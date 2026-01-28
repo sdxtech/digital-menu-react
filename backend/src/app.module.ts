@@ -6,6 +6,14 @@ import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
+import { RedisModule } from './redis/redis.module';
+import { QueueModule } from './queue/queue.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { FilesModule } from './files/files.module';
+import { ImportsModule } from './imports/imports.module';
+import { ExportsModule } from './exports/exports.module';
+import { MailModule } from './mail/mail.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -16,8 +24,16 @@ import { AdminModule } from './admin/admin.module';
         uri: config.get<string>('MONGO_URI'),
       }),
     }),
+    RedisModule,
+    QueueModule,
     UsersModule,
     AuthModule,
+    ProductsModule,
+    NotificationsModule,
+    FilesModule,
+    ImportsModule,
+    ExportsModule,
+    MailModule,
     AdminModule,
   ],
   controllers: [AppController],
