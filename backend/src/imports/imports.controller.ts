@@ -9,8 +9,8 @@ import { ImportsService } from './imports.service';
 export class ImportsController {
   constructor(private readonly importsService: ImportsService) {}
 
-  @Post()
-  async create(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
-    return this.importsService.enqueue(req.user.sub, dto.fileKey, dto.kind);
+  @Post('products')
+  async importProducts(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
+    return this.importsService.enqueueProducts(req.user.sub, dto.fileKey);
   }
 }

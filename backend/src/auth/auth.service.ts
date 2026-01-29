@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { resolveExpiresIn } from './jwt.utils';
+import { AppRole } from './roles.constants';
 
 @Injectable()
 export class AuthService {
@@ -17,7 +18,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await this.users.create({ name, email, passwordHash });
 
-    return this.issueTokens(user.id, user.email, user.roles);
+    return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
   }
 
   async login(email: string, password: string) {
@@ -28,7 +29,7 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) throw new UnauthorizedException('User disabled');
 
-    return this.issueTokens(user.id, user.email, user.roles);
+    return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
   }
 
   async refresh(refreshToken: string) {
@@ -41,14 +42,14 @@ export class AuthService {
       const user = await this.users.findById(payload.sub);
       if (!user || !user.isActive) throw new UnauthorizedException('Invalid refresh token');
 
-      // TODO: store hashed refresh tokens with allowlist for rotation/revocation.
-      return this.issueTokens(user.id, user.email, user.roles);
+      // TODO: allowlist + hash refresh token untuk produksi (rotation/revocation).
+      return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
 
-  private async issueTokens(sub: string, email: string, roles: string[]) {
+  private async issueTokens(sub: string, name: string, email: string, roles: AppRole[]) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
       '15m',
@@ -60,7 +61,7 @@ export class AuthService {
     const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
 
     const accessToken = await this.jwt.signAsync(
-      { sub, email, roles },
+      { sub, name, email, roles },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(

@@ -29,7 +29,7 @@ export class NotificationsService {
       _id?: unknown;
       createdAt?: Date;
     };
-    this.gateway.emitToUser(userId, 'notification', {
+    this.gateway.emitToUser(userId, 'notification:new', {
       id: createdObject._id?.toString() ?? created.id,
       title: createdObject.title,
       message: createdObject.message,
@@ -65,5 +65,17 @@ export class NotificationsService {
 
     if (!updated) throw new NotFoundException('Notification not found');
     return updated;
+  }
+
+  emitJobProgress(userId: string, payload: Record<string, unknown>) {
+    this.gateway.emitToUser(userId, 'job:progress', payload);
+  }
+
+  emitJobDone(userId: string, payload: Record<string, unknown>) {
+    this.gateway.emitToUser(userId, 'job:done', payload);
+  }
+
+  emitJobFailed(userId: string, payload: Record<string, unknown>) {
+    this.gateway.emitToUser(userId, 'job:failed', payload);
   }
 }

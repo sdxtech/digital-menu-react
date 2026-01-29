@@ -25,6 +25,51 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Digital Menu Backend
+
+### Env vars (DewaCloud)
+
+- NODE_ENV
+- PORT
+- CORS_ORIGIN
+- MONGO_URI
+- REDIS_URL
+- JWT_ACCESS_SECRET
+- JWT_REFRESH_SECRET
+- JWT_ACCESS_EXPIRES_IN
+- JWT_REFRESH_EXPIRES_IN
+- S3_ENDPOINT
+- S3_REGION
+- S3_ACCESS_KEY
+- S3_SECRET_KEY
+- S3_BUCKET
+- S3_PUBLIC_BASE_URL
+- EMAIL_FROM
+- SMTP_HOST
+- SMTP_PORT
+- SMTP_USER
+- SMTP_PASS
+
+### Run local
+
+```bash
+$ cp .env.example .env
+$ docker compose -f ..\infra\docker-compose.yml up -d
+$ npm install
+$ npm run start:dev
+```
+
+### Run prod
+
+```bash
+$ docker build -t digital-menu-backend .
+$ docker run --env-file .env -p 3000:3000 digital-menu-backend
+```
+
+```bash
+$ docker compose -f ..\docker-compose.prod.example.yml up -d
+```
+
 ## Project setup
 
 ```bash

@@ -7,9 +7,17 @@ import { ProductsModule } from '../products/products.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { QueueModule } from '../queue/queue.module';
 import { AuthModule } from '../auth/auth.module';
+import { CategoriesModule } from '../categories/categories.module';
 
 @Module({
-  imports: [QueueModule, FilesModule, ProductsModule, NotificationsModule, AuthModule],
+  imports: [
+    QueueModule,
+    FilesModule,
+    ProductsModule,
+    CategoriesModule,
+    NotificationsModule,
+    AuthModule,
+  ],
   controllers: [ImportsController],
   providers: [ImportsService, ImportsProcessor],
 })

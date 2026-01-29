@@ -3,7 +3,7 @@ import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { Inject } from '@nestjs/common';
-import { ProductsService } from '../../products/products.service';
+import { ExportProductRow, ProductsService } from '../../products/products.service';
 import { FilesService } from '../../files/files.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { randomUUID } from 'crypto';
@@ -38,36 +38,55 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async handle(job: Job<ExportJob>) {
     const { userId } = job.data;
-    const products = await this.products.findAllByUser(userId);
-    const csv = this.buildCsv(products);
+    try {
+      this.notifications.emitJobProgress(userId, { jobId: job.id, stage: 'start' });
+      const products = await this.products.findActiveForExport();
+      const csv = this.buildCsv(products);
 
-    const key = `exports/${randomUUID()}.csv`;
-    const publicUrl = await this.files.uploadObject(
-      key,
-      Readable.from([csv]),
-      'text/csv',
-    );
+      const key = `exports/${randomUUID()}.csv`;
+      const publicUrl = await this.files.uploadObject(
+        key,
+        Readable.from([csv]),
+        'text/csv',
+      );
 
-    await this.notifications.create(
-      userId,
-      'Export selesai',
-      `Export produk selesai. Total: ${products.length}.`,
-      { url: publicUrl, count: products.length },
-    );
+      const summary = { url: publicUrl, count: products.length };
+      await this.notifications.create(
+        userId,
+        'Export selesai',
+        `Export produk selesai. Total: ${products.length}.`,
+        summary,
+      );
+      this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
+    } catch (error) {
+      const reason = (error as Error).message;
+      await this.notifications.create(
+        userId,
+        'Export gagal',
+        'Terjadi kesalahan saat memproses export produk.',
+        { reason },
+      );
+      this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
+      throw error;
+    }
   }
 
-  private buildCsv(
-    products: Array<{ name: string; price: number; category?: string | null }>,
-  ) {
+  private buildCsv(products: ExportProductRow[]) {
     const lines: string[] = [];
-    lines.push('name,price,category');
+    lines.push('name,price,category,description,imageUrl');
 
     for (const product of products) {
+      const categoryName =
+        product.categoryId && typeof product.categoryId === 'object'
+          ? product.categoryId.name ?? ''
+          : '';
       lines.push(
         [
           this.escapeCsv(product.name),
           this.escapeCsv(String(product.price)),
-          this.escapeCsv(product.category ?? ''),
+          this.escapeCsv(categoryName),
+          this.escapeCsv(product.description ?? ''),
+          this.escapeCsv(product.imageUrl ?? ''),
         ].join(','),
       );
     }

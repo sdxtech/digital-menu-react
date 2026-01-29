@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGIN: https://your-frontend-domain
+      MONGO_URI: mongodb+srv://user:pass@cluster.example.mongodb.net/digital_menu
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: change_me_access
+      JWT_REFRESH_SECRET: change_me_refresh
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      S3_ENDPOINT: https://s3.dewacloud.example
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: change_me
+      S3_SECRET_KEY: change_me
+      S3_BUCKET: digital-menu
+      S3_PUBLIC_BASE_URL: https://cdn.dewacloud.example/digital-menu
+      EMAIL_FROM: "Digital Menu <no-reply@digitalmenu.local>"
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USER: your_smtp_user
+      SMTP_PASS: your_smtp_pass
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    restart: unless-stopped

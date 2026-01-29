@@ -13,6 +13,17 @@ async function bootstrap() {
     }),
   );
 
+  const corsOrigin = process.env.CORS_ORIGIN;
+  if (!corsOrigin || corsOrigin === '*') {
+    app.enableCors({ origin: true, credentials: true });
+  } else {
+    const origins = corsOrigin
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    app.enableCors({ origin: origins, credentials: true });
+  }
+
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   await app.listen(port);
 }
