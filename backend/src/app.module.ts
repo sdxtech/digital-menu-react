@@ -15,6 +15,7 @@ import { ExportsModule } from './exports/exports.module';
 import { MailModule } from './mail/mail.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
+import { RawMaterialsModule } from './raw-materials/raw-materials.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { CategoriesModule } from './categories/categories.module';
     UsersModule,
     AuthModule,
     ProductsModule,
+    RawMaterialsModule,
     CategoriesModule,
     NotificationsModule,
     FilesModule,

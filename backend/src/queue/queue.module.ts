@@ -42,6 +42,6 @@ class QueueLifecycle implements OnModuleDestroy {
     },
     QueueLifecycle,
   ],
-  exports: [IMPORTS_QUEUE, EXPORTS_QUEUE, MAIL_QUEUE, REDIS_OPTIONS],
+  exports: [IMPORTS_QUEUE, EXPORTS_QUEUE, MAIL_QUEUE, RedisModule],
 })
 export class QueueModule {}

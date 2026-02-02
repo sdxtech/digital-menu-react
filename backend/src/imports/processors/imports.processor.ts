@@ -2,22 +2,48 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { parse } from 'csv-parse';
+import ExcelJS from 'exceljs';
+import { Readable } from 'stream';
 import { Inject } from '@nestjs/common';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { FilesService } from '../../files/files.service';
 import { ProductsService } from '../../products/products.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CategoriesService } from '../../categories/categories.service';
+import { RawMaterialsService } from '../../raw-materials/raw-materials.service';
 
 type ImportJob = {
   userId: string;
   fileKey: string;
+  fileName?: string;
+  contentType?: string;
 };
 
 type ImportError = {
   row: number;
   name?: string;
   reason: string;
+};
+
+const RAW_MATERIAL_HEADER_ALIASES = {
+  productCode: [
+    'product code',
+    'product_code',
+    'productcode',
+    'code',
+    'sku',
+    'kode',
+    'kode produk',
+  ],
+  name: ['name', 'nama', 'product name', 'material name'],
+  unitOfMeasures: [
+    'unit of measures',
+    'unit of measure',
+    'unit',
+    'uom',
+    'unit_of_measures',
+    'satuan',
+  ],
 };
 
 @Injectable()
@@ -30,6 +56,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly files: FilesService,
     private readonly products: ProductsService,
     private readonly categories: CategoriesService,
+    private readonly rawMaterials: RawMaterialsService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -46,6 +73,11 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handle(job: Job<ImportJob>) {
+    if (job.name === 'import-raw-materials') {
+      await this.handleRawMaterials(job);
+      return;
+    }
+
     const { userId, fileKey } = job.data;
     const errors: ImportError[] = [];
     let successCount = 0;
@@ -151,5 +183,254 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
       throw error;
     }
+  }
+
+  private async handleRawMaterials(job: Job<ImportJob>) {
+    const { userId, fileKey, fileName, contentType } = job.data;
+    const errors: ImportError[] = [];
+    let successCount = 0;
+    let failCount = 0;
+    let processed = 0;
+
+    const pushError = (error: ImportError) => {
+      failCount += 1;
+      if (errors.length < 50) errors.push(error);
+    };
+
+    const flushBatch = async (
+      batch: Array<{ productCode: string; name: string; unitOfMeasures: string; row: number }>,
+    ) => {
+      if (batch.length === 0) return;
+      try {
+        const result = await this.rawMaterials.bulkUpsertByProductCode(
+          batch.map(({ productCode, name, unitOfMeasures }) => ({
+            productCode,
+            name,
+            unitOfMeasures,
+          })),
+        );
+        successCount += result.upsertedCount + result.matchedCount;
+      } catch (error) {
+        this.logger.warn(`Raw material batch failed: ${(error as Error).message}`);
+        batch.forEach((item) =>
+          pushError({
+            row: item.row,
+            name: item.name,
+            reason: 'Failed to save raw material',
+          }),
+        );
+      }
+    };
+
+    try {
+      this.notifications.emitJobProgress(userId, {
+        jobId: job.id,
+        processed,
+        successCount,
+        failCount,
+      });
+      const stream = await this.files.getObjectStream(fileKey);
+      const useExcel = this.isExcelFile(fileName, contentType);
+      const rows = useExcel
+        ? this.rawMaterialRowsFromExcel(stream)
+        : this.rawMaterialRowsFromCsv(stream);
+
+      const batch = new Map<
+        string,
+        { productCode: string; name: string; unitOfMeasures: string; row: number }
+      >();
+      const batchSize = 1000;
+
+      for await (const record of rows) {
+        processed += 1;
+        const productCode = record.productCode.trim();
+        const name = record.name.trim();
+        const unitOfMeasures = record.unitOfMeasures.trim();
+
+        if (!productCode || !name || !unitOfMeasures) {
+          pushError({
+            row: record.rowNumber,
+            name,
+            reason: 'productCode, name, unitOfMeasures required',
+          });
+          continue;
+        }
+
+        const normalizedCode = this.normalizeHeader(productCode);
+        batch.set(normalizedCode, {
+          productCode,
+          name,
+          unitOfMeasures,
+          row: record.rowNumber,
+        });
+
+        if (batch.size >= batchSize) {
+          await flushBatch(Array.from(batch.values()));
+          batch.clear();
+        }
+
+        if (processed % 1000 === 0) {
+          this.notifications.emitJobProgress(userId, {
+            jobId: job.id,
+            processed,
+            successCount,
+            failCount,
+          });
+        }
+      }
+
+      await flushBatch(Array.from(batch.values()));
+
+      const summary = { successCount, failCount, errors };
+      await this.notifications.create(
+        userId,
+        'Import raw material selesai',
+        `Import raw material selesai. Sukses: ${successCount}, gagal: ${failCount}.`,
+        summary,
+      );
+      this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
+    } catch (error) {
+      const reason = (error as Error).message;
+      await this.notifications.create(
+        userId,
+        'Import raw material gagal',
+        'Terjadi kesalahan saat memproses file import raw material.',
+        { successCount, failCount, errors, reason },
+      );
+      this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
+      throw error;
+    }
+  }
+
+  private async *rawMaterialRowsFromCsv(stream: Readable) {
+    const parser = parse({ columns: true, skip_empty_lines: true, trim: true });
+    const rows = stream.pipe(parser);
+    let rowNumber = 0;
+
+    for await (const record of rows) {
+      rowNumber += 1;
+      const normalized = this.normalizeRecord(record as Record<string, unknown>);
+      const productCode = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.productCode);
+      const name = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.name);
+      const unitOfMeasures = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
+      );
+
+      yield {
+        rowNumber,
+        productCode,
+        name,
+        unitOfMeasures,
+      };
+    }
+  }
+
+  private async *rawMaterialRowsFromExcel(stream: Readable) {
+    const workbook = new ExcelJS.stream.xlsx.WorkbookReader(stream, {
+      worksheets: 'emit',
+      sharedStrings: 'cache',
+      hyperlinks: 'ignore',
+      styles: 'ignore',
+    });
+
+    let headerMap: { productCode: number; name: number; unitOfMeasures: number } | null =
+      null;
+
+    for await (const worksheet of workbook) {
+      for await (const row of worksheet) {
+        const values = Array.isArray(row.values) ? row.values : [];
+
+        if (!headerMap) {
+          headerMap = this.buildHeaderMap(values);
+          continue;
+        }
+
+        const productCode = this.getCellValue(values, headerMap.productCode);
+        const name = this.getCellValue(values, headerMap.name);
+        const unitOfMeasures = this.getCellValue(values, headerMap.unitOfMeasures);
+
+        yield {
+          rowNumber: row.number,
+          productCode,
+          name,
+          unitOfMeasures,
+        };
+      }
+      break;
+    }
+
+    if (!headerMap) {
+      throw new Error('Header file tidak ditemukan untuk import raw material.');
+    }
+  }
+
+  private normalizeRecord(record: Record<string, unknown>) {
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+      const nextKey = this.normalizeHeader(key);
+      normalized[nextKey] = value;
+    }
+    return normalized;
+  }
+
+  private pickValue(record: Record<string, unknown>, aliases: string[]) {
+    for (const alias of aliases) {
+      if (alias in record) {
+        const value = record[alias];
+        if (value === undefined || value === null) return '';
+        return String(value).trim();
+      }
+    }
+    return '';
+  }
+
+  private buildHeaderMap(values: unknown[]) {
+    const map = {
+      productCode: 0,
+      name: 0,
+      unitOfMeasures: 0,
+    };
+
+    for (let idx = 1; idx < values.length; idx += 1) {
+      const header = this.normalizeHeader(values[idx]);
+      if (!header) continue;
+      if (RAW_MATERIAL_HEADER_ALIASES.productCode.includes(header)) {
+        map.productCode = idx;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.name.includes(header)) {
+        map.name = idx;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures.includes(header)) {
+        map.unitOfMeasures = idx;
+      }
+    }
+
+    if (!map.productCode || !map.name || !map.unitOfMeasures) {
+      throw new Error(
+        'Header harus berisi product code, name, dan unit of measures untuk import raw material.',
+      );
+    }
+
+    return map;
+  }
+
+  private getCellValue(values: unknown[], index: number) {
+    const cell = values[index];
+    if (cell === undefined || cell === null) return '';
+    if (typeof cell === 'object' && cell && 'text' in cell) {
+      return String((cell as { text?: unknown }).text ?? '').trim();
+    }
+    return String(cell).trim();
+  }
+
+  private isExcelFile(fileName?: string, contentType?: string) {
+    if (fileName && /\.(xlsx|xls)$/i.test(fileName)) return true;
+    if (contentType && contentType.includes('sheet')) return true;
+    return false;
+  }
+
+  private normalizeHeader(value: unknown) {
+    return String(value ?? '').trim().toLowerCase();
   }
 }

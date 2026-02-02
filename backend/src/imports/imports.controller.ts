@@ -11,6 +11,21 @@ export class ImportsController {
 
   @Post('products')
   async importProducts(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
-    return this.importsService.enqueueProducts(req.user.sub, dto.fileKey);
+    return this.importsService.enqueueProducts(
+      req.user.sub,
+      dto.fileKey,
+      dto.fileName,
+      dto.contentType,
+    );
+  }
+
+  @Post('raw-materials')
+  async importRawMaterials(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
+    return this.importsService.enqueueRawMaterials(
+      req.user.sub,
+      dto.fileKey,
+      dto.fileName,
+      dto.contentType,
+    );
   }
 }

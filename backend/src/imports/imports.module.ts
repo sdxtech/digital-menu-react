@@ -8,12 +8,14 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { QueueModule } from '../queue/queue.module';
 import { AuthModule } from '../auth/auth.module';
 import { CategoriesModule } from '../categories/categories.module';
+import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
 
 @Module({
   imports: [
     QueueModule,
     FilesModule,
     ProductsModule,
+    RawMaterialsModule,
     CategoriesModule,
     NotificationsModule,
     AuthModule,
