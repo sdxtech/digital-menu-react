@@ -16,6 +16,8 @@ import { MailModule } from './mail/mail.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
 import { RawMaterialsModule } from './raw-materials/raw-materials.module';
+import { RecipesModule } from './recipes/recipes.module';
+import { MenuProductionsModule } from './menu-productions/menu-productions.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { RawMaterialsModule } from './raw-materials/raw-materials.module';
     ProductsModule,
     RawMaterialsModule,
     CategoriesModule,
+    RecipesModule,
+    MenuProductionsModule,
     NotificationsModule,
     FilesModule,
     ImportsModule,

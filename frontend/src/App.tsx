@@ -10,6 +10,7 @@ import ChefMenuCycle from './app/ChefMenuCycle'
 import ChefRawMaterial from './app/ChefRawMaterial'
 import ChefStoreRequest from './app/ChefStoreRequest'
 import StorekeeperPage from './app/StorekeeperPage'
+import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerPage from './app/UnitManagerPage'
 
 const RequireAuth = () => {
@@ -72,6 +73,7 @@ function App() {
         </Route>
         <Route element={<RequireRole role="storekeeper" />}>
           <Route path="/storekeeper" element={<StorekeeperPage />} />
+          <Route path="/storekeeper/history" element={<StorekeeperHistoryPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />

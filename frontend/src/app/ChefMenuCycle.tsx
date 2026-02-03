@@ -97,7 +97,7 @@ const ChefMenuCycle = () => {
     setInputMessage('Baris menu dihapus.')
   }
 
-  const handleSubmitToTimeline = () => {
+  const handleSubmitToTimeline = async () => {
     if (!productionDate) {
       setInputError('Pilih tanggal produksi terlebih dahulu.')
       setInputMessage('')
@@ -152,14 +152,22 @@ const ChefMenuCycle = () => {
       })
     }
 
-    payload.forEach((item) => addMenuProduction(item))
-
-    setMenuRows([createMenuInputRow()])
-    setInputError('')
-    setInputMessage('')
-    setTimelineMessage(
-      `${payload.length} menu masuk ke timeline produksi tanggal ${productionDate} dan diajukan ke Unit Manager (pending approval).`,
-    )
+    try {
+      await Promise.all(payload.map((item) => addMenuProduction(item)))
+      setMenuRows([createMenuInputRow()])
+      setInputError('')
+      setInputMessage('')
+      setTimelineMessage(
+        `${payload.length} menu masuk ke timeline produksi tanggal ${productionDate} dan diajukan ke Unit Manager (pending approval).`,
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Gagal menyimpan menu production.'
+      setInputError(message)
+      setInputMessage('')
+    }
   }
 
   return (

@@ -9,18 +9,12 @@ const navItems = [
   { label: 'Riwayat Pengeluaran', to: '/storekeeper/history' },
 ]
 
-const StorekeeperPage = () => {
+const StorekeeperHistoryPage = () => {
   const { user, logout } = useAuth()
-  const {
-    menuProductions,
-    recipes,
-    fetchMenuProductions,
-    fetchRecipes,
-    markStoreFulfilled,
-  } = useChefData()
+  const { menuProductions, recipes, fetchMenuProductions, fetchRecipes } =
+    useChefData()
   const navigate = useNavigate()
   const [loadError, setLoadError] = useState('')
-  const [actionMessage, setActionMessage] = useState('')
 
   const handleLogout = () => {
     logout()
@@ -36,19 +30,19 @@ const StorekeeperPage = () => {
     })
   }, [fetchMenuProductions, fetchRecipes])
 
-  const requestedMenus = useMemo(
+  const fulfilledMenus = useMemo(
     () =>
       menuProductions.filter(
         (item) =>
           item.approvalStatus === 'approved' &&
-          item.storeRequestStatus === 'requested',
+          item.storeRequestStatus === 'fulfilled',
       ),
     [menuProductions],
   )
 
   const groupedByDate = useMemo(() => {
-    const map = new Map<string, typeof requestedMenus>()
-    requestedMenus.forEach((item) => {
+    const map = new Map<string, typeof fulfilledMenus>()
+    fulfilledMenus.forEach((item) => {
       const date = item.productionDate
       const bucket = map.get(date)
       if (bucket) {
@@ -57,8 +51,8 @@ const StorekeeperPage = () => {
         map.set(date, [item])
       }
     })
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [requestedMenus])
+    return Array.from(map.entries()).sort(([a], [b]) => b.localeCompare(a))
+  }, [fulfilledMenus])
 
   const recipeByName = useMemo(() => {
     const map = new Map<string, (typeof recipes)[number]>()
@@ -129,7 +123,7 @@ const StorekeeperPage = () => {
                 Storekeeper Workspace
               </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                Inventory Desk
+                Riwayat Pengeluaran
               </h1>
             </div>
           </div>
@@ -155,7 +149,7 @@ const StorekeeperPage = () => {
               </p>
               <h2 className="mt-2 text-lg font-semibold">Storekeeper</h2>
               <p className="mt-3 text-xs text-muted">
-                Kelola stok dan distribusi bahan baku.
+                Lihat riwayat pengeluaran bahan untuk dapur.
               </p>
             </div>
 
@@ -183,29 +177,24 @@ const StorekeeperPage = () => {
           <main className="space-y-6 lg:col-span-9">
             <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
               <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                Store Request
+                Riwayat
               </p>
               <h2 className="mt-2 text-xl font-semibold">
-                Menu produksi yang harus disiapkan
+                Menu produksi yang sudah dikirim ke dapur
               </h2>
               <p className="mt-3 text-sm text-muted">
-                Data ini otomatis masuk setelah Unit Manager melakukan approval.
+                Data ini berisi pengeluaran bahan yang sudah selesai.
               </p>
               {loadError ? (
                 <p className="mt-3 text-xs font-medium text-red-600">
                   {loadError}
                 </p>
               ) : null}
-              {actionMessage ? (
-                <p className="mt-3 text-xs font-medium text-primary">
-                  {actionMessage}
-                </p>
-              ) : null}
             </div>
 
             {summaryByDate.length === 0 ? (
               <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
-                Belum ada menu produksi yang masuk ke store request.
+                Belum ada riwayat pengeluaran bahan.
               </div>
             ) : (
               summaryByDate.map((group) => (
@@ -220,37 +209,9 @@ const StorekeeperPage = () => {
                       </p>
                       <h3 className="mt-2 text-lg font-semibold">{group.date}</h3>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
-                        {group.items.length} menu
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setActionMessage('')
-                          setLoadError('')
-                          try {
-                            await Promise.all(
-                              group.items.map((menu) =>
-                                markStoreFulfilled(menu.id),
-                              ),
-                            )
-                            setActionMessage(
-                              `Pengeluaran bahan untuk ${group.date} selesai.`,
-                            )
-                          } catch (error) {
-                            const message =
-                              error instanceof Error
-                                ? error.message
-                                : 'Gagal menyelesaikan pengeluaran bahan.'
-                            setLoadError(message)
-                          }
-                        }}
-                        className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-                      >
-                        Selesaikan & kirim ke dapur
-                      </button>
-                    </div>
+                    <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
+                      {group.items.length} menu
+                    </span>
                   </div>
 
                   <div className="mt-5 grid gap-4 lg:grid-cols-12">
@@ -341,4 +302,4 @@ const StorekeeperPage = () => {
   )
 }
 
-export default StorekeeperPage
+export default StorekeeperHistoryPage

@@ -4,6 +4,7 @@ import type { RedisOptions } from 'ioredis';
 import { parse } from 'csv-parse';
 import ExcelJS from 'exceljs';
 import { Readable } from 'stream';
+import { createReadStream, promises as fs } from 'fs';
 import { Inject } from '@nestjs/common';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { FilesService } from '../../files/files.service';
@@ -17,6 +18,7 @@ type ImportJob = {
   fileKey: string;
   fileName?: string;
   contentType?: string;
+  filePath?: string;
 };
 
 type ImportError = {
@@ -186,7 +188,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleRawMaterials(job: Job<ImportJob>) {
-    const { userId, fileKey, fileName, contentType } = job.data;
+    const { userId, fileKey, fileName, contentType, filePath } = job.data;
     const errors: ImportError[] = [];
     let successCount = 0;
     let failCount = 0;
@@ -229,8 +231,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         successCount,
         failCount,
       });
-      const stream = await this.files.getObjectStream(fileKey);
-      const useExcel = this.isExcelFile(fileName, contentType);
+      if (!filePath && !fileKey) {
+        throw new Error('File tidak ditemukan untuk import raw material.');
+      }
+
+      const stream = filePath
+        ? createReadStream(filePath)
+        : await this.files.getObjectStream(fileKey);
+      const useExcel = this.isExcelFile(fileName ?? filePath, contentType);
       const rows = useExcel
         ? this.rawMaterialRowsFromExcel(stream)
         : this.rawMaterialRowsFromCsv(stream);
@@ -299,6 +307,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       );
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
       throw error;
+    } finally {
+      if (filePath) {
+        fs.unlink(filePath).catch(() => null);
+      }
     }
   }
 

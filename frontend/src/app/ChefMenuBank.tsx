@@ -12,12 +12,6 @@ const nextFilter = (current: 'all' | 'draft' | 'active') => {
 const statusLabel = (status: 'draft' | 'active') =>
   status === 'active' ? 'Aktif' : 'Draft'
 
-const approvalLabel = (approvalStatus: 'pending' | 'approved' | 'rejected') => {
-  if (approvalStatus === 'approved') return 'Approved'
-  if (approvalStatus === 'rejected') return 'Rejected'
-  return 'Pending Approval'
-}
-
 const ChefMenuBank = () => {
   const { recipes } = useChefData()
   const [searchTerm, setSearchTerm] = useState('')
@@ -108,12 +102,7 @@ const ChefMenuBank = () => {
                     <td className="px-5 py-4 font-medium">{recipe.name}</td>
                     <td className="px-5 py-4">{recipe.category}</td>
                     <td className="px-5 py-4">
-                      <div className="flex flex-col gap-1">
-                        <span>{statusLabel(recipe.status)}</span>
-                        <span className="text-xs text-muted">
-                          {approvalLabel(recipe.approvalStatus)}
-                        </span>
-                      </div>
+                      <span>{statusLabel(recipe.status)}</span>
                     </td>
                     <td className="px-5 py-4">
                       <button
@@ -169,7 +158,7 @@ const ChefMenuBank = () => {
           </p>
           <h3 className="mt-2 text-lg font-semibold">{selectedRecipe.name}</h3>
           <p className="mt-2 text-sm text-muted">{selectedRecipe.description}</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Kategori
@@ -182,6 +171,55 @@ const ChefMenuBank = () => {
               </p>
               <p className="mt-2 text-sm font-medium">Rp {selectedRecipe.price}</p>
             </div>
+            <div className="rounded-2xl border border-border bg-background p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                Porsi dasar
+              </p>
+              <p className="mt-2 text-sm font-medium">
+                {selectedRecipe.portionSize}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Ingredients
+            </p>
+            <h4 className="mt-2 text-base font-semibold">
+              Kebutuhan bahan & jumlah
+            </h4>
+
+            {selectedRecipe.ingredients.length === 0 ? (
+              <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                Belum ada ingredient untuk recipe ini.
+              </div>
+            ) : (
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-background">
+                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                      <th className="px-4 py-3 font-semibold">Product code</th>
+                      <th className="px-4 py-3 font-semibold">Nama bahan</th>
+                      <th className="px-4 py-3 font-semibold">Qty</th>
+                      <th className="px-4 py-3 font-semibold">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRecipe.ingredients.map((ingredient, idx) => (
+                      <tr
+                        key={`${ingredient.productCode}-${idx}`}
+                        className="border-t border-border"
+                      >
+                        <td className="px-4 py-3">{ingredient.productCode}</td>
+                        <td className="px-4 py-3">{ingredient.name}</td>
+                        <td className="px-4 py-3">{ingredient.qty}</td>
+                        <td className="px-4 py-3">{ingredient.unitOfMeasures}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       ) : null}

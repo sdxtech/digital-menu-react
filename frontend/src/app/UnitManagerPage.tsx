@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useChefData } from '../lib/chef-data'
@@ -17,6 +17,7 @@ const UnitManagerPage = () => {
     approveMenuProduction,
     rejectMenuProduction,
   } = useChefData()
+  const [actionError, setActionError] = useState('')
 
   const pendingRecipes = useMemo(
     () => recipes.filter((item) => item.approvalStatus === 'pending'),
@@ -102,6 +103,11 @@ const UnitManagerPage = () => {
               <p className="text-sm text-muted">
                 Review recipe dan menu production dari tim Chef.
               </p>
+              {actionError ? (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {actionError}
+                </p>
+              ) : null}
             </div>
 
             <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
@@ -138,14 +144,36 @@ const UnitManagerPage = () => {
                             <div className="flex gap-2">
                               <button
                                 type="button"
-                                onClick={() => approveRecipe(item.id)}
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await approveRecipe(item.id)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Gagal approve recipe.',
+                                    )
+                                  }
+                                }}
                                 className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
                               >
                                 Approve
                               </button>
                               <button
                                 type="button"
-                                onClick={() => rejectRecipe(item.id)}
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await rejectRecipe(item.id)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Gagal reject recipe.',
+                                    )
+                                  }
+                                }}
                                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                               >
                                 Reject
@@ -194,14 +222,36 @@ const UnitManagerPage = () => {
                             <div className="flex gap-2">
                               <button
                                 type="button"
-                                onClick={() => approveMenuProduction(item.id)}
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await approveMenuProduction(item.id)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Gagal approve menu production.',
+                                    )
+                                  }
+                                }}
                                 className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
                               >
                                 Approve
                               </button>
                               <button
                                 type="button"
-                                onClick={() => rejectMenuProduction(item.id)}
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await rejectMenuProduction(item.id)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Gagal reject menu production.',
+                                    )
+                                  }
+                                }}
                                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                               >
                                 Reject

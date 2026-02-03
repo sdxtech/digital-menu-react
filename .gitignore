@@ -27,3 +27,7 @@ Thumbs.db
 
 # Docker
 **/data/
+
+# Uploads
+uploads/
+backend/uploads/

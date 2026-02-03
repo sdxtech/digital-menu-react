@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import {
   useChefData,
   type RecipeIngredient,
@@ -9,6 +9,7 @@ type RecipeForm = {
   name: string
   category: string
   description: string
+  portionSize: string
 }
 
 type IngredientRow = {
@@ -31,10 +32,16 @@ const initialRecipeForm: RecipeForm = {
   name: '',
   category: '',
   description: '',
+  portionSize: '1',
 }
 
 const ChefCreateMenu = () => {
-  const { createRecipe, importRecipesFromExcel } = useChefData()
+  const {
+    createRecipe,
+    importRecipesFromExcel,
+    rawMaterials,
+    fetchRawMaterials,
+  } = useChefData()
 
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
@@ -46,6 +53,24 @@ const ChefCreateMenu = () => {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
+
+  useEffect(() => {
+    fetchRawMaterials(1, 500).catch(() => null)
+  }, [fetchRawMaterials])
+
+  const normalizeValue = (value: string) => value.trim().toLowerCase()
+  const findRawMaterialByCode = (value: string) => {
+    const normalized = normalizeValue(value)
+    return rawMaterials.find(
+      (item) => normalizeValue(item.productCode) === normalized,
+    )
+  }
+  const findRawMaterialByName = (value: string) => {
+    const normalized = normalizeValue(value)
+    return rawMaterials.find(
+      (item) => normalizeValue(item.name) === normalized,
+    )
+  }
 
   const updateRecipeForm = <K extends keyof RecipeForm>(
     field: K,
@@ -63,7 +88,30 @@ const ChefCreateMenu = () => {
     value: IngredientRow[K],
   ) => {
     setIngredientRows((prev) =>
-      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+      prev.map((row) => {
+        if (row.id !== id) return row
+
+        const next = { ...row, [field]: value }
+        if (field === 'productCode' && typeof value === 'string') {
+          const matched = findRawMaterialByCode(value)
+          if (matched) {
+            next.productCode = matched.productCode
+            next.name = matched.name
+            next.unitOfMeasures = matched.unitOfMeasures
+          }
+        }
+
+        if (field === 'name' && typeof value === 'string') {
+          const matched = findRawMaterialByName(value)
+          if (matched) {
+            next.productCode = matched.productCode
+            next.name = matched.name
+            next.unitOfMeasures = matched.unitOfMeasures
+          }
+        }
+
+        return next
+      }),
     )
   }
 
@@ -103,27 +151,44 @@ const ChefCreateMenu = () => {
     setImportError('')
   }
 
-  const handleImportRecipes = () => {
+  const handleImportRecipes = async () => {
     if (!importFile) {
       setImportError('Pilih file excel terlebih dahulu')
       setImportMessage('')
       return
     }
 
-    const importedCount = importRecipesFromExcel(importFile.name)
-    setImportError('')
-    setImportMessage(
-      `${importedCount} recipe berhasil diimport dari ${importFile.name}`,
-    )
+    try {
+      const importedCount = await importRecipesFromExcel(importFile)
+      setImportError('')
+      setImportMessage(
+        `${importedCount} recipe berhasil diimport dari ${importFile.name}`,
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Gagal mengimport recipe.'
+      setImportError(message)
+      setImportMessage('')
+    }
   }
 
-  const handleCreateRecipe = () => {
+  const handleCreateRecipe = async () => {
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
+    const portionRaw = recipeForm.portionSize.trim()
 
     if (!nextName || !nextCategory) {
       setSubmitError('Lengkapi nama recipe dan kategori terlebih dahulu.')
+      setSubmitMessage('')
+      return
+    }
+
+    const portionSize = Number(portionRaw)
+    if (!Number.isFinite(portionSize) || portionSize <= 0) {
+      setSubmitError('Porsi dasar harus angka lebih dari 0.')
       setSubmitMessage('')
       return
     }
@@ -171,19 +236,29 @@ const ChefCreateMenu = () => {
       })
     }
 
-    createRecipe({
-      name: nextName,
-      category: nextCategory,
-      description: nextDescription,
-      price: 0,
-      status: 'draft',
-      ingredients: parsedIngredients,
-    })
+    try {
+      await createRecipe({
+        name: nextName,
+        category: nextCategory,
+        description: nextDescription,
+        price: 0,
+        portionSize,
+        status: 'draft',
+        ingredients: parsedIngredients,
+      })
 
-    setRecipeForm(initialRecipeForm)
-    setIngredientRows([createIngredientRow()])
-    setSubmitError('')
-    setSubmitMessage('Recipe berhasil disimpan dan diajukan ke Unit Manager.')
+      setRecipeForm(initialRecipeForm)
+      setIngredientRows([createIngredientRow()])
+      setSubmitError('')
+      setSubmitMessage('Recipe berhasil disimpan dan diajukan ke Unit Manager.')
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Gagal menyimpan recipe.'
+      setSubmitError(message)
+      setSubmitMessage('')
+    }
   }
 
   return (
@@ -262,6 +337,25 @@ const ChefCreateMenu = () => {
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
           </div>
+          <div>
+            <label className="text-sm font-medium text-foreground">
+              Porsi dasar
+            </label>
+            <input
+              type="number"
+              min={1}
+              step="1"
+              value={recipeForm.portionSize}
+              onChange={(event) =>
+                updateRecipeForm('portionSize', event.target.value)
+              }
+              placeholder="1"
+              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+            />
+            <p className="mt-2 text-xs text-muted">
+              Isi berapa porsi untuk resep ini (mis. 1 atau 10).
+            </p>
+          </div>
           <div className="sm:col-span-2">
             <label className="text-sm font-medium text-foreground">Deskripsi</label>
             <textarea
@@ -283,6 +377,24 @@ const ChefCreateMenu = () => {
           <h4 className="mt-2 text-lg font-semibold">Tambah ingredient</h4>
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+            <datalist id="raw-material-code-options">
+              {rawMaterials.map((item) => (
+                <option
+                  key={`code-${item.id}`}
+                  value={item.productCode}
+                  label={item.name}
+                />
+              ))}
+            </datalist>
+            <datalist id="raw-material-name-options">
+              {rawMaterials.map((item) => (
+                <option
+                  key={`name-${item.id}`}
+                  value={item.name}
+                  label={item.productCode}
+                />
+              ))}
+            </datalist>
             <table className="min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -321,6 +433,7 @@ const ChefCreateMenu = () => {
                           )
                         }
                         placeholder="PRD-001"
+                        list="raw-material-code-options"
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>
@@ -332,6 +445,7 @@ const ChefCreateMenu = () => {
                           updateIngredientRow(row.id, 'name', event.target.value)
                         }
                         placeholder="Oat Milk"
+                        list="raw-material-name-options"
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>

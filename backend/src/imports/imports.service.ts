@@ -23,13 +23,14 @@ export class ImportsService {
 
   async enqueueRawMaterials(
     userId: string,
-    fileKey: string,
+    fileKey?: string,
     fileName?: string,
     contentType?: string,
+    filePath?: string,
   ) {
     const job = await this.importsQueue.add(
       'import-raw-materials',
-      { userId, fileKey, fileName, contentType },
+      { userId, fileKey, fileName, contentType, filePath },
       {
         attempts: 3,
         backoff: { type: 'exponential', delay: 1000 },

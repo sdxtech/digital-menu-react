@@ -1,10 +1,10 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  useCallback,
   type ReactNode,
 } from 'react'
 import { apiFetch } from './api'
@@ -12,7 +12,7 @@ import { useAuth } from './auth'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type RecipeStatus = 'draft' | 'active'
-export type StoreRequestStatus = 'not-requested' | 'requested'
+export type StoreRequestStatus = 'not-requested' | 'requested' | 'fulfilled'
 
 export type RecipeIngredient = {
   productCode: string
@@ -27,6 +27,7 @@ export type Recipe = {
   category: string
   description: string
   price: number
+  portionSize: number
   status: RecipeStatus
   approvalStatus: ApprovalStatus
   ingredients: RecipeIngredient[]
@@ -52,6 +53,9 @@ export type RawMaterial = {
   createdAt: string
 }
 
+type RecipeApi = Omit<Recipe, 'id'> & { id?: string; _id?: string }
+type MenuProductionApi = Omit<MenuProduction, 'id'> & { id?: string; _id?: string }
+
 type ChefDataState = {
   recipes: Recipe[]
   menuProductions: MenuProduction[]
@@ -63,6 +67,7 @@ type CreateRecipeInput = {
   category: string
   description: string
   price: number
+  portionSize: number
   status: RecipeStatus
   ingredients: RecipeIngredient[]
 }
@@ -90,21 +95,22 @@ type RawMaterialsMeta = {
 }
 
 type ChefDataContextValue = ChefDataState & {
-  createRecipe: (input: CreateRecipeInput) => void
-  importRecipesFromExcel: (fileName: string) => number
-  approveRecipe: (id: string) => void
-  rejectRecipe: (id: string) => void
-  addMenuProduction: (input: AddMenuProductionInput) => void
-  approveMenuProduction: (id: string) => void
-  rejectMenuProduction: (id: string) => void
+  createRecipe: (input: CreateRecipeInput) => Promise<void>
+  importRecipesFromExcel: (file: File) => Promise<number>
+  approveRecipe: (id: string) => Promise<void>
+  rejectRecipe: (id: string) => Promise<void>
+  addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
+  approveMenuProduction: (id: string) => Promise<void>
+  rejectMenuProduction: (id: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
   addRawMaterial: (input: AddRawMaterialInput) => Promise<void>
   importRawMaterialsFromExcel: (file: File) => Promise<string>
-  markStoreRequested: (menuProductionId: string) => void
+  markStoreRequested: (menuProductionId: string) => Promise<void>
+  markStoreFulfilled: (menuProductionId: string) => Promise<void>
+  fetchRecipes: () => Promise<void>
+  fetchMenuProductions: () => Promise<void>
 }
-
-const STORAGE_KEY = 'dm-chef-data-v1'
 
 const initialState: ChefDataState = {
   recipes: [],
@@ -114,28 +120,6 @@ const initialState: ChefDataState = {
 
 const ChefDataContext = createContext<ChefDataContextValue | undefined>(undefined)
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null
-
-const readStoredState = (): ChefDataState => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return initialState
-    const parsed = JSON.parse(raw) as unknown
-    if (!isObject(parsed)) return initialState
-
-    return {
-      recipes: Array.isArray(parsed.recipes) ? (parsed.recipes as Recipe[]) : [],
-      menuProductions: Array.isArray(parsed.menuProductions)
-        ? (parsed.menuProductions as MenuProduction[])
-        : [],
-      rawMaterials: [],
-    }
-  } catch {
-    return initialState
-  }
-}
-
 const makeId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`
@@ -143,14 +127,61 @@ const makeId = (prefix: string) => {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const parseFileBaseName = (fileName: string, fallback: string) => {
-  const name = fileName.replace(/\.(xlsx|xls)$/i, '').trim()
-  return name || fallback
+const pickId = (id: string | undefined, fallbackPrefix: string) =>
+  id ?? makeId(fallbackPrefix)
+
+const mapRecipe = (item: RecipeApi): Recipe => {
+  const approvalStatus = item.approvalStatus ?? 'pending'
+  const derivedStatus: RecipeStatus =
+    approvalStatus === 'approved' ? 'active' : 'draft'
+
+  return {
+  id: pickId(item.id ?? item._id, 'recipe'),
+  name: item.name ?? '',
+  category: item.category ?? '',
+  description: item.description ?? '',
+  price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+  portionSize: Number.isFinite(Number(item.portionSize))
+    ? Number(item.portionSize)
+    : 1,
+  status: derivedStatus,
+  approvalStatus,
+  ingredients: Array.isArray(item.ingredients)
+    ? item.ingredients.map((ingredient) => ({
+        productCode: ingredient.productCode ?? '',
+        name: ingredient.name ?? '',
+        unitOfMeasures: ingredient.unitOfMeasures ?? '',
+        qty: Number.isFinite(Number(ingredient.qty))
+          ? Number(ingredient.qty)
+          : 0,
+      }))
+    : [],
+  createdAt: item.createdAt ?? new Date().toISOString(),
+  }
+}
+
+const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
+  id: pickId(item.id ?? item._id, 'menu-production'),
+  menuName: item.menuName ?? '',
+  category: item.category ?? '',
+  portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
+  productionDate: item.productionDate ?? '',
+  approvalStatus: item.approvalStatus ?? 'pending',
+  storeRequestStatus: item.storeRequestStatus ?? 'not-requested',
+  createdAt: item.createdAt ?? new Date().toISOString(),
+})
+
+const upsertById = <T extends { id: string }>(items: T[], next: T) => {
+  const idx = items.findIndex((item) => item.id === next.id)
+  if (idx === -1) return [next, ...items]
+  const copy = [...items]
+  copy[idx] = next
+  return copy
 }
 
 export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
   const { accessToken } = useAuth()
-  const [state, setState] = useState<ChefDataState>(readStoredState)
+  const [state, setState] = useState<ChefDataState>(initialState)
   const [rawMaterialsMeta, setRawMaterialsMeta] = useState<RawMaterialsMeta>({
     page: 1,
     limit: 10,
@@ -160,101 +191,165 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     error: '',
   })
 
+  const fetchRecipes = useCallback(async () => {
+    if (!accessToken) return
+
+    const data = await apiFetch<{ items: RecipeApi[] } | RecipeApi[]>(
+      '/recipes',
+      undefined,
+      accessToken,
+    )
+    const items = Array.isArray(data) ? data : data.items ?? []
+    setState((prev) => ({
+      ...prev,
+      recipes: items.map(mapRecipe),
+    }))
+  }, [accessToken])
+
+  const fetchMenuProductions = useCallback(async () => {
+    if (!accessToken) return
+
+    const data = await apiFetch<{ items: MenuProductionApi[] } | MenuProductionApi[]>(
+      '/menu-productions',
+      undefined,
+      accessToken,
+    )
+    const items = Array.isArray(data) ? data : data.items ?? []
+    setState((prev) => ({
+      ...prev,
+      menuProductions: items.map(mapMenuProduction),
+    }))
+  }, [accessToken])
+
   useEffect(() => {
-    const snapshot = {
-      recipes: state.recipes,
-      menuProductions: state.menuProductions,
+    if (!accessToken) {
+      setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
+      return
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-  }, [state.menuProductions, state.recipes])
+    fetchRecipes().catch(() => null)
+    fetchMenuProductions().catch(() => null)
+  }, [accessToken, fetchMenuProductions, fetchRecipes])
 
-  const createRecipe = (input: CreateRecipeInput) => {
-    const now = new Date().toISOString()
-    const nextRecipe: Recipe = {
-      id: makeId('recipe'),
-      ...input,
-      approvalStatus: 'pending',
-      createdAt: now,
+  const createRecipe = async (input: CreateRecipeInput) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
     }
 
+    const created = await apiFetch<RecipeApi>(
+      '/recipes',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+    const mapped = mapRecipe(created)
     setState((prev) => ({
       ...prev,
-      recipes: [nextRecipe, ...prev.recipes],
+      recipes: upsertById(prev.recipes, mapped),
     }))
   }
 
-  const importRecipesFromExcel = (fileName: string) => {
-    const now = new Date().toISOString()
-    const base = parseFileBaseName(fileName, 'Recipe Import')
-    const imported: Recipe[] = [1, 2, 3].map((idx) => ({
-      id: makeId('recipe'),
-      name: `${base} #${idx}`,
-      category: 'Imported',
-      description: `Recipe hasil import dari file ${fileName}`,
-      price: 0,
-      status: 'draft',
-      approvalStatus: 'pending',
-      ingredients: [],
-      createdAt: now,
-    }))
-
-    setState((prev) => ({
-      ...prev,
-      recipes: [...imported, ...prev.recipes],
-    }))
-
-    return imported.length
-  }
-
-  const approveRecipe = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      recipes: prev.recipes.map((recipe) =>
-        recipe.id === id ? { ...recipe, approvalStatus: 'approved' } : recipe,
-      ),
-    }))
-  }
-
-  const rejectRecipe = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      recipes: prev.recipes.map((recipe) =>
-        recipe.id === id ? { ...recipe, approvalStatus: 'rejected' } : recipe,
-      ),
-    }))
-  }
-
-  const addMenuProduction = (input: AddMenuProductionInput) => {
-    const now = new Date().toISOString()
-    const next: MenuProduction = {
-      id: makeId('menu-production'),
-      ...input,
-      approvalStatus: 'pending',
-      storeRequestStatus: 'not-requested',
-      createdAt: now,
+  const importRecipesFromExcel = async (file: File) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
     }
+    const formData = new FormData()
+    formData.append('file', file)
 
+    const result = await apiFetch<{ insertedCount: number }>(
+      '/recipes/import',
+      {
+        method: 'POST',
+        body: formData,
+      },
+      accessToken,
+    )
+
+    await fetchRecipes()
+    return result.insertedCount ?? 0
+  }
+
+  const approveRecipe = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<RecipeApi>(
+      `/recipes/${id}/approve`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapRecipe(updated)
     setState((prev) => ({
       ...prev,
-      menuProductions: [next, ...prev.menuProductions],
+      recipes: upsertById(prev.recipes, mapped),
     }))
   }
 
-  const approveMenuProduction = (id: string) => {
+  const rejectRecipe = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<RecipeApi>(
+      `/recipes/${id}/reject`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapRecipe(updated)
     setState((prev) => ({
       ...prev,
-      menuProductions: prev.menuProductions.map((item) =>
-        item.id === id ? { ...item, approvalStatus: 'approved' } : item,
-      ),
+      recipes: upsertById(prev.recipes, mapped),
     }))
   }
 
-  const rejectMenuProduction = (id: string) => {
+  const addMenuProduction = async (input: AddMenuProductionInput) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const created = await apiFetch<MenuProductionApi>(
+      '/menu-productions',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(created)
     setState((prev) => ({
       ...prev,
-      menuProductions: prev.menuProductions.map((item) =>
-        item.id === id ? { ...item, approvalStatus: 'rejected' } : item,
-      ),
+      menuProductions: upsertById(prev.menuProductions, mapped),
+    }))
+  }
+
+  const approveMenuProduction = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<MenuProductionApi>(
+      `/menu-productions/${id}/approve`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(updated)
+    setState((prev) => ({
+      ...prev,
+      menuProductions: upsertById(prev.menuProductions, mapped),
+    }))
+  }
+
+  const rejectMenuProduction = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<MenuProductionApi>(
+      `/menu-productions/${id}/reject`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(updated)
+    setState((prev) => ({
+      ...prev,
+      menuProductions: upsertById(prev.menuProductions, mapped),
     }))
   }
 
@@ -279,43 +374,14 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     if (!accessToken) {
       throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
     }
-
-    const presign = await apiFetch<{
-      key: string
-      url: string
-      publicUrl: string
-    }>(
-      '/files/presign',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          contentType: file.type || 'application/octet-stream',
-          prefix: 'raw-materials',
-        }),
-      },
-      accessToken,
-    )
-
-    const uploadResponse = await fetch(presign.url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-      },
-      body: file,
-    })
-    if (!uploadResponse.ok) {
-      throw new Error('Upload file raw material gagal.')
-    }
+    const formData = new FormData()
+    formData.append('file', file)
 
     const job = await apiFetch<{ jobId: string }>(
-      '/imports/raw-materials',
+      '/imports/raw-materials/upload',
       {
         method: 'POST',
-        body: JSON.stringify({
-          fileKey: presign.key,
-          fileName: file.name,
-          contentType: file.type,
-        }),
+        body: formData,
       },
       accessToken,
     )
@@ -388,20 +454,42 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     [accessToken],
   )
 
-  const markStoreRequested = (menuProductionId: string) => {
+  const markStoreRequested = async (menuProductionId: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<MenuProductionApi>(
+      `/menu-productions/${menuProductionId}/store-request`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(updated)
     setState((prev) => ({
       ...prev,
-      menuProductions: prev.menuProductions.map((item) =>
-        item.id === menuProductionId
-          ? { ...item, storeRequestStatus: 'requested' }
-          : item,
-      ),
+      menuProductions: upsertById(prev.menuProductions, mapped),
+    }))
+  }
+
+  const markStoreFulfilled = async (menuProductionId: string) => {
+    if (!accessToken) {
+      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+    }
+    const updated = await apiFetch<MenuProductionApi>(
+      `/menu-productions/${menuProductionId}/fulfill`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(updated)
+    setState((prev) => ({
+      ...prev,
+      menuProductions: upsertById(prev.menuProductions, mapped),
     }))
   }
 
   const value = useMemo(
     () => ({
       ...state,
+      addRawMaterial,
       createRecipe,
       importRecipesFromExcel,
       approveRecipe,
@@ -409,13 +497,32 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       addMenuProduction,
       approveMenuProduction,
       rejectMenuProduction,
-      addRawMaterial,
       importRawMaterialsFromExcel,
       fetchRawMaterials,
       rawMaterialsMeta,
       markStoreRequested,
+      markStoreFulfilled,
+      fetchRecipes,
+      fetchMenuProductions,
     }),
-    [fetchRawMaterials, rawMaterialsMeta, state],
+    [
+      addRawMaterial,
+      addMenuProduction,
+      approveMenuProduction,
+      approveRecipe,
+      createRecipe,
+      fetchMenuProductions,
+      fetchRawMaterials,
+      fetchRecipes,
+      importRawMaterialsFromExcel,
+      importRecipesFromExcel,
+      markStoreFulfilled,
+      markStoreRequested,
+      rawMaterialsMeta,
+      rejectMenuProduction,
+      rejectRecipe,
+      state,
+    ],
   )
 
   return (
