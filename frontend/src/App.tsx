@@ -38,9 +38,9 @@ const NotFound = () => (
       <p className="text-xs uppercase tracking-[0.4em] text-muted">
         404
       </p>
-      <h1 className="text-3xl font-semibold">Halaman tidak ditemukan</h1>
+      <h1 className="text-3xl font-semibold">Page not found</h1>
       <p className="text-sm text-muted">
-        Periksa kembali alamat atau kembali ke dashboard Anda.
+        Check the address or return to your dashboard.
       </p>
     </div>
   </div>

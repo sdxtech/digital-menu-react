@@ -10,5 +10,8 @@ export const unitOfMeasuresOptions = [
   { value: 'ctn', label: 'Ctn' },
   { value: 'sachet', label: 'Sachet' },
   { value: 'jar', label: 'Jar' },
-  { value: 'botol', label: 'Botol' },
+  { value: 'botol', label: 'Bottle' },
 ]
+
+export const formatUnitLabel = (value: string) =>
+  unitOfMeasuresOptions.find((option) => option.value === value)?.label ?? value

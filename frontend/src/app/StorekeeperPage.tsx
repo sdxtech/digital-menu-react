@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useChefData } from '../lib/chef-data'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
 const navItems = [
-  { label: 'Storekeeper Dashboard', to: '/storekeeper' },
-  { label: 'Riwayat Pengeluaran', to: '/storekeeper/history' },
+  { label: 'Storekeeper Dashboard', to: '/storekeeper', end: true },
+  { label: 'Issuance History', to: '/storekeeper/history', end: true },
 ]
 
 const StorekeeperPage = () => {
@@ -31,7 +32,7 @@ const StorekeeperPage = () => {
     setLoadError('')
     Promise.all([fetchMenuProductions(), fetchRecipes()]).catch((error) => {
       const message =
-        error instanceof Error ? error.message : 'Gagal memuat data.'
+        error instanceof Error ? error.message : 'Failed to load data.'
       setLoadError(message)
     })
   }, [fetchMenuProductions, fetchRecipes])
@@ -155,7 +156,7 @@ const StorekeeperPage = () => {
               </p>
               <h2 className="mt-2 text-lg font-semibold">Storekeeper</h2>
               <p className="mt-3 text-xs text-muted">
-                Kelola stok dan distribusi bahan baku.
+                Manage stock and ingredient distribution.
               </p>
             </div>
 
@@ -164,6 +165,7 @@ const StorekeeperPage = () => {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.end}
                   className={({ isActive }) =>
                     [
                       'flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition',
@@ -186,10 +188,10 @@ const StorekeeperPage = () => {
                 Store Request
               </p>
               <h2 className="mt-2 text-xl font-semibold">
-                Menu produksi yang harus disiapkan
+                Production menus to prepare
               </h2>
               <p className="mt-3 text-sm text-muted">
-                Data ini otomatis masuk setelah Unit Manager melakukan approval.
+                This data is auto-added after Unit Manager approval.
               </p>
               {loadError ? (
                 <p className="mt-3 text-xs font-medium text-red-600">
@@ -205,7 +207,7 @@ const StorekeeperPage = () => {
 
             {summaryByDate.length === 0 ? (
               <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
-                Belum ada menu produksi yang masuk ke store request.
+                No production menus in store request yet.
               </div>
             ) : (
               summaryByDate.map((group) => (
@@ -216,13 +218,13 @@ const StorekeeperPage = () => {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                        Tanggal produksi
+                        Production date
                       </p>
                       <h3 className="mt-2 text-lg font-semibold">{group.date}</h3>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
-                        {group.items.length} menu
+                        {group.items.length} menus
                       </span>
                       <button
                         type="button"
@@ -236,19 +238,19 @@ const StorekeeperPage = () => {
                               ),
                             )
                             setActionMessage(
-                              `Pengeluaran bahan untuk ${group.date} selesai.`,
+                              `Ingredient issuance for ${group.date} completed.`,
                             )
                           } catch (error) {
                             const message =
                               error instanceof Error
                                 ? error.message
-                                : 'Gagal menyelesaikan pengeluaran bahan.'
+                                : 'Failed to complete ingredient issuance.'
                             setLoadError(message)
                           }
                         }}
                         className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
                       >
-                        Selesaikan & kirim ke dapur
+                        Complete & send to kitchen
                       </button>
                     </div>
                   </div>
@@ -256,14 +258,14 @@ const StorekeeperPage = () => {
                   <div className="mt-5 grid gap-4 lg:grid-cols-12">
                     <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-5">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Daftar menu
+                        Menu list
                       </p>
                       <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
                         <table className="min-w-full text-sm">
                           <thead className="bg-background">
                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                               <th className="px-4 py-3 font-semibold">Menu</th>
-                              <th className="px-4 py-3 font-semibold">Kategori</th>
+                              <th className="px-4 py-3 font-semibold">Category</th>
                               <th className="px-4 py-3 font-semibold">Portion</th>
                             </tr>
                           </thead>
@@ -280,21 +282,21 @@ const StorekeeperPage = () => {
                       </div>
                       {group.missingRecipes.length > 0 ? (
                         <p className="mt-3 text-xs text-danger">
-                          Recipe tidak ditemukan untuk: {group.missingRecipes.join(', ')}
+                          Recipe not found for: {group.missingRecipes.join(', ')}
                         </p>
                       ) : null}
                     </div>
 
                     <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-7">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Ringkasan bahan
+                        Ingredient summary
                       </p>
                       <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
                         <table className="min-w-full text-sm">
                           <thead className="bg-background">
                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                               <th className="px-4 py-3 font-semibold">Product code</th>
-                              <th className="px-4 py-3 font-semibold">Nama bahan</th>
+                              <th className="px-4 py-3 font-semibold">Ingredient name</th>
                               <th className="px-4 py-3 font-semibold">Qty</th>
                               <th className="px-4 py-3 font-semibold">Unit</th>
                             </tr>
@@ -306,7 +308,7 @@ const StorekeeperPage = () => {
                                   colSpan={4}
                                   className="px-4 py-6 text-center text-muted"
                                 >
-                                  Belum ada ingredient yang bisa dihitung.
+                                  No ingredients available to calculate.
                                 </td>
                               </tr>
                             ) : (
@@ -322,7 +324,9 @@ const StorekeeperPage = () => {
                                   <td className="px-4 py-3">
                                     {formatQuantity(item.qty)}
                                   </td>
-                                  <td className="px-4 py-3">{item.unit}</td>
+                                  <td className="px-4 py-3">
+                                    {formatUnitLabel(item.unit)}
+                                  </td>
                                 </tr>
                               ))
                             )}

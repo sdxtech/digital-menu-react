@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { RawMaterial, RawMaterialDocument } from './schemas/raw-material.schema';
@@ -51,6 +51,34 @@ export class RawMaterialsService {
     const item = await this.rawMaterialModel.findById(id).lean();
     if (!item) throw new NotFoundException('Raw material not found');
     return item;
+  }
+
+  async updateById(id: string, input: RawMaterialUpsertInput) {
+    const item = await this.rawMaterialModel.findById(id);
+    if (!item) throw new NotFoundException('Raw material not found');
+
+    const productCode = input.productCode.trim();
+    const name = input.name.trim();
+    const unitOfMeasures = input.unitOfMeasures.trim();
+    const normalizedCode = this.normalizeProductCode(productCode);
+
+    if (item.productCodeNormalized !== normalizedCode) {
+      const conflict = await this.rawMaterialModel.findOne({
+        productCodeNormalized: normalizedCode,
+        _id: { $ne: item._id },
+      });
+      if (conflict) {
+        throw new BadRequestException('Product code already exists.');
+      }
+    }
+
+    item.productCode = productCode;
+    item.productCodeNormalized = normalizedCode;
+    item.name = name;
+    item.unitOfMeasures = unitOfMeasures;
+    await item.save();
+
+    return item.toObject();
   }
 
   async findAll(query: ListRawMaterialsQuery) {
@@ -137,4 +165,3 @@ export class RawMaterialsService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
-

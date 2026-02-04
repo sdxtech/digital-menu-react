@@ -169,8 +169,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       const summary = { successCount, failCount, errors };
       await this.notifications.create(
         userId,
-        'Import selesai',
-        `Import selesai. Sukses: ${successCount}, gagal: ${failCount}.`,
+        'Import completed',
+        `Import finished. Success: ${successCount}, failed: ${failCount}.`,
         summary,
       );
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
@@ -178,8 +178,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       const reason = (error as Error).message;
       await this.notifications.create(
         userId,
-        'Import gagal',
-        'Terjadi kesalahan saat memproses file import.',
+        'Import failed',
+        'An error occurred while processing the import file.',
         { successCount, failCount, errors, reason },
       );
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
@@ -232,7 +232,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         failCount,
       });
       if (!filePath && !fileKey) {
-        throw new Error('File tidak ditemukan untuk import raw material.');
+        throw new Error('File not found for raw material import.');
       }
 
       const stream = filePath
@@ -292,8 +292,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       const summary = { successCount, failCount, errors };
       await this.notifications.create(
         userId,
-        'Import raw material selesai',
-        `Import raw material selesai. Sukses: ${successCount}, gagal: ${failCount}.`,
+        'Raw material import completed',
+        `Raw material import finished. Success: ${successCount}, failed: ${failCount}.`,
         summary,
       );
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
@@ -301,8 +301,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       const reason = (error as Error).message;
       await this.notifications.create(
         userId,
-        'Import raw material gagal',
-        'Terjadi kesalahan saat memproses file import raw material.',
+        'Raw material import failed',
+        'An error occurred while processing the raw material import file.',
         { successCount, failCount, errors, reason },
       );
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
@@ -373,7 +373,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!headerMap) {
-      throw new Error('Header file tidak ditemukan untuk import raw material.');
+      throw new Error('Header row not found for raw material import.');
     }
   }
 
@@ -420,7 +420,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
     if (!map.productCode || !map.name || !map.unitOfMeasures) {
       throw new Error(
-        'Header harus berisi product code, name, dan unit of measures untuk import raw material.',
+        'Header must include product code, name, and unit of measures for raw material import.',
       );
     }
 

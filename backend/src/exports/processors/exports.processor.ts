@@ -53,8 +53,8 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
       const summary = { url: publicUrl, count: products.length };
       await this.notifications.create(
         userId,
-        'Export selesai',
-        `Export produk selesai. Total: ${products.length}.`,
+        'Export completed',
+        `Product export completed. Total: ${products.length}.`,
         summary,
       );
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
@@ -62,8 +62,8 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
       const reason = (error as Error).message;
       await this.notifications.create(
         userId,
-        'Export gagal',
-        'Terjadi kesalahan saat memproses export produk.',
+        'Export failed',
+        'An error occurred while processing the product export.',
         { reason },
       );
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });

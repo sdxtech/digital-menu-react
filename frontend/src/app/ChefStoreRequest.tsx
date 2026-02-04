@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useChefData } from '../lib/chef-data'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ChefStoreRequest = () => {
   const { menuProductions, fetchMenuProductions, recipes } = useChefData()
@@ -54,7 +55,7 @@ const ChefStoreRequest = () => {
           Store Request
         </p>
         <h2 className="mt-2 text-2xl font-semibold">
-          Menu produksi approved Unit Manager
+          Production menus approved by Unit Manager
         </h2>
       </div>
 
@@ -62,14 +63,14 @@ const ChefStoreRequest = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
-              Sumber data
+              Data source
             </p>
             <h3 className="mt-2 text-lg font-semibold">
-              Daftar menu yang otomatis masuk store request
+              Menus automatically added to store request
             </h3>
             <p className="mt-2 text-sm text-muted">
-              Menu di halaman ini berasal dari Menu Production yang sudah
-              di-approve Unit Manager.
+              Menus on this page come from Menu Production approved by the Unit
+              Manager.
             </p>
           </div>
           <button
@@ -79,20 +80,18 @@ const ChefStoreRequest = () => {
               setErrorMessage('')
               try {
                 await fetchMenuProductions()
-                setInfoMessage(
-                  'Data approve sudah ter-refresh dari Menu Production.',
-                )
+                setInfoMessage('Approved data refreshed from Menu Production.')
               } catch (error) {
                 const message =
                   error instanceof Error
                     ? error.message
-                    : 'Gagal refresh data.'
+                    : 'Failed to refresh data.'
                 setErrorMessage(message)
               }
             }}
             className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
           >
-            Refresh data approve
+            Refresh approvals
           </button>
         </div>
         {infoMessage ? (
@@ -109,15 +108,15 @@ const ChefStoreRequest = () => {
         <table className="min-w-full text-sm">
           <thead className="bg-background">
             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-              <th className="px-5 py-4 font-semibold">Tanggal produksi</th>
-              <th className="px-5 py-4 font-semibold">Status approval</th>
+              <th className="px-5 py-4 font-semibold">Production date</th>
+              <th className="px-5 py-4 font-semibold">Approval status</th>
             </tr>
           </thead>
           <tbody>
             {groupedByDate.length === 0 ? (
               <tr className="border-t border-border">
                 <td colSpan={2} className="px-5 py-10 text-center text-muted">
-                  Belum ada menu produksi yang di-approve Unit Manager.
+                  No production menus approved by the Unit Manager yet.
                 </td>
               </tr>
             ) : (
@@ -136,7 +135,7 @@ const ChefStoreRequest = () => {
                           <div className="flex items-center gap-2 text-sm">
                             <span>Approved</span>
                             <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                              {items.length} menu
+                              {items.length} menus
                             </span>
                           </div>
                           <button
@@ -147,7 +146,7 @@ const ChefStoreRequest = () => {
                             }}
                             className="rounded-full border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
                           >
-                            {isExpanded ? 'Tutup detail' : 'Lihat detail'}
+                            {isExpanded ? 'Hide details' : 'View details'}
                           </button>
                         </div>
                       </td>
@@ -159,14 +158,14 @@ const ChefStoreRequest = () => {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
                                 <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                                  Menu Detail
+                                  Menu details
                                 </p>
                                 <p className="mt-2 text-sm text-muted">
-                                  Tanggal produksi: {date}
+                                  Production date: {date}
                                 </p>
                               </div>
                               <div className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary">
-                                Request otomatis setelah approval
+                                Auto-requested after approval
                               </div>
                             </div>
 
@@ -195,7 +194,7 @@ const ChefStoreRequest = () => {
                                         </p>
                                       </div>
                                       <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
-                                        {menu.portion} portion
+                                        {menu.portion} portions
                                       </span>
                                     </div>
 
@@ -206,10 +205,10 @@ const ChefStoreRequest = () => {
                                         </p>
                                 <p className="mt-1 text-sm font-medium">
                                   {menu.storeRequestStatus === 'fulfilled'
-                                    ? 'Selesai dikirim ke dapur'
+                                    ? 'Delivered to kitchen'
                                     : menu.storeRequestStatus === 'requested'
-                                      ? 'Sudah diajukan otomatis'
-                                      : 'Menunggu otomatisasi'}
+                                      ? 'Auto-requested'
+                                      : 'Waiting for auto request'}
                                 </p>
                               </div>
                             </div>
@@ -220,23 +219,23 @@ const ChefStoreRequest = () => {
                                       Ingredients
                                     </p>
                                     <h4 className="mt-2 text-base font-semibold">
-                                      Kebutuhan bahan & jumlah
+                                      Ingredient requirements
                                     </h4>
                                     <p className="mt-1 text-xs text-muted">
-                                      Qty dihitung dari porsi dasar recipe (
-                                      {recipe?.portionSize ?? 1}) → kebutuhan untuk{' '}
-                                      {menu.portion} porsi
+                                      Qty calculated from base servings (
+                                      {recipe?.portionSize ?? 1}) for{' '}
+                                      {menu.portion} portions
                                     </p>
 
                                     {!recipe ? (
                                       <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
-                                        Recipe belum ditemukan di daftar recipe.
-                                        Pastikan nama menu sama dengan recipe yang
-                                        dibuat.
+                                        Recipe not found in the recipe list. Make
+                                        sure the menu name matches the created
+                                        recipe.
                                       </div>
                                     ) : ingredients.length === 0 ? (
                                       <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
-                                        Belum ada ingredient untuk recipe ini.
+                                        No ingredients for this recipe yet.
                                       </div>
                                     ) : (
                                       <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
@@ -247,7 +246,7 @@ const ChefStoreRequest = () => {
                                                 Product code
                                               </th>
                                               <th className="px-4 py-3 font-semibold">
-                                                Nama bahan
+                                                Ingredient name
                                               </th>
                                               <th className="px-4 py-3 font-semibold">
                                                 Qty
@@ -279,7 +278,9 @@ const ChefStoreRequest = () => {
                                                   )}
                                               </td>
                                                 <td className="px-4 py-3">
-                                                  {ingredient.unitOfMeasures}
+                                                  {formatUnitLabel(
+                                                    ingredient.unitOfMeasures,
+                                                  )}
                                                 </td>
                                               </tr>
                                             ))}

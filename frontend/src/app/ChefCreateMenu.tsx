@@ -143,7 +143,7 @@ const ChefCreateMenu = () => {
     const isExcelFile = /\.(xlsx|xls)$/i.test(nextFile.name)
     if (!isExcelFile) {
       setImportFile(null)
-      setImportError('File harus format .xlsx atau .xls')
+      setImportError('File must be .xlsx or .xls')
       return
     }
 
@@ -153,7 +153,7 @@ const ChefCreateMenu = () => {
 
   const handleImportRecipes = async () => {
     if (!importFile) {
-      setImportError('Pilih file excel terlebih dahulu')
+      setImportError('Select an Excel file first')
       setImportMessage('')
       return
     }
@@ -162,13 +162,13 @@ const ChefCreateMenu = () => {
       const importedCount = await importRecipesFromExcel(importFile)
       setImportError('')
       setImportMessage(
-        `${importedCount} recipe berhasil diimport dari ${importFile.name}`,
+        `${importedCount} recipes imported from ${importFile.name}`,
       )
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : 'Gagal mengimport recipe.'
+          : 'Failed to import recipes.'
       setImportError(message)
       setImportMessage('')
     }
@@ -181,14 +181,14 @@ const ChefCreateMenu = () => {
     const portionRaw = recipeForm.portionSize.trim()
 
     if (!nextName || !nextCategory) {
-      setSubmitError('Lengkapi nama recipe dan kategori terlebih dahulu.')
+      setSubmitError('Complete the recipe name and category first.')
       setSubmitMessage('')
       return
     }
 
     const portionSize = Number(portionRaw)
     if (!Number.isFinite(portionSize) || portionSize <= 0) {
-      setSubmitError('Porsi dasar harus angka lebih dari 0.')
+      setSubmitError('Base servings must be a number greater than 0.')
       setSubmitMessage('')
       return
     }
@@ -203,7 +203,7 @@ const ChefCreateMenu = () => {
     })
 
     if (usedRows.length === 0) {
-      setSubmitError('Tambah minimal 1 ingredient sebelum submit recipe.')
+      setSubmitError('Add at least 1 ingredient before submitting the recipe.')
       setSubmitMessage('')
       return
     }
@@ -216,14 +216,14 @@ const ChefCreateMenu = () => {
       const qtyRaw = row.qty.trim()
 
       if (!productCode || !name || !unitOfMeasures || !qtyRaw) {
-        setSubmitError('Pastikan setiap row ingredient terisi lengkap.')
+        setSubmitError('Make sure each ingredient row is complete.')
         setSubmitMessage('')
         return
       }
 
       const qty = Number(qtyRaw)
       if (!Number.isFinite(qty) || qty <= 0) {
-        setSubmitError('Qty ingredient harus angka lebih dari 0.')
+        setSubmitError('Ingredient qty must be a number greater than 0.')
         setSubmitMessage('')
         return
       }
@@ -250,12 +250,12 @@ const ChefCreateMenu = () => {
       setRecipeForm(initialRecipeForm)
       setIngredientRows([createIngredientRow()])
       setSubmitError('')
-      setSubmitMessage('Recipe berhasil disimpan dan diajukan ke Unit Manager.')
+      setSubmitMessage('Recipe saved and submitted to the Unit Manager.')
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : 'Gagal menyimpan recipe.'
+          : 'Failed to save recipe.'
       setSubmitError(message)
       setSubmitMessage('')
     }
@@ -267,16 +267,16 @@ const ChefCreateMenu = () => {
         <p className="text-xs uppercase tracking-[0.3em] text-muted">
           Create New Recipe
         </p>
-        <h2 className="mt-2 text-2xl font-semibold">Susun recipe baru</h2>
+        <h2 className="mt-2 text-2xl font-semibold">Create a new recipe</h2>
       </div>
 
       <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
         <p className="text-xs uppercase tracking-[0.2em] text-muted">
           Import Recipe
         </p>
-        <h3 className="mt-2 text-lg font-semibold">Import recipe dari excel</h3>
+        <h3 className="mt-2 text-lg font-semibold">Import recipes from Excel</h3>
         <p className="mt-2 text-sm text-muted">
-          Gunakan file .xlsx atau .xls untuk import banyak recipe sekaligus.
+          Use .xlsx or .xls to import multiple recipes at once.
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
           <div>
@@ -289,7 +289,7 @@ const ChefCreateMenu = () => {
             />
             {importFile ? (
               <p className="mt-2 text-xs text-muted">
-                File terpilih: {importFile.name}
+                Selected file: {importFile.name}
               </p>
             ) : null}
             {importError ? (
@@ -307,39 +307,39 @@ const ChefCreateMenu = () => {
             onClick={handleImportRecipes}
             className="h-fit self-end rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
           >
-            Import recipe
+            Import recipes
           </button>
         </div>
       </div>
 
       <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-        <h3 className="text-lg font-semibold">Detail recipe</h3>
+        <h3 className="text-lg font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
             <label className="text-sm font-medium text-foreground">
-              Nama recipe
+              Recipe name
             </label>
             <input
               type="text"
               value={recipeForm.name}
               onChange={(event) => updateRecipeForm('name', event.target.value)}
-              placeholder="Contoh: Nasi Ayam Teriyaki"
+              placeholder="Example: Teriyaki Chicken Rice"
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground">Kategori</label>
+            <label className="text-sm font-medium text-foreground">Category</label>
             <input
               type="text"
               value={recipeForm.category}
               onChange={(event) => updateRecipeForm('category', event.target.value)}
-              placeholder="Main Course / Minuman"
+              placeholder="Main Course / Beverage"
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">
-              Porsi dasar
+              Base servings
             </label>
             <input
               type="number"
@@ -353,17 +353,19 @@ const ChefCreateMenu = () => {
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
             <p className="mt-2 text-xs text-muted">
-              Isi berapa porsi untuk resep ini (mis. 1 atau 10).
+              Enter how many servings this recipe yields (e.g., 1 or 10).
             </p>
           </div>
           <div className="sm:col-span-2">
-            <label className="text-sm font-medium text-foreground">Deskripsi</label>
+            <label className="text-sm font-medium text-foreground">
+              Description
+            </label>
             <textarea
               value={recipeForm.description}
               onChange={(event) =>
                 updateRecipeForm('description', event.target.value)
               }
-              placeholder="Catatan singkat recipe..."
+              placeholder="Short recipe notes..."
               rows={3}
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
@@ -374,7 +376,7 @@ const ChefCreateMenu = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Ingredients
           </p>
-          <h4 className="mt-2 text-lg font-semibold">Tambah ingredient</h4>
+          <h4 className="mt-2 text-lg font-semibold">Add ingredients</h4>
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
             <datalist id="raw-material-code-options">
@@ -414,8 +416,8 @@ const ChefCreateMenu = () => {
                           type="button"
                           onClick={() => handleRemoveIngredientRow(row.id)}
                           className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-danger/40 bg-surface text-base font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
-                          aria-label="Hapus baris ingredient"
-                          title="Hapus baris ingredient"
+                          aria-label="Remove ingredient row"
+                          title="Remove ingredient row"
                         >
                           X
                         </button>
@@ -474,7 +476,7 @@ const ChefCreateMenu = () => {
                         }
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       >
-                        <option value="">Pilih unit</option>
+                        <option value="">Select a unit</option>
                         {unitOfMeasuresOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -517,7 +519,7 @@ const ChefCreateMenu = () => {
             onClick={handleCreateRecipe}
             className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
           >
-            Simpan & Ajukan ke Unit Manager
+            Save & submit to Unit Manager
           </button>
         </div>
       </div>

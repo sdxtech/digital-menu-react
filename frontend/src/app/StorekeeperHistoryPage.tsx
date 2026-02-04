@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useChefData } from '../lib/chef-data'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
 const navItems = [
-  { label: 'Storekeeper Dashboard', to: '/storekeeper' },
-  { label: 'Riwayat Pengeluaran', to: '/storekeeper/history' },
+  { label: 'Storekeeper Dashboard', to: '/storekeeper', end: true },
+  { label: 'Issuance History', to: '/storekeeper/history', end: true },
 ]
 
 const StorekeeperHistoryPage = () => {
@@ -25,7 +26,7 @@ const StorekeeperHistoryPage = () => {
     setLoadError('')
     Promise.all([fetchMenuProductions(), fetchRecipes()]).catch((error) => {
       const message =
-        error instanceof Error ? error.message : 'Gagal memuat data.'
+        error instanceof Error ? error.message : 'Failed to load data.'
       setLoadError(message)
     })
   }, [fetchMenuProductions, fetchRecipes])
@@ -123,7 +124,7 @@ const StorekeeperHistoryPage = () => {
                 Storekeeper Workspace
               </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                Riwayat Pengeluaran
+                Issuance History
               </h1>
             </div>
           </div>
@@ -149,7 +150,7 @@ const StorekeeperHistoryPage = () => {
               </p>
               <h2 className="mt-2 text-lg font-semibold">Storekeeper</h2>
               <p className="mt-3 text-xs text-muted">
-                Lihat riwayat pengeluaran bahan untuk dapur.
+                View ingredient issuance history for the kitchen.
               </p>
             </div>
 
@@ -158,6 +159,7 @@ const StorekeeperHistoryPage = () => {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.end}
                   className={({ isActive }) =>
                     [
                       'flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition',
@@ -177,13 +179,13 @@ const StorekeeperHistoryPage = () => {
           <main className="space-y-6 lg:col-span-9">
             <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
               <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                Riwayat
+                History
               </p>
               <h2 className="mt-2 text-xl font-semibold">
-                Menu produksi yang sudah dikirim ke dapur
+                Production menus already sent to the kitchen
               </h2>
               <p className="mt-3 text-sm text-muted">
-                Data ini berisi pengeluaran bahan yang sudah selesai.
+                This data contains completed ingredient issuances.
               </p>
               {loadError ? (
                 <p className="mt-3 text-xs font-medium text-red-600">
@@ -194,7 +196,7 @@ const StorekeeperHistoryPage = () => {
 
             {summaryByDate.length === 0 ? (
               <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
-                Belum ada riwayat pengeluaran bahan.
+                No ingredient issuance history yet.
               </div>
             ) : (
               summaryByDate.map((group) => (
@@ -205,26 +207,26 @@ const StorekeeperHistoryPage = () => {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                        Tanggal produksi
+                        Production date
                       </p>
                       <h3 className="mt-2 text-lg font-semibold">{group.date}</h3>
                     </div>
                     <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
-                      {group.items.length} menu
+                      {group.items.length} menus
                     </span>
                   </div>
 
                   <div className="mt-5 grid gap-4 lg:grid-cols-12">
                     <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-5">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Daftar menu
+                        Menu list
                       </p>
                       <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
                         <table className="min-w-full text-sm">
                           <thead className="bg-background">
                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                               <th className="px-4 py-3 font-semibold">Menu</th>
-                              <th className="px-4 py-3 font-semibold">Kategori</th>
+                              <th className="px-4 py-3 font-semibold">Category</th>
                               <th className="px-4 py-3 font-semibold">Portion</th>
                             </tr>
                           </thead>
@@ -241,21 +243,21 @@ const StorekeeperHistoryPage = () => {
                       </div>
                       {group.missingRecipes.length > 0 ? (
                         <p className="mt-3 text-xs text-danger">
-                          Recipe tidak ditemukan untuk: {group.missingRecipes.join(', ')}
+                          Recipe not found for: {group.missingRecipes.join(', ')}
                         </p>
                       ) : null}
                     </div>
 
                     <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-7">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        Ringkasan bahan
+                        Ingredient summary
                       </p>
                       <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
                         <table className="min-w-full text-sm">
                           <thead className="bg-background">
                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                               <th className="px-4 py-3 font-semibold">Product code</th>
-                              <th className="px-4 py-3 font-semibold">Nama bahan</th>
+                              <th className="px-4 py-3 font-semibold">Ingredient name</th>
                               <th className="px-4 py-3 font-semibold">Qty</th>
                               <th className="px-4 py-3 font-semibold">Unit</th>
                             </tr>
@@ -267,7 +269,7 @@ const StorekeeperHistoryPage = () => {
                                   colSpan={4}
                                   className="px-4 py-6 text-center text-muted"
                                 >
-                                  Belum ada ingredient yang bisa dihitung.
+                                  No ingredients available to calculate.
                                 </td>
                               </tr>
                             ) : (
@@ -283,7 +285,9 @@ const StorekeeperHistoryPage = () => {
                                   <td className="px-4 py-3">
                                     {formatQuantity(item.qty)}
                                   </td>
-                                  <td className="px-4 py-3">{item.unit}</td>
+                                  <td className="px-4 py-3">
+                                    {formatUnitLabel(item.unit)}
+                                  </td>
                                 </tr>
                               ))
                             )}

@@ -118,15 +118,15 @@ export class MenuProductionsService {
     if (!item) throw new NotFoundException('Menu production not found');
     if (status === 'requested') {
       if (item.approvalStatus !== 'approved') {
-        throw new BadRequestException('Menu production belum di-approve.');
+        throw new BadRequestException('Menu production is not approved yet.');
       }
     }
     if (status === 'fulfilled') {
       if (item.approvalStatus !== 'approved') {
-        throw new BadRequestException('Menu production belum di-approve.');
+        throw new BadRequestException('Menu production is not approved yet.');
       }
       if (item.storeRequestStatus !== 'requested') {
-        throw new BadRequestException('Store request belum diajukan.');
+        throw new BadRequestException('Store request has not been submitted yet.');
       }
     }
     item.storeRequestStatus = status;

@@ -73,7 +73,7 @@ const UnitManagerPage = () => {
               </p>
               <h2 className="mt-2 text-lg font-semibold">Unit Manager</h2>
               <p className="mt-3 text-xs text-muted">
-                Review dan approval recipe serta menu production.
+                Review and approve recipes and production menus.
               </p>
             </div>
 
@@ -101,7 +101,7 @@ const UnitManagerPage = () => {
           <main className="space-y-6 lg:col-span-9">
             <div>
               <p className="text-sm text-muted">
-                Review recipe dan menu production dari tim Chef.
+                Review recipes and production menus from the Chef team.
               </p>
               {actionError ? (
                 <p className="mt-2 text-xs font-medium text-red-600">
@@ -116,9 +116,9 @@ const UnitManagerPage = () => {
                 <table className="min-w-full bg-white text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                      <th className="px-4 py-3 font-semibold">Nama</th>
-                      <th className="px-4 py-3 font-semibold">Kategori</th>
-                      <th className="px-4 py-3 font-semibold">Status recipe</th>
+                      <th className="px-4 py-3 font-semibold">Name</th>
+                      <th className="px-4 py-3 font-semibold">Category</th>
+                      <th className="px-4 py-3 font-semibold">Recipe status</th>
                       <th className="px-4 py-3 font-semibold">Action</th>
                     </tr>
                   </thead>
@@ -129,7 +129,7 @@ const UnitManagerPage = () => {
                           colSpan={4}
                           className="px-4 py-6 text-center text-muted"
                         >
-                          Tidak ada recipe pending approval.
+                          No recipes pending approval.
                         </td>
                       </tr>
                     ) : (
@@ -138,7 +138,7 @@ const UnitManagerPage = () => {
                           <td className="px-4 py-3">{item.name}</td>
                           <td className="px-4 py-3">{item.category}</td>
                           <td className="px-4 py-3">
-                            {item.status === 'active' ? 'Aktif' : 'Draft'}
+                            {item.status === 'active' ? 'Active' : 'Draft'}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
@@ -152,7 +152,7 @@ const UnitManagerPage = () => {
                                     setActionError(
                                       error instanceof Error
                                         ? error.message
-                                        : 'Gagal approve recipe.',
+                                        : 'Failed to approve recipe.',
                                     )
                                   }
                                 }}
@@ -170,7 +170,7 @@ const UnitManagerPage = () => {
                                     setActionError(
                                       error instanceof Error
                                         ? error.message
-                                        : 'Gagal reject recipe.',
+                                        : 'Failed to reject recipe.',
                                     )
                                   }
                                 }}
@@ -195,9 +195,9 @@ const UnitManagerPage = () => {
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                       <th className="px-4 py-3 font-semibold">Menu</th>
-                      <th className="px-4 py-3 font-semibold">Kategori</th>
+                      <th className="px-4 py-3 font-semibold">Category</th>
                       <th className="px-4 py-3 font-semibold">Portion</th>
-                      <th className="px-4 py-3 font-semibold">Tanggal produksi</th>
+                      <th className="px-4 py-3 font-semibold">Production date</th>
                       <th className="px-4 py-3 font-semibold">Action</th>
                     </tr>
                   </thead>
@@ -208,7 +208,7 @@ const UnitManagerPage = () => {
                           colSpan={5}
                           className="px-4 py-6 text-center text-muted"
                         >
-                          Tidak ada menu production pending approval.
+                          No production menus pending approval.
                         </td>
                       </tr>
                     ) : (
@@ -230,7 +230,7 @@ const UnitManagerPage = () => {
                                     setActionError(
                                       error instanceof Error
                                         ? error.message
-                                        : 'Gagal approve menu production.',
+                                        : 'Failed to approve menu production.',
                                     )
                                   }
                                 }}
@@ -248,7 +248,7 @@ const UnitManagerPage = () => {
                                     setActionError(
                                       error instanceof Error
                                         ? error.message
-                                        : 'Gagal reject menu production.',
+                                        : 'Failed to reject menu production.',
                                     )
                                   }
                                 }}

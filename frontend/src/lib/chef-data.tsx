@@ -85,6 +85,8 @@ type AddRawMaterialInput = {
   unitOfMeasures: string
 }
 
+type UpdateRawMaterialInput = AddRawMaterialInput
+
 type RawMaterialsMeta = {
   page: number
   limit: number
@@ -105,6 +107,7 @@ type ChefDataContextValue = ChefDataState & {
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
   addRawMaterial: (input: AddRawMaterialInput) => Promise<void>
+  updateRawMaterial: (id: string, input: UpdateRawMaterialInput) => Promise<void>
   importRawMaterialsFromExcel: (file: File) => Promise<string>
   markStoreRequested: (menuProductionId: string) => Promise<void>
   markStoreFulfilled: (menuProductionId: string) => Promise<void>
@@ -232,7 +235,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const createRecipe = async (input: CreateRecipeInput) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
 
     const created = await apiFetch<RecipeApi>(
@@ -252,7 +255,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const importRecipesFromExcel = async (file: File) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const formData = new FormData()
     formData.append('file', file)
@@ -272,7 +275,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const approveRecipe = async (id: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<RecipeApi>(
       `/recipes/${id}/approve`,
@@ -288,7 +291,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const rejectRecipe = async (id: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<RecipeApi>(
       `/recipes/${id}/reject`,
@@ -304,7 +307,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const addMenuProduction = async (input: AddMenuProductionInput) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const created = await apiFetch<MenuProductionApi>(
       '/menu-productions',
@@ -323,7 +326,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const approveMenuProduction = async (id: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${id}/approve`,
@@ -339,7 +342,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const rejectMenuProduction = async (id: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${id}/reject`,
@@ -356,7 +359,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
   const addRawMaterial = (input: AddRawMaterialInput) => {
     if (!accessToken) {
       return Promise.reject(
-        new Error('Login terlebih dahulu agar data tersimpan ke database.'),
+        new Error('Please log in first to save data to the database.'),
       )
     }
 
@@ -370,9 +373,37 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     ).then(() => undefined)
   }
 
+  const updateRawMaterial = async (id: string, input: UpdateRawMaterialInput) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+
+    const updated = await apiFetch<RawMaterial & { _id?: string }>(
+      `/raw-materials/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+
+    const mapped: RawMaterial = {
+      id: updated.id || updated._id || id,
+      productCode: updated.productCode ?? input.productCode,
+      name: updated.name ?? input.name,
+      unitOfMeasures: updated.unitOfMeasures ?? input.unitOfMeasures,
+      createdAt: updated.createdAt ?? new Date().toISOString(),
+    }
+
+    setState((prev) => ({
+      ...prev,
+      rawMaterials: upsertById(prev.rawMaterials, mapped),
+    }))
+  }
+
   const importRawMaterialsFromExcel = async (file: File) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const formData = new FormData()
     formData.append('file', file)
@@ -395,7 +426,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         setRawMaterialsMeta((prev) => ({
           ...prev,
           loading: false,
-          error: 'Login terlebih dahulu untuk memuat data raw material.',
+          error: 'Please log in first to load raw material data.',
         }))
         return
       }
@@ -443,7 +474,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         })
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'Gagal memuat data.'
+          error instanceof Error ? error.message : 'Failed to load data.'
         setRawMaterialsMeta((prev) => ({
           ...prev,
           loading: false,
@@ -456,7 +487,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const markStoreRequested = async (menuProductionId: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${menuProductionId}/store-request`,
@@ -472,7 +503,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const markStoreFulfilled = async (menuProductionId: string) => {
     if (!accessToken) {
-      throw new Error('Login terlebih dahulu agar data tersimpan ke database.')
+      throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${menuProductionId}/fulfill`,
@@ -490,6 +521,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     () => ({
       ...state,
       addRawMaterial,
+      updateRawMaterial,
       createRecipe,
       importRecipesFromExcel,
       approveRecipe,
@@ -518,6 +550,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       importRecipesFromExcel,
       markStoreFulfilled,
       markStoreRequested,
+      updateRawMaterial,
       rawMaterialsMeta,
       rejectMenuProduction,
       rejectRecipe,
