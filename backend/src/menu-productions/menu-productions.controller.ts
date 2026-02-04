@@ -38,6 +38,18 @@ export class MenuProductionsController {
     return this.menuProductions.createMany(dto.items ?? [], req.user.sub);
   }
 
+  // BACKEND LOGIC: store-request aggregation lives here (qty multiplier + summary)
+  @Get('store-requests')
+  storeRequests(@Query() query: ListMenuProductionsQueryDto) {
+    return this.menuProductions.buildStoreRequestGroups(query);
+  }
+
+  // BACKEND LOGIC: timeline grouping + approval stats for production menus.
+  @Get('timeline')
+  timeline(@Query() query: ListMenuProductionsQueryDto) {
+    return this.menuProductions.buildTimeline(query);
+  }
+
   @Get()
   list(@Query() query: ListMenuProductionsQueryDto) {
     return this.menuProductions.findAll(query);

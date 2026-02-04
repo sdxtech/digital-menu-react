@@ -1,9 +1,31 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
+import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
+
+type StoreRequestIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  qty: number
+}
+
+type StoreRequestMenu = {
+  id: string
+  menuName: string
+  category: string
+  portion: number
+}
+
+type StoreRequestGroup = {
+  date: string
+  items: StoreRequestMenu[]
+  summary: StoreRequestIngredient[]
+  missingRecipes: string[]
+}
 
 const navItems = [
   { label: 'Storekeeper Dashboard', to: '/storekeeper', end: true },
@@ -11,105 +33,47 @@ const navItems = [
 ]
 
 const StorekeeperPage = () => {
-  const { user, logout } = useAuth()
-  const {
-    menuProductions,
-    recipes,
-    fetchMenuProductions,
-    fetchRecipes,
-    markStoreFulfilled,
-  } = useChefData()
+  const { user, accessToken, logout } = useAuth()
+  const { markStoreFulfilled } = useChefData()
   const navigate = useNavigate()
   const [loadError, setLoadError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [groups, setGroups] = useState<StoreRequestGroup[]>([])
+  const [loading, setLoading] = useState(false)
 
   const handleLogout = () => {
     logout()
     navigate('/login', { replace: true })
   }
 
-  useEffect(() => {
+  // FRONTEND VIEW: backend returns grouped requests with ingredient summary.
+  const fetchStoreRequests = useCallback(async () => {
+    if (!accessToken) {
+      setLoadError('Please log in first to load data.')
+      return
+    }
+
+    setLoading(true)
     setLoadError('')
-    Promise.all([fetchMenuProductions(), fetchRecipes()]).catch((error) => {
+    try {
+      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+        '/menu-productions/store-requests?storeRequestStatus=requested&approvalStatus=approved',
+        undefined,
+        accessToken,
+      )
+      setGroups(data.items ?? [])
+    } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to load data.'
       setLoadError(message)
-    })
-  }, [fetchMenuProductions, fetchRecipes])
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken])
 
-  const requestedMenus = useMemo(
-    () =>
-      menuProductions.filter(
-        (item) =>
-          item.approvalStatus === 'approved' &&
-          item.storeRequestStatus === 'requested',
-      ),
-    [menuProductions],
-  )
-
-  const groupedByDate = useMemo(() => {
-    const map = new Map<string, typeof requestedMenus>()
-    requestedMenus.forEach((item) => {
-      const date = item.productionDate
-      const bucket = map.get(date)
-      if (bucket) {
-        bucket.push(item)
-      } else {
-        map.set(date, [item])
-      }
-    })
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [requestedMenus])
-
-  const recipeByName = useMemo(() => {
-    const map = new Map<string, (typeof recipes)[number]>()
-    recipes.forEach((recipe) => {
-      map.set(recipe.name.trim().toLowerCase(), recipe)
-    })
-    return map
-  }, [recipes])
-
-  const summaryByDate = useMemo(() => {
-    return groupedByDate.map(([date, items]) => {
-      const summary = new Map<
-        string,
-        { productCode: string; name: string; unit: string; qty: number }
-      >()
-      const missingRecipes: string[] = []
-
-      items.forEach((menu) => {
-        const recipe = recipeByName.get(menu.menuName.trim().toLowerCase())
-        if (!recipe) {
-          missingRecipes.push(menu.menuName)
-          return
-        }
-        const base = Number(recipe.portionSize) || 1
-        const multiplier = Number(menu.portion) / base
-        recipe.ingredients.forEach((ingredient) => {
-          const key = `${ingredient.productCode}__${ingredient.unitOfMeasures}`
-          const existing = summary.get(key)
-          const qty = Number(ingredient.qty) * multiplier
-          if (existing) {
-            existing.qty += qty
-          } else {
-            summary.set(key, {
-              productCode: ingredient.productCode,
-              name: ingredient.name,
-              unit: ingredient.unitOfMeasures,
-              qty,
-            })
-          }
-        })
-      })
-
-      return {
-        date,
-        items,
-        summary: Array.from(summary.values()),
-        missingRecipes,
-      }
-    })
-  }, [groupedByDate, recipeByName])
+  useEffect(() => {
+    fetchStoreRequests().catch(() => null)
+  }, [fetchStoreRequests])
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -205,12 +169,16 @@ const StorekeeperPage = () => {
               ) : null}
             </div>
 
-            {summaryByDate.length === 0 ? (
+            {loading ? (
+              <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
+                Loading store requests...
+              </div>
+            ) : groups.length === 0 ? (
               <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
                 No production menus in store request yet.
               </div>
             ) : (
-              summaryByDate.map((group) => (
+              groups.map((group) => (
                 <div
                   key={group.date}
                   className="rounded-3xl border border-border bg-surface p-6 shadow-sm"
@@ -240,6 +208,7 @@ const StorekeeperPage = () => {
                             setActionMessage(
                               `Ingredient issuance for ${group.date} completed.`,
                             )
+                            fetchStoreRequests().catch(() => null)
                           } catch (error) {
                             const message =
                               error instanceof Error
@@ -314,7 +283,7 @@ const StorekeeperPage = () => {
                             ) : (
                               group.summary.map((item) => (
                                 <tr
-                                  key={`${item.productCode}-${item.unit}`}
+                                  key={`${item.productCode}-${item.unitOfMeasures}`}
                                   className="border-t border-border"
                                 >
                                   <td className="px-4 py-3">
@@ -325,7 +294,7 @@ const StorekeeperPage = () => {
                                     {formatQuantity(item.qty)}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {formatUnitLabel(item.unit)}
+                                    {formatUnitLabel(item.unitOfMeasures)}
                                   </td>
                                 </tr>
                               ))

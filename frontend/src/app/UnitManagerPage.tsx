@@ -1,33 +1,75 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
+import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+
+type Recipe = {
+  id?: string
+  _id?: string
+  name: string
+  category: string
+  status: 'draft' | 'active'
+  approvalStatus: 'pending' | 'approved' | 'rejected'
+}
+
+type MenuProduction = {
+  id?: string
+  _id?: string
+  menuName: string
+  category: string
+  portion: number
+  productionDate: string
+  approvalStatus: 'pending' | 'approved' | 'rejected'
+}
 
 const navItems = [{ label: 'Approval Center', to: '/unit-manager' }]
 
 const UnitManagerPage = () => {
-  const { user, logout } = useAuth()
+  const { user, accessToken, logout } = useAuth()
   const navigate = useNavigate()
   const {
-    recipes,
-    menuProductions,
     approveRecipe,
     rejectRecipe,
     approveMenuProduction,
     rejectMenuProduction,
   } = useChefData()
   const [actionError, setActionError] = useState('')
+  const [pendingRecipes, setPendingRecipes] = useState<Recipe[]>([])
+  const [pendingMenuProductions, setPendingMenuProductions] = useState<
+    MenuProduction[]
+  >([])
 
-  const pendingRecipes = useMemo(
-    () => recipes.filter((item) => item.approvalStatus === 'pending'),
-    [recipes],
-  )
+  // FRONTEND VIEW: pending approvals are fetched from backend.
+  const fetchPending = useCallback(async () => {
+    if (!accessToken) return
+    try {
+      const [recipesData, menusData] = await Promise.all([
+        apiFetch<{ items: Recipe[] }>(
+          '/recipes?approvalStatus=pending&limit=50',
+          undefined,
+          accessToken,
+        ),
+        apiFetch<{ items: MenuProduction[] }>(
+          '/menu-productions?approvalStatus=pending&limit=50',
+          undefined,
+          accessToken,
+        ),
+      ])
+      setPendingRecipes(recipesData.items ?? [])
+      setPendingMenuProductions(menusData.items ?? [])
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load approvals.'
+      setActionError(message)
+    }
+  }, [accessToken])
 
-  const pendingMenuProductions = useMemo(
-    () => menuProductions.filter((item) => item.approvalStatus === 'pending'),
-    [menuProductions],
-  )
+  useEffect(() => {
+    setActionError('')
+    fetchPending().catch(() => null)
+  }, [fetchPending])
 
   const handleLogout = () => {
     logout()
@@ -134,7 +176,7 @@ const UnitManagerPage = () => {
                       </tr>
                     ) : (
                       pendingRecipes.map((item) => (
-                        <tr key={item.id} className="border-t border-border">
+                        <tr key={item.id ?? item._id} className="border-t border-border">
                           <td className="px-4 py-3">{item.name}</td>
                           <td className="px-4 py-3">{item.category}</td>
                           <td className="px-4 py-3">
@@ -147,7 +189,8 @@ const UnitManagerPage = () => {
                                 onClick={async () => {
                                   setActionError('')
                                   try {
-                                    await approveRecipe(item.id)
+                                    await approveRecipe(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
                                   } catch (error) {
                                     setActionError(
                                       error instanceof Error
@@ -165,7 +208,8 @@ const UnitManagerPage = () => {
                                 onClick={async () => {
                                   setActionError('')
                                   try {
-                                    await rejectRecipe(item.id)
+                                    await rejectRecipe(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
                                   } catch (error) {
                                     setActionError(
                                       error instanceof Error
@@ -213,7 +257,7 @@ const UnitManagerPage = () => {
                       </tr>
                     ) : (
                       pendingMenuProductions.map((item) => (
-                        <tr key={item.id} className="border-t border-border">
+                        <tr key={item.id ?? item._id} className="border-t border-border">
                           <td className="px-4 py-3">{item.menuName}</td>
                           <td className="px-4 py-3">{item.category}</td>
                           <td className="px-4 py-3">{item.portion}</td>
@@ -225,7 +269,8 @@ const UnitManagerPage = () => {
                                 onClick={async () => {
                                   setActionError('')
                                   try {
-                                    await approveMenuProduction(item.id)
+                                    await approveMenuProduction(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
                                   } catch (error) {
                                     setActionError(
                                       error instanceof Error
@@ -243,7 +288,8 @@ const UnitManagerPage = () => {
                                 onClick={async () => {
                                   setActionError('')
                                   try {
-                                    await rejectMenuProduction(item.id)
+                                    await rejectMenuProduction(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
                                   } catch (error) {
                                     setActionError(
                                       error instanceof Error

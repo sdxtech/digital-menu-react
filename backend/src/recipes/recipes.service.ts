@@ -48,8 +48,20 @@ export class RecipesService {
       ];
     }
 
-    if (query.status) filter.status = query.status;
+    // BACKEND LOGIC: server-side filtering for recipes (search/status/category).
+    const statuses = this.parseCsv(query.statuses);
+    if (query.status) statuses.push(query.status);
+    if (statuses.length) {
+      filter.status = { $in: Array.from(new Set(statuses)) };
+    }
+
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
+
+    const categories = this.parseCsv(query.categories);
+    if (query.category?.trim()) categories.push(query.category.trim());
+    if (categories.length) {
+      filter.category = { $in: Array.from(new Set(categories)) };
+    }
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
@@ -75,6 +87,7 @@ export class RecipesService {
   }
 
   async setApprovalStatus(id: string, status: ApprovalStatus) {
+    // BACKEND LOGIC: approval updates also update recipe status.
     const nextStatus = status === 'approved' ? 'active' : 'draft';
     const updated = await this.recipeModel
       .findByIdAndUpdate(
@@ -109,5 +122,24 @@ export class RecipesService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private parseCsv(value?: string) {
+    if (!value?.trim()) return [];
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  // BACKEND LOGIC: category list for frontend filters.
+  async listCategories() {
+    const categories = await this.recipeModel.distinct('category', {
+      category: { $ne: '' },
+    });
+    return (categories ?? [])
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
   }
 }

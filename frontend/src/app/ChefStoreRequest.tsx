@@ -1,40 +1,40 @@
-import { Fragment, useMemo, useState } from 'react'
-import { useChefData } from '../lib/chef-data'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
+type StoreRequestIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  qty: number
+}
+
+type StoreRequestMenu = {
+  id: string
+  menuName: string
+  category: string
+  portion: number
+  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  portionSize: number
+  ingredients: StoreRequestIngredient[]
+  missingRecipe: boolean
+}
+
+type StoreRequestGroup = {
+  date: string
+  items: StoreRequestMenu[]
+  summary: StoreRequestIngredient[]
+  missingRecipes: string[]
+}
+
 const ChefStoreRequest = () => {
-  const { menuProductions, fetchMenuProductions, recipes } = useChefData()
+  const { accessToken } = useAuth()
   const [infoMessage, setInfoMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [expandedDates, setExpandedDates] = useState<string[]>([])
-
-  const approvedMenus = useMemo(
-    () => menuProductions.filter((item) => item.approvalStatus === 'approved'),
-    [menuProductions],
-  )
-
-  const recipeByName = useMemo(() => {
-    const map = new Map<string, (typeof recipes)[number]>()
-    recipes.forEach((recipe) => {
-      const key = recipe.name.trim().toLowerCase()
-      if (!map.has(key)) map.set(key, recipe)
-    })
-    return map
-  }, [recipes])
-
-  const groupedByDate = useMemo(() => {
-    const map = new Map<string, typeof approvedMenus>()
-    approvedMenus.forEach((item) => {
-      const date = item.productionDate
-      const bucket = map.get(date)
-      if (bucket) {
-        bucket.push(item)
-      } else {
-        map.set(date, [item])
-      }
-    })
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [approvedMenus])
+  const [groups, setGroups] = useState<StoreRequestGroup[]>([])
+  const [loading, setLoading] = useState(false)
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -42,11 +42,41 @@ const ChefStoreRequest = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
+  // FRONTEND VIEW: backend returns grouped store requests with multiplied ingredients.
+  const fetchStoreRequests = useCallback(async () => {
+    if (!accessToken) {
+      setErrorMessage('Please log in first to load store requests.')
+      return
+    }
+
+    setLoading(true)
+    setErrorMessage('')
+    try {
+      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+        '/menu-productions/store-requests?approvalStatus=approved',
+        undefined,
+        accessToken,
+      )
+      setGroups(data.items ?? [])
+      setInfoMessage('Approved data refreshed from Menu Production.')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to refresh data.'
+      setErrorMessage(message)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken])
+
   const toggleExpanded = (date: string) => {
     setExpandedDates((prev) =>
       prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
     )
   }
+
+  useEffect(() => {
+    fetchStoreRequests().catch(() => null)
+  }, [fetchStoreRequests])
 
   return (
     <div className="space-y-6">
@@ -78,16 +108,7 @@ const ChefStoreRequest = () => {
             onClick={async () => {
               setInfoMessage('')
               setErrorMessage('')
-              try {
-                await fetchMenuProductions()
-                setInfoMessage('Approved data refreshed from Menu Production.')
-              } catch (error) {
-                const message =
-                  error instanceof Error
-                    ? error.message
-                    : 'Failed to refresh data.'
-                setErrorMessage(message)
-              }
+              await fetchStoreRequests()
             }}
             className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
           >
@@ -113,14 +134,22 @@ const ChefStoreRequest = () => {
             </tr>
           </thead>
           <tbody>
-            {groupedByDate.length === 0 ? (
+            {loading ? (
+              <tr className="border-t border-border">
+                <td colSpan={2} className="px-5 py-10 text-center text-muted">
+                  Loading store requests...
+                </td>
+              </tr>
+            ) : groups.length === 0 ? (
               <tr className="border-t border-border">
                 <td colSpan={2} className="px-5 py-10 text-center text-muted">
                   No production menus approved by the Unit Manager yet.
                 </td>
               </tr>
             ) : (
-              groupedByDate.map(([date, items]) => {
+              groups.map((group) => {
+                const date = group.date
+                const items = group.items
                 const isExpanded = expandedDates.includes(date)
 
                 return (
@@ -169,11 +198,8 @@ const ChefStoreRequest = () => {
                               </div>
                             </div>
 
-                        {items.map((menu) => {
-                              const recipe = recipeByName.get(
-                                menu.menuName.trim().toLowerCase(),
-                              )
-                              const ingredients = recipe?.ingredients ?? []
+                            {items.map((menu) => {
+                              const ingredients = menu.ingredients ?? []
 
                               return (
                                 <div
@@ -203,16 +229,17 @@ const ChefStoreRequest = () => {
                                         <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                           Store request
                                         </p>
-                                <p className="mt-1 text-sm font-medium">
-                                  {menu.storeRequestStatus === 'fulfilled'
-                                    ? 'Delivered to kitchen'
-                                    : menu.storeRequestStatus === 'requested'
-                                      ? 'Auto-requested'
-                                      : 'Waiting for auto request'}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                                        <p className="mt-1 text-sm font-medium">
+                                          {menu.storeRequestStatus === 'fulfilled'
+                                            ? 'Delivered to kitchen'
+                                            : menu.storeRequestStatus ===
+                                                'requested'
+                                              ? 'Auto-requested'
+                                              : 'Waiting for auto request'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
 
                                   <div className="rounded-2xl border border-border bg-surface p-4 lg:col-span-7">
                                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -223,11 +250,11 @@ const ChefStoreRequest = () => {
                                     </h4>
                                     <p className="mt-1 text-xs text-muted">
                                       Qty calculated from base servings (
-                                      {recipe?.portionSize ?? 1}) for{' '}
-                                      {menu.portion} portions
+                                      {menu.portionSize ?? 1}) for {menu.portion}{' '}
+                                      portions
                                     </p>
 
-                                    {!recipe ? (
+                                    {menu.missingRecipe ? (
                                       <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
                                         Recipe not found in the recipe list. Make
                                         sure the menu name matches the created
@@ -268,15 +295,9 @@ const ChefStoreRequest = () => {
                                                 <td className="px-4 py-3">
                                                   {ingredient.name}
                                                 </td>
-                                              <td className="px-4 py-3">
-                                                  {formatQuantity(
-                                                    Number(ingredient.qty) *
-                                                      (Number(menu.portion) /
-                                                        Number(
-                                                          recipe?.portionSize ?? 1,
-                                                        )),
-                                                  )}
-                                              </td>
+                                                <td className="px-4 py-3">
+                                                  {formatQuantity(ingredient.qty)}
+                                                </td>
                                                 <td className="px-4 py-3">
                                                   {formatUnitLabel(
                                                     ingredient.unitOfMeasures,

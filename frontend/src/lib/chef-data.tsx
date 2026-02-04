@@ -133,33 +133,32 @@ const makeId = (prefix: string) => {
 const pickId = (id: string | undefined, fallbackPrefix: string) =>
   id ?? makeId(fallbackPrefix)
 
+// FRONTEND MAPPER: status/approval values come from backend.
 const mapRecipe = (item: RecipeApi): Recipe => {
   const approvalStatus = item.approvalStatus ?? 'pending'
-  const derivedStatus: RecipeStatus =
-    approvalStatus === 'approved' ? 'active' : 'draft'
 
   return {
-  id: pickId(item.id ?? item._id, 'recipe'),
-  name: item.name ?? '',
-  category: item.category ?? '',
-  description: item.description ?? '',
-  price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
-  portionSize: Number.isFinite(Number(item.portionSize))
-    ? Number(item.portionSize)
-    : 1,
-  status: derivedStatus,
-  approvalStatus,
-  ingredients: Array.isArray(item.ingredients)
-    ? item.ingredients.map((ingredient) => ({
-        productCode: ingredient.productCode ?? '',
-        name: ingredient.name ?? '',
-        unitOfMeasures: ingredient.unitOfMeasures ?? '',
-        qty: Number.isFinite(Number(ingredient.qty))
-          ? Number(ingredient.qty)
-          : 0,
-      }))
-    : [],
-  createdAt: item.createdAt ?? new Date().toISOString(),
+    id: pickId(item.id ?? item._id, 'recipe'),
+    name: item.name ?? '',
+    category: item.category ?? '',
+    description: item.description ?? '',
+    price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+    portionSize: Number.isFinite(Number(item.portionSize))
+      ? Number(item.portionSize)
+      : 1,
+    status: (item.status ?? 'draft') as RecipeStatus,
+    approvalStatus,
+    ingredients: Array.isArray(item.ingredients)
+      ? item.ingredients.map((ingredient) => ({
+          productCode: ingredient.productCode ?? '',
+          name: ingredient.name ?? '',
+          unitOfMeasures: ingredient.unitOfMeasures ?? '',
+          qty: Number.isFinite(Number(ingredient.qty))
+            ? Number(ingredient.qty)
+            : 0,
+        }))
+      : [],
+    createdAt: item.createdAt ?? new Date().toISOString(),
   }
 }
 

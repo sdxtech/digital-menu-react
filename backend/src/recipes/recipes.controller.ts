@@ -43,6 +43,12 @@ export class RecipesController {
     return this.recipes.create(dto, req.user.sub);
   }
 
+  // BACKEND LOGIC: provide category options for recipe filters.
+  @Get('categories')
+  listCategories() {
+    return this.recipes.listCategories();
+  }
+
   @Get()
   list(@Query() query: ListRecipesQueryDto) {
     return this.recipes.findAll(query);

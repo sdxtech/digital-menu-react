@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 
 const TIMELINE_ITEMS_PER_PAGE = 10
@@ -7,6 +9,26 @@ type MenuInputRow = {
   id: string
   recipeId: string
   portion: number | ''
+}
+
+type TimelineItem = {
+  id: string
+  menuName: string
+  category: string
+  portion: number
+  approvalStatus: 'pending' | 'approved' | 'rejected'
+}
+
+type TimelineGroup = {
+  date: string
+  items: TimelineItem[]
+}
+
+type TimelineStats = {
+  approved: number
+  pending: number
+  rejected: number
+  total: number
 }
 
 const createMenuInputRow = (): MenuInputRow => ({
@@ -22,7 +44,8 @@ const approvalLabel = (approvalStatus: 'pending' | 'approved' | 'rejected') => {
 }
 
 const ChefMenuCycle = () => {
-  const { recipes, menuProductions, addMenuProduction } = useChefData()
+  const { accessToken } = useAuth()
+  const { recipes, addMenuProduction } = useChefData()
   const [productionDate, setProductionDate] = useState('')
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])
   const [inputError, setInputError] = useState('')
@@ -30,6 +53,15 @@ const ChefMenuCycle = () => {
   const [timelineMessage, setTimelineMessage] = useState('')
   const [expandedDates, setExpandedDates] = useState<string[]>([])
   const [timelinePage, setTimelinePage] = useState(1)
+  const [timelineGroups, setTimelineGroups] = useState<TimelineGroup[]>([])
+  const [timelineStats, setTimelineStats] = useState<TimelineStats>({
+    approved: 0,
+    pending: 0,
+    rejected: 0,
+    total: 0,
+  })
+  const [timelineTotalPages, setTimelineTotalPages] = useState(1)
+  const [timelineLoading, setTimelineLoading] = useState(false)
 
   const recipeById = useMemo(() => {
     return recipes.reduce<Record<string, (typeof recipes)[number]>>((acc, recipe) => {
@@ -38,37 +70,44 @@ const ChefMenuCycle = () => {
     }, {})
   }, [recipes])
 
-  const productionStats = useMemo(() => {
-    const approved = menuProductions.filter(
-      (item) => item.approvalStatus === 'approved',
-    ).length
-    const pending = menuProductions.filter(
-      (item) => item.approvalStatus === 'pending',
-    ).length
-    const rejected = menuProductions.filter(
-      (item) => item.approvalStatus === 'rejected',
-    ).length
-    return { approved, pending, rejected, total: menuProductions.length }
-  }, [menuProductions])
+  // FRONTEND VIEW: timeline groups + stats come from backend.
+  const fetchTimeline = useCallback(async () => {
+    if (!accessToken) return
+    setTimelineLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('page', String(timelinePage))
+      params.set('limit', String(TIMELINE_ITEMS_PER_PAGE))
 
-  const timelineGroups = useMemo(() => {
-    const grouped: Record<string, typeof menuProductions> = {}
-    menuProductions.forEach((item) => {
-      if (!grouped[item.productionDate]) grouped[item.productionDate] = []
-      grouped[item.productionDate].push(item)
-    })
-    return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
-  }, [menuProductions])
+      const data = await apiFetch<{
+        stats: TimelineStats
+        items: TimelineGroup[]
+        page: number
+        limit: number
+        totalGroups: number
+        totalPages: number
+      }>(`/menu-productions/timeline?${params.toString()}`, undefined, accessToken)
 
-  const timelineTotalPages = Math.max(
-    1,
-    Math.ceil(timelineGroups.length / TIMELINE_ITEMS_PER_PAGE),
-  )
-  const timelineStart = (timelinePage - 1) * TIMELINE_ITEMS_PER_PAGE
-  const timelinePagedGroups = timelineGroups.slice(
-    timelineStart,
-    timelineStart + TIMELINE_ITEMS_PER_PAGE,
-  )
+      setTimelineGroups(data.items ?? [])
+      setTimelineStats(data.stats ?? {
+        approved: 0,
+        pending: 0,
+        rejected: 0,
+        total: 0,
+      })
+      setTimelineTotalPages(data.totalPages ?? 1)
+    } catch {
+      setTimelineGroups([])
+      setTimelineStats({ approved: 0, pending: 0, rejected: 0, total: 0 })
+      setTimelineTotalPages(1)
+    } finally {
+      setTimelineLoading(false)
+    }
+  }, [accessToken, timelinePage])
+
+  useEffect(() => {
+    fetchTimeline().catch(() => null)
+  }, [fetchTimeline])
 
   useEffect(() => {
     setTimelinePage((prev) => Math.min(prev, timelineTotalPages))
@@ -182,6 +221,7 @@ const ChefMenuCycle = () => {
       setTimelineMessage(
         `${payload.length} menus added to the production timeline for ${productionDate} and submitted to the Unit Manager (pending approval).`,
       )
+      fetchTimeline().catch(() => null)
     } catch (error) {
       const message =
         error instanceof Error
@@ -208,7 +248,7 @@ const ChefMenuCycle = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Pending approval
           </p>
-          <h3 className="mt-2 text-xl font-semibold">{productionStats.pending}</h3>
+          <h3 className="mt-2 text-xl font-semibold">{timelineStats.pending}</h3>
           <p className="mt-3 text-sm text-muted">
             Menus not reviewed by the Unit Manager yet.
           </p>
@@ -217,7 +257,7 @@ const ChefMenuCycle = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Approved
           </p>
-          <h3 className="mt-2 text-xl font-semibold">{productionStats.approved}</h3>
+          <h3 className="mt-2 text-xl font-semibold">{timelineStats.approved}</h3>
           <p className="mt-3 text-sm text-muted">
             Menus ready for Store Request.
           </p>
@@ -227,10 +267,10 @@ const ChefMenuCycle = () => {
             Total menus
           </p>
           <h3 className="mt-2 text-xl font-semibold text-primary">
-            {productionStats.total}
+            {timelineStats.total}
           </h3>
           <p className="mt-3 text-sm text-muted">
-            {productionStats.rejected} menus are rejected.
+            {timelineStats.rejected} menus are rejected.
           </p>
         </div>
       </div>
@@ -361,43 +401,47 @@ const ChefMenuCycle = () => {
       <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Timeline
-          </p>
-          <h3 className="mt-2 text-lg font-semibold">
-            Scheduled production menus
-          </h3>
-        </div>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Timeline
+            </p>
+            <h3 className="mt-2 text-lg font-semibold">
+              Scheduled production menus
+            </h3>
+          </div>
         </div>
         {timelineMessage ? (
           <p className="mt-4 text-xs font-medium text-primary">{timelineMessage}</p>
         ) : null}
 
-        {timelineGroups.length === 0 ? (
+        {timelineLoading ? (
+          <div className="mt-6 rounded-2xl border border-border bg-background p-6 text-center text-sm text-muted">
+            Loading production timeline...
+          </div>
+        ) : timelineGroups.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-border bg-background p-6 text-center text-sm text-muted">
             No menus in the production timeline yet.
           </div>
         ) : (
           <div className="mt-6 space-y-4">
-            {timelinePagedGroups.map(([date, items]) => {
-              const isExpanded = expandedDates.includes(date)
+            {timelineGroups.map((group) => {
+              const isExpanded = expandedDates.includes(group.date)
               return (
                 <div
-                  key={date}
+                  key={group.date}
                   className="rounded-2xl border border-border bg-background p-4"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        {date}
+                        {group.date}
                       </p>
                       <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                        {items.length} menus
+                        {group.items.length} menus
                       </span>
                     </div>
                     <button
                       type="button"
-                      onClick={() => toggleExpanded(date)}
+                      onClick={() => toggleExpanded(group.date)}
                       className="rounded-full border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
                     >
                       {isExpanded ? 'Hide details' : 'View details'}
@@ -416,7 +460,7 @@ const ChefMenuCycle = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {items.map((item) => (
+                          {group.items.map((item) => (
                             <tr key={item.id} className="border-t border-border">
                               <td className="px-4 py-3">{item.menuName}</td>
                               <td className="px-4 py-3">{item.category}</td>
@@ -438,17 +482,16 @@ const ChefMenuCycle = () => {
           </div>
         )}
 
-        {timelineGroups.length > TIMELINE_ITEMS_PER_PAGE ? (
+        {timelineTotalPages > 1 ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
-              Showing {timelinePagedGroups.length} of {timelineGroups.length}{' '}
-              production dates
+              Showing {timelineGroups.length} production dates
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setTimelinePage((prev) => Math.max(1, prev - 1))}
-                disabled={timelinePage === 1}
+                disabled={timelinePage === 1 || timelineLoading}
                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Prev
@@ -463,7 +506,7 @@ const ChefMenuCycle = () => {
                     Math.min(timelineTotalPages, prev + 1),
                   )
                 }
-                disabled={timelinePage === timelineTotalPages}
+                disabled={timelinePage === timelineTotalPages || timelineLoading}
                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next

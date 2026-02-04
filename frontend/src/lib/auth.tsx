@@ -33,20 +33,6 @@ const rolePaths: Record<Role, string> = {
   admin: '/admin',
 }
 
-const resolveRoleFromEmail = (email: string): Role => {
-  const normalized = email.trim().toLowerCase()
-  if (normalized.includes('admin')) {
-    return 'admin'
-  }
-  if (normalized.includes('unit') || normalized.includes('manager')) {
-    return 'unit-manager'
-  }
-  if (normalized.includes('store') || normalized.includes('keeper')) {
-    return 'storekeeper'
-  }
-  return 'chef'
-}
-
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 const readStoredUser = (): User | null => {
@@ -77,18 +63,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       body: JSON.stringify({ email, password }),
     })
 
-    let nextRole = resolveRoleFromEmail(email)
+    let nextRole: Role = 'chef'
     try {
-      const me = await apiFetch<{ roles?: string[] }>(
+      // FRONTEND AUTH: role is provided by backend (/auth/me).
+      const me = await apiFetch<{ roles?: string[]; appRole?: Role }>(
         '/auth/me',
         undefined,
         nextAccessToken,
       )
-      if (me?.roles?.includes('admin')) {
-        nextRole = 'admin'
-      }
+      if (me?.appRole) nextRole = me.appRole
+      else if (me?.roles?.includes('admin')) nextRole = 'admin'
     } catch {
-      // ignore auth/me failures and fallback to email-based role
+      // ignore auth/me failures and use default role
     }
 
     const nextUser: User = {

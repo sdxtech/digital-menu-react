@@ -13,6 +13,7 @@ import { FilesModule } from './files/files.module';
 import { ImportsModule } from './imports/imports.module';
 import { ExportsModule } from './exports/exports.module';
 import { MailModule } from './mail/mail.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
 import { RawMaterialsModule } from './raw-materials/raw-materials.module';
@@ -42,6 +43,7 @@ import { MenuProductionsModule } from './menu-productions/menu-productions.modul
     ImportsModule,
     ExportsModule,
     MailModule,
+    DashboardModule,
     AdminModule,
   ],
   controllers: [AppController],

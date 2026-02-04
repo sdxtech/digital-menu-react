@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
+import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 import {
   ApprovalStatus,
   MenuProduction,
@@ -10,11 +11,58 @@ import {
   StoreRequestStatus,
 } from './schemas/menu-production.schema';
 
+type StoreRequestIngredient = {
+  productCode: string;
+  name: string;
+  unitOfMeasures: string;
+  qty: number;
+};
+
+type StoreRequestMenu = {
+  id: string;
+  menuName: string;
+  category: string;
+  portion: number;
+  productionDate: string;
+  approvalStatus: ApprovalStatus;
+  storeRequestStatus: StoreRequestStatus;
+  portionSize: number;
+  ingredients: StoreRequestIngredient[];
+  missingRecipe: boolean;
+};
+
+type StoreRequestGroup = {
+  date: string;
+  items: StoreRequestMenu[];
+  summary: StoreRequestIngredient[];
+  missingRecipes: string[];
+};
+
+type TimelineGroup = {
+  date: string;
+  items: Array<{
+    id: string;
+    menuName: string;
+    category: string;
+    portion: number;
+    approvalStatus: ApprovalStatus;
+  }>;
+};
+
+type TimelineStats = {
+  approved: number;
+  pending: number;
+  rejected: number;
+  total: number;
+};
+
 @Injectable()
 export class MenuProductionsService {
   constructor(
     @InjectModel(MenuProduction.name)
     private readonly menuProductionModel: Model<MenuProductionDocument>,
+    @InjectModel(Recipe.name)
+    private readonly recipeModel: Model<RecipeDocument>,
   ) {}
 
   async create(input: CreateMenuProductionDto, createdBy?: string) {
@@ -100,6 +148,7 @@ export class MenuProductionsService {
   }
 
   async setApprovalStatus(id: string, status: ApprovalStatus) {
+    // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
     const updated = await this.menuProductionModel
@@ -133,7 +182,192 @@ export class MenuProductionsService {
     return item.save();
   }
 
+  // BACKEND LOGIC: production timeline grouping + approval stats.
+  async buildTimeline(query: ListMenuProductionsQueryDto) {
+    const filter: Record<string, unknown> = {};
+    if (query.search?.trim()) {
+      const text = query.search.trim();
+      filter.$or = [
+        { menuName: new RegExp(this.escapeRegExp(text), 'i') },
+        { category: new RegExp(this.escapeRegExp(text), 'i') },
+      ];
+    }
+    if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
+    if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.productionDate) filter.productionDate = query.productionDate;
+
+    const items = await this.menuProductionModel
+      .find(filter)
+      .sort({ productionDate: 1, createdAt: -1 })
+      .lean();
+
+    const grouped = new Map<string, TimelineGroup>();
+    items.forEach((item) => {
+      const date = item.productionDate;
+      const bucket = grouped.get(date) ?? { date, items: [] };
+      bucket.items.push({
+        id: String(item._id ?? item.id ?? ''),
+        menuName: item.menuName,
+        category: item.category,
+        portion: item.portion,
+        approvalStatus: item.approvalStatus,
+      });
+      grouped.set(date, bucket);
+    });
+
+    const groups = Array.from(grouped.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const totalGroups = groups.length;
+    const totalPages = Math.max(1, Math.ceil(totalGroups / limit));
+    const start = (page - 1) * limit;
+    const pagedGroups = groups.slice(start, start + limit);
+
+    const stats: TimelineStats = {
+      approved: items.filter((item) => item.approvalStatus === 'approved').length,
+      pending: items.filter((item) => item.approvalStatus === 'pending').length,
+      rejected: items.filter((item) => item.approvalStatus === 'rejected').length,
+      total: items.length,
+    };
+
+    return {
+      stats,
+      items: pagedGroups,
+      page,
+      limit,
+      totalGroups,
+      totalPages,
+    };
+  }
+
+  // BACKEND LOGIC: compute ingredient multipliers + summary for store requests.
+  async buildStoreRequestGroups(query: ListMenuProductionsQueryDto) {
+    const filter: Record<string, unknown> = {};
+    if (query.search?.trim()) {
+      const text = query.search.trim();
+      filter.$or = [
+        { menuName: new RegExp(this.escapeRegExp(text), 'i') },
+        { category: new RegExp(this.escapeRegExp(text), 'i') },
+      ];
+    }
+    if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
+    if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.productionDate) filter.productionDate = query.productionDate;
+
+    const items = await this.menuProductionModel
+      .find(filter)
+      .sort({ productionDate: 1, createdAt: -1 })
+      .lean();
+
+    if (items.length === 0) {
+      return { items: [] as StoreRequestGroup[] };
+    }
+
+    const recipes = await this.recipeModel.find().lean();
+    const recipeByName = new Map<string, RecipeDocument>();
+    recipes.forEach((recipe) => {
+      const key = this.normalizeName(recipe.name ?? '');
+      if (!key || recipeByName.has(key)) return;
+      recipeByName.set(key, recipe);
+    });
+
+    const groups = new Map<
+      string,
+      {
+        date: string;
+        items: StoreRequestMenu[];
+        summaryMap: Map<string, StoreRequestIngredient>;
+        missingRecipes: Set<string>;
+      }
+    >();
+
+    items.forEach((menu) => {
+      const date = menu.productionDate;
+      const group = groups.get(date) ?? {
+        date,
+        items: [],
+        summaryMap: new Map<string, StoreRequestIngredient>(),
+        missingRecipes: new Set<string>(),
+      };
+
+      const recipe = recipeByName.get(this.normalizeName(menu.menuName));
+      let ingredients: StoreRequestIngredient[] = [];
+      let missingRecipe = false;
+      let portionSize = 1;
+
+      if (!recipe) {
+        missingRecipe = true;
+        if (menu.menuName) {
+          group.missingRecipes.add(menu.menuName);
+        }
+      } else {
+        portionSize = Number(recipe.portionSize) || 1;
+        if (portionSize <= 0) portionSize = 1;
+        // BACKEND LOGIC: qty multiplier = requested portions / base portion size.
+        const multiplier = Number(menu.portion) / portionSize;
+
+        ingredients = (recipe.ingredients ?? []).map((ingredient) => {
+          const qty = Number(ingredient.qty) * multiplier;
+          const normalizedKey = `${this.normalizeName(
+            ingredient.productCode,
+          )}__${this.normalizeName(ingredient.unitOfMeasures)}`;
+          const existing = group.summaryMap.get(normalizedKey);
+          if (existing) {
+            existing.qty += qty;
+          } else {
+            group.summaryMap.set(normalizedKey, {
+              productCode: ingredient.productCode,
+              name: ingredient.name,
+              unitOfMeasures: ingredient.unitOfMeasures,
+              qty,
+            });
+          }
+
+          return {
+            productCode: ingredient.productCode,
+            name: ingredient.name,
+            unitOfMeasures: ingredient.unitOfMeasures,
+            qty,
+          };
+        });
+      }
+
+      group.items.push({
+        id: String(menu._id ?? menu.id ?? ''),
+        menuName: menu.menuName,
+        category: menu.category,
+        portion: menu.portion,
+        productionDate: menu.productionDate,
+        approvalStatus: menu.approvalStatus,
+        storeRequestStatus: menu.storeRequestStatus,
+        portionSize,
+        ingredients,
+        missingRecipe,
+      });
+
+      groups.set(date, group);
+    });
+
+    const grouped = Array.from(groups.values()).map((group) => ({
+      date: group.date,
+      items: group.items,
+      summary: Array.from(group.summaryMap.values()),
+      missingRecipes: Array.from(group.missingRecipes.values()),
+    }));
+
+    grouped.sort((a, b) => a.date.localeCompare(b.date));
+
+    return { items: grouped };
+  }
+
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private normalizeName(value: string) {
+    return value ? value.trim().toLowerCase() : '';
   }
 }

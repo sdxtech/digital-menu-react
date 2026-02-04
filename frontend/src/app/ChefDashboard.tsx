@@ -1,4 +1,49 @@
+import { useCallback, useEffect, useState } from 'react'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
+
+type DashboardSummary = {
+  summary: {
+    incomingOrders: number
+    incomingOrdersDelta: number
+    menusCompleted: number
+    targetMenus: number
+    avgTimeMinutes: number
+    avgTimeDeltaMinutes: number
+  }
+  priority: Array<{ name: string; status: string; time: string }>
+  shiftTimeline: Array<{ label: string; progress: string }>
+}
+
 const ChefDashboard = () => {
+  const { accessToken } = useAuth()
+  const [data, setData] = useState<DashboardSummary | null>(null)
+  const [error, setError] = useState('')
+
+  // FRONTEND VIEW: fetch dashboard data from backend.
+  const fetchDashboard = useCallback(async () => {
+    if (!accessToken) return
+    try {
+      const response = await apiFetch<DashboardSummary>(
+        '/dashboard/chef',
+        undefined,
+        accessToken,
+      )
+      setData(response)
+      setError('')
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to load dashboard data.'
+      setError(message)
+    }
+  }, [accessToken])
+
+  useEffect(() => {
+    fetchDashboard().catch(() => null)
+  }, [fetchDashboard])
+
+  const summary = data?.summary
+
   return (
     <div className="space-y-6">
       <div>
@@ -6,6 +51,9 @@ const ChefDashboard = () => {
           Dashboard
         </p>
         <h2 className="mt-2 text-2xl font-semibold">Today's Kitchen Summary</h2>
+        {error ? (
+          <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -13,22 +61,34 @@ const ChefDashboard = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Incoming orders
           </p>
-          <p className="mt-3 text-3xl font-semibold">72</p>
-          <p className="mt-2 text-xs text-muted">+12% from yesterday</p>
+          <p className="mt-3 text-3xl font-semibold">
+            {summary?.incomingOrders ?? 0}
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            {summary?.incomingOrdersDelta ?? 0}% from yesterday
+          </p>
         </div>
         <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Menus completed
           </p>
-          <p className="mt-3 text-3xl font-semibold">58</p>
-          <p className="mt-2 text-xs text-muted">Target 80 menus</p>
+          <p className="mt-3 text-3xl font-semibold">
+            {summary?.menusCompleted ?? 0}
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            Target {summary?.targetMenus ?? 0} menus
+          </p>
         </div>
         <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
           <p className="text-xs uppercase tracking-[0.2em] text-primary">
             Average time
           </p>
-          <p className="mt-3 text-3xl font-semibold text-primary">8m</p>
-          <p className="mt-2 text-xs text-muted">Down 1m from last shift</p>
+          <p className="mt-3 text-3xl font-semibold text-primary">
+            {summary?.avgTimeMinutes ?? 0}m
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            {summary?.avgTimeDeltaMinutes ?? 0}m from last shift
+          </p>
         </div>
       </div>
 
@@ -44,22 +104,13 @@ const ChefDashboard = () => {
               </h3>
             </div>
             <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary">
-              4 items
+              {data?.priority.length ?? 0} items
             </span>
           </div>
           <div className="mt-6 space-y-4">
-            {[
-              { name: 'Iced Matcha', status: 'In progress', time: '08:10' },
-              { name: 'Teriyaki Chicken Rice', status: 'Queue 2', time: '08:22' },
-              { name: 'Tuna Sandwich', status: 'Queue 3', time: '08:30' },
-              {
-                name: 'Palm Sugar Milk Coffee',
-                status: 'Queue 4',
-                time: '08:40',
-              },
-            ].map((item) => (
+            {(data?.priority ?? []).map((item) => (
               <div
-                key={item.name}
+                key={`${item.name}-${item.time}`}
                 className="flex items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 text-sm"
               >
                 <div>
@@ -82,11 +133,7 @@ const ChefDashboard = () => {
             Key ingredient prep
           </h3>
           <div className="mt-6 space-y-4">
-            {[
-              { label: 'Prep vegetables & sauce', progress: 'Done' },
-              { label: 'Batch coffee & tea', progress: 'In progress' },
-              { label: 'Breakfast plating', progress: 'Waiting' },
-            ].map((task) => (
+            {(data?.shiftTimeline ?? []).map((task) => (
               <div
                 key={task.label}
                 className="rounded-2xl border border-border bg-background px-4 py-3 text-sm"

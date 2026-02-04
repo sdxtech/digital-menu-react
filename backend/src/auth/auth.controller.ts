@@ -28,7 +28,8 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@Req() req: AuthenticatedRequest) {
-    const { sub, name, email, roles } = req.user;
-    return { id: sub, name, email, roles };
+    const { sub, name, email, roles, appRole } = req.user;
+    // BACKEND LOGIC: appRole is derived in auth service and returned here.
+    return { id: sub, name, email, roles, appRole };
   }
 }

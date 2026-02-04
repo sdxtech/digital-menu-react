@@ -49,6 +49,19 @@ export class AuthService {
     }
   }
 
+  // BACKEND LOGIC: derive appRole for UI routing (no frontend role parsing).
+  private resolveAppRole(email: string, roles: AppRole[]) {
+    if (roles?.includes(AppRole.Admin)) return 'admin';
+    const normalized = email.trim().toLowerCase();
+    if (normalized.includes('unit') || normalized.includes('manager')) {
+      return 'unit-manager';
+    }
+    if (normalized.includes('store') || normalized.includes('keeper')) {
+      return 'storekeeper';
+    }
+    return 'chef';
+  }
+
   private async issueTokens(sub: string, name: string, email: string, roles: AppRole[]) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
@@ -59,9 +72,10 @@ export class AuthService {
       '7d',
     );
     const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    const appRole = this.resolveAppRole(email, roles);
 
     const accessToken = await this.jwt.signAsync(
-      { sub, name, email, roles },
+      { sub, name, email, roles, appRole },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(

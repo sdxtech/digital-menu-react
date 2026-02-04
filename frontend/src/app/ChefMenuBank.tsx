@@ -1,14 +1,37 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useChefData } from '../lib/chef-data'
+import { useCallback, useEffect, useState } from 'react'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ITEMS_PER_PAGE = 10
+
+type RecipeIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  qty: number
+}
+
+type Recipe = {
+  id?: string
+  _id?: string
+  name: string
+  category: string
+  description?: string
+  price: number
+  portionSize: number
+  status: 'draft' | 'active'
+  approvalStatus: 'pending' | 'approved' | 'rejected'
+  ingredients: RecipeIngredient[]
+}
 
 const statusLabel = (status: 'draft' | 'active') =>
   status === 'active' ? 'Active' : 'Draft'
 
 const ChefMenuBank = () => {
-  const { recipes } = useChefData()
+  const { accessToken } = useAuth()
+  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [categories, setCategories] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilters, setStatusFilters] = useState<Array<'draft' | 'active'>>(
     [],
@@ -17,53 +40,81 @@ const ChefMenuBank = () => {
   const [filterOpen, setFilterOpen] = useState(false)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-
-  const categoryOptions = useMemo(() => {
-    const unique = Array.from(
-      new Set(
-        recipes
-          .map((recipe) => recipe.category.trim())
-          .filter((value) => value.length > 0),
-      ),
-    )
-    return unique.sort((a, b) => a.localeCompare(b))
-  }, [recipes])
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const activeFilterCount = statusFilters.length + categoryFilters.length
 
-  const filteredRecipes = useMemo(() => {
-    const normalized = searchTerm.trim().toLowerCase()
-    return recipes.filter((recipe) => {
-      const byStatus =
-        statusFilters.length === 0 ? true : statusFilters.includes(recipe.status)
-      const byCategory =
-        categoryFilters.length === 0
-          ? true
-          : categoryFilters.includes(recipe.category)
-      const bySearch =
-        !normalized ||
-        recipe.name.toLowerCase().includes(normalized) ||
-        recipe.category.toLowerCase().includes(normalized)
-      return byStatus && byCategory && bySearch
-    })
-  }, [recipes, searchTerm, statusFilters, categoryFilters])
+  // FRONTEND VIEW: fetch filter categories from backend.
+  const fetchCategories = useCallback(async () => {
+    if (!accessToken) return
+    try {
+      const data = await apiFetch<string[]>(
+        '/recipes/categories',
+        undefined,
+        accessToken,
+      )
+      setCategories(data ?? [])
+    } catch {
+      // keep categories empty on failure
+    }
+  }, [accessToken])
 
-  const totalPages = Math.max(1, Math.ceil(filteredRecipes.length / ITEMS_PER_PAGE))
-  const pageStart = (page - 1) * ITEMS_PER_PAGE
-  const pagedRecipes = filteredRecipes.slice(pageStart, pageStart + ITEMS_PER_PAGE)
+  // FRONTEND VIEW: fetch recipes with server-side filters/pagination.
+  const fetchRecipes = useCallback(async () => {
+    if (!accessToken) return
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('page', String(page))
+      params.set('limit', String(ITEMS_PER_PAGE))
+      if (searchTerm.trim()) params.set('search', searchTerm.trim())
+      if (statusFilters.length) {
+        params.set('statuses', statusFilters.join(','))
+      }
+      if (categoryFilters.length) {
+        params.set('categories', categoryFilters.join(','))
+      }
+
+      const data = await apiFetch<{
+        items: Recipe[]
+        total: number
+        page: number
+        limit: number
+        totalPages?: number
+      }>(`/recipes?${params.toString()}`, undefined, accessToken)
+
+      setRecipes(data.items ?? [])
+      setTotalItems(data.total ?? 0)
+      setTotalPages(data.totalPages ?? Math.max(1, Math.ceil((data.total ?? 0) / ITEMS_PER_PAGE)))
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to load recipes.'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken, page, searchTerm, statusFilters, categoryFilters])
+
+  useEffect(() => {
+    fetchCategories().catch(() => null)
+  }, [fetchCategories])
+
+  useEffect(() => {
+    fetchRecipes().catch(() => null)
+  }, [fetchRecipes])
 
   useEffect(() => {
     setPage(1)
   }, [searchTerm, statusFilters, categoryFilters])
 
-  useEffect(() => {
-    setPage((prev) => Math.min(prev, totalPages))
-  }, [totalPages])
-
   const selectedRecipe =
     selectedRecipeId === null
       ? null
-      : recipes.find((item) => item.id === selectedRecipeId) ?? null
+      : recipes.find((item) => (item.id ?? item._id) === selectedRecipeId) ?? null
 
   return (
     <div className="space-y-6">
@@ -159,12 +210,10 @@ const ChefMenuBank = () => {
                   ) : null}
                 </div>
                 <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                  {categoryOptions.length === 0 ? (
-                    <p className="text-xs text-muted">
-                      No categories yet.
-                    </p>
+                  {categories.length === 0 ? (
+                    <p className="text-xs text-muted">No categories yet.</p>
                   ) : (
-                    categoryOptions.map((category) => (
+                    categories.map((category) => (
                       <label
                         key={category}
                         className="flex items-center gap-2 text-sm"
@@ -204,15 +253,21 @@ const ChefMenuBank = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredRecipes.length === 0 ? (
+              {loading ? (
                 <tr className="border-t border-border">
                   <td colSpan={4} className="px-5 py-10 text-center text-muted">
-                    No recipes yet.
+                    Loading recipes...
+                  </td>
+                </tr>
+              ) : recipes.length === 0 ? (
+                <tr className="border-t border-border">
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                    {error ? error : 'No recipes yet.'}
                   </td>
                 </tr>
               ) : (
-                pagedRecipes.map((recipe) => (
-                  <tr key={recipe.id} className="border-t border-border">
+                recipes.map((recipe) => (
+                  <tr key={recipe.id ?? recipe._id} className="border-t border-border">
                     <td className="px-5 py-4 font-medium">{recipe.name}</td>
                     <td className="px-5 py-4">{recipe.category}</td>
                     <td className="px-5 py-4">
@@ -223,7 +278,7 @@ const ChefMenuBank = () => {
                         type="button"
                         onClick={() =>
                           setSelectedRecipeId((prev) =>
-                            prev === recipe.id ? null : recipe.id,
+                            prev === (recipe.id ?? recipe._id) ? null : (recipe.id ?? recipe._id ?? null),
                           )
                         }
                         className="text-xs font-semibold text-primary"
@@ -239,13 +294,13 @@ const ChefMenuBank = () => {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {pagedRecipes.length} of {filteredRecipes.length} recipes
+            Showing {recipes.length} of {totalItems} recipes
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={page === 1}
+              disabled={page === 1 || loading}
               className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
             >
               Prev
@@ -256,7 +311,7 @@ const ChefMenuBank = () => {
             <button
               type="button"
               onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-              disabled={page === totalPages}
+              disabled={page === totalPages || loading}
               className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
             >
               Next
@@ -277,7 +332,9 @@ const ChefMenuBank = () => {
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Category
               </p>
-              <p className="mt-2 text-sm font-medium">{selectedRecipe.category}</p>
+              <p className="mt-2 text-sm font-medium">
+                {selectedRecipe.category}
+              </p>
             </div>
             <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">

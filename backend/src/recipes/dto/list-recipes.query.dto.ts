@@ -11,6 +11,18 @@ export class ListRecipesQueryDto {
   status?: 'draft' | 'active';
 
   @IsOptional()
+  @IsString()
+  statuses?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  categories?: string;
+
+  @IsOptional()
   @IsIn(['pending', 'approved', 'rejected'])
   approvalStatus?: 'pending' | 'approved' | 'rejected';
 
