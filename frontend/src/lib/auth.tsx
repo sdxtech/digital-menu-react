@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { apiFetch } from './api'
 
-export type Role = 'chef' | 'unit-manager' | 'storekeeper'
+export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'admin'
 
 export type User = {
   email: string
@@ -30,10 +30,14 @@ const rolePaths: Record<Role, string> = {
   chef: '/chef',
   'unit-manager': '/unit-manager',
   storekeeper: '/storekeeper',
+  admin: '/admin',
 }
 
 const resolveRoleFromEmail = (email: string): Role => {
   const normalized = email.trim().toLowerCase()
+  if (normalized.includes('admin')) {
+    return 'admin'
+  }
   if (normalized.includes('unit') || normalized.includes('manager')) {
     return 'unit-manager'
   }
@@ -73,9 +77,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       body: JSON.stringify({ email, password }),
     })
 
+    let nextRole = resolveRoleFromEmail(email)
+    try {
+      const me = await apiFetch<{ roles?: string[] }>(
+        '/auth/me',
+        undefined,
+        nextAccessToken,
+      )
+      if (me?.roles?.includes('admin')) {
+        nextRole = 'admin'
+      }
+    } catch {
+      // ignore auth/me failures and fallback to email-based role
+    }
+
     const nextUser: User = {
       email,
-      role: resolveRoleFromEmail(email),
+      role: nextRole,
     }
     setUser(nextUser)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))

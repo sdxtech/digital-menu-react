@@ -12,6 +12,7 @@ import ChefStoreRequest from './app/ChefStoreRequest'
 import StorekeeperPage from './app/StorekeeperPage'
 import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerPage from './app/UnitManagerPage'
+import AdminUsersPage from './app/AdminUsersPage'
 
 const RequireAuth = () => {
   const { user } = useAuth()
@@ -74,6 +75,9 @@ function App() {
         <Route element={<RequireRole role="storekeeper" />}>
           <Route path="/storekeeper" element={<StorekeeperPage />} />
           <Route path="/storekeeper/history" element={<StorekeeperHistoryPage />} />
+        </Route>
+        <Route element={<RequireRole role="admin" />}>
+          <Route path="/admin" element={<AdminUsersPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />
