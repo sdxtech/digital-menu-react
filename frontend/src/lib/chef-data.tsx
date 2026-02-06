@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { apiFetch } from './api'
-import { useAuth } from './auth'
+import { readStoredToken, useAuth } from './auth'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type RecipeStatus = 'draft' | 'active'
@@ -106,6 +106,7 @@ type ChefDataContextValue = ChefDataState & {
   rejectMenuProduction: (id: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
+  searchRawMaterials: (search: string, limit?: number) => Promise<RawMaterial[]>
   addRawMaterial: (input: AddRawMaterialInput) => Promise<void>
   updateRawMaterial: (id: string, input: UpdateRawMaterialInput) => Promise<void>
   importRawMaterialsFromExcel: (file: File) => Promise<string>
@@ -171,6 +172,14 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   approvalStatus: item.approvalStatus ?? 'pending',
   storeRequestStatus: item.storeRequestStatus ?? 'not-requested',
   createdAt: item.createdAt ?? new Date().toISOString(),
+})
+
+const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
+  id: item.id || item._id || makeId('raw-material'),
+  productCode: item.productCode,
+  name: item.name,
+  unitOfMeasures: item.unitOfMeasures,
+  createdAt: item.createdAt,
 })
 
 const upsertById = <T extends { id: string }>(items: T[], next: T) => {
@@ -421,7 +430,8 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchRawMaterials = useCallback(
     async (page = 1, limit = 10, search?: string) => {
-      if (!accessToken) {
+      const token = accessToken ?? readStoredToken()
+      if (!token) {
         setRawMaterialsMeta((prev) => ({
           ...prev,
           loading: false,
@@ -430,6 +440,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         return
       }
 
+      const safeLimit = Math.min(limit, 100)
       setRawMaterialsMeta((prev) => ({
         ...prev,
         loading: true,
@@ -439,7 +450,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
-        params.set('limit', String(limit))
+        params.set('limit', String(safeLimit))
         if (search?.trim()) params.set('search', search.trim())
 
         const data = await apiFetch<{
@@ -448,15 +459,9 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
           page: number
           limit: number
           totalPages?: number
-        }>(`/raw-materials?${params.toString()}`, undefined, accessToken)
+        }>(`/raw-materials?${params.toString()}`, undefined, token)
 
-        const mapped = (data.items ?? []).map((item) => ({
-          id: item.id || item._id || makeId('raw-material'),
-          productCode: item.productCode,
-          name: item.name,
-          unitOfMeasures: item.unitOfMeasures,
-          createdAt: item.createdAt,
-        }))
+        const mapped = (data.items ?? []).map(mapRawMaterial)
 
         setState((prev) => ({
           ...prev,
@@ -464,10 +469,11 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         }))
         setRawMaterialsMeta({
           page: data.page ?? page,
-          limit: data.limit ?? limit,
+          limit: data.limit ?? safeLimit,
           total: data.total ?? 0,
           totalPages:
-            data.totalPages ?? Math.max(1, Math.ceil((data.total ?? 0) / limit)),
+            data.totalPages ??
+            Math.max(1, Math.ceil((data.total ?? 0) / safeLimit)),
           loading: false,
           error: '',
         })
@@ -480,6 +486,30 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
           error: message,
         }))
       }
+    },
+    [accessToken],
+  )
+
+  const searchRawMaterials = useCallback(
+    async (search: string, limit = 5) => {
+      const token = accessToken ?? readStoredToken()
+      if (!token) return []
+
+      const safeLimit = Math.min(limit, 100)
+      const params = new URLSearchParams()
+      params.set('page', '1')
+      params.set('limit', String(safeLimit))
+      if (search?.trim()) params.set('search', search.trim())
+
+      const data = await apiFetch<{
+        items: Array<RawMaterial & { _id?: string }>
+        total: number
+        page: number
+        limit: number
+        totalPages?: number
+      }>(`/raw-materials?${params.toString()}`, undefined, token)
+
+      return (data.items ?? []).map(mapRawMaterial)
     },
     [accessToken],
   )
@@ -530,6 +560,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       rejectMenuProduction,
       importRawMaterialsFromExcel,
       fetchRawMaterials,
+      searchRawMaterials,
       rawMaterialsMeta,
       markStoreRequested,
       markStoreFulfilled,
@@ -549,6 +580,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       importRecipesFromExcel,
       markStoreFulfilled,
       markStoreRequested,
+      searchRawMaterials,
       updateRawMaterial,
       rawMaterialsMeta,
       rejectMenuProduction,

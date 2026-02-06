@@ -1,9 +1,10 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import {
   useChefData,
+  type RawMaterial,
   type RecipeIngredient,
 } from '../lib/chef-data'
-import { unitOfMeasuresOptions } from '../lib/unit-of-measures'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type RecipeForm = {
   name: string
@@ -39,8 +40,7 @@ const ChefCreateMenu = () => {
   const {
     createRecipe,
     importRecipesFromExcel,
-    rawMaterials,
-    fetchRawMaterials,
+    searchRawMaterials,
   } = useChefData()
 
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
@@ -48,26 +48,54 @@ const ChefCreateMenu = () => {
     createIngredientRow(),
   ])
 
+  const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
 
+  const searchTimeoutRef = useRef<number | null>(null)
+  const searchRequestRef = useRef(0)
+  const isMountedRef = useRef(true)
+
   useEffect(() => {
-    fetchRawMaterials(1, 500).catch(() => null)
-  }, [fetchRawMaterials])
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const requestId = ++searchRequestRef.current
+    searchRawMaterials('', 5)
+      .then((results) => {
+        if (!isMountedRef.current || searchRequestRef.current !== requestId) {
+          return
+        }
+        setRawMaterialOptions(results.slice(0, 5))
+      })
+      .catch(() => {
+        if (!isMountedRef.current || searchRequestRef.current !== requestId) {
+          return
+        }
+        setRawMaterialOptions([])
+      })
+  }, [searchRawMaterials])
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
   const findRawMaterialByCode = (value: string) => {
     const normalized = normalizeValue(value)
-    return rawMaterials.find(
+    return rawMaterialOptions.find(
       (item) => normalizeValue(item.productCode) === normalized,
     )
   }
   const findRawMaterialByName = (value: string) => {
     const normalized = normalizeValue(value)
-    return rawMaterials.find(
+    return rawMaterialOptions.find(
       (item) => normalizeValue(item.name) === normalized,
     )
   }
@@ -113,6 +141,104 @@ const ChefCreateMenu = () => {
         return next
       }),
     )
+  }
+
+  const rankRawMaterials = (query: string, items: RawMaterial[]) => {
+    const normalized = normalizeValue(query)
+    return [...items].sort((a, b) => {
+      const aCode = normalizeValue(a.productCode)
+      const bCode = normalizeValue(b.productCode)
+      const aName = normalizeValue(a.name)
+      const bName = normalizeValue(b.name)
+
+      const aScore =
+        aCode === normalized || aName === normalized
+          ? 3
+          : aCode.startsWith(normalized) || aName.startsWith(normalized)
+            ? 2
+            : 1
+      const bScore =
+        bCode === normalized || bName === normalized
+          ? 3
+          : bCode.startsWith(normalized) || bName.startsWith(normalized)
+            ? 2
+            : 1
+
+      if (aScore !== bScore) return bScore - aScore
+      return aName.localeCompare(bName)
+    })
+  }
+
+  const scheduleRawMaterialSearch = (
+    query: string,
+    target?: { rowId: string; field: 'productCode' | 'name' },
+  ) => {
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+    }
+
+    const requestId = ++searchRequestRef.current
+    const trimmed = query.trim()
+    const targetMeta = trimmed && target ? { ...target } : null
+    const delay = trimmed ? 200 : 0
+    const fetchLimit = trimmed ? 40 : 5
+
+    searchTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        const results = await searchRawMaterials(trimmed, fetchLimit)
+        if (!isMountedRef.current || searchRequestRef.current !== requestId) {
+          return
+        }
+        const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
+        setRawMaterialOptions(ranked.slice(0, 5))
+
+        if (targetMeta) {
+          setIngredientRows((prev) =>
+            prev.map((row) => {
+              if (row.id !== targetMeta.rowId) return row
+              const matched =
+                targetMeta.field === 'productCode'
+                  ? results.find(
+                      (item) =>
+                        normalizeValue(item.productCode) ===
+                        normalizeValue(row.productCode),
+                    )
+                  : results.find(
+                      (item) =>
+                        normalizeValue(item.name) === normalizeValue(row.name),
+                    )
+              if (!matched) return row
+              return {
+                ...row,
+                productCode: matched.productCode,
+                name: matched.name,
+                unitOfMeasures: matched.unitOfMeasures,
+              }
+            }),
+          )
+        }
+      } catch {
+        if (!isMountedRef.current || searchRequestRef.current !== requestId) {
+          return
+        }
+        setRawMaterialOptions([])
+      }
+    }, delay)
+  }
+
+  const handleIngredientInputChange = <K extends keyof IngredientRow>(
+    id: string,
+    field: K,
+    value: IngredientRow[K],
+  ) => {
+    updateIngredientRow(id, field, value)
+    if ((field === 'productCode' || field === 'name') && typeof value === 'string') {
+      scheduleRawMaterialSearch(value, { rowId: id, field })
+    }
+  }
+
+  const handleRawMaterialFocus = () => {
+    scheduleRawMaterialSearch('')
   }
 
   const handleAddIngredientRow = () => {
@@ -380,7 +506,7 @@ const ChefCreateMenu = () => {
 
           <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
             <datalist id="raw-material-code-options">
-              {rawMaterials.map((item) => (
+              {rawMaterialOptions.map((item) => (
                 <option
                   key={`code-${item.id}`}
                   value={item.productCode}
@@ -389,7 +515,7 @@ const ChefCreateMenu = () => {
               ))}
             </datalist>
             <datalist id="raw-material-name-options">
-              {rawMaterials.map((item) => (
+              {rawMaterialOptions.map((item) => (
                 <option
                   key={`name-${item.id}`}
                   value={item.name}
@@ -428,12 +554,14 @@ const ChefCreateMenu = () => {
                         type="text"
                         value={row.productCode}
                         onChange={(event) =>
-                          updateIngredientRow(
+                          handleIngredientInputChange(
                             row.id,
                             'productCode',
                             event.target.value,
                           )
                         }
+                        onFocus={handleRawMaterialFocus}
+                        autoComplete="off"
                         placeholder="PRD-001"
                         list="raw-material-code-options"
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
@@ -444,8 +572,14 @@ const ChefCreateMenu = () => {
                         type="text"
                         value={row.name}
                         onChange={(event) =>
-                          updateIngredientRow(row.id, 'name', event.target.value)
+                          handleIngredientInputChange(
+                            row.id,
+                            'name',
+                            event.target.value,
+                          )
                         }
+                        onFocus={handleRawMaterialFocus}
+                        autoComplete="off"
                         placeholder="Oat Milk"
                         list="raw-material-name-options"
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
@@ -465,24 +599,18 @@ const ChefCreateMenu = () => {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        value={row.unitOfMeasures}
-                        onChange={(event) =>
-                          updateIngredientRow(
-                            row.id,
-                            'unitOfMeasures',
-                            event.target.value,
-                          )
+                      <input
+                        type="text"
+                        value={
+                          row.unitOfMeasures
+                            ? formatUnitLabel(row.unitOfMeasures)
+                            : ''
                         }
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      >
-                        <option value="">Select a unit</option>
-                        {unitOfMeasuresOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        readOnly
+                        aria-readonly="true"
+                        placeholder="Auto-filled from raw material"
+                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-foreground outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      />
                     </td>
                   </tr>
                 ))}

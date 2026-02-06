@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { apiFetch } from './api'
 
 export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'admin'
@@ -45,14 +38,19 @@ const readStoredUser = (): User | null => {
   }
 }
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
+export const readStoredToken = (): string | null => {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
 
-  useEffect(() => {
-    setUser(readStoredUser())
-    setAccessToken(localStorage.getItem(TOKEN_KEY))
-  }, [])
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<User | null>(() => readStoredUser())
+  const [accessToken, setAccessToken] = useState<string | null>(() =>
+    readStoredToken(),
+  )
 
   const login = async (email: string, password: string) => {
     const { accessToken: nextAccessToken, refreshToken } = await apiFetch<{
