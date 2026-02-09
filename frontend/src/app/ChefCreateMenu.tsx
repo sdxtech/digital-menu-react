@@ -314,7 +314,7 @@ const ChefCreateMenu = () => {
 
     const portionSize = Number(portionRaw)
     if (!Number.isFinite(portionSize) || portionSize <= 0) {
-      setSubmitError('Base servings must be a number greater than 0.')
+      setSubmitError('Base pax must be a number greater than 0.')
       setSubmitMessage('')
       return
     }
@@ -464,9 +464,7 @@ const ChefCreateMenu = () => {
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground">
-              Base servings
-            </label>
+            <label className="text-sm font-medium text-foreground">Base pax</label>
             <input
               type="number"
               min={1}
@@ -479,7 +477,7 @@ const ChefCreateMenu = () => {
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
             <p className="mt-2 text-xs text-muted">
-              Enter how many servings this recipe yields (e.g., 1 or 10).
+              Enter how many pax this recipe yields (e.g., 1 or 10).
             </p>
           </div>
           <div className="sm:col-span-2">
@@ -526,16 +524,24 @@ const ChefCreateMenu = () => {
             <table className="min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-14 px-2 py-3 font-semibold">No</th>
                   <th className="w-20 px-2 py-3 font-semibold" />
-                  <th className="px-4 py-3 font-semibold">Product code</th>
-                  <th className="px-4 py-3 font-semibold">Name</th>
-                  <th className="px-4 py-3 font-semibold">Qty</th>
-                  <th className="px-4 py-3 font-semibold">Unit of Measures</th>
+                  <th className="px-4 py-3 font-semibold w-[160px]">
+                    Product code
+                  </th>
+                  <th className="px-4 py-3 font-semibold min-w-[260px]">
+                    Name
+                  </th>
+                  <th className="px-4 py-3 font-semibold w-[120px]">Qty</th>
+                  <th className="px-4 py-3 font-semibold w-[180px]">
+                    Unit of Measures
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {ingredientRows.map((row) => (
+                {ingredientRows.map((row, index) => (
                   <tr key={row.id} className="border-t border-border">
+                    <td className="px-2 py-3 text-sm text-muted">{index + 1}</td>
                     <td className="px-2 py-3">
                       <div className="flex justify-center">
                         <button
@@ -582,7 +588,8 @@ const ChefCreateMenu = () => {
                         autoComplete="off"
                         placeholder="Oat Milk"
                         list="raw-material-name-options"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        size={Math.max(24, row.name.length)}
+                        className="rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>
                     <td className="px-4 py-3">
@@ -609,13 +616,13 @@ const ChefCreateMenu = () => {
                         readOnly
                         aria-readonly="true"
                         placeholder="Auto-filled from raw material"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-foreground outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>
                   </tr>
                 ))}
                 <tr className="border-t border-border">
-                  <td colSpan={5} className="px-4 py-3">
+                  <td colSpan={6} className="px-4 py-3">
                     <div className="flex justify-center">
                       <button
                         type="button"

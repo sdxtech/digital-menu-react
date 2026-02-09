@@ -246,6 +246,7 @@ const ChefMenuBank = () => {
           <table className="min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-16 px-5 py-4 font-semibold">No</th>
                 <th className="px-5 py-4 font-semibold">Name</th>
                 <th className="px-5 py-4 font-semibold">Category</th>
                 <th className="px-5 py-4 font-semibold">Recipe status</th>
@@ -255,19 +256,22 @@ const ChefMenuBank = () => {
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
                     Loading recipes...
                   </td>
                 </tr>
               ) : recipes.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
                     {error ? error : 'No recipes yet.'}
                   </td>
                 </tr>
               ) : (
-                recipes.map((recipe) => (
+                recipes.map((recipe, index) => (
                   <tr key={recipe.id ?? recipe._id} className="border-t border-border">
+                    <td className="px-5 py-4 text-sm text-muted">
+                      {(page - 1) * ITEMS_PER_PAGE + index + 1}
+                    </td>
                     <td className="px-5 py-4 font-medium">{recipe.name}</td>
                     <td className="px-5 py-4">{recipe.category}</td>
                     <td className="px-5 py-4">
@@ -346,7 +350,7 @@ const ChefMenuBank = () => {
             </div>
             <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                Base servings
+                Base pax
               </p>
               <p className="mt-2 text-sm font-medium">
                 {selectedRecipe.portionSize}
@@ -371,6 +375,7 @@ const ChefMenuBank = () => {
                 <table className="min-w-full text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                      <th className="w-16 px-4 py-3 font-semibold">No</th>
                       <th className="px-4 py-3 font-semibold">Product code</th>
                       <th className="px-4 py-3 font-semibold">Ingredient name</th>
                       <th className="px-4 py-3 font-semibold">Qty</th>
@@ -383,6 +388,9 @@ const ChefMenuBank = () => {
                         key={`${ingredient.productCode}-${idx}`}
                         className="border-t border-border"
                       >
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {idx + 1}
+                        </td>
                         <td className="px-4 py-3">{ingredient.productCode}</td>
                         <td className="px-4 py-3">{ingredient.name}</td>
                         <td className="px-4 py-3">{ingredient.qty}</td>

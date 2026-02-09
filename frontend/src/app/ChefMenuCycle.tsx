@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const TIMELINE_ITEMS_PER_PAGE = 10
 
@@ -62,6 +63,7 @@ const ChefMenuCycle = () => {
   })
   const [timelineTotalPages, setTimelineTotalPages] = useState(1)
   const [timelineLoading, setTimelineLoading] = useState(false)
+  const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
 
   const recipeById = useMemo(() => {
     return recipes.reduce<Record<string, (typeof recipes)[number]>>((acc, recipe) => {
@@ -117,6 +119,18 @@ const ChefMenuCycle = () => {
     setExpandedDates((prev) =>
       prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
     )
+  }
+
+  const toggleMenuRowDetails = (id: string) => {
+    setExpandedMenuRows((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    )
+  }
+
+  const formatQuantity = (value: number) => {
+    if (!Number.isFinite(value)) return '0'
+    if (Number.isInteger(value)) return String(value)
+    return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
   const updateRowRecipe = (id: string, recipeId: string) => {
@@ -302,67 +316,197 @@ const ChefMenuCycle = () => {
           <table className="min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-14 px-2 py-3 font-semibold">No</th>
                 <th className="w-20 px-2 py-3 font-semibold" />
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Portion</th>
+                <th className="px-4 py-3 font-semibold">Recipe details</th>
               </tr>
             </thead>
             <tbody>
-              {menuRows.map((row) => {
+              {menuRows.map((row, index) => {
                 const selectedRecipe = recipeById[row.recipeId]
+                const isDetailsOpen = expandedMenuRows.includes(row.id)
+                const ingredients = selectedRecipe?.ingredients ?? []
                 return (
-                  <tr key={row.id} className="border-t border-border">
-                    <td className="px-2 py-3">
-                      <div className="flex justify-center">
+                  <Fragment key={row.id}>
+                    <tr className="border-t border-border">
+                      <td className="px-2 py-3 text-sm text-muted">{index + 1}</td>
+                      <td className="px-2 py-3">
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMenuRow(row.id)}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-danger/40 bg-surface text-base font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                            aria-label="Remove menu row"
+                            title="Remove menu row"
+                          >
+                            X
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={row.recipeId}
+                          onChange={(event) =>
+                            updateRowRecipe(row.id, event.target.value)
+                          }
+                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        >
+                          <option value="">Select menu</option>
+                          {recipes.map((recipe) => (
+                            <option key={recipe.id} value={recipe.id}>
+                              {recipe.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted">
+                        {selectedRecipe?.category ?? '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={row.portion === '' ? '' : String(row.portion)}
+                          onChange={(event) =>
+                            updateRowPortion(row.id, event.target.value)
+                          }
+                          placeholder="Example: 10"
+                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
                         <button
                           type="button"
-                          onClick={() => handleRemoveMenuRow(row.id)}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-danger/40 bg-surface text-base font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
-                          aria-label="Remove menu row"
-                          title="Remove menu row"
+                          disabled={!selectedRecipe}
+                          onClick={() => {
+                            if (!selectedRecipe) return
+                            toggleMenuRowDetails(row.id)
+                          }}
+                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-expanded={isDetailsOpen}
                         >
-                          X
+                          {isDetailsOpen ? 'Hide details' : 'View details'}
                         </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={row.recipeId}
-                        onChange={(event) =>
-                          updateRowRecipe(row.id, event.target.value)
-                        }
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      >
-                        <option value="">Select menu</option>
-                        {recipes.map((recipe) => (
-                          <option key={recipe.id} value={recipe.id}>
-                            {recipe.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-muted">
-                      {selectedRecipe?.category ?? '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={row.portion === '' ? '' : String(row.portion)}
-                        onChange={(event) =>
-                          updateRowPortion(row.id, event.target.value)
-                        }
-                        placeholder="Example: 10"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      />
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {isDetailsOpen ? (
+                      <tr className="border-t border-border bg-background">
+                        <td colSpan={6} className="px-4 py-4">
+                          {!selectedRecipe ? (
+                            <div className="rounded-2xl border border-border bg-surface p-4 text-sm text-muted">
+                              Select a menu to view recipe details.
+                            </div>
+                          ) : (
+                            <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
+                              <div className="rounded-2xl border border-border bg-surface p-4">
+                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                  Recipe
+                                </p>
+                                <h4 className="mt-2 text-base font-semibold">
+                                  {selectedRecipe.name}
+                                </h4>
+                                <p className="mt-1 text-xs text-muted">
+                                  {selectedRecipe.category}
+                                </p>
+                                {selectedRecipe.description ? (
+                                  <p className="mt-3 text-sm text-muted">
+                                    {selectedRecipe.description}
+                                  </p>
+                                ) : (
+                                  <p className="mt-3 text-sm text-muted">
+                                    No description added.
+                                  </p>
+                                )}
+                                <div className="mt-4 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
+                                    Base pax: {selectedRecipe.portionSize}
+                                  </span>
+                                  <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-muted">
+                                    Ingredients: {ingredients.length}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-border bg-surface p-4">
+                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                  Ingredients
+                                </p>
+                                <h4 className="mt-2 text-base font-semibold">
+                                  Recipe ingredients
+                                </h4>
+                                <p className="mt-1 text-xs text-muted">
+                                  Qty listed per base pax.
+                                </p>
+                                {ingredients.length === 0 ? (
+                                  <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                    No ingredients for this recipe yet.
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                                    <table className="min-w-full text-sm">
+                                      <thead className="bg-background">
+                                        <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                          <th className="w-12 px-4 py-3 font-semibold">
+                                            No
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Product code
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Ingredient name
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Qty
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Unit
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {ingredients.map((ingredient, idx) => (
+                                          <tr
+                                            key={`${ingredient.productCode}-${idx}`}
+                                            className="border-t border-border"
+                                          >
+                                            <td className="px-4 py-3 text-sm text-muted">
+                                              {idx + 1}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {ingredient.productCode}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {ingredient.name}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {formatQuantity(ingredient.qty)}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {formatUnitLabel(
+                                                ingredient.unitOfMeasures,
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 )
               })}
               <tr className="border-t border-border">
-                <td colSpan={4} className="px-4 py-3">
+                <td colSpan={6} className="px-4 py-3">
                   <div className="flex justify-center">
                     <button
                       type="button"
@@ -453,6 +597,7 @@ const ChefMenuCycle = () => {
                       <table className="min-w-full bg-white text-sm">
                         <thead className="bg-background">
                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                            <th className="w-12 px-4 py-3 font-semibold">No</th>
                             <th className="px-4 py-3 font-semibold">Menu</th>
                             <th className="px-4 py-3 font-semibold">Category</th>
                             <th className="px-4 py-3 font-semibold">Portion</th>
@@ -460,8 +605,11 @@ const ChefMenuCycle = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {group.items.map((item) => (
+                          {group.items.map((item, index) => (
                             <tr key={item.id} className="border-t border-border">
+                              <td className="px-4 py-3 text-sm text-muted">
+                                {index + 1}
+                              </td>
                               <td className="px-4 py-3">{item.menuName}</td>
                               <td className="px-4 py-3">{item.category}</td>
                               <td className="px-4 py-3">{item.portion}</td>

@@ -9,8 +9,10 @@ import ChefMenuBank from './app/ChefMenuBank'
 import ChefMenuCycle from './app/ChefMenuCycle'
 import ChefRawMaterial from './app/ChefRawMaterial'
 import ChefStoreRequest from './app/ChefStoreRequest'
+import StorekeeperLayout from './app/StorekeeperLayout'
 import StorekeeperPage from './app/StorekeeperPage'
 import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
+import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerPage from './app/UnitManagerPage'
 import AdminUsersPage from './app/AdminUsersPage'
 
@@ -70,11 +72,15 @@ function App() {
           </Route>
         </Route>
         <Route element={<RequireRole role="unit-manager" />}>
-          <Route path="/unit-manager" element={<UnitManagerPage />} />
+          <Route path="/unit-manager" element={<UnitManagerLayout />}>
+            <Route index element={<UnitManagerPage />} />
+          </Route>
         </Route>
         <Route element={<RequireRole role="storekeeper" />}>
-          <Route path="/storekeeper" element={<StorekeeperPage />} />
-          <Route path="/storekeeper/history" element={<StorekeeperHistoryPage />} />
+          <Route path="/storekeeper" element={<StorekeeperLayout />}>
+            <Route index element={<StorekeeperPage />} />
+            <Route path="history" element={<StorekeeperHistoryPage />} />
+          </Route>
         </Route>
         <Route element={<RequireRole role="admin" />}>
           <Route path="/admin" element={<AdminUsersPage />} />

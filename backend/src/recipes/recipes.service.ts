@@ -77,6 +77,22 @@ export class RecipesService {
       this.recipeModel.countDocuments(filter),
     ]);
 
+    const needsSync = items.some(
+      (item) =>
+        item.approvalStatus === 'approved' && item.status !== 'active',
+    );
+    if (needsSync) {
+      await this.recipeModel.updateMany(
+        { approvalStatus: 'approved', status: { $ne: 'active' } },
+        { $set: { status: 'active' } },
+      );
+      items.forEach((item) => {
+        if (item.approvalStatus === 'approved' && item.status !== 'active') {
+          item.status = 'active';
+        }
+      });
+    }
+
     return {
       items,
       total,

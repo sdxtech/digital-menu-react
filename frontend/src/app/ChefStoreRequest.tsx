@@ -129,6 +129,7 @@ const ChefStoreRequest = () => {
         <table className="min-w-full text-sm">
           <thead className="bg-background">
             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+              <th className="w-16 px-5 py-4 font-semibold">No</th>
               <th className="px-5 py-4 font-semibold">Production date</th>
               <th className="px-5 py-4 font-semibold">Approval status</th>
             </tr>
@@ -136,20 +137,21 @@ const ChefStoreRequest = () => {
           <tbody>
             {loading ? (
               <tr className="border-t border-border">
-                <td colSpan={2} className="px-5 py-10 text-center text-muted">
+                <td colSpan={3} className="px-5 py-10 text-center text-muted">
                   Loading store requests...
                 </td>
               </tr>
             ) : groups.length === 0 ? (
               <tr className="border-t border-border">
-                <td colSpan={2} className="px-5 py-10 text-center text-muted">
+                <td colSpan={3} className="px-5 py-10 text-center text-muted">
                   No production menus approved by the Unit Manager yet.
                 </td>
               </tr>
             ) : (
-              groups.map((group) => {
+              groups.map((group, index) => {
                 const date = group.date
                 const items = group.items
+                const summaryItems = group.summary ?? []
                 const isExpanded = expandedDates.includes(date)
 
                 return (
@@ -158,6 +160,9 @@ const ChefStoreRequest = () => {
                       className="border-t border-border cursor-pointer"
                       onClick={() => toggleExpanded(date)}
                     >
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {index + 1}
+                      </td>
                       <td className="px-5 py-4">{date}</td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -182,7 +187,7 @@ const ChefStoreRequest = () => {
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={2} className="px-5 py-5">
+                        <td colSpan={3} className="px-5 py-5">
                           <div className="space-y-6">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -249,7 +254,7 @@ const ChefStoreRequest = () => {
                                       Ingredient requirements
                                     </h4>
                                     <p className="mt-1 text-xs text-muted">
-                                      Qty calculated from base servings (
+                                      Qty calculated from base pax (
                                       {menu.portionSize ?? 1}) for {menu.portion}{' '}
                                       portions
                                     </p>
@@ -269,6 +274,9 @@ const ChefStoreRequest = () => {
                                         <table className="min-w-full text-sm">
                                           <thead className="bg-background">
                                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                              <th className="w-12 px-4 py-3 font-semibold">
+                                                No
+                                              </th>
                                               <th className="px-4 py-3 font-semibold">
                                                 Product code
                                               </th>
@@ -289,6 +297,9 @@ const ChefStoreRequest = () => {
                                                 key={`${ingredient.productCode}-${idx}`}
                                                 className="border-t border-border"
                                               >
+                                                <td className="px-4 py-3 text-sm text-muted">
+                                                  {idx + 1}
+                                                </td>
                                                 <td className="px-4 py-3">
                                                   {ingredient.productCode}
                                                 </td>
@@ -313,6 +324,74 @@ const ChefStoreRequest = () => {
                                 </div>
                               )
                             })}
+
+                            <div className="rounded-2xl border border-border bg-surface p-4">
+                              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                Summary
+                              </p>
+                              <h4 className="mt-2 text-base font-semibold">
+                                Ingredient summary
+                              </h4>
+                              <p className="mt-1 text-xs text-muted">
+                                Combined ingredients for all menus on {date}.
+                              </p>
+
+                              {summaryItems.length === 0 ? (
+                                <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                  No ingredient summary available yet.
+                                </div>
+                              ) : (
+                                <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                                  <table className="min-w-full text-sm">
+                                    <thead className="bg-background">
+                                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                        <th className="w-12 px-4 py-3 font-semibold">
+                                          No
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Product code
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Ingredient name
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Qty
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Unit
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {summaryItems.map((ingredient, idx) => (
+                                        <tr
+                                          key={`${ingredient.productCode}-${idx}`}
+                                          className="border-t border-border"
+                                        >
+                                          <td className="px-4 py-3 text-sm text-muted">
+                                            {idx + 1}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.productCode}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.name}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {formatQuantity(ingredient.qty)}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {formatUnitLabel(
+                                              ingredient.unitOfMeasures,
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>

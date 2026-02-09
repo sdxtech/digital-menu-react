@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
-import AppShell from '../components/AppShell'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
@@ -24,11 +22,8 @@ type MenuProduction = {
   approvalStatus: 'pending' | 'approved' | 'rejected'
 }
 
-const navItems = [{ label: 'Approval Center', to: '/unit-manager' }]
-
 const UnitManagerPage = () => {
-  const { user, accessToken, logout } = useAuth()
-  const navigate = useNavigate()
+  const { accessToken } = useAuth()
   const {
     approveRecipe,
     rejectRecipe,
@@ -36,10 +31,12 @@ const UnitManagerPage = () => {
     rejectMenuProduction,
   } = useChefData()
   const [actionError, setActionError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
   const [pendingRecipes, setPendingRecipes] = useState<Recipe[]>([])
   const [pendingMenuProductions, setPendingMenuProductions] = useState<
     MenuProduction[]
   >([])
+  const [expandedDates, setExpandedDates] = useState<string[]>([])
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
@@ -68,253 +65,274 @@ const UnitManagerPage = () => {
 
   useEffect(() => {
     setActionError('')
+    setActionMessage('')
     fetchPending().catch(() => null)
   }, [fetchPending])
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login', { replace: true })
+  const toggleExpandedDate = (date: string) => {
+    setExpandedDates((prev) =>
+      prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
+    )
+  }
+
+  const menuProductionGroups = useMemo(() => {
+    const grouped = new Map<string, MenuProduction[]>()
+    pendingMenuProductions.forEach((item) => {
+      const date = item.productionDate || 'Unknown date'
+      const items = grouped.get(date) ?? []
+      items.push(item)
+      grouped.set(date, items)
+    })
+    return Array.from(grouped.entries())
+      .map(([date, items]) => ({ date, items }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [pendingMenuProductions])
+
+  const handleBulkApproval = async (
+    date: string,
+    items: MenuProduction[],
+    action: 'approve' | 'reject',
+  ) => {
+    if (items.length === 0) return
+    setActionError('')
+    setActionMessage('')
+
+    const requests = items.map((item) => {
+      const id = item.id ?? item._id ?? ''
+      if (!id) {
+        return Promise.reject(new Error('Menu production id is missing.'))
+      }
+      return action === 'approve'
+        ? approveMenuProduction(id)
+        : rejectMenuProduction(id)
+    })
+
+    const results = await Promise.allSettled(requests)
+    const successCount = results.filter((result) => result.status === 'fulfilled')
+      .length
+    const failedCount = results.length - successCount
+
+    if (successCount > 0) {
+      setActionMessage(
+        `${successCount} menu ${action === 'approve' ? 'approved' : 'rejected'} for ${date}.`,
+      )
+    }
+    if (failedCount > 0) {
+      setActionError(
+        `${failedCount} menu failed to ${action} for ${date}.`,
+      )
+    }
+
+    fetchPending().catch(() => null)
   }
 
   return (
-    <AppShell>
-      <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-white shadow-[0_12px_30px_rgba(11,41,87,0.25)]">
-              UM
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                Unit Manager Workspace
-              </p>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                Approval Center
-              </h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-border bg-surface px-4 py-2 text-xs font-medium text-muted shadow-sm">
-              {user?.email ?? 'unit.manager@brand.com'}
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-2xl border border-border bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:bg-primary-soft"
-            >
-              Logout
-            </button>
-          </div>
-        </header>
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs uppercase tracking-[0.3em] text-muted">
+          Approval Center
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold">
+          Review pending approvals
+        </h2>
+        <p className="mt-2 text-sm text-muted">
+          Review recipes and production menus from the Chef team.
+        </p>
+        {actionError ? (
+          <p className="mt-2 text-xs font-medium text-red-600">
+            {actionError}
+          </p>
+        ) : null}
+        {actionMessage ? (
+          <p className="mt-2 text-xs font-medium text-primary">
+            {actionMessage}
+          </p>
+        ) : null}
+      </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <aside className="lg:col-span-3">
-            <div className="rounded-3xl border border-border bg-surface p-5 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                Role
-              </p>
-              <h2 className="mt-2 text-lg font-semibold">Unit Manager</h2>
-              <p className="mt-3 text-xs text-muted">
-                Review and approve recipes and production menus.
-              </p>
-            </div>
-
-            <nav className="mt-5 space-y-2 rounded-3xl border border-border bg-surface p-4 shadow-sm">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      'flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-medium transition',
-                      isActive
-                        ? 'bg-primary text-white shadow-[0_12px_30px_rgba(11,41,87,0.25)]'
-                        : 'bg-background text-foreground hover:bg-primary-soft',
-                    ].join(' ')
-                  }
-                >
-                  <span>{item.label}</span>
-                  <span className="text-xs opacity-70">-&gt;</span>
-                </NavLink>
-              ))}
-            </nav>
-          </aside>
-
-          <main className="space-y-6 lg:col-span-9">
-            <div>
-              <p className="text-sm text-muted">
-                Review recipes and production menus from the Chef team.
-              </p>
-              {actionError ? (
-                <p className="mt-2 text-xs font-medium text-red-600">
-                  {actionError}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Approval Recipe</h2>
-              <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
-                <table className="min-w-full bg-white text-sm">
-                  <thead className="bg-background">
-                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                      <th className="px-4 py-3 font-semibold">Name</th>
-                      <th className="px-4 py-3 font-semibold">Category</th>
-                      <th className="px-4 py-3 font-semibold">Recipe status</th>
-                      <th className="px-4 py-3 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingRecipes.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="px-4 py-6 text-center text-muted"
+      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Approval Recipe</h2>
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+          <table className="min-w-full bg-white text-sm">
+            <thead className="bg-background">
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-12 px-4 py-3 font-semibold">No</th>
+                <th className="px-4 py-3 font-semibold">Name</th>
+                <th className="px-4 py-3 font-semibold">Category</th>
+                <th className="px-4 py-3 font-semibold">Recipe status</th>
+                <th className="px-4 py-3 font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRecipes.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-6 text-center text-muted"
+                  >
+                    No recipes pending approval.
+                  </td>
+                </tr>
+              ) : (
+                pendingRecipes.map((item, index) => (
+                  <tr key={item.id ?? item._id} className="border-t border-border">
+                    <td className="px-4 py-3 text-sm text-muted">
+                      {index + 1}
+                    </td>
+                    <td className="px-4 py-3">{item.name}</td>
+                    <td className="px-4 py-3">{item.category}</td>
+                    <td className="px-4 py-3">
+                      {item.status === 'active' ? 'Active' : 'Draft'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setActionError('')
+                            try {
+                              await approveRecipe(item.id ?? item._id ?? '')
+                              fetchPending().catch(() => null)
+                            } catch (error) {
+                              setActionError(
+                                error instanceof Error
+                                  ? error.message
+                                  : 'Failed to approve recipe.',
+                              )
+                            }
+                          }}
+                          className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
                         >
-                          No recipes pending approval.
-                        </td>
-                      </tr>
-                    ) : (
-                      pendingRecipes.map((item) => (
-                        <tr key={item.id ?? item._id} className="border-t border-border">
-                          <td className="px-4 py-3">{item.name}</td>
-                          <td className="px-4 py-3">{item.category}</td>
-                          <td className="px-4 py-3">
-                            {item.status === 'active' ? 'Active' : 'Draft'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  setActionError('')
-                                  try {
-                                    await approveRecipe(item.id ?? item._id ?? '')
-                                    fetchPending().catch(() => null)
-                                  } catch (error) {
-                                    setActionError(
-                                      error instanceof Error
-                                        ? error.message
-                                        : 'Failed to approve recipe.',
-                                    )
-                                  }
-                                }}
-                                className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  setActionError('')
-                                  try {
-                                    await rejectRecipe(item.id ?? item._id ?? '')
-                                    fetchPending().catch(() => null)
-                                  } catch (error) {
-                                    setActionError(
-                                      error instanceof Error
-                                        ? error.message
-                                        : 'Failed to reject recipe.',
-                                    )
-                                  }
-                                }}
-                                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Approval Menu Production</h2>
-              <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
-                <table className="min-w-full bg-white text-sm">
-                  <thead className="bg-background">
-                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                      <th className="px-4 py-3 font-semibold">Menu</th>
-                      <th className="px-4 py-3 font-semibold">Category</th>
-                      <th className="px-4 py-3 font-semibold">Portion</th>
-                      <th className="px-4 py-3 font-semibold">Production date</th>
-                      <th className="px-4 py-3 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingMenuProductions.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-6 text-center text-muted"
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setActionError('')
+                            try {
+                              await rejectRecipe(item.id ?? item._id ?? '')
+                              fetchPending().catch(() => null)
+                            } catch (error) {
+                              setActionError(
+                                error instanceof Error
+                                  ? error.message
+                                  : 'Failed to reject recipe.',
+                              )
+                            }
+                          }}
+                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                         >
-                          No production menus pending approval.
-                        </td>
-                      </tr>
-                    ) : (
-                      pendingMenuProductions.map((item) => (
-                        <tr key={item.id ?? item._id} className="border-t border-border">
-                          <td className="px-4 py-3">{item.menuName}</td>
-                          <td className="px-4 py-3">{item.category}</td>
-                          <td className="px-4 py-3">{item.portion}</td>
-                          <td className="px-4 py-3">{item.productionDate}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  setActionError('')
-                                  try {
-                                    await approveMenuProduction(item.id ?? item._id ?? '')
-                                    fetchPending().catch(() => null)
-                                  } catch (error) {
-                                    setActionError(
-                                      error instanceof Error
-                                        ? error.message
-                                        : 'Failed to approve menu production.',
-                                    )
-                                  }
-                                }}
-                                className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  setActionError('')
-                                  try {
-                                    await rejectMenuProduction(item.id ?? item._id ?? '')
-                                    fetchPending().catch(() => null)
-                                  } catch (error) {
-                                    setActionError(
-                                      error instanceof Error
-                                        ? error.message
-                                        : 'Failed to reject menu production.',
-                                    )
-                                  }
-                                }}
-                                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </main>
+                          Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-    </AppShell>
+
+      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Approval Menu Production</h2>
+        <div className="mt-4 space-y-4">
+          {menuProductionGroups.length === 0 ? (
+            <div className="rounded-2xl border border-border bg-background px-4 py-6 text-center text-sm text-muted">
+              No production menus pending approval.
+            </div>
+          ) : (
+            menuProductionGroups.map((group) => (
+              <div
+                key={group.date}
+                className="rounded-2xl border border-border bg-background p-4"
+              >
+                {(() => {
+                  const isExpanded = expandedDates.includes(group.date)
+                  return (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                            Production date
+                          </p>
+                          <h3 className="mt-2 text-lg font-semibold">
+                            {group.date}
+                          </h3>
+                          <p className="mt-1 text-xs text-muted">
+                            {group.items.length} menus pending
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandedDate(group.date)}
+                            className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                          >
+                            {isExpanded ? 'Hide menus' : 'View menus'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleBulkApproval(group.date, group.items, 'approve')
+                            }
+                            className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                          >
+                            Approve all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleBulkApproval(group.date, group.items, 'reject')
+                            }
+                            className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                          >
+                            Reject all
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded ? (
+                        <div className="mt-4 overflow-x-auto rounded-2xl border border-border bg-white">
+                          <table className="min-w-full text-sm">
+                            <thead className="bg-background">
+                              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                <th className="w-12 px-4 py-3 font-semibold">
+                                  No
+                                </th>
+                                <th className="px-4 py-3 font-semibold">Menu</th>
+                                <th className="px-4 py-3 font-semibold">
+                                  Category
+                                </th>
+                                <th className="px-4 py-3 font-semibold">
+                                  Portion
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.items.map((item, index) => (
+                                <tr key={item.id ?? item._id} className="border-t border-border">
+                                  <td className="px-4 py-3 text-sm text-muted">
+                                    {index + 1}
+                                  </td>
+                                  <td className="px-4 py-3">{item.menuName}</td>
+                                  <td className="px-4 py-3">{item.category}</td>
+                                  <td className="px-4 py-3">{item.portion}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </>
+                  )
+                })()}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

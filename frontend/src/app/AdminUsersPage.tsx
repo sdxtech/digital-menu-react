@@ -303,6 +303,7 @@ const AdminUsersPage = () => {
                 <table className="min-w-full text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                      <th className="w-16 px-5 py-4 font-semibold">No</th>
                       <th className="px-5 py-4 font-semibold">Name</th>
                       <th className="px-5 py-4 font-semibold">Email</th>
                       <th className="px-5 py-4 font-semibold">Roles</th>
@@ -313,19 +314,22 @@ const AdminUsersPage = () => {
                   <tbody>
                     {meta.loading ? (
                       <tr className="border-t border-border">
-                        <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                        <td colSpan={6} className="px-5 py-10 text-center text-muted">
                           Loading users...
                         </td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr className="border-t border-border">
-                        <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                        <td colSpan={6} className="px-5 py-10 text-center text-muted">
                           {meta.error ? meta.error : 'No users found.'}
                         </td>
                       </tr>
                     ) : (
-                      users.map((item) => (
+                      users.map((item, index) => (
                         <tr key={item.id} className="border-t border-border">
+                          <td className="px-5 py-4 text-sm text-muted">
+                            {(meta.page - 1) * meta.limit + index + 1}
+                          </td>
                           <td className="px-5 py-4">
                             {editingId === item.id ? (
                               <input
