@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   useChefData,
   type RawMaterial,
@@ -21,12 +22,22 @@ type IngredientRow = {
   qty: string
 }
 
-const createIngredientRow = (): IngredientRow => ({
+type BaseRecipe = {
+  name: string
+  category: string
+  description?: string
+  portionSize?: number
+  ingredients?: RecipeIngredient[]
+}
+
+const createIngredientRow = (
+  values: Partial<IngredientRow> = {},
+): IngredientRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  productCode: '',
-  name: '',
-  unitOfMeasures: '',
-  qty: '',
+  productCode: values.productCode ?? '',
+  name: values.name ?? '',
+  unitOfMeasures: values.unitOfMeasures ?? '',
+  qty: values.qty ?? '',
 })
 
 const initialRecipeForm: RecipeForm = {
@@ -37,12 +48,15 @@ const initialRecipeForm: RecipeForm = {
 }
 
 const ChefCreateMenu = () => {
+  const location = useLocation()
   const {
     createRecipe,
     importRecipesFromExcel,
     searchRawMaterials,
   } = useChefData()
 
+  const baseRecipe = (location.state as { baseRecipe?: BaseRecipe } | null)
+    ?.baseRecipe
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -58,6 +72,7 @@ const ChefCreateMenu = () => {
   const searchTimeoutRef = useRef<number | null>(null)
   const searchRequestRef = useRef(0)
   const isMountedRef = useRef(true)
+  const baseRecipeRef = useRef<BaseRecipe | null>(null)
 
   useEffect(() => {
     isMountedRef.current = true
@@ -68,6 +83,41 @@ const ChefCreateMenu = () => {
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!baseRecipe || baseRecipeRef.current === baseRecipe) return
+    baseRecipeRef.current = baseRecipe
+
+    const portionSize =
+      Number.isFinite(baseRecipe.portionSize) && (baseRecipe.portionSize ?? 0) > 0
+        ? String(baseRecipe.portionSize)
+        : '1'
+
+    setRecipeForm({
+      name: baseRecipe.name ?? '',
+      category: baseRecipe.category ?? '',
+      description: baseRecipe.description ?? '',
+      portionSize,
+    })
+
+    const baseIngredients = Array.isArray(baseRecipe.ingredients)
+      ? baseRecipe.ingredients
+      : []
+    setIngredientRows(
+      baseIngredients.length
+        ? baseIngredients.map((ingredient) =>
+            createIngredientRow({
+              productCode: ingredient.productCode ?? '',
+              name: ingredient.name ?? '',
+              unitOfMeasures: ingredient.unitOfMeasures ?? '',
+              qty: Number.isFinite(ingredient.qty) ? String(ingredient.qty) : '',
+            }),
+          )
+        : [createIngredientRow()],
+    )
+    setSubmitError('')
+    setSubmitMessage('')
+  }, [baseRecipe])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current

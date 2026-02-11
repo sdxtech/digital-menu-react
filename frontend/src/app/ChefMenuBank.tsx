@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -30,6 +31,7 @@ const statusLabel = (status: 'draft' | 'active') =>
 
 const ChefMenuBank = () => {
   const { accessToken } = useAuth()
+  const navigate = useNavigate()
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -115,6 +117,20 @@ const ChefMenuBank = () => {
     selectedRecipeId === null
       ? null
       : recipes.find((item) => (item.id ?? item._id) === selectedRecipeId) ?? null
+
+  const handleCreateFromRecipe = (recipe: Recipe) => {
+    navigate('/chef/menu-create', {
+      state: {
+        baseRecipe: {
+          name: recipe.name,
+          category: recipe.category,
+          description: recipe.description ?? '',
+          portionSize: recipe.portionSize,
+          ingredients: recipe.ingredients ?? [],
+        },
+      },
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -326,11 +342,26 @@ const ChefMenuBank = () => {
 
       {selectedRecipe ? (
         <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Recipe Detail
-          </p>
-          <h3 className="mt-2 text-lg font-semibold">{selectedRecipe.name}</h3>
-          <p className="mt-2 text-sm text-muted">{selectedRecipe.description}</p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                Recipe Detail
+              </p>
+              <h3 className="mt-2 text-lg font-semibold">
+                {selectedRecipe.name}
+              </h3>
+              <p className="mt-2 text-sm text-muted">
+                {selectedRecipe.description}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCreateFromRecipe(selectedRecipe)}
+              className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+            >
+              Create menu from this recipe
+            </button>
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
