@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { apiFetch } from './api'
 
-export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'admin'
+export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'
 
 export type User = {
   email: string
@@ -23,7 +23,7 @@ const rolePaths: Record<Role, string> = {
   chef: '/chef',
   'unit-manager': '/unit-manager',
   storekeeper: '/storekeeper',
-  admin: '/admin',
+  superadmin: '/superadmin',
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -32,7 +32,9 @@ const readStoredUser = (): User | null => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return null
-    return JSON.parse(stored) as User
+    const parsed = JSON.parse(stored) as User
+    if (!parsed?.role || !(parsed.role in rolePaths)) return null
+    return parsed
   } catch {
     return null
   }
@@ -69,8 +71,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         undefined,
         nextAccessToken,
       )
-      if (me?.appRole) nextRole = me.appRole
-      else if (me?.roles?.includes('admin')) nextRole = 'admin'
+      if (me?.appRole) nextRole = me.appRole as Role
+      else if (me?.roles?.includes('superadmin')) nextRole = 'superadmin'
     } catch {
       // ignore auth/me failures and use default role
     }

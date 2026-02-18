@@ -1,7 +1,8 @@
 export enum AppRole {
-  Admin = 'admin',
-  Staff = 'staff',
-  User = 'user',
+  Superadmin = 'superadmin',
+  Chef = 'chef',
+  UnitManager = 'unit-manager',
+  Storekeeper = 'storekeeper',
 }
 
-export const DEFAULT_ROLE = AppRole.User;
+export const DEFAULT_ROLE = AppRole.Chef;

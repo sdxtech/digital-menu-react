@@ -6,19 +6,19 @@ import { AppRole } from '../auth/roles.constants';
 import { MailService } from '../mail/mail.service';
 import { TestEmailDto } from '../mail/dto/test-email.dto';
 
-@Controller('admin')
+@Controller('superadmin')
 @UseGuards(JwtAuthGuard, RolesGuard)
-export class AdminController {
+export class SuperadminController {
   constructor(private readonly mail: MailService) {}
 
   @Get('ping')
-  @Roles(AppRole.Admin)
+  @Roles(AppRole.Superadmin)
   ping() {
     return { ok: true };
   }
 
   @Post('test-email')
-  @Roles(AppRole.Admin)
+  @Roles(AppRole.Superadmin)
   testEmail(@Body() dto: TestEmailDto) {
     return this.mail.enqueue(dto.to, 'Test Email', 'Ini email test dari Digital Menu.');
   }

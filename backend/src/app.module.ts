@@ -5,7 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { AdminModule } from './admin/admin.module';
+import { SuperadminModule } from './superadmin/superadmin.module';
 import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -44,7 +44,7 @@ import { MenuProductionsModule } from './menu-productions/menu-productions.modul
     ExportsModule,
     MailModule,
     DashboardModule,
-    AdminModule,
+    SuperadminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

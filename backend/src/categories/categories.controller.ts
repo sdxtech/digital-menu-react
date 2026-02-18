@@ -15,7 +15,7 @@ export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}
 
   @Post()
-  @Roles(AppRole.Admin, AppRole.Staff)
+  @Roles(AppRole.Superadmin)
   create(@Body() dto: CreateCategoryDto) {
     return this.categories.create({ name: dto.name, isActive: dto.isActive });
   }
@@ -31,13 +31,13 @@ export class CategoriesController {
   }
 
   @Patch(':id')
-  @Roles(AppRole.Admin, AppRole.Staff)
+  @Roles(AppRole.Superadmin)
   update(@Param() params: CategoryIdParamDto, @Body() dto: UpdateCategoryDto) {
     return this.categories.update(params.id, { name: dto.name, isActive: dto.isActive });
   }
 
   @Delete(':id')
-  @Roles(AppRole.Admin)
+  @Roles(AppRole.Superadmin)
   remove(@Param() params: CategoryIdParamDto) {
     return this.categories.softDelete(params.id);
   }

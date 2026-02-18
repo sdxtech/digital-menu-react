@@ -14,7 +14,8 @@ import StorekeeperPage from './app/StorekeeperPage'
 import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerPage from './app/UnitManagerPage'
-import AdminUsersPage from './app/AdminUsersPage'
+import SuperadminLayout from './app/SuperadminLayout'
+import SuperadminUsersPage from './app/SuperadminUsersPage'
 
 const RequireAuth = () => {
   const { user } = useAuth()
@@ -82,8 +83,10 @@ function App() {
             <Route path="history" element={<StorekeeperHistoryPage />} />
           </Route>
         </Route>
-        <Route element={<RequireRole role="admin" />}>
-          <Route path="/admin" element={<AdminUsersPage />} />
+        <Route element={<RequireRole role="superadmin" />}>
+          <Route path="/superadmin" element={<SuperadminLayout />}>
+            <Route index element={<SuperadminUsersPage />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />

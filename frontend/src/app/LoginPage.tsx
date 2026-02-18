@@ -11,6 +11,7 @@ const LoginPage = () => {
     password: '',
   })
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -41,7 +42,7 @@ const LoginPage = () => {
 
   return (
     <AppShell>
-      <div className="flex min-h-screen w-full items-center py-14">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-14 lg:px-10">
         <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-12">
           <section className="lg:col-span-7 flex items-center justify-center">
             <div className="flex items-center gap-3">
@@ -69,7 +70,7 @@ const LoginPage = () => {
                   Sign in to your dashboard
                 </h2>
                 <p className="mt-3 text-sm text-muted">
-                  Use the email and password registered by the admin.
+                  Use the email and password registered by the superadmin.
                 </p>
               </div>
 
@@ -96,19 +97,60 @@ const LoginPage = () => {
                   <label className="text-sm font-medium text-foreground">
                     Password
                   </label>
-                  <input
-                    type="password"
-                    name="password"
-                    placeholder="********"
-                    value={formState.password}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        password: event.target.value,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-indigo focus:ring-4 focus:ring-accent-indigo/20"
-                  />
+                  <div className="relative mt-2">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      placeholder="********"
+                      value={formState.password}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          password: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-border bg-white px-4 py-3 pr-12 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-indigo focus:ring-4 focus:ring-accent-indigo/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted transition hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? (
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 3l18 18" />
+                          <path d="M10.5 10.5a2 2 0 0 0 2.83 2.83" />
+                          <path d="M9.88 4.24A9.81 9.81 0 0 1 12 4c4.48 0 8.27 2.94 9.54 7a9.96 9.96 0 0 1-4.29 5.04" />
+                          <path d="M6.63 6.63A9.96 9.96 0 0 0 2.46 12c1.25 4.05 5.02 7 9.54 7 1.69 0 3.28-.4 4.67-1.12" />
+                        </svg>
+                      ) : (
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        >
+                          <path d="M2.46 12C3.73 7.94 7.52 5 12 5c4.48 0 8.27 2.94 9.54 7-1.27 4.06-5.06 7-9.54 7-4.48 0-8.27-2.94-9.54-7Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {error ? (
                   <p className="text-xs font-medium text-danger">{error}</p>

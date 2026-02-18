@@ -15,7 +15,7 @@ export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   @Post()
-  @Roles(AppRole.Admin, AppRole.Staff)
+  @Roles(AppRole.Superadmin)
   create(@Body() dto: CreateProductDto) {
     return this.products.create({
       name: dto.name,
@@ -46,7 +46,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
-  @Roles(AppRole.Admin, AppRole.Staff)
+  @Roles(AppRole.Superadmin)
   update(@Param() params: ProductIdParamDto, @Body() dto: UpdateProductDto) {
     return this.products.update(params.id, {
       name: dto.name,
@@ -59,7 +59,7 @@ export class ProductsController {
   }
 
   @Delete(':id')
-  @Roles(AppRole.Admin)
+  @Roles(AppRole.Superadmin)
   remove(@Param() params: ProductIdParamDto) {
     return this.products.softDelete(params.id);
   }

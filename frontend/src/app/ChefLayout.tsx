@@ -129,7 +129,9 @@ const navItems = [
 const ChefLayout = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
+  )
 
   const handleLogout = () => {
     logout()
@@ -140,7 +142,7 @@ const ChefLayout = () => {
     <AppShell>
       <div className="min-h-screen">
         <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
-          <div className="flex w-full items-center justify-between gap-4 py-2">
+          <div className="flex w-full items-center justify-between gap-4 px-4 py-2">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
                 DM
@@ -169,7 +171,7 @@ const ChefLayout = () => {
         <div className="flex w-full items-stretch gap-6">
           <aside
             className={`shrink-0 border border-border bg-white shadow-sm transition-all ${
-              sidebarOpen ? 'w-64' : 'w-16'
+              sidebarOpen ? 'w-40 sm:w-64' : 'w-10 sm:w-16'
             } min-h-[calc(100vh-64px)]`}
           >
             <div
@@ -210,7 +212,7 @@ const ChefLayout = () => {
                   to={item.to}
                   className={({ isActive }) =>
                     [
-                      'group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition',
+                      'group flex items-center gap-3 rounded-xl px-3 py-2 text-[11px] font-medium transition sm:text-sm',
                       sidebarOpen ? 'justify-start' : 'justify-center',
                       isActive
                         ? 'bg-primary-soft text-primary'
@@ -227,7 +229,7 @@ const ChefLayout = () => {
             </nav>
           </aside>
 
-          <main className="flex-1">
+          <main className="flex-1 pr-4">
             <Outlet />
           </main>
         </div>
