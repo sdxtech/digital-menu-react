@@ -227,7 +227,7 @@ const AdminUsersPage = () => {
     <AppShell>
       <div className="min-h-screen">
         <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-2 py-2 lg:px-2 lg:py-2">
+          <div className="flex w-full items-center justify-between gap-4 py-2">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
                 DM
@@ -253,7 +253,7 @@ const AdminUsersPage = () => {
           </div>
         </header>
 
-        <div className="mx-auto w-full max-w-6xl px-2 py-2 lg:px-2 lg:py-2">
+        <div className="w-full py-2">
           <div className="space-y-6">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-muted">

@@ -41,7 +41,7 @@ const LoginPage = () => {
 
   return (
     <AppShell>
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-14 lg:px-10">
+      <div className="flex min-h-screen w-full items-center py-14">
         <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-12">
           <section className="lg:col-span-7 flex items-center justify-center">
             <div className="flex items-center gap-3">

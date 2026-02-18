@@ -28,6 +28,80 @@ type StoreRequestGroup = {
   missingRecipes: string[]
 }
 
+const xmlEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value)
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+const sanitizeWorksheetName = (value: string) => {
+  const cleaned = value.replace(/[\\/:*?\[\]]/g, '-')
+  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const buildSpreadsheetXml = (
+  sheetName: string,
+  rows: Array<Array<unknown>>,
+) => {
+  const safeName = sanitizeWorksheetName(sheetName)
+  const rowXml = rows
+    .map((row, index) => {
+      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
+      const cells = row
+        .map((cell) => {
+          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
+          const type = isNumber ? 'Number' : 'String'
+          const value = isNumber ? String(cell) : xmlEscape(cell)
+          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
+        })
+        .join('')
+      return `<Row${rowStyle}>${cells}</Row>`
+    })
+    .join('')
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1"/>
+   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>
+</Workbook>`
+}
+
+const downloadExcel = (
+  filename: string,
+  sheetName: string,
+  rows: Array<Array<unknown>>,
+) => {
+  const xml = buildSpreadsheetXml(sheetName, rows)
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 const ChefStoreRequest = () => {
   const { accessToken } = useAuth()
   const [infoMessage, setInfoMessage] = useState('')
@@ -40,6 +114,71 @@ const ChefStoreRequest = () => {
     if (!Number.isFinite(value)) return '0'
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
+  }
+
+  const storeRequestStatusLabel = (
+    status: StoreRequestMenu['storeRequestStatus'],
+  ) => {
+    if (status === 'fulfilled') return 'Delivered to kitchen'
+    if (status === 'requested') return 'Auto-requested'
+    return 'Waiting for auto request'
+  }
+
+  const handleExportMenusByDate = (group: StoreRequestGroup) => {
+    const header = [
+      'Production Date',
+      'Menu Name',
+      'Category',
+      'Portions',
+      'Base Pax',
+      'Store Request Status',
+      'Notes',
+      'Product Code',
+      'Ingredient Name',
+      'Qty',
+      'Unit',
+    ]
+
+    const rows: Array<Array<string>> = []
+    group.items.forEach((menu) => {
+      const ingredients = menu.ingredients ?? []
+      const note = menu.missingRecipe
+        ? 'Missing recipe'
+        : ingredients.length === 0
+          ? 'No ingredients'
+          : ''
+      const baseRow = [
+        group.date,
+        menu.menuName,
+        menu.category,
+        String(menu.portion),
+        String(menu.portionSize ?? 1),
+        storeRequestStatusLabel(menu.storeRequestStatus),
+        note,
+      ]
+
+      if (ingredients.length === 0) {
+        rows.push([...baseRow, '', '', '', ''])
+        return
+      }
+
+      ingredients.forEach((ingredient) => {
+        rows.push([
+          ...baseRow,
+          ingredient.productCode,
+          ingredient.name,
+          formatQuantity(ingredient.qty),
+          formatUnitLabel(ingredient.unitOfMeasures),
+        ])
+      })
+    })
+
+    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    downloadExcel(
+      `store-request-menu-${safeDate}.xls`,
+      `Menus ${group.date}`,
+      [header, ...rows],
+    )
   }
 
   // FRONTEND VIEW: backend returns grouped store requests with multiplied ingredients.
@@ -198,8 +337,17 @@ const ChefStoreRequest = () => {
                                   Production date: {date}
                                 </p>
                               </div>
-                              <div className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary">
-                                Auto-requested after approval
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary">
+                                  Auto-requested after approval
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleExportMenusByDate(group)}
+                                  className="rounded-2xl border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
+                                >
+                                  Export menu (Excel)
+                                </button>
                               </div>
                             </div>
 

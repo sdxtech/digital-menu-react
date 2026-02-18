@@ -30,7 +30,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
     <AppShell>
       <div className="min-h-screen">
         <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-2 py-2 lg:px-2 lg:py-2">
+          <div className="flex w-full items-center justify-between gap-4 py-2">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
                 DM
@@ -56,9 +56,9 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
           </div>
         </header>
 
-        <div className="mx-auto flex w-full max-w-6xl items-start gap-6 px-2 py-2 lg:px-2 lg:py-2">
+        <div className="flex w-full items-stretch gap-6">
           <aside
-            className={`shrink-0 rounded-2xl border border-border bg-white shadow-sm transition-all ${
+            className={`shrink-0 border border-border bg-white shadow-sm transition-all ${
               sidebarOpen ? 'w-64' : 'w-16'
             } min-h-[calc(100vh-64px)]`}
           >
@@ -104,7 +104,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
                       'group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition',
                       sidebarOpen ? 'justify-start' : 'justify-center',
                       isActive
-                        ? 'bg-primary/10 text-primary'
+                        ? 'bg-primary-soft text-primary'
                         : 'text-foreground hover:bg-primary-soft',
                     ].join(' ')
                   }
