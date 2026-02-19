@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type Recipe = {
   id?: string
@@ -12,14 +13,31 @@ type Recipe = {
   approvalStatus: 'pending' | 'approved' | 'rejected'
 }
 
-type MenuProduction = {
-  id?: string
-  _id?: string
+type StoreRequestIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  qty: number
+}
+
+type StoreRequestMenu = {
+  id: string
   menuName: string
   category: string
   portion: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  portionSize: number
+  ingredients: StoreRequestIngredient[]
+  missingRecipe: boolean
+}
+
+type StoreRequestGroup = {
+  date: string
+  items: StoreRequestMenu[]
+  summary: StoreRequestIngredient[]
+  missingRecipes: string[]
 }
 
 const UnitManagerPage = () => {
@@ -33,8 +51,8 @@ const UnitManagerPage = () => {
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [pendingRecipes, setPendingRecipes] = useState<Recipe[]>([])
-  const [pendingMenuProductions, setPendingMenuProductions] = useState<
-    MenuProduction[]
+  const [menuProductionGroups, setMenuProductionGroups] = useState<
+    StoreRequestGroup[]
   >([])
   const [expandedDates, setExpandedDates] = useState<string[]>([])
 
@@ -48,14 +66,17 @@ const UnitManagerPage = () => {
           undefined,
           accessToken,
         ),
-        apiFetch<{ items: MenuProduction[] }>(
-          '/menu-productions?approvalStatus=pending&limit=50',
+        apiFetch<{ items: StoreRequestGroup[] }>(
+          '/menu-productions/store-requests?approvalStatus=pending',
           undefined,
           accessToken,
         ),
       ])
       setPendingRecipes(recipesData.items ?? [])
-      setPendingMenuProductions(menusData.items ?? [])
+      const sortedGroups = [...(menusData.items ?? [])].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      )
+      setMenuProductionGroups(sortedGroups)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to load approvals.'
@@ -75,22 +96,9 @@ const UnitManagerPage = () => {
     )
   }
 
-  const menuProductionGroups = useMemo(() => {
-    const grouped = new Map<string, MenuProduction[]>()
-    pendingMenuProductions.forEach((item) => {
-      const date = item.productionDate || 'Unknown date'
-      const items = grouped.get(date) ?? []
-      items.push(item)
-      grouped.set(date, items)
-    })
-    return Array.from(grouped.entries())
-      .map(([date, items]) => ({ date, items }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-  }, [pendingMenuProductions])
-
   const handleBulkApproval = async (
     date: string,
-    items: MenuProduction[],
+    items: StoreRequestMenu[],
     action: 'approve' | 'reject',
   ) => {
     if (items.length === 0) return
@@ -98,7 +106,7 @@ const UnitManagerPage = () => {
     setActionMessage('')
 
     const requests = items.map((item) => {
-      const id = item.id ?? item._id ?? ''
+      const id = item.id ?? ''
       if (!id) {
         return Promise.reject(new Error('Menu production id is missing.'))
       }
@@ -124,6 +132,12 @@ const UnitManagerPage = () => {
     }
 
     fetchPending().catch(() => null)
+  }
+
+  const formatQuantity = (value: number) => {
+    if (!Number.isFinite(value)) return '0'
+    if (Number.isInteger(value)) return String(value)
+    return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
   return (
@@ -269,7 +283,7 @@ const UnitManagerPage = () => {
                             onClick={() => toggleExpandedDate(group.date)}
                             className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
                           >
-                            {isExpanded ? 'Hide menus' : 'View menus'}
+                            {isExpanded ? 'Hide details' : 'View details'}
                           </button>
                           <button
                             type="button"
@@ -293,35 +307,110 @@ const UnitManagerPage = () => {
                       </div>
 
                       {isExpanded ? (
-                        <div className="mt-4 overflow-x-auto rounded-2xl border border-border bg-white">
-                          <table className="min-w-full text-sm">
-                            <thead className="bg-background">
-                              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                <th className="w-12 px-4 py-3 font-semibold">
-                                  No
-                                </th>
-                                <th className="px-4 py-3 font-semibold">Menu</th>
-                                <th className="px-4 py-3 font-semibold">
-                                  Category
-                                </th>
-                                <th className="px-4 py-3 font-semibold">
-                                  Portion
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.items.map((item, index) => (
-                                <tr key={item.id ?? item._id} className="border-t border-border">
-                                  <td className="px-4 py-3 text-sm text-muted">
-                                    {index + 1}
-                                  </td>
-                                  <td className="px-4 py-3">{item.menuName}</td>
-                                  <td className="px-4 py-3">{item.category}</td>
-                                  <td className="px-4 py-3">{item.portion}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div className="mt-4 grid gap-4 lg:grid-cols-12">
+                          <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-5">
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                              Menu list
+                            </p>
+                            <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                              <table className="min-w-full text-sm">
+                                <thead className="bg-background">
+                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                    <th className="w-12 px-4 py-3 font-semibold">
+                                      No
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Menu
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Category
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Portion
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.items.map((item, index) => (
+                                    <tr key={item.id} className="border-t border-border">
+                                      <td className="px-4 py-3 text-sm text-muted">
+                                        {index + 1}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        {item.menuName}
+                                      </td>
+                                      <td className="px-4 py-3">{item.category}</td>
+                                      <td className="px-4 py-3">{item.portion}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            {group.missingRecipes.length > 0 ? (
+                              <p className="mt-3 text-xs text-danger">
+                                Recipe not found for:{' '}
+                                {group.missingRecipes.join(', ')}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-7">
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                              Ingredient summary
+                            </p>
+                            <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                              <table className="min-w-full text-sm">
+                                <thead className="bg-background">
+                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                    <th className="w-12 px-4 py-3 font-semibold">
+                                      No
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Product code
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Ingredient name
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">Qty</th>
+                                    <th className="px-4 py-3 font-semibold">Unit</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.summary.length === 0 ? (
+                                    <tr className="border-t border-border">
+                                      <td
+                                        colSpan={5}
+                                        className="px-4 py-6 text-center text-muted"
+                                      >
+                                        No ingredients available to calculate.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    group.summary.map((item, index) => (
+                                      <tr
+                                        key={`${item.productCode}-${item.unitOfMeasures}`}
+                                        className="border-t border-border"
+                                      >
+                                        <td className="px-4 py-3 text-sm text-muted">
+                                          {index + 1}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {item.productCode}
+                                        </td>
+                                        <td className="px-4 py-3">{item.name}</td>
+                                        <td className="px-4 py-3">
+                                          {formatQuantity(item.qty)}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {formatUnitLabel(item.unitOfMeasures)}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
                         </div>
                       ) : null}
                     </>
