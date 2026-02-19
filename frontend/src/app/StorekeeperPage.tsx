@@ -25,6 +25,86 @@ type StoreRequestGroup = {
   missingRecipes: string[]
 }
 
+const xmlEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value)
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+const sanitizeWorksheetName = (value: string) => {
+  const cleaned = value.replace(/[\\/:*?\[\]]/g, '-')
+  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
+  const safeName = sanitizeWorksheetName(sheetName)
+  const rowXml = rows
+    .map((row, index) => {
+      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
+      const cells = row
+        .map((cell) => {
+          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
+          const type = isNumber ? 'Number' : 'String'
+          const value = isNumber ? String(cell) : xmlEscape(cell)
+          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
+        })
+        .join('')
+      return `<Row${rowStyle}>${cells}</Row>`
+    })
+    .join('')
+
+  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>`
+}
+
+const buildWorkbookXml = (
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const worksheetsXml = sheets
+    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
+    .join('')
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1"/>
+   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+ </Styles>
+ ${worksheetsXml}
+</Workbook>`
+}
+
+const downloadExcel = (
+  filename: string,
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const xml = buildWorkbookXml(sheets)
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 const StorekeeperPage = () => {
   const { accessToken } = useAuth()
   const { markStoreFulfilled } = useChefData()
@@ -66,6 +146,33 @@ const StorekeeperPage = () => {
     if (!Number.isFinite(value)) return '0'
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
+  }
+
+  const handleExportMenusByDate = (group: StoreRequestGroup) => {
+    const menuRows = [
+      ['No', 'Menu', 'Category', 'Portion'],
+      ...group.items.map((menu, index) => [
+        index + 1,
+        menu.menuName,
+        menu.category,
+        menu.portion,
+      ]),
+    ]
+    const summaryRows = [
+      ['No', 'Product code', 'Ingredient name', 'Qty', 'Unit'],
+      ...group.summary.map((item, index) => [
+        index + 1,
+        item.productCode,
+        item.name,
+        formatQuantity(item.qty),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ]
+    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    downloadExcel(`store-request-${safeDate}.xls`, [
+      { name: `Menus ${group.date}`, rows: menuRows },
+      { name: `Ingredients ${group.date}`, rows: summaryRows },
+    ])
   }
 
   return (
@@ -113,6 +220,13 @@ const StorekeeperPage = () => {
                 <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
                   {group.items.length} menus
                 </span>
+                <button
+                  type="button"
+                  onClick={() => handleExportMenusByDate(group)}
+                  className="rounded-2xl border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
+                >
+                  Export (Excel)
+                </button>
                 <button
                   type="button"
                   onClick={async () => {
