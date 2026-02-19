@@ -574,8 +574,10 @@ const ChefCreateMenu = () => {
             <table className="min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                  <th className="w-14 px-2 py-3 font-semibold">No</th>
                   <th className="w-20 px-2 py-3 font-semibold" />
+                  <th className="w-14 px-2 py-3 font-semibold text-center">
+                    No
+                  </th>
                   <th className="px-4 py-3 font-semibold w-[160px]">
                     Product code
                   </th>
@@ -591,19 +593,21 @@ const ChefCreateMenu = () => {
               <tbody>
                 {ingredientRows.map((row, index) => (
                   <tr key={row.id} className="border-t border-border">
-                    <td className="px-2 py-3 text-sm text-muted">{index + 1}</td>
                     <td className="px-2 py-3">
                       <div className="flex justify-center">
                         <button
                           type="button"
                           onClick={() => handleRemoveIngredientRow(row.id)}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-danger/40 bg-surface text-base font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
                           aria-label="Remove ingredient row"
                           title="Remove ingredient row"
                         >
                           X
                         </button>
                       </div>
+                    </td>
+                    <td className="px-2 py-3 text-center text-sm text-muted">
+                      {index + 1}
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -624,23 +628,27 @@ const ChefCreateMenu = () => {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(event) =>
-                          handleIngredientInputChange(
-                            row.id,
-                            'name',
-                            event.target.value,
-                          )
-                        }
-                        onFocus={handleRawMaterialFocus}
-                        autoComplete="off"
-                        placeholder="Oat Milk"
-                        list="raw-material-name-options"
-                        size={Math.max(24, row.name.length)}
-                        className="rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      />
+                      <div className="grid">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(event) =>
+                            handleIngredientInputChange(
+                              row.id,
+                              'name',
+                              event.target.value,
+                            )
+                          }
+                          onFocus={handleRawMaterialFocus}
+                          autoComplete="off"
+                          placeholder="Oat Milk"
+                          list="raw-material-name-options"
+                          className="peer col-start-1 row-start-1 h-full w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-muted focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
+                        />
+                        <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
+                          {row.name}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <input

@@ -371,14 +371,15 @@ const ChefMenuBank = () => {
                 {selectedRecipe.category}
               </p>
             </div>
-            <div className="rounded-2xl border border-border bg-background p-4">
+            {/* TODO: Re-enable price card when pricing is finalized. */}
+            {/* <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Price
               </p>
               <p className="mt-2 text-sm font-medium">
                 IDR {selectedRecipe.price}
               </p>
-            </div>
+            </div> */}
             <div className="rounded-2xl border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Base pax
