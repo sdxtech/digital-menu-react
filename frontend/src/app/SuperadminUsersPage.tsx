@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -53,6 +53,10 @@ const SuperadminUsersPage = () => {
   const [passwordError, setPasswordError] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [message, setMessage] = useState('')
+  const [importError, setImportError] = useState('')
+  const [importMessage, setImportMessage] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   const fetchUsers = useCallback(
     async (page = 1, limit = DEFAULT_LIMIT, searchValue = '') => {
@@ -240,6 +244,65 @@ const SuperadminUsersPage = () => {
     setMeta((prev) => ({ ...prev, page: 1 }))
   }
 
+  const openImportModal = () => {
+    setImportError('')
+    setImportMessage('')
+    setImportOpen(true)
+  }
+
+  const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null
+    event.target.value = ''
+    if (!nextFile) return
+
+    const isExcelFile = /\.(xlsx|xls)$/i.test(nextFile.name)
+    if (!isExcelFile) {
+      setImportError('File must be .xlsx or .xls')
+      setImportMessage('')
+      return
+    }
+
+    if (!accessToken) {
+      setImportError('Please log in first to import users.')
+      setImportMessage('')
+      return
+    }
+
+    setImporting(true)
+    setImportError('')
+    setImportMessage('')
+    setMessage('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', nextFile)
+
+      const result = await apiFetch<{
+        insertedCount: number
+        skippedCount?: number
+      }>(
+        '/superadmin/users/import',
+        {
+          method: 'POST',
+          body: formData,
+        },
+        accessToken,
+      )
+
+      const skipped = result.skippedCount ?? 0
+      setImportMessage(
+        `${result.insertedCount} users imported${skipped ? `, ${skipped} skipped` : ''}.`,
+      )
+      fetchUsers(meta.page, meta.limit, search).catch(() => null)
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Failed to import users.'
+      setImportError(messageText)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="w-full py-2">
       <div className="space-y-6">
@@ -252,6 +315,78 @@ const SuperadminUsersPage = () => {
             Update names, emails, and passwords for your team.
           </p>
         </div>
+
+        {importOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                    Import accounts
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold">Upload Excel file</h3>
+                  <p className="mt-2 text-sm text-muted">
+                    Import multiple user accounts at once using .xlsx or .xls.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImportOpen(false)}
+                  disabled={importing}
+                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                  Required columns
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>name</li>
+                  <li>email</li>
+                  <li>password</li>
+                  <li>roles</li>
+                </ul>
+                <p className="mt-3 text-xs text-muted">
+                  roles: superadmin, chef, unit-manager, storekeeper. You can
+                  separate multiple roles with commas.
+                </p>
+              </div>
+
+              <div className="mt-4">
+                <label className="text-sm font-medium text-foreground">
+                  File Excel
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleImportFileChange}
+                  disabled={importing}
+                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                {importing ? (
+                  <p className="mt-2 text-xs text-muted">Importing...</p>
+                ) : null}
+                {importError ? (
+                  <p className="mt-2 text-xs font-medium text-red-600">
+                    {importError}
+                  </p>
+                ) : null}
+                {importMessage ? (
+                  <p className="mt-2 text-xs font-medium text-primary">
+                    {importMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="rounded-3xl border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -278,13 +413,30 @@ const SuperadminUsersPage = () => {
                 Reset
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => fetchUsers(meta.page, meta.limit, search)}
-              className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
-            >
-              Refresh
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={openImportModal}
+                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <i className="bi bi-upload text-base" aria-hidden="true" />
+                  <span>Import accounts</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fetchUsers(meta.page, meta.limit, search)}
+                aria-label="Refresh users"
+                title="Refresh users"
+                className="rounded-2xl border border-border bg-background p-2 text-primary"
+              >
+                <i
+                  className="bi bi-arrow-clockwise text-base"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -379,19 +531,10 @@ const SuperadminUsersPage = () => {
                               aria-label="Edit user"
                               title="Edit user"
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="h-4 w-4"
+                              <i
+                                className="bi bi-pencil-square text-base"
                                 aria-hidden="true"
-                              >
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
+                              />
                             </button>
                             {passwordId === item.id ? (
                               <div className="flex flex-col gap-2">
@@ -429,19 +572,7 @@ const SuperadminUsersPage = () => {
                                 aria-label="Change password"
                                 title="Change password"
                               >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="1.6"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="h-4 w-4"
-                                  aria-hidden="true"
-                                >
-                                  <rect x="5" y="10" width="14" height="10" rx="2" />
-                                  <path d="M8 10V7a4 4 0 1 1 8 0v3" />
-                                </svg>
+                                <i className="bi bi-lock text-base" aria-hidden="true" />
                               </button>
                             )}
                             <button
@@ -451,22 +582,10 @@ const SuperadminUsersPage = () => {
                               aria-label="Delete user"
                               title="Delete user"
                             >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="h-4 w-4"
+                              <i
+                                className="bi bi-trash text-base"
                                 aria-hidden="true"
-                              >
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4h8v2" />
-                                <path d="M6 6l1 14h10l1-14" />
-                                <path d="M10 11v6" />
-                                <path d="M14 11v6" />
-                              </svg>
+                              />
                             </button>
                           </div>
                         )}
@@ -493,9 +612,19 @@ const SuperadminUsersPage = () => {
               {deleteError}
             </p>
           ) : null}
+          {importError ? (
+            <p className="px-5 pb-2 text-xs font-medium text-red-600">
+              {importError}
+            </p>
+          ) : null}
           {message ? (
             <p className="px-5 pb-2 text-xs font-medium text-primary">
               {message}
+            </p>
+          ) : null}
+          {importMessage ? (
+            <p className="px-5 pb-2 text-xs font-medium text-primary">
+              {importMessage}
             </p>
           ) : null}
 

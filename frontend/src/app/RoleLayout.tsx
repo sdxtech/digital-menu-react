@@ -80,18 +80,12 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-primary transition hover:bg-primary-soft"
                 aria-label={sidebarOpen ? 'Collapse menu' : 'Expand menu'}
               >
-                <svg
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="h-4 w-4"
+                <i
+                  className={`bi ${
+                    sidebarOpen ? 'bi-x-lg' : 'bi-list'
+                  } text-base leading-none`}
                   aria-hidden="true"
-                >
-                  {sidebarOpen ? (
-                    <path d="M6.22 6.22a.75.75 0 0 1 1.06 0L10 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L11.06 10l2.72 2.72a.75.75 0 1 1-1.06 1.06L10 11.06l-2.72 2.72a.75.75 0 1 1-1.06-1.06L8.94 10 6.22 7.28a.75.75 0 0 1 0-1.06z" />
-                  ) : (
-                    <path d="M3.75 5.5a.75.75 0 0 1 .75-.75h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75zm0 4.5a.75.75 0 0 1 .75-.75h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75zm0 4.5a.75.75 0 0 1 .75-.75h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75z" />
-                  )}
-                </svg>
+                />
               </button>
             </div>
 
@@ -111,7 +105,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
                     ].join(' ')
                   }
                 >
-                  {item.icon('h-5 w-5 text-current')}
+                  {item.icon('text-lg leading-none text-current')}
                   {sidebarOpen ? <span className="truncate">{item.label}</span> : null}
                 </NavLink>
               ))}

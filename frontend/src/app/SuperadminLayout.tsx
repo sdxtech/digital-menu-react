@@ -6,19 +6,7 @@ const navItems = [
     to: '/superadmin',
     end: true,
     icon: (className: string) => (
-      <svg viewBox="0 0 24 24" fill="none" className={className}>
-        <path
-          d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"
-          stroke="currentColor"
-          strokeWidth="1.6"
-        />
-        <path
-          d="M4 20a8 8 0 0 1 16 0"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-      </svg>
+      <i className={`bi bi-people ${className}`} aria-hidden="true" />
     ),
   },
 ]

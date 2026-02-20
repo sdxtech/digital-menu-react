@@ -249,9 +249,11 @@ const ChefStoreRequest = () => {
               setErrorMessage('')
               await fetchStoreRequests()
             }}
-            className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+            aria-label="Refresh approvals"
+            title="Refresh approvals"
+            className="rounded-2xl border border-border bg-background p-2 text-primary"
           >
-            Refresh approvals
+            <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
           </button>
         </div>
         {infoMessage ? (

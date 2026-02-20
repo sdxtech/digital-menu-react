@@ -119,35 +119,12 @@ const LoginPage = () => {
                       title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-5 w-5"
+                        <i
+                          className="bi bi-eye-slash text-lg"
                           aria-hidden="true"
-                        >
-                          <path d="M3 3l18 18" />
-                          <path d="M10.5 10.5a2 2 0 0 0 2.83 2.83" />
-                          <path d="M9.88 4.24A9.81 9.81 0 0 1 12 4c4.48 0 8.27 2.94 9.54 7a9.96 9.96 0 0 1-4.29 5.04" />
-                          <path d="M6.63 6.63A9.96 9.96 0 0 0 2.46 12c1.25 4.05 5.02 7 9.54 7 1.69 0 3.28-.4 4.67-1.12" />
-                        </svg>
+                        />
                       ) : (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-5 w-5"
-                          aria-hidden="true"
-                        >
-                          <path d="M2.46 12C3.73 7.94 7.52 5 12 5c4.48 0 8.27 2.94 9.54 7-1.27 4.06-5.06 7-9.54 7-4.48 0-8.27-2.94-9.54-7Z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
+                        <i className="bi bi-eye text-lg" aria-hidden="true" />
                       )}
                     </button>
                   </div>
