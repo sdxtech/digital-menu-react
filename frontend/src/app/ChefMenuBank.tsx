@@ -134,204 +134,208 @@ const ChefMenuBank = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-muted">
-            Recipe Data
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold">Curated recipe collection</h2>
-        </div>
-        <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search recipes..."
-            className="w-full min-w-[200px] rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 sm:w-64 md:w-72"
-          />
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setFilterOpen((prev) => !prev)}
-              className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-            >
-              <span className="flex items-center gap-2">
-                <span>
-                  Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Recipe Data</h1>
+          </div>
+          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search recipes..."
+              className="w-full min-w-[200px] rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 sm:w-64 md:w-72"
+            />
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterOpen((prev) => !prev)}
+                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <span>
+                    Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
+                  </span>
+                  <i
+                    className={`bi bi-chevron-down text-base transition-transform ${
+                      filterOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
                 </span>
-                <i
-                  className={`bi bi-chevron-down text-base transition-transform ${
-                    filterOpen ? 'rotate-180' : ''
-                  }`}
-                  aria-hidden="true"
-                />
-              </span>
-            </button>
+              </button>
 
-            {filterOpen ? (
-              <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-border bg-white p-4 text-sm shadow-xl">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                    Status
-                  </p>
-                  {statusFilters.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setStatusFilters([])}
-                      className="text-xs font-semibold text-primary"
-                    >
-                      Reset
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-3 space-y-2">
-                  {(['draft', 'active'] as const).map((status) => (
-                    <label
-                      key={status}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={statusFilters.includes(status)}
-                        onChange={() =>
-                          setStatusFilters((prev) =>
-                            prev.includes(status)
-                              ? prev.filter((item) => item !== status)
-                              : [...prev, status],
-                          )
-                        }
-                        className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-                      />
-                      <span>{statusLabel(status)}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <div className="mt-4 flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                    Category
-                  </p>
-                  {categoryFilters.length ? (
-                    <button
-                      type="button"
-                      onClick={() => setCategoryFilters([])}
-                      className="text-xs font-semibold text-primary"
-                    >
-                      Reset
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                  {categories.length === 0 ? (
-                    <p className="text-xs text-muted">No categories yet.</p>
-                  ) : (
-                    categories.map((category) => (
+              {filterOpen ? (
+                <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-border bg-white p-4 text-sm shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                      Status
+                    </p>
+                    {statusFilters.length ? (
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilters([])}
+                        className="text-xs font-semibold text-primary"
+                      >
+                        Reset
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {(['draft', 'active'] as const).map((status) => (
                       <label
-                        key={category}
+                        key={status}
                         className="flex items-center gap-2 text-sm"
                       >
                         <input
                           type="checkbox"
-                          checked={categoryFilters.includes(category)}
+                          checked={statusFilters.includes(status)}
                           onChange={() =>
-                            setCategoryFilters((prev) =>
-                              prev.includes(category)
-                                ? prev.filter((item) => item !== category)
-                                : [...prev, category],
+                            setStatusFilters((prev) =>
+                              prev.includes(status)
+                                ? prev.filter((item) => item !== status)
+                                : [...prev, status],
                             )
                           }
                           className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
                         />
-                        <span>{category}</span>
+                        <span>{statusLabel(status)}</span>
                       </label>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+                    ))}
+                  </div>
 
-      <div className="rounded-3xl border border-border bg-surface shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-background">
-              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-16 px-5 py-4 font-semibold">No</th>
-                <th className="px-5 py-4 font-semibold">Name</th>
-                <th className="px-5 py-4 font-semibold">Category</th>
-                <th className="px-5 py-4 font-semibold">Recipe status</th>
-                <th className="px-5 py-4 font-semibold">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
-                    Loading recipes...
-                  </td>
-                </tr>
-              ) : recipes.length === 0 ? (
-                <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
-                    {error ? error : 'No recipes yet.'}
-                  </td>
-                </tr>
-              ) : (
-                recipes.map((recipe, index) => (
-                  <tr key={recipe.id ?? recipe._id} className="border-t border-border">
-                    <td className="px-5 py-4 text-sm text-muted">
-                      {(page - 1) * ITEMS_PER_PAGE + index + 1}
-                    </td>
-                    <td className="px-5 py-4 font-medium">{recipe.name}</td>
-                    <td className="px-5 py-4">{recipe.category}</td>
-                    <td className="px-5 py-4">
-                      <span>{statusLabel(recipe.status)}</span>
-                    </td>
-                    <td className="px-5 py-4">
+                  <div className="mt-4 flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                      Category
+                    </p>
+                    {categoryFilters.length ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setSelectedRecipeId((prev) =>
-                            prev === (recipe.id ?? recipe._id) ? null : (recipe.id ?? recipe._id ?? null),
-                          )
-                        }
+                        onClick={() => setCategoryFilters([])}
                         className="text-xs font-semibold text-primary"
                       >
-                        View recipe details
+                        Reset
                       </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+                    {categories.length === 0 ? (
+                      <p className="text-xs text-muted">No categories yet.</p>
+                    ) : (
+                      categories.map((category) => (
+                        <label
+                          key={category}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={categoryFilters.includes(category)}
+                            onChange={() =>
+                              setCategoryFilters((prev) =>
+                                prev.includes(category)
+                                  ? prev.filter((item) => item !== category)
+                                  : [...prev, category],
+                              )
+                            }
+                            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+                          />
+                          <span>{category}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-surface shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-background">
+                <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-16 px-5 py-4 font-semibold">No</th>
+                  <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Category</th>
+                  <th className="px-5 py-4 font-semibold">Recipe status</th>
+                  <th className="px-5 py-4 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr className="border-t border-border">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                      Loading recipes...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
-          <span className="text-muted">
-            Showing {recipes.length} of {totalItems} recipes
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={page === 1 || loading}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Prev
-            </button>
-            <span className="text-xs font-semibold text-foreground">
-              Page {page} / {totalPages}
+                ) : recipes.length === 0 ? (
+                  <tr className="border-t border-border">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                      {error ? error : 'No recipes yet.'}
+                    </td>
+                  </tr>
+                ) : (
+                  recipes.map((recipe, index) => (
+                    <tr
+                      key={recipe.id ?? recipe._id}
+                      className="border-t border-border"
+                    >
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {(page - 1) * ITEMS_PER_PAGE + index + 1}
+                      </td>
+                      <td className="px-5 py-4 font-medium">{recipe.name}</td>
+                      <td className="px-5 py-4">{recipe.category}</td>
+                      <td className="px-5 py-4">
+                        <span>{statusLabel(recipe.status)}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedRecipeId((prev) =>
+                              prev === (recipe.id ?? recipe._id)
+                                ? null
+                                : (recipe.id ?? recipe._id ?? null),
+                            )
+                          }
+                          className="text-xs font-semibold text-primary"
+                        >
+                          View recipe details
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
+            <span className="text-muted">
+              Showing {recipes.length} of {totalItems} recipes
             </span>
-            <button
-              type="button"
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-              disabled={page === totalPages || loading}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Next
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page === 1 || loading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold text-foreground">
+                Page {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page === totalPages || loading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       </div>

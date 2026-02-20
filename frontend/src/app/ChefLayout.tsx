@@ -152,7 +152,7 @@ const ChefLayout = () => {
             </nav>
           </aside>
 
-          <main className="flex-1 pr-4">
+          <main className="flex-1 pr-4 pt-4">
             <Outlet />
           </main>
         </div>

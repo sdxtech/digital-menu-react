@@ -248,44 +248,45 @@ const ChefMenuCycle = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">
-          Menu Production
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold">
-          Weekly production plan
-        </h2>
-      </div>
+      <div className="space-y-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Menu Production</h1>
+        </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Pending approval
-          </p>
-          <h3 className="mt-2 text-xl font-semibold">{timelineStats.pending}</h3>
-          <p className="mt-3 text-sm text-muted">
-            Menus not reviewed by the Unit Manager yet.
-          </p>
-        </div>
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Approved
-          </p>
-          <h3 className="mt-2 text-xl font-semibold">{timelineStats.approved}</h3>
-          <p className="mt-3 text-sm text-muted">
-            Menus ready for Store Request.
-          </p>
-        </div>
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-primary">
-            Total menus
-          </p>
-          <h3 className="mt-2 text-xl font-semibold text-primary">
-            {timelineStats.total}
-          </h3>
-          <p className="mt-3 text-sm text-muted">
-            {timelineStats.rejected} menus are rejected.
-          </p>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Pending approval
+            </p>
+            <h3 className="mt-2 text-xl font-semibold">
+              {timelineStats.pending}
+            </h3>
+            <p className="mt-3 text-sm text-muted">
+              Menus not reviewed by the Unit Manager yet.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Approved
+            </p>
+            <h3 className="mt-2 text-xl font-semibold">
+              {timelineStats.approved}
+            </h3>
+            <p className="mt-3 text-sm text-muted">
+              Menus ready for Store Request.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+              Total menus
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-primary">
+              {timelineStats.total}
+            </h3>
+            <p className="mt-3 text-sm text-muted">
+              {timelineStats.rejected} menus are rejected.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -316,8 +317,8 @@ const ChefMenuCycle = () => {
           <table className="min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-14 px-2 py-3 font-semibold">No</th>
                 <th className="w-20 px-2 py-3 font-semibold" />
+                <th className="w-14 px-2 py-3 font-semibold text-center">No</th>
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Portion</th>
@@ -332,19 +333,21 @@ const ChefMenuCycle = () => {
                 return (
                   <Fragment key={row.id}>
                     <tr className="border-t border-border">
-                      <td className="px-2 py-3 text-sm text-muted">{index + 1}</td>
                       <td className="px-2 py-3">
                         <div className="flex justify-center">
                           <button
                             type="button"
                             onClick={() => handleRemoveMenuRow(row.id)}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-danger/40 bg-surface text-base font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
                             aria-label="Remove menu row"
                             title="Remove menu row"
                           >
                             X
                           </button>
                         </div>
+                      </td>
+                      <td className="px-2 py-3 text-center text-sm text-muted">
+                        {index + 1}
                       </td>
                       <td className="px-4 py-3">
                         <select

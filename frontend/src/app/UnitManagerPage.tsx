@@ -142,109 +142,109 @@ const UnitManagerPage = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">
-          Approval Center
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold">
-          Review pending approvals
-        </h2>
-        <p className="mt-2 text-sm text-muted">
-          Review recipes and production menus from the Chef team.
-        </p>
-        {actionError ? (
-          <p className="mt-2 text-xs font-medium text-red-600">
-            {actionError}
+      <div className="space-y-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Approval Center</h1>
+          <p className="mt-2 text-sm text-muted">
+            Review recipes and production menus from the Chef team.
           </p>
-        ) : null}
-        {actionMessage ? (
-          <p className="mt-2 text-xs font-medium text-primary">
-            {actionMessage}
-          </p>
-        ) : null}
-      </div>
+          {actionError ? (
+            <p className="mt-2 text-xs font-medium text-red-600">
+              {actionError}
+            </p>
+          ) : null}
+          {actionMessage ? (
+            <p className="mt-2 text-xs font-medium text-primary">
+              {actionMessage}
+            </p>
+          ) : null}
+        </div>
 
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Approval Recipe</h2>
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
-          <table className="min-w-full bg-white text-sm">
-            <thead className="bg-background">
-              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-12 px-4 py-3 font-semibold">No</th>
-                <th className="px-4 py-3 font-semibold">Name</th>
-                <th className="px-4 py-3 font-semibold">Category</th>
-                <th className="px-4 py-3 font-semibold">Recipe status</th>
-                <th className="px-4 py-3 font-semibold">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingRecipes.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-6 text-center text-muted"
-                  >
-                    No recipes pending approval.
-                  </td>
+        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <h2 className="text-lg font-semibold">Approval Recipe</h2>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+            <table className="min-w-full bg-white text-sm">
+              <thead className="bg-background">
+                <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-12 px-4 py-3 font-semibold">No</th>
+                  <th className="px-4 py-3 font-semibold">Name</th>
+                  <th className="px-4 py-3 font-semibold">Category</th>
+                  <th className="px-4 py-3 font-semibold">Recipe status</th>
+                  <th className="px-4 py-3 font-semibold">Action</th>
                 </tr>
-              ) : (
-                pendingRecipes.map((item, index) => (
-                  <tr key={item.id ?? item._id} className="border-t border-border">
-                    <td className="px-4 py-3 text-sm text-muted">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3">{item.name}</td>
-                    <td className="px-4 py-3">{item.category}</td>
-                    <td className="px-4 py-3">
-                      {item.status === 'active' ? 'Active' : 'Draft'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setActionError('')
-                            try {
-                              await approveRecipe(item.id ?? item._id ?? '')
-                              fetchPending().catch(() => null)
-                            } catch (error) {
-                              setActionError(
-                                error instanceof Error
-                                  ? error.message
-                                  : 'Failed to approve recipe.',
-                              )
-                            }
-                          }}
-                          className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setActionError('')
-                            try {
-                              await rejectRecipe(item.id ?? item._id ?? '')
-                              fetchPending().catch(() => null)
-                            } catch (error) {
-                              setActionError(
-                                error instanceof Error
-                                  ? error.message
-                                  : 'Failed to reject recipe.',
-                              )
-                            }
-                          }}
-                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                        >
-                          Reject
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {pendingRecipes.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-4 py-6 text-center text-muted"
+                    >
+                      No recipes pending approval.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  pendingRecipes.map((item, index) => (
+                    <tr
+                      key={item.id ?? item._id}
+                      className="border-t border-border"
+                    >
+                      <td className="px-4 py-3 text-sm text-muted">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3">{item.name}</td>
+                      <td className="px-4 py-3">{item.category}</td>
+                      <td className="px-4 py-3">
+                        {item.status === 'active' ? 'Active' : 'Draft'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setActionError('')
+                              try {
+                                await approveRecipe(item.id ?? item._id ?? '')
+                                fetchPending().catch(() => null)
+                              } catch (error) {
+                                setActionError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Failed to approve recipe.',
+                                )
+                              }
+                            }}
+                            className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setActionError('')
+                              try {
+                                await rejectRecipe(item.id ?? item._id ?? '')
+                                fetchPending().catch(() => null)
+                              } catch (error) {
+                                setActionError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Failed to reject recipe.',
+                                )
+                              }
+                            }}
+                            className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

@@ -219,51 +219,50 @@ const ChefStoreRequest = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">
-          Store Request
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold">
-          Production menus approved by Unit Manager
-        </h2>
-      </div>
-
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
-              Data source
-            </p>
-            <h3 className="mt-2 text-lg font-semibold">
-              Menus automatically added to store request
-            </h3>
-            <p className="mt-2 text-sm text-muted">
-              Menus on this page come from Menu Production approved by the Unit
-              Manager.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              setInfoMessage('')
-              setErrorMessage('')
-              await fetchStoreRequests()
-            }}
-            aria-label="Refresh approvals"
-            title="Refresh approvals"
-            className="rounded-2xl border border-border bg-background p-2 text-primary"
-          >
-            <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
-          </button>
+      <div className="space-y-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Store Request</h1>
         </div>
-        {infoMessage ? (
-          <p className="mt-3 text-xs font-medium text-primary">{infoMessage}</p>
-        ) : null}
-        {errorMessage ? (
-          <p className="mt-3 text-xs font-medium text-red-600">
-            {errorMessage}
-          </p>
-        ) : null}
+
+        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                Data source
+              </p>
+              <h3 className="mt-2 text-lg font-semibold">
+                Menus automatically added to store request
+              </h3>
+              <p className="mt-2 text-sm text-muted">
+                Menus on this page come from Menu Production approved by the Unit
+                Manager.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setInfoMessage('')
+                setErrorMessage('')
+                await fetchStoreRequests()
+              }}
+              aria-label="Refresh approvals"
+              title="Refresh approvals"
+              className="rounded-2xl border border-border bg-background p-2 text-primary"
+            >
+              <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
+            </button>
+          </div>
+          {infoMessage ? (
+            <p className="mt-3 text-xs font-medium text-primary">
+              {infoMessage}
+            </p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-3 text-xs font-medium text-red-600">
+              {errorMessage}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-3xl border border-border bg-surface shadow-sm">

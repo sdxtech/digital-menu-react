@@ -306,89 +306,89 @@ const SuperadminUsersPage = () => {
   return (
     <div className="w-full py-2">
       <div className="space-y-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-muted">
-            User Management
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold">Manage users</h2>
-          <p className="mt-1 text-sm text-muted">
-            Update names, emails, and passwords for your team.
-          </p>
-        </div>
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-2xl font-semibold">User Management</h1>
+            <p className="mt-1 text-sm text-muted">
+              Update names, emails, and passwords for your team.
+            </p>
+          </div>
 
-        {importOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div
-              className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted">
-                    Import accounts
+          {importOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div
+                className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                      Import accounts
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold">
+                      Upload Excel file
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      Import multiple user accounts at once using .xlsx or .xls.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setImportOpen(false)}
+                    disabled={importing}
+                    className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                    Required columns
                   </p>
-                  <h3 className="mt-2 text-lg font-semibold">Upload Excel file</h3>
-                  <p className="mt-2 text-sm text-muted">
-                    Import multiple user accounts at once using .xlsx or .xls.
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>name</li>
+                    <li>email</li>
+                    <li>password</li>
+                    <li>roles</li>
+                  </ul>
+                  <p className="mt-3 text-xs text-muted">
+                    roles: superadmin, chef, unit-manager, storekeeper. You can
+                    separate multiple roles with commas.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setImportOpen(false)}
-                  disabled={importing}
-                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Close
-                </button>
-              </div>
 
-              <div className="mt-4 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                  Required columns
-                </p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  <li>name</li>
-                  <li>email</li>
-                  <li>password</li>
-                  <li>roles</li>
-                </ul>
-                <p className="mt-3 text-xs text-muted">
-                  roles: superadmin, chef, unit-manager, storekeeper. You can
-                  separate multiple roles with commas.
-                </p>
-              </div>
-
-              <div className="mt-4">
-                <label className="text-sm font-medium text-foreground">
-                  File Excel
-                </label>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleImportFileChange}
-                  disabled={importing}
-                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                {importing ? (
-                  <p className="mt-2 text-xs text-muted">Importing...</p>
-                ) : null}
-                {importError ? (
-                  <p className="mt-2 text-xs font-medium text-red-600">
-                    {importError}
-                  </p>
-                ) : null}
-                {importMessage ? (
-                  <p className="mt-2 text-xs font-medium text-primary">
-                    {importMessage}
-                  </p>
-                ) : null}
+                <div className="mt-4">
+                  <label className="text-sm font-medium text-foreground">
+                    File Excel
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportFileChange}
+                    disabled={importing}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  {importing ? (
+                    <p className="mt-2 text-xs text-muted">Importing...</p>
+                  ) : null}
+                  {importError ? (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      {importError}
+                    </p>
+                  ) : null}
+                  {importMessage ? (
+                    <p className="mt-2 text-xs font-medium text-primary">
+                      {importMessage}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        <div className="rounded-3xl border border-border bg-surface shadow-sm">
+          <div className="rounded-3xl border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -655,6 +655,7 @@ const SuperadminUsersPage = () => {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

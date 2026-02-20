@@ -51,49 +51,48 @@ const ChefDashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">
-          Dashboard
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold">Today's Kitchen Summary</h2>
-        {error ? (
-          <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
-        ) : null}
-      </div>
+      <div className="space-y-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          {error ? (
+            <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
+          ) : null}
+        </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Menus scheduled today
-          </p>
-          <p className="mt-3 text-3xl font-semibold">
-            {summary?.menusToday ?? 0}
-          </p>
-          <p className="mt-2 text-xs text-muted">
-            {formatDelta(summary?.menusTodayDelta)}
-          </p>
-        </div>
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Menus approved today
-          </p>
-          <p className="mt-3 text-3xl font-semibold">
-            {summary?.approvedToday ?? 0}
-          </p>
-          <p className="mt-2 text-xs text-muted">
-            Pending {summary?.pendingToday ?? 0} menus
-          </p>
-        </div>
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-primary">
-            Store requests pending
-          </p>
-          <p className="mt-3 text-3xl font-semibold text-primary">
-            {summary?.storeRequestedToday ?? 0}
-          </p>
-          <p className="mt-2 text-xs text-muted">
-            Fulfilled {summary?.storeFulfilledToday ?? 0} menus
-          </p>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Menus scheduled today
+            </p>
+            <p className="mt-3 text-3xl font-semibold">
+              {summary?.menusToday ?? 0}
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              {formatDelta(summary?.menusTodayDelta)}
+            </p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              Menus approved today
+            </p>
+            <p className="mt-3 text-3xl font-semibold">
+              {summary?.approvedToday ?? 0}
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              Pending {summary?.pendingToday ?? 0} menus
+            </p>
+          </div>
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+              Store requests pending
+            </p>
+            <p className="mt-3 text-3xl font-semibold text-primary">
+              {summary?.storeRequestedToday ?? 0}
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              Fulfilled {summary?.storeFulfilledToday ?? 0} menus
+            </p>
+          </div>
         </div>
       </div>
 

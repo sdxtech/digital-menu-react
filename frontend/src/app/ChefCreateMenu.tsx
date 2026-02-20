@@ -68,6 +68,7 @@ const ChefCreateMenu = () => {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
 
   const searchTimeoutRef = useRef<number | null>(null)
   const searchRequestRef = useRef(0)
@@ -327,6 +328,14 @@ const ChefCreateMenu = () => {
     setImportError('')
   }
 
+  const openImportModal = () => {
+    setImportOpen(true)
+  }
+
+  const closeImportModal = () => {
+    setImportOpen(false)
+  }
+
   const handleImportRecipes = async () => {
     if (!importFile) {
       setImportError('Select an Excel file first')
@@ -439,56 +448,90 @@ const ChefCreateMenu = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-muted">
-          Create New Recipe
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold">Create a new recipe</h2>
-      </div>
-
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted">
-          Import Recipe
-        </p>
-        <h3 className="mt-2 text-lg font-semibold">Import recipes from Excel</h3>
-        <p className="mt-2 text-sm text-muted">
-          Use .xlsx or .xls to import multiple recipes at once.
-        </p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <label className="text-sm font-medium text-foreground">File Excel</label>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleImportFileChange}
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-            />
-            {importFile ? (
-              <p className="mt-2 text-xs text-muted">
-                Selected file: {importFile.name}
-              </p>
-            ) : null}
-            {importError ? (
-              <p className="mt-2 text-xs font-medium text-red-600">{importError}</p>
-            ) : null}
-            {importMessage ? (
-              <p className="mt-2 text-xs font-medium text-primary">
-                {importMessage}
-              </p>
-            ) : null}
+            <h1 className="text-2xl font-semibold">Create New Recipe</h1>
           </div>
-
           <button
             type="button"
-            onClick={handleImportRecipes}
-            className="h-fit self-end rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+            onClick={openImportModal}
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
           >
-            Import recipes
+            <i className="bi bi-upload text-base" aria-hidden="true" />
+            <span>Import recipes</span>
           </button>
         </div>
-      </div>
 
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        {importOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                    Import Recipe
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold">
+                    Import recipes from Excel
+                  </h3>
+                  <p className="mt-2 text-sm text-muted">
+                    Use .xlsx or .xls to import multiple recipes at once.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeImportModal}
+                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    File Excel
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportFileChange}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                  />
+                  {importFile ? (
+                    <p className="mt-2 text-xs text-muted">
+                      Selected file: {importFile.name}
+                    </p>
+                  ) : null}
+                  {importError ? (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      {importError}
+                    </p>
+                  ) : null}
+                  {importMessage ? (
+                    <p className="mt-2 text-xs font-medium text-primary">
+                      {importMessage}
+                    </p>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleImportRecipes}
+                  className="h-fit self-end rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+                >
+                  Import recipes
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
         <h3 className="text-lg font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
@@ -716,6 +759,7 @@ const ChefCreateMenu = () => {
           </button>
         </div>
       </div>
+    </div>
     </div>
   )
 }
