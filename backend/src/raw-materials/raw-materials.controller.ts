@@ -17,6 +17,11 @@ export class RawMaterialsController {
       productCode: dto.productCode,
       name: dto.name,
       unitOfMeasures: dto.unitOfMeasures,
+      site: dto.site,
+      vendor: dto.vendor,
+      currency: dto.currency,
+      minimumQuantity: dto.minimumQuantity,
+      price: dto.price,
     });
   }
 
@@ -35,6 +40,11 @@ export class RawMaterialsController {
       productCode: dto.productCode,
       name: dto.name,
       unitOfMeasures: dto.unitOfMeasures,
+      site: dto.site,
+      vendor: dto.vendor,
+      currency: dto.currency,
+      minimumQuantity: dto.minimumQuantity,
+      price: dto.price,
     });
   }
 }

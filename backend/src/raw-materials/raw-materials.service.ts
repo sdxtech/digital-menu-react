@@ -7,6 +7,12 @@ export type RawMaterialUpsertInput = {
   productCode: string;
   name: string;
   unitOfMeasures: string;
+  site?: string;
+  vendor?: string;
+  currency?: string;
+  minimumQuantity?: number;
+  price?: number;
+  extraFields?: Record<string, string>;
 };
 
 type ListRawMaterialsQuery = {
@@ -24,16 +30,32 @@ export class RawMaterialsService {
 
   async create(input: RawMaterialUpsertInput) {
     const normalizedCode = this.normalizeProductCode(input.productCode);
+    const site = this.normalizeOptionalText(input.site);
+    const vendor = this.normalizeOptionalText(input.vendor);
+    const currency = this.normalizeOptionalText(input.currency);
+    const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
+    const price = this.normalizeOptionalNumber(input.price);
+    const extraFields = input.extraFields;
+
+    const updateFields: Record<string, unknown> = {
+      productCode: input.productCode.trim(),
+      name: input.name.trim(),
+      unitOfMeasures: input.unitOfMeasures.trim(),
+    };
+    if (site !== undefined) updateFields.site = site;
+    if (vendor !== undefined) updateFields.vendor = vendor;
+    if (currency !== undefined) updateFields.currency = currency;
+    if (minimumQuantity !== undefined) {
+      updateFields.minimumQuantity = minimumQuantity;
+    }
+    if (price !== undefined) updateFields.price = price;
+    if (extraFields !== undefined) {
+      updateFields.extraFields = extraFields;
+    }
 
     const existing = await this.rawMaterialModel.findOneAndUpdate(
       { productCodeNormalized: normalizedCode },
-      {
-        $set: {
-          productCode: input.productCode.trim(),
-          name: input.name.trim(),
-          unitOfMeasures: input.unitOfMeasures.trim(),
-        },
-      },
+      { $set: updateFields },
       { new: true },
     );
 
@@ -44,6 +66,12 @@ export class RawMaterialsService {
       productCodeNormalized: normalizedCode,
       name: input.name.trim(),
       unitOfMeasures: input.unitOfMeasures.trim(),
+      ...(site !== undefined ? { site } : {}),
+      ...(vendor !== undefined ? { vendor } : {}),
+      ...(currency !== undefined ? { currency } : {}),
+      ...(minimumQuantity !== undefined ? { minimumQuantity } : {}),
+      ...(price !== undefined ? { price } : {}),
+      ...(extraFields !== undefined ? { extraFields } : {}),
     });
   }
 
@@ -61,6 +89,11 @@ export class RawMaterialsService {
     const name = input.name.trim();
     const unitOfMeasures = input.unitOfMeasures.trim();
     const normalizedCode = this.normalizeProductCode(productCode);
+    const site = this.normalizeOptionalText(input.site);
+    const vendor = this.normalizeOptionalText(input.vendor);
+    const currency = this.normalizeOptionalText(input.currency);
+    const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
+    const price = this.normalizeOptionalNumber(input.price);
 
     if (item.productCodeNormalized !== normalizedCode) {
       const conflict = await this.rawMaterialModel.findOne({
@@ -76,6 +109,14 @@ export class RawMaterialsService {
     item.productCodeNormalized = normalizedCode;
     item.name = name;
     item.unitOfMeasures = unitOfMeasures;
+    if (site !== undefined) item.site = site;
+    if (vendor !== undefined) item.vendor = vendor;
+    if (currency !== undefined) item.currency = currency;
+    if (minimumQuantity !== undefined) item.minimumQuantity = minimumQuantity;
+    if (price !== undefined) item.price = price;
+    if (input.extraFields !== undefined) {
+      item.extraFields = input.extraFields;
+    }
     await item.save();
 
     return item.toObject();
@@ -126,16 +167,32 @@ export class RawMaterialsService {
       const name = row.name.trim();
       const unitOfMeasures = row.unitOfMeasures.trim();
       const normalizedCode = this.normalizeProductCode(productCode);
+      const site = this.normalizeOptionalText(row.site);
+      const vendor = this.normalizeOptionalText(row.vendor);
+      const currency = this.normalizeOptionalText(row.currency);
+      const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
+      const price = this.normalizeOptionalNumber(row.price);
+      const updateFields: Record<string, unknown> = {
+        productCode,
+        name,
+        unitOfMeasures,
+      };
+      if (site !== undefined) updateFields.site = site;
+      if (vendor !== undefined) updateFields.vendor = vendor;
+      if (currency !== undefined) updateFields.currency = currency;
+      if (minimumQuantity !== undefined) {
+        updateFields.minimumQuantity = minimumQuantity;
+      }
+      if (price !== undefined) updateFields.price = price;
+      if (row.extraFields !== undefined) {
+        updateFields.extraFields = row.extraFields;
+      }
 
       return {
         updateOne: {
           filter: { productCodeNormalized: normalizedCode },
           update: {
-            $set: {
-              productCode,
-              name,
-              unitOfMeasures,
-            },
+            $set: updateFields,
             $setOnInsert: {
               productCodeNormalized: normalizedCode,
             },
@@ -159,6 +216,15 @@ export class RawMaterialsService {
 
   private normalizeProductCode(productCode: string) {
     return productCode.trim().toLowerCase();
+  }
+
+  private normalizeOptionalText(value?: string) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private normalizeOptionalNumber(value?: number) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
   private escapeRegExp(value: string) {

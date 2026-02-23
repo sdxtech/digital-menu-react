@@ -1,4 +1,6 @@
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
+import { apiFetch } from '../lib/api'
+import { readStoredToken } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { unitOfMeasuresOptions } from '../lib/unit-of-measures'
 
@@ -6,6 +8,21 @@ type RawMaterialForm = {
   productCode: string
   name: string
   unitOfMeasures: string
+}
+
+type NotificationItem = {
+  id?: string
+  _id?: string
+  title?: string
+  message?: string
+  meta?: Record<string, unknown>
+  createdAt?: string
+}
+
+type ImportResult = {
+  status: 'success' | 'error'
+  title: string
+  message: string
 }
 
 const emptyRawMaterialForm: RawMaterialForm = {
@@ -26,6 +43,8 @@ const ChefAddRawMaterial = () => {
   const [importMessage, setImportMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [importStartedAt, setImportStartedAt] = useState<number | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
   const updateRawMaterialForm = <K extends keyof RawMaterialForm>(
     field: K,
@@ -69,7 +88,6 @@ const ChefAddRawMaterial = () => {
   const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0] ?? null
     setImportMessage('')
-    setImporting(false)
 
     if (!nextFile) {
       setImportFile(null)
@@ -89,11 +107,18 @@ const ChefAddRawMaterial = () => {
   }
 
   const openImportModal = () => {
+    setImportError('')
+    setImportMessage('')
+    setImportResult(null)
     setImportOpen(true)
   }
 
   const closeImportModal = () => {
     setImportOpen(false)
+  }
+
+  const closeImportResult = () => {
+    setImportResult(null)
   }
 
   const handleImportRawMaterials = async () => {
@@ -103,11 +128,16 @@ const ChefAddRawMaterial = () => {
       return
     }
 
+    if (importing) return
+
     setImporting(true)
+    setImportError('')
+    setImportMessage('Starting import...')
+    setImportResult(null)
     try {
       await importRawMaterialsFromExcel(importFile)
-      setImportError('')
-      setImportMessage('')
+      setImportStartedAt(Date.now())
+      setImportMessage('Import started. Waiting for completion...')
     } catch (error) {
       const message =
         error instanceof Error
@@ -115,10 +145,105 @@ const ChefAddRawMaterial = () => {
           : 'Failed to start raw material import.'
       setImportError(message)
       setImportMessage('')
-    } finally {
       setImporting(false)
+      setImportStartedAt(null)
     }
   }
+
+  useEffect(() => {
+    if (!importing || !importStartedAt) return
+
+    let cancelled = false
+    let timeoutId: number | undefined
+
+    const pollStatus = async () => {
+      const token = readStoredToken()
+      if (!token) {
+        setImportError('Please log in first to check import status.')
+        setImportMessage('')
+        setImporting(false)
+        setImportStartedAt(null)
+        return
+      }
+
+      try {
+        const notifications = await apiFetch<NotificationItem[]>(
+          '/notifications?page=1&limit=25',
+          undefined,
+          token,
+        )
+        if (cancelled) return
+        const match = notifications.find((item) => {
+          if (!item?.title || !item.createdAt) return false
+          if (
+            item.title !== 'Raw material import completed' &&
+            item.title !== 'Raw material import failed'
+          ) {
+            return false
+          }
+          const createdAt = new Date(item.createdAt).getTime()
+          return Number.isFinite(createdAt) && createdAt >= importStartedAt
+        })
+
+        if (match) {
+          const isSuccess = match.title === 'Raw material import completed'
+          let message = match.message ?? ''
+          if (!isSuccess) {
+            const reason =
+              match.meta && typeof match.meta.reason === 'string'
+                ? match.meta.reason
+                : ''
+            if (reason) {
+              message = `${message} (${reason})`
+            }
+          }
+
+          setImportResult({
+            status: isSuccess ? 'success' : 'error',
+            title: match.title ?? 'Import finished',
+            message: message || 'Import finished.',
+          })
+          setImporting(false)
+          setImportOpen(false)
+          setImportError('')
+          setImportMessage('')
+          setImportFile(null)
+          setImportStartedAt(null)
+          if (isSuccess) {
+            fetchRawMaterials(1, rawMaterialsMeta.limit).catch(() => null)
+          }
+          return
+        }
+      } catch (error) {
+        if (cancelled) return
+        const message =
+          error instanceof Error ? error.message : 'Failed to check import status.'
+        setImportResult({
+          status: 'error',
+          title: 'Import failed',
+          message,
+        })
+        setImporting(false)
+        setImportOpen(false)
+        setImportMessage('')
+        setImportStartedAt(null)
+        return
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollStatus, 2000)
+      }
+    }
+
+    timeoutId = window.setTimeout(pollStatus, 2000)
+
+    return () => {
+      cancelled = true
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [fetchRawMaterials, importing, importStartedAt, rawMaterialsMeta.limit])
 
   return (
     <div className="space-y-6">
@@ -174,6 +299,7 @@ const ChefAddRawMaterial = () => {
                     type="file"
                     accept=".xlsx,.xls"
                     onChange={handleImportFileChange}
+                    disabled={importing}
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                   />
                   {importFile ? (
@@ -208,6 +334,52 @@ const ChefAddRawMaterial = () => {
                     {importMessage}
                   </p>
                 ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {importResult ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-md rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                    Import Raw Material
+                  </p>
+                  <h3
+                    className={`mt-2 text-lg font-semibold ${
+                      importResult.status === 'success'
+                        ? 'text-primary'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {importResult.title}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted">
+                    {importResult.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeImportResult}
+                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  type="button"
+                  onClick={closeImportResult}
+                  className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white"
+                >
+                  Ok
+                </button>
               </div>
             </div>
           </div>

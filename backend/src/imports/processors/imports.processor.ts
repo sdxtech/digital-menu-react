@@ -27,6 +27,18 @@ type ImportError = {
   reason: string;
 };
 
+type RawMaterialHeaderMap = {
+  productCode: number;
+  name: number;
+  unitOfMeasures: number;
+  site: number;
+  vendor: number;
+  currency: number;
+  minimumQuantity: number;
+  price: number;
+  extraFields: Record<string, number>;
+};
+
 const RAW_MATERIAL_HEADER_ALIASES = {
   productCode: [
     'product code',
@@ -46,7 +58,33 @@ const RAW_MATERIAL_HEADER_ALIASES = {
     'unit_of_measures',
     'satuan',
   ],
+  site: ['site', 'location', 'lokasi', 'cabang'],
+  vendor: ['vendor', 'supplier', 'supplier name', 'vendor name', 'pemasok'],
+  currency: ['currency', 'curr', 'mata uang', 'mata_uang'],
+  minimumQuantity: [
+    'minimal quantity',
+    'minimum quantity',
+    'min quantity',
+    'min qty',
+    'minimal qty',
+    'minimum qty',
+    'min_qty',
+    'minimum_qty',
+    'minimal_qty',
+  ],
+  price: ['price', 'unit price', 'unit_price', 'harga', 'cost'],
 };
+
+const RAW_MATERIAL_RESERVED_HEADERS = new Set([
+  ...RAW_MATERIAL_HEADER_ALIASES.productCode,
+  ...RAW_MATERIAL_HEADER_ALIASES.name,
+  ...RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
+  ...RAW_MATERIAL_HEADER_ALIASES.site,
+  ...RAW_MATERIAL_HEADER_ALIASES.vendor,
+  ...RAW_MATERIAL_HEADER_ALIASES.currency,
+  ...RAW_MATERIAL_HEADER_ALIASES.minimumQuantity,
+  ...RAW_MATERIAL_HEADER_ALIASES.price,
+]);
 
 @Injectable()
 export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
@@ -200,16 +238,45 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     };
 
     const flushBatch = async (
-      batch: Array<{ productCode: string; name: string; unitOfMeasures: string; row: number }>,
+      batch: Array<{
+        productCode: string;
+        name: string;
+        unitOfMeasures: string;
+        site?: string;
+        vendor?: string;
+        currency?: string;
+        minimumQuantity?: number;
+        price?: number;
+        extraFields?: Record<string, string>;
+        row: number;
+      }>,
     ) => {
       if (batch.length === 0) return;
       try {
         const result = await this.rawMaterials.bulkUpsertByProductCode(
-          batch.map(({ productCode, name, unitOfMeasures }) => ({
+          batch.map(
+            ({
+              productCode,
+              name,
+              unitOfMeasures,
+              site,
+              vendor,
+              currency,
+              minimumQuantity,
+              price,
+              extraFields,
+            }) => ({
             productCode,
             name,
             unitOfMeasures,
-          })),
+            site,
+            vendor,
+            currency,
+            minimumQuantity,
+            price,
+            extraFields,
+          }),
+          ),
         );
         successCount += result.upsertedCount + result.matchedCount;
       } catch (error) {
@@ -245,7 +312,18 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
       const batch = new Map<
         string,
-        { productCode: string; name: string; unitOfMeasures: string; row: number }
+        {
+          productCode: string;
+          name: string;
+          unitOfMeasures: string;
+          site?: string;
+          vendor?: string;
+          currency?: string;
+          minimumQuantity?: number;
+          price?: number;
+          extraFields?: Record<string, string>;
+          row: number;
+        }
       >();
       const batchSize = 1000;
 
@@ -254,6 +332,12 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const productCode = record.productCode.trim();
         const name = record.name.trim();
         const unitOfMeasures = record.unitOfMeasures.trim();
+        const site = record.site;
+        const vendor = record.vendor;
+        const currency = record.currency;
+        const minimumQuantity = record.minimumQuantity;
+        const price = record.price;
+        const extraFields = record.extraFields;
 
         if (!productCode || !name || !unitOfMeasures) {
           pushError({
@@ -264,11 +348,17 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        const normalizedCode = this.normalizeHeader(productCode);
+        const normalizedCode = this.normalizeProductCode(productCode);
         batch.set(normalizedCode, {
           productCode,
           name,
           unitOfMeasures,
+          site,
+          vendor,
+          currency,
+          minimumQuantity,
+          price,
+          extraFields,
           row: record.rowNumber,
         });
 
@@ -328,12 +418,34 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
       );
+      const site = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.site);
+      const vendor = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.vendor);
+      const currency = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.currency);
+      const minimumQuantityRaw = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.minimumQuantity,
+      );
+      const priceRaw = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.price);
+      const minimumQuantity = this.parseNumber(minimumQuantityRaw);
+      const price = this.parseNumber(priceRaw);
+      const extraFields: Record<string, string> = {};
+      for (const [key, value] of Object.entries(normalized)) {
+        if (!key || RAW_MATERIAL_RESERVED_HEADERS.has(key)) continue;
+        const text = value === undefined || value === null ? '' : String(value).trim();
+        extraFields[key] = text;
+      }
 
       yield {
         rowNumber,
         productCode,
         name,
         unitOfMeasures,
+        site: this.normalizeOptionalText(site),
+        vendor: this.normalizeOptionalText(vendor),
+        currency: this.normalizeOptionalText(currency),
+        minimumQuantity,
+        price,
+        extraFields,
       };
     }
   }
@@ -346,8 +458,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       styles: 'ignore',
     });
 
-    let headerMap: { productCode: number; name: number; unitOfMeasures: number } | null =
-      null;
+    let headerMap: RawMaterialHeaderMap | null = null;
 
     for await (const worksheet of workbook) {
       for await (const row of worksheet) {
@@ -361,12 +472,29 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const productCode = this.getCellValue(values, headerMap.productCode);
         const name = this.getCellValue(values, headerMap.name);
         const unitOfMeasures = this.getCellValue(values, headerMap.unitOfMeasures);
+        const site = this.getCellValue(values, headerMap.site);
+        const vendor = this.getCellValue(values, headerMap.vendor);
+        const currency = this.getCellValue(values, headerMap.currency);
+        const minimumQuantityRaw = this.getCellValue(values, headerMap.minimumQuantity);
+        const priceRaw = this.getCellValue(values, headerMap.price);
+        const minimumQuantity = this.parseNumber(minimumQuantityRaw);
+        const price = this.parseNumber(priceRaw);
+        const extraFields: Record<string, string> = {};
+        for (const [key, index] of Object.entries(headerMap.extraFields)) {
+          extraFields[key] = this.getCellValue(values, index);
+        }
 
         yield {
           rowNumber: row.number,
           productCode,
           name,
           unitOfMeasures,
+          site: this.normalizeOptionalText(site),
+          vendor: this.normalizeOptionalText(vendor),
+          currency: this.normalizeOptionalText(currency),
+          minimumQuantity,
+          price,
+          extraFields,
         };
       }
       break;
@@ -397,11 +525,17 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     return '';
   }
 
-  private buildHeaderMap(values: unknown[]) {
-    const map = {
+  private buildHeaderMap(values: unknown[]): RawMaterialHeaderMap {
+    const map: RawMaterialHeaderMap = {
       productCode: 0,
       name: 0,
       unitOfMeasures: 0,
+      site: 0,
+      vendor: 0,
+      currency: 0,
+      minimumQuantity: 0,
+      price: 0,
+      extraFields: {},
     };
 
     for (let idx = 1; idx < values.length; idx += 1) {
@@ -409,13 +543,37 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       if (!header) continue;
       if (RAW_MATERIAL_HEADER_ALIASES.productCode.includes(header)) {
         map.productCode = idx;
+        continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.name.includes(header)) {
         map.name = idx;
+        continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures.includes(header)) {
         map.unitOfMeasures = idx;
+        continue;
       }
+      if (RAW_MATERIAL_HEADER_ALIASES.site.includes(header)) {
+        map.site = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.vendor.includes(header)) {
+        map.vendor = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.currency.includes(header)) {
+        map.currency = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.minimumQuantity.includes(header)) {
+        map.minimumQuantity = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.price.includes(header)) {
+        map.price = idx;
+        continue;
+      }
+      map.extraFields[header] = idx;
     }
 
     if (!map.productCode || !map.name || !map.unitOfMeasures) {
@@ -443,6 +601,34 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizeHeader(value: unknown) {
-    return String(value ?? '').trim().toLowerCase();
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\./g, '_')
+      .replace(/\$/g, '');
+  }
+
+  private normalizeOptionalText(value: string) {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private parseNumber(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    let normalized = trimmed.replace(/\s/g, '');
+    if (normalized.includes(',') && normalized.includes('.')) {
+      normalized = normalized.replace(/,/g, '');
+    } else if (normalized.includes(',') && !normalized.includes('.')) {
+      normalized = normalized.replace(',', '.');
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private normalizeProductCode(value: string) {
+    return value.trim().toLowerCase();
   }
 }
