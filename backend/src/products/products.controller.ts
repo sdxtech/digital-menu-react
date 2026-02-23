@@ -1,8 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ListProductsQueryDto } from './dto/list-products.query.dto';
 import { ProductIdParamDto } from './dto/product-id.param.dto';
@@ -16,7 +28,7 @@ export class ProductsController {
 
   @Post()
   @Roles(AppRole.Superadmin)
-  create(@Body() dto: CreateProductDto) {
+  create(@Req() req: AuthenticatedRequest, @Body() dto: CreateProductDto) {
     return this.products.create({
       name: dto.name,
       price: dto.price,
@@ -24,11 +36,11 @@ export class ProductsController {
       description: dto.description,
       imageUrl: dto.imageUrl,
       isActive: dto.isActive,
-    });
+    }, req.user.site);
   }
 
   @Get()
-  list(@Query() query: ListProductsQueryDto) {
+  list(@Req() req: AuthenticatedRequest, @Query() query: ListProductsQueryDto) {
     return this.products.findAll({
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -37,17 +49,21 @@ export class ProductsController {
       isActive: query.isActive ?? true,
       sortBy: query.sortBy ?? 'createdAt',
       sortDir: query.sortDir ?? 'desc',
-    });
+    }, req.user.site);
   }
 
   @Get(':id')
-  detail(@Param() params: ProductIdParamDto) {
-    return this.products.findById(params.id);
+  detail(@Req() req: AuthenticatedRequest, @Param() params: ProductIdParamDto) {
+    return this.products.findById(params.id, req.user.site);
   }
 
   @Patch(':id')
   @Roles(AppRole.Superadmin)
-  update(@Param() params: ProductIdParamDto, @Body() dto: UpdateProductDto) {
+  update(
+    @Req() req: AuthenticatedRequest,
+    @Param() params: ProductIdParamDto,
+    @Body() dto: UpdateProductDto,
+  ) {
     return this.products.update(params.id, {
       name: dto.name,
       price: dto.price,
@@ -55,12 +71,12 @@ export class ProductsController {
       description: dto.description,
       imageUrl: dto.imageUrl,
       isActive: dto.isActive,
-    });
+    }, req.user.site);
   }
 
   @Delete(':id')
   @Roles(AppRole.Superadmin)
-  remove(@Param() params: ProductIdParamDto) {
-    return this.products.softDelete(params.id);
+  remove(@Req() req: AuthenticatedRequest, @Param() params: ProductIdParamDto) {
+    return this.products.softDelete(params.id, req.user.site);
   }
 }

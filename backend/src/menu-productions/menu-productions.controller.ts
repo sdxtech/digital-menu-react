@@ -27,7 +27,7 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionDto,
   ) {
-    return this.menuProductions.create(dto, req.user.sub);
+    return this.menuProductions.create(dto, req.user.sub, req.user.site);
   }
 
   @Post('bulk')
@@ -35,43 +35,61 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionBulkDto,
   ) {
-    return this.menuProductions.createMany(dto.items ?? [], req.user.sub);
+    return this.menuProductions.createMany(
+      dto.items ?? [],
+      req.user.sub,
+      req.user.site,
+    );
   }
 
   // BACKEND LOGIC: store-request aggregation lives here (qty multiplier + summary)
   @Get('store-requests')
-  storeRequests(@Query() query: ListMenuProductionsQueryDto) {
-    return this.menuProductions.buildStoreRequestGroups(query);
+  storeRequests(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListMenuProductionsQueryDto,
+  ) {
+    return this.menuProductions.buildStoreRequestGroups(query, req.user.site);
   }
 
   // BACKEND LOGIC: timeline grouping + approval stats for production menus.
   @Get('timeline')
-  timeline(@Query() query: ListMenuProductionsQueryDto) {
-    return this.menuProductions.buildTimeline(query);
+  timeline(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListMenuProductionsQueryDto,
+  ) {
+    return this.menuProductions.buildTimeline(query, req.user.site);
   }
 
   @Get()
-  list(@Query() query: ListMenuProductionsQueryDto) {
-    return this.menuProductions.findAll(query);
+  list(@Req() req: AuthenticatedRequest, @Query() query: ListMenuProductionsQueryDto) {
+    return this.menuProductions.findAll(query, req.user.site);
   }
 
   @Patch(':id/approve')
-  approve(@Param('id') id: string) {
-    return this.menuProductions.setApprovalStatus(id, 'approved');
+  approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.menuProductions.setApprovalStatus(id, 'approved', req.user.site);
   }
 
   @Patch(':id/reject')
-  reject(@Param('id') id: string) {
-    return this.menuProductions.setApprovalStatus(id, 'rejected');
+  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.menuProductions.setApprovalStatus(id, 'rejected', req.user.site);
   }
 
   @Patch(':id/store-request')
-  markStoreRequested(@Param('id') id: string) {
-    return this.menuProductions.setStoreRequestStatus(id, 'requested');
+  markStoreRequested(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.menuProductions.setStoreRequestStatus(
+      id,
+      'requested',
+      req.user.site,
+    );
   }
 
   @Patch(':id/fulfill')
-  markStoreFulfilled(@Param('id') id: string) {
-    return this.menuProductions.setStoreRequestStatus(id, 'fulfilled');
+  markStoreFulfilled(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.menuProductions.setStoreRequestStatus(
+      id,
+      'fulfilled',
+      req.user.site,
+    );
   }
 }

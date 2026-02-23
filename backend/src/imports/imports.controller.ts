@@ -30,6 +30,7 @@ export class ImportsController {
       dto.fileKey,
       dto.fileName,
       dto.contentType,
+      req.user.site,
     );
   }
 

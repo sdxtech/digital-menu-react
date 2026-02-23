@@ -56,6 +56,8 @@ type TimelineStats = {
   total: number;
 };
 
+const DEFAULT_SITE = 'A1';
+
 @Injectable()
 export class MenuProductionsService {
   constructor(
@@ -65,7 +67,12 @@ export class MenuProductionsService {
     private readonly recipeModel: Model<RecipeDocument>,
   ) {}
 
-  async create(input: CreateMenuProductionDto, createdBy?: string) {
+  async create(
+    input: CreateMenuProductionDto,
+    createdBy?: string,
+    site?: string,
+  ) {
+    const normalizedSite = this.normalizeSite(site);
     return this.menuProductionModel.create({
       menuName: input.menuName.trim(),
       category: input.category.trim(),
@@ -74,11 +81,17 @@ export class MenuProductionsService {
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
       createdBy,
+      ...(normalizedSite ? { site: normalizedSite } : {}),
     });
   }
 
-  async createMany(inputs: CreateMenuProductionDto[], createdBy?: string) {
+  async createMany(
+    inputs: CreateMenuProductionDto[],
+    createdBy?: string,
+    site?: string,
+  ) {
     if (!inputs.length) return [];
+    const normalizedSite = this.normalizeSite(site);
     const payload = inputs.map((input) => ({
       menuName: input.menuName.trim(),
       category: input.category.trim(),
@@ -87,18 +100,29 @@ export class MenuProductionsService {
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
       createdBy,
+      ...(normalizedSite ? { site: normalizedSite } : {}),
     }));
     return this.menuProductionModel.insertMany(payload, { ordered: false });
   }
 
-  async findAll(query: ListMenuProductionsQueryDto) {
+  async findAll(query: ListMenuProductionsQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
+    const andFilters: Record<string, unknown>[] = [];
+    const siteFilter = this.buildSiteFilter(site);
+    if (Object.keys(siteFilter).length) {
+      andFilters.push(siteFilter);
+    }
     if (query.search?.trim()) {
       const text = query.search.trim();
-      filter.$or = [
-        { menuName: new RegExp(this.escapeRegExp(text), 'i') },
-        { category: new RegExp(this.escapeRegExp(text), 'i') },
-      ];
+      andFilters.push({
+        $or: [
+          { menuName: new RegExp(this.escapeRegExp(text), 'i') },
+          { category: new RegExp(this.escapeRegExp(text), 'i') },
+        ],
+      });
+    }
+    if (andFilters.length) {
+      filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
     if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
@@ -124,10 +148,13 @@ export class MenuProductionsService {
         item.storeRequestStatus === 'not-requested',
     );
     if (needsSync) {
-      await this.menuProductionModel.updateMany(
+      const syncFilter = this.withSiteFilter(
         { approvalStatus: 'approved', storeRequestStatus: 'not-requested' },
-        { $set: { storeRequestStatus: 'requested' } },
+        site,
       );
+      await this.menuProductionModel.updateMany(syncFilter, {
+        $set: { storeRequestStatus: 'requested' },
+      });
       items.forEach((item) => {
         if (
           item.approvalStatus === 'approved' &&
@@ -147,13 +174,14 @@ export class MenuProductionsService {
     };
   }
 
-  async setApprovalStatus(id: string, status: ApprovalStatus) {
+  async setApprovalStatus(id: string, status: ApprovalStatus, site?: string) {
     // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
+    const filter = this.withSiteFilter({ _id: id }, site);
     const updated = await this.menuProductionModel
-      .findByIdAndUpdate(
-        id,
+      .findOneAndUpdate(
+        filter,
         { approvalStatus: status, storeRequestStatus: nextStoreStatus },
         { new: true },
       )
@@ -162,8 +190,13 @@ export class MenuProductionsService {
     return updated;
   }
 
-  async setStoreRequestStatus(id: string, status: StoreRequestStatus) {
-    const item = await this.menuProductionModel.findById(id);
+  async setStoreRequestStatus(
+    id: string,
+    status: StoreRequestStatus,
+    site?: string,
+  ) {
+    const filter = this.withSiteFilter({ _id: id }, site);
+    const item = await this.menuProductionModel.findOne(filter);
     if (!item) throw new NotFoundException('Menu production not found');
     if (status === 'requested') {
       if (item.approvalStatus !== 'approved') {
@@ -183,14 +216,24 @@ export class MenuProductionsService {
   }
 
   // BACKEND LOGIC: production timeline grouping + approval stats.
-  async buildTimeline(query: ListMenuProductionsQueryDto) {
+  async buildTimeline(query: ListMenuProductionsQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
+    const andFilters: Record<string, unknown>[] = [];
+    const siteFilter = this.buildSiteFilter(site);
+    if (Object.keys(siteFilter).length) {
+      andFilters.push(siteFilter);
+    }
     if (query.search?.trim()) {
       const text = query.search.trim();
-      filter.$or = [
-        { menuName: new RegExp(this.escapeRegExp(text), 'i') },
-        { category: new RegExp(this.escapeRegExp(text), 'i') },
-      ];
+      andFilters.push({
+        $or: [
+          { menuName: new RegExp(this.escapeRegExp(text), 'i') },
+          { category: new RegExp(this.escapeRegExp(text), 'i') },
+        ],
+      });
+    }
+    if (andFilters.length) {
+      filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
     if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
@@ -244,14 +287,24 @@ export class MenuProductionsService {
   }
 
   // BACKEND LOGIC: compute ingredient multipliers + summary for store requests.
-  async buildStoreRequestGroups(query: ListMenuProductionsQueryDto) {
+  async buildStoreRequestGroups(query: ListMenuProductionsQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
+    const andFilters: Record<string, unknown>[] = [];
+    const siteFilter = this.buildSiteFilter(site);
+    if (Object.keys(siteFilter).length) {
+      andFilters.push(siteFilter);
+    }
     if (query.search?.trim()) {
       const text = query.search.trim();
-      filter.$or = [
-        { menuName: new RegExp(this.escapeRegExp(text), 'i') },
-        { category: new RegExp(this.escapeRegExp(text), 'i') },
-      ];
+      andFilters.push({
+        $or: [
+          { menuName: new RegExp(this.escapeRegExp(text), 'i') },
+          { category: new RegExp(this.escapeRegExp(text), 'i') },
+        ],
+      });
+    }
+    if (andFilters.length) {
+      filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
     if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
@@ -266,7 +319,9 @@ export class MenuProductionsService {
       return { items: [] as StoreRequestGroup[] };
     }
 
-    const recipes = await this.recipeModel.find().lean();
+    const recipeFilter =
+      Object.keys(siteFilter).length > 0 ? siteFilter : {};
+    const recipes = await this.recipeModel.find(recipeFilter).lean();
     const recipeByName = new Map<string, RecipeDocument>();
     recipes.forEach((recipe) => {
       const key = this.normalizeName(recipe.name ?? '');
@@ -369,5 +424,29 @@ export class MenuProductionsService {
 
   private normalizeName(value: string) {
     return value ? value.trim().toLowerCase() : '';
+  }
+
+  private normalizeSite(site?: string) {
+    const trimmed = site?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private buildSiteFilter(site?: string) {
+    if (!site) return {};
+    if (site === DEFAULT_SITE) {
+      return {
+        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+      };
+    }
+    return { site };
+  }
+
+  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+    const siteFilter = this.buildSiteFilter(site);
+    if (!Object.keys(siteFilter).length) return filter;
+    if ('$or' in siteFilter) {
+      return { $and: [filter, siteFilter] };
+    }
+    return { ...filter, ...siteFilter };
   }
 }

@@ -149,6 +149,9 @@ export class UsersService {
 
   private normalizeSites(sites?: string[]) {
     if (!Array.isArray(sites)) return [];
-    return sites.map((site) => site.trim()).filter(Boolean);
+    return sites
+      .map((site) => site.trim())
+      .filter(Boolean)
+      .slice(0, 1);
   }
 }

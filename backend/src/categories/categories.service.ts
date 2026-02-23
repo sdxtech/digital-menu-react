@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 
+const DEFAULT_SITE = 'A1';
+
 export type CreateCategoryInput = {
   name: string;
   isActive?: boolean;
@@ -23,9 +25,20 @@ export class CategoriesService {
     @InjectModel(Category.name) private readonly categoryModel: Model<CategoryDocument>,
   ) {}
 
-  async create(input: CreateCategoryInput) {
+  async create(input: CreateCategoryInput, site?: string) {
+    const normalizedSite = this.normalizeSite(site);
+    const name = input.name.trim();
+    const existing = await this.findByNameInsensitive(name, site);
+    if (existing) {
+      throw new ConflictException('Category name already exists');
+    }
+
     try {
-      return await this.categoryModel.create(input);
+      return await this.categoryModel.create({
+        name,
+        isActive: input.isActive ?? true,
+        ...(normalizedSite ? { site: normalizedSite } : {}),
+      });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
         throw new ConflictException('Category name already exists');
@@ -34,9 +47,27 @@ export class CategoriesService {
     }
   }
 
-  async update(id: string, input: UpdateCategoryInput) {
+  async update(id: string, input: UpdateCategoryInput, site?: string) {
+    const trimmedName = input.name?.trim();
+    if (trimmedName) {
+      const existing = await this.findByNameInsensitive(trimmedName, site);
+      if (existing && String(existing._id) !== id) {
+        throw new ConflictException('Category name already exists');
+      }
+    }
+
     try {
-      const updated = await this.categoryModel.findByIdAndUpdate(id, input, { new: true });
+      const normalizedSite = this.normalizeSite(site);
+      const updateFields: UpdateCategoryInput & { site?: string } = {
+        ...input,
+      };
+      if (trimmedName) updateFields.name = trimmedName;
+      if (normalizedSite) updateFields.site = normalizedSite;
+
+      const filter = this.withSiteFilter({ _id: id }, site);
+      const updated = await this.categoryModel.findOneAndUpdate(filter, updateFields, {
+        new: true,
+      });
       if (!updated) throw new NotFoundException('Category not found');
       return updated;
     } catch (error) {
@@ -47,9 +78,10 @@ export class CategoriesService {
     }
   }
 
-  async softDelete(id: string) {
-    const updated = await this.categoryModel.findByIdAndUpdate(
-      id,
+  async softDelete(id: string, site?: string) {
+    const filter = this.withSiteFilter({ _id: id }, site);
+    const updated = await this.categoryModel.findOneAndUpdate(
+      filter,
       { isActive: false },
       { new: true },
     );
@@ -57,19 +89,28 @@ export class CategoriesService {
     return updated;
   }
 
-  async findById(id: string) {
-    const category = await this.categoryModel.findById(id).lean();
+  async findById(id: string, site?: string) {
+    const filter = this.withSiteFilter({ _id: id }, site);
+    const category = await this.categoryModel.findOne(filter).lean();
     if (!category) throw new NotFoundException('Category not found');
     return category;
   }
 
-  async findAll(query: ListCategoriesQuery) {
+  async findAll(query: ListCategoriesQuery, site?: string) {
     const filter: Record<string, unknown> = {};
+    const andFilters: Record<string, unknown>[] = [];
+    const siteFilter = this.buildSiteFilter(site);
+    if (Object.keys(siteFilter).length) {
+      andFilters.push(siteFilter);
+    }
     if (query.search) {
-      filter.name = new RegExp(this.escapeRegExp(query.search), 'i');
+      andFilters.push({ name: new RegExp(this.escapeRegExp(query.search), 'i') });
     }
     if (query.isActive !== undefined) {
       filter.isActive = query.isActive;
+    }
+    if (andFilters.length) {
+      filter.$and = andFilters;
     }
 
     const skip = (query.page - 1) * query.limit;
@@ -91,21 +132,25 @@ export class CategoriesService {
     };
   }
 
-  async findByNameInsensitive(name: string) {
-    return this.categoryModel
-      .findOne({ name })
-      .collation({ locale: 'en', strength: 2 });
+  async findByNameInsensitive(name: string, site?: string) {
+    const filter = this.withSiteFilter({ name }, site);
+    return this.categoryModel.findOne(filter).collation({ locale: 'en', strength: 2 });
   }
 
-  async findOrCreateByName(name: string) {
-    const existing = await this.findByNameInsensitive(name);
+  async findOrCreateByName(name: string, site?: string) {
+    const normalizedSite = this.normalizeSite(site);
+    const existing = await this.findByNameInsensitive(name, site);
     if (existing) return existing;
 
     try {
-      return await this.categoryModel.create({ name, isActive: true });
+      return await this.categoryModel.create({
+        name: name.trim(),
+        isActive: true,
+        ...(normalizedSite ? { site: normalizedSite } : {}),
+      });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
-        const again = await this.findByNameInsensitive(name);
+        const again = await this.findByNameInsensitive(name, site);
         if (again) return again;
       }
       throw error;
@@ -114,5 +159,29 @@ export class CategoriesService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private normalizeSite(site?: string) {
+    const trimmed = site?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private buildSiteFilter(site?: string) {
+    if (!site) return {};
+    if (site === DEFAULT_SITE) {
+      return {
+        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+      };
+    }
+    return { site };
+  }
+
+  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+    const siteFilter = this.buildSiteFilter(site);
+    if (!Object.keys(siteFilter).length) return filter;
+    if ('$or' in siteFilter) {
+      return { $and: [filter, siteFilter] };
+    }
+    return { ...filter, ...siteFilter };
   }
 }

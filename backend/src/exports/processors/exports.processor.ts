@@ -11,6 +11,7 @@ import { Readable } from 'stream';
 
 type ExportJob = {
   userId: string;
+  site?: string;
 };
 
 @Injectable()
@@ -37,10 +38,10 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handle(job: Job<ExportJob>) {
-    const { userId } = job.data;
+    const { userId, site } = job.data;
     try {
       this.notifications.emitJobProgress(userId, { jobId: job.id, stage: 'start' });
-      const products = await this.products.findActiveForExport();
+      const products = await this.products.findActiveForExport(site);
       const csv = this.buildCsv(products);
 
       const key = `exports/${randomUUID()}.csv`;

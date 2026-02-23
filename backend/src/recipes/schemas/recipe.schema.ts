@@ -21,6 +21,9 @@ export class Recipe {
   @Prop({ required: true, trim: true })
   category: string;
 
+  @Prop({ type: String, trim: true, index: true })
+  site?: string;
+
   @Prop({ trim: true })
   description?: string;
 

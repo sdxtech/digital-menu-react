@@ -11,10 +11,11 @@ export class ImportsService {
     fileKey: string,
     fileName?: string,
     contentType?: string,
+    site?: string,
   ) {
     const job = await this.importsQueue.add(
       'import-products',
-      { userId, fileKey, fileName, contentType },
+      { userId, fileKey, fileName, contentType, site },
       { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
     );
 

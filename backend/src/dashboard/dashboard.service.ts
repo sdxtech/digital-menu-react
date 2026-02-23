@@ -6,6 +6,8 @@ import {
   MenuProductionDocument,
 } from '../menu-productions/schemas/menu-production.schema';
 
+const DEFAULT_SITE = 'A1';
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -14,11 +16,14 @@ export class DashboardService {
   ) {}
 
   // BACKEND LOGIC: chef dashboard summary values from menu productions.
-  async getChefSummary() {
+  async getChefSummary(site?: string) {
     const today = this.formatDateKey(new Date());
     const yesterdayDate = new Date();
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = this.formatDateKey(yesterdayDate);
+    const siteFilter = this.buildSiteFilter(site);
+    const baseFilter =
+      Object.keys(siteFilter).length > 0 ? siteFilter : {};
 
     const [
       menusToday,
@@ -29,26 +34,36 @@ export class DashboardService {
       storeFulfilledToday,
       priorityItems,
     ] = await Promise.all([
-      this.menuProductionModel.countDocuments({ productionDate: today }),
-      this.menuProductionModel.countDocuments({ productionDate: yesterday }),
       this.menuProductionModel.countDocuments({
+        ...baseFilter,
+        productionDate: today,
+      }),
+      this.menuProductionModel.countDocuments({
+        ...baseFilter,
+        productionDate: yesterday,
+      }),
+      this.menuProductionModel.countDocuments({
+        ...baseFilter,
         productionDate: today,
         approvalStatus: 'approved',
       }),
       this.menuProductionModel.countDocuments({
+        ...baseFilter,
         productionDate: today,
         approvalStatus: 'pending',
       }),
       this.menuProductionModel.countDocuments({
+        ...baseFilter,
         productionDate: today,
         storeRequestStatus: 'requested',
       }),
       this.menuProductionModel.countDocuments({
+        ...baseFilter,
         productionDate: today,
         storeRequestStatus: 'fulfilled',
       }),
       this.menuProductionModel
-        .find({ productionDate: today })
+        .find({ ...baseFilter, productionDate: today })
         .sort({ portion: -1, createdAt: 1 })
         .limit(4)
         .lean(),
@@ -95,5 +110,15 @@ export class DashboardService {
     if (status === 'approved') return 'Approved';
     if (status === 'rejected') return 'Rejected';
     return 'Pending approval';
+  }
+
+  private buildSiteFilter(site?: string) {
+    if (!site) return {};
+    if (site === DEFAULT_SITE) {
+      return {
+        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+      };
+    }
+    return { site };
   }
 }

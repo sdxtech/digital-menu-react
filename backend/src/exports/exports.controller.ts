@@ -10,6 +10,6 @@ export class ExportsController {
 
   @Post('products')
   exportProducts(@Req() req: AuthenticatedRequest) {
-    return this.exportsService.enqueueProducts(req.user.sub);
+    return this.exportsService.enqueueProducts(req.user.sub, req.user.site);
   }
 }

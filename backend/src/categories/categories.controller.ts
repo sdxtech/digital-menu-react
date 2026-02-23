@@ -1,8 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CategoriesService } from './categories.service';
 import { CategoryIdParamDto } from './dto/category-id.param.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -16,29 +28,40 @@ export class CategoriesController {
 
   @Post()
   @Roles(AppRole.Superadmin)
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categories.create({ name: dto.name, isActive: dto.isActive });
+  create(@Req() req: AuthenticatedRequest, @Body() dto: CreateCategoryDto) {
+    return this.categories.create(
+      { name: dto.name, isActive: dto.isActive },
+      req.user.site,
+    );
   }
 
   @Get()
-  list(@Query() query: ListCategoriesQueryDto) {
+  list(@Req() req: AuthenticatedRequest, @Query() query: ListCategoriesQueryDto) {
     return this.categories.findAll({
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       search: query.search,
       isActive: query.isActive ?? true,
-    });
+    }, req.user.site);
   }
 
   @Patch(':id')
   @Roles(AppRole.Superadmin)
-  update(@Param() params: CategoryIdParamDto, @Body() dto: UpdateCategoryDto) {
-    return this.categories.update(params.id, { name: dto.name, isActive: dto.isActive });
+  update(
+    @Req() req: AuthenticatedRequest,
+    @Param() params: CategoryIdParamDto,
+    @Body() dto: UpdateCategoryDto,
+  ) {
+    return this.categories.update(
+      params.id,
+      { name: dto.name, isActive: dto.isActive },
+      req.user.site,
+    );
   }
 
   @Delete(':id')
   @Roles(AppRole.Superadmin)
-  remove(@Param() params: CategoryIdParamDto) {
-    return this.categories.softDelete(params.id);
+  remove(@Req() req: AuthenticatedRequest, @Param() params: CategoryIdParamDto) {
+    return this.categories.softDelete(params.id, req.user.site);
   }
 }

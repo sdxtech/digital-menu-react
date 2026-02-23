@@ -19,6 +19,7 @@ type ImportJob = {
   fileName?: string;
   contentType?: string;
   filePath?: string;
+  site?: string;
 };
 
 type ImportError = {
@@ -118,7 +119,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const { userId, fileKey } = job.data;
+    const { userId, fileKey, site } = job.data;
     const errors: ImportError[] = [];
     let successCount = 0;
     let failCount = 0;
@@ -160,7 +161,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         }
 
         // Chosen strategy: skip duplicates (case-insensitive) to avoid overwriting existing data.
-        const existing = await this.products.findByNameInsensitive(name);
+        const existing = await this.products.findByNameInsensitive(name, site);
         if (existing) {
           pushError({ row: processed, name, reason: 'Duplicate name' });
           continue;
@@ -173,7 +174,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           if (cached) {
             categoryId = cached;
           } else {
-            const category = await this.categories.findOrCreateByName(categoryRaw);
+            const category = await this.categories.findOrCreateByName(categoryRaw, site);
             categoryId = category.id;
             categoryCache.set(key, categoryId);
           }
@@ -187,7 +188,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
             description,
             imageUrl,
             isActive: true,
-          });
+          }, site);
           successCount += 1;
         } catch (error) {
           this.logger.warn(`Import row failed: ${(error as Error).message}`);

@@ -10,19 +10,23 @@ import {
   RecipeIngredient,
 } from './schemas/recipe.schema';
 
+const DEFAULT_SITE = 'A1';
+
 @Injectable()
 export class RecipesService {
   constructor(
     @InjectModel(Recipe.name) private readonly recipeModel: Model<RecipeDocument>,
   ) {}
 
-  async create(input: CreateRecipeDto, createdBy?: string) {
+  async create(input: CreateRecipeDto, createdBy?: string, site?: string) {
     const ingredients = (input.ingredients ?? []).map((item) => ({
       productCode: item.productCode.trim(),
       name: item.name.trim(),
       unitOfMeasures: item.unitOfMeasures.trim(),
       qty: item.qty,
     }));
+
+    const normalizedSite = this.normalizeSite(site);
 
     return this.recipeModel.create({
       name: input.name.trim(),
@@ -34,18 +38,30 @@ export class RecipesService {
       approvalStatus: 'pending',
       ingredients,
       createdBy,
+      ...(normalizedSite ? { site: normalizedSite } : {}),
     });
   }
 
-  async findAll(query: ListRecipesQueryDto) {
+  async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
+    const andFilters: Record<string, unknown>[] = [];
+    const siteFilter = this.buildSiteFilter(site);
+    if (Object.keys(siteFilter).length) {
+      andFilters.push(siteFilter);
+    }
 
     if (query.search?.trim()) {
       const text = query.search.trim();
-      filter.$or = [
-        { name: new RegExp(this.escapeRegExp(text), 'i') },
-        { category: new RegExp(this.escapeRegExp(text), 'i') },
-      ];
+      andFilters.push({
+        $or: [
+          { name: new RegExp(this.escapeRegExp(text), 'i') },
+          { category: new RegExp(this.escapeRegExp(text), 'i') },
+        ],
+      });
+    }
+
+    if (andFilters.length) {
+      filter.$and = andFilters;
     }
 
     // BACKEND LOGIC: server-side filtering for recipes (search/status/category).
@@ -82,10 +98,11 @@ export class RecipesService {
         item.approvalStatus === 'approved' && item.status !== 'active',
     );
     if (needsSync) {
-      await this.recipeModel.updateMany(
+      const syncFilter = this.withSiteFilter(
         { approvalStatus: 'approved', status: { $ne: 'active' } },
-        { $set: { status: 'active' } },
+        site,
       );
+      await this.recipeModel.updateMany(syncFilter, { $set: { status: 'active' } });
       items.forEach((item) => {
         if (item.approvalStatus === 'approved' && item.status !== 'active') {
           item.status = 'active';
@@ -102,12 +119,13 @@ export class RecipesService {
     };
   }
 
-  async setApprovalStatus(id: string, status: ApprovalStatus) {
+  async setApprovalStatus(id: string, status: ApprovalStatus, site?: string) {
     // BACKEND LOGIC: approval updates also update recipe status.
     const nextStatus = status === 'approved' ? 'active' : 'draft';
+    const filter = this.withSiteFilter({ _id: id }, site);
     const updated = await this.recipeModel
-      .findByIdAndUpdate(
-        id,
+      .findOneAndUpdate(
+        filter,
         { approvalStatus: status, status: nextStatus },
         { new: true },
       )
@@ -118,9 +136,10 @@ export class RecipesService {
 
   async bulkCreate(records: Array<Omit<CreateRecipeDto, 'ingredients'> & {
     ingredients?: RecipeIngredient[];
-  }>, createdBy?: string) {
+  }>, createdBy?: string, site?: string) {
     if (!records.length) return [];
 
+    const normalizedSite = this.normalizeSite(site);
     const payload = records.map((record) => ({
       name: record.name.trim(),
       category: record.category.trim(),
@@ -131,6 +150,7 @@ export class RecipesService {
       approvalStatus: 'pending',
       ingredients: record.ingredients ?? [],
       createdBy,
+      ...(normalizedSite ? { site: normalizedSite } : {}),
     }));
 
     return this.recipeModel.insertMany(payload, { ordered: false });
@@ -149,13 +169,36 @@ export class RecipesService {
   }
 
   // BACKEND LOGIC: category list for frontend filters.
-  async listCategories() {
-    const categories = await this.recipeModel.distinct('category', {
-      category: { $ne: '' },
-    });
+  async listCategories(site?: string) {
+    const filter = this.withSiteFilter({ category: { $ne: '' } }, site);
+    const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
       .map((item) => String(item).trim())
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
+  }
+
+  private normalizeSite(site?: string) {
+    const trimmed = site?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private buildSiteFilter(site?: string) {
+    if (!site) return {};
+    if (site === DEFAULT_SITE) {
+      return {
+        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+      };
+    }
+    return { site };
+  }
+
+  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+    const siteFilter = this.buildSiteFilter(site);
+    if (!Object.keys(siteFilter).length) return filter;
+    if ('$or' in siteFilter) {
+      return { $and: [filter, siteFilter] };
+    }
+    return { ...filter, ...siteFilter };
   }
 }

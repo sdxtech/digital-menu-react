@@ -18,7 +18,9 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await this.users.create({ name, email, passwordHash });
 
-    return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
+    const roles = user.roles as AppRole[];
+    const site = this.resolveUserSite(roles, user.sites);
+    return this.issueTokens(user.id, user.name, user.email, roles, site);
   }
 
   async login(email: string, password: string) {
@@ -29,7 +31,9 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) throw new UnauthorizedException('User disabled');
 
-    return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
+    const roles = user.roles as AppRole[];
+    const site = this.resolveUserSite(roles, user.sites);
+    return this.issueTokens(user.id, user.name, user.email, roles, site);
   }
 
   async refresh(refreshToken: string) {
@@ -43,7 +47,9 @@ export class AuthService {
       if (!user || !user.isActive) throw new UnauthorizedException('Invalid refresh token');
 
       // TODO: allowlist + hash refresh token untuk produksi (rotation/revocation).
-      return this.issueTokens(user.id, user.name, user.email, user.roles as AppRole[]);
+      const roles = user.roles as AppRole[];
+      const site = this.resolveUserSite(roles, user.sites);
+      return this.issueTokens(user.id, user.name, user.email, roles, site);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -58,7 +64,18 @@ export class AuthService {
     return 'chef';
   }
 
-  private async issueTokens(sub: string, name: string, email: string, roles: AppRole[]) {
+  private resolveUserSite(_roles: AppRole[] = [], sites?: string[]) {
+    const normalized = (sites ?? []).map((site) => site.trim()).filter(Boolean);
+    return normalized[0] ?? 'A1';
+  }
+
+  private async issueTokens(
+    sub: string,
+    name: string,
+    email: string,
+    roles: AppRole[],
+    site?: string,
+  ) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
       '15m',
@@ -71,7 +88,7 @@ export class AuthService {
     const appRole = this.resolveAppRole(roles);
 
     const accessToken = await this.jwt.signAsync(
-      { sub, name, email, roles, appRole },
+      { sub, name, email, roles, appRole, site },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(

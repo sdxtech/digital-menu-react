@@ -40,28 +40,28 @@ export class RecipesController {
 
   @Post()
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateRecipeDto) {
-    return this.recipes.create(dto, req.user.sub);
+    return this.recipes.create(dto, req.user.sub, req.user.site);
   }
 
   // BACKEND LOGIC: provide category options for recipe filters.
   @Get('categories')
-  listCategories() {
-    return this.recipes.listCategories();
+  listCategories(@Req() req: AuthenticatedRequest) {
+    return this.recipes.listCategories(req.user.site);
   }
 
   @Get()
-  list(@Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query);
+  list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
+    return this.recipes.findAll(query, req.user.site);
   }
 
   @Patch(':id/approve')
-  approve(@Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'approved');
+  approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.setApprovalStatus(id, 'approved', req.user.site);
   }
 
   @Patch(':id/reject')
-  reject(@Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'rejected');
+  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.setApprovalStatus(id, 'rejected', req.user.site);
   }
 
   @Post('import')
@@ -95,14 +95,18 @@ export class RecipesController {
     }
 
     try {
-      const insertedCount = await this.importFromExcel(file.path, req.user.sub);
+      const insertedCount = await this.importFromExcel(
+        file.path,
+        req.user.sub,
+        req.user.site,
+      );
       return { insertedCount };
     } finally {
       await fs.unlink(file.path).catch(() => null);
     }
   }
 
-  private async importFromExcel(filePath: string, createdBy: string) {
+  private async importFromExcel(filePath: string, createdBy: string, site?: string) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.worksheets[0];
@@ -154,7 +158,7 @@ export class RecipesController {
     });
 
     if (!rows.length) return 0;
-    const created = await this.recipes.bulkCreate(rows, createdBy);
+    const created = await this.recipes.bulkCreate(rows, createdBy, site);
     return created.length;
   }
 

@@ -1,5 +1,6 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { DashboardService } from './dashboard.service';
 
 @Controller('dashboard')
@@ -9,7 +10,7 @@ export class DashboardController {
 
   // BACKEND LOGIC: chef dashboard data comes from backend.
   @Get('chef')
-  chefSummary() {
-    return this.dashboard.getChefSummary();
+  chefSummary(@Req() req: AuthenticatedRequest) {
+    return this.dashboard.getChefSummary(req.user.site);
   }
 }
