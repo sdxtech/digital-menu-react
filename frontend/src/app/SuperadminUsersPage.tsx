@@ -59,6 +59,15 @@ const SuperadminUsersPage = () => {
   const [importMessage, setImportMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'chef',
+    sites: '',
+  })
+  const [createError, setCreateError] = useState('')
 
   const fetchUsers = useCallback(
     async (page = 1, limit = DEFAULT_LIMIT, searchValue = '') => {
@@ -259,6 +268,75 @@ const SuperadminUsersPage = () => {
     setMeta((prev) => ({ ...prev, page: 1 }))
   }
 
+  const openCreateModal = () => {
+    setCreateError('')
+    setCreateForm({
+      name: '',
+      email: '',
+      password: '',
+      role: 'chef',
+      sites: '',
+    })
+    setCreateOpen(true)
+  }
+
+  const closeCreateModal = () => {
+    setCreateOpen(false)
+  }
+
+  const handleCreateChange = (
+    field: 'name' | 'email' | 'password' | 'role' | 'sites',
+    value: string,
+  ) => {
+    setCreateForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const saveCreate = async () => {
+    if (!accessToken) return
+    const name = createForm.name.trim()
+    const email = createForm.email.trim()
+    const password = createForm.password.trim()
+    const role = createForm.role.trim()
+    const sites = createForm.sites
+      .split(',')
+      .map((site) => site.trim())
+      .filter(Boolean)
+
+    if (!name || !email || !password) {
+      setCreateError('Please complete name, email, and password.')
+      return
+    }
+    if (password.length < 6) {
+      setCreateError('Password must be at least 6 characters.')
+      return
+    }
+
+    try {
+      await apiFetch(
+        '/superadmin/users',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            roles: role ? [role] : undefined,
+            sites,
+          }),
+        },
+        accessToken,
+      )
+      setCreateOpen(false)
+      setMessage('User created.')
+      setCreateError('')
+      fetchUsers(meta.page, meta.limit, search).catch(() => null)
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Failed to create user.'
+      setCreateError(messageText)
+    }
+  }
+
   const openImportModal = () => {
     setImportError('')
     setImportMessage('')
@@ -328,6 +406,131 @@ const SuperadminUsersPage = () => {
               Update names, emails, and passwords for your team.
             </p>
           </div>
+
+          {createOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div
+                className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                      Create account
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold">New user</h3>
+                    <p className="mt-2 text-sm text-muted">
+                      Add a new user and assign their role.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCreateModal}
+                    className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.name}
+                      onChange={(event) =>
+                        handleCreateChange('name', event.target.value)
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={createForm.email}
+                      onChange={(event) =>
+                        handleCreateChange('email', event.target.value)
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      value={createForm.password}
+                      onChange={(event) =>
+                        handleCreateChange('password', event.target.value)
+                      }
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-medium text-foreground">
+                        Role
+                      </label>
+                      <select
+                        value={createForm.role}
+                        onChange={(event) =>
+                          handleCreateChange('role', event.target.value)
+                        }
+                        className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      >
+                        <option value="chef">chef</option>
+                        <option value="unit-manager">unit-manager</option>
+                        <option value="storekeeper">storekeeper</option>
+                        <option value="superadmin">superadmin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground">
+                        Sites
+                      </label>
+                      <input
+                        type="text"
+                        value={createForm.sites}
+                        onChange={(event) =>
+                          handleCreateChange('sites', event.target.value)
+                        }
+                        placeholder="e.g. Jakarta, Bandung"
+                        className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      />
+                    </div>
+                  </div>
+                  {createError ? (
+                    <p className="text-xs font-medium text-red-600">
+                      {createError}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={saveCreate}
+                      className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white"
+                    >
+                      Create user
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeCreateModal}
+                      className="rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {importOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -429,6 +632,16 @@ const SuperadminUsersPage = () => {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+              >
+                <span className="flex items-center gap-2">
+                  <i className="bi bi-person-plus text-base" aria-hidden="true" />
+                  <span>Create user</span>
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={openImportModal}

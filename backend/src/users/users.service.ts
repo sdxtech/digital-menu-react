@@ -15,6 +15,7 @@ type CreateUserInput = {
   email: string;
   passwordHash: string;
   roles?: AppRole[];
+  sites?: string[];
 };
 
 type UpdateUserInput = {
@@ -50,6 +51,7 @@ export class UsersService {
       ...input,
       email: input.email.toLowerCase().trim(),
       roles: input.roles?.length ? input.roles : [DEFAULT_ROLE],
+      sites: this.normalizeSites(input.sites),
     });
 
     return created;

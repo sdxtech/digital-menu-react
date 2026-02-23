@@ -24,6 +24,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
 import { UsersService } from '../users/users.service';
+import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ListUsersQueryDto } from '../users/dto/list-users.query.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { UpdateUserPasswordDto } from '../users/dto/update-user-password.dto';
@@ -105,6 +106,38 @@ export class SuperadminUsersController {
     } finally {
       await fs.unlink(file.path).catch(() => null);
     }
+  }
+
+  @Post()
+  @Roles(AppRole.Superadmin)
+  async create(@Body() dto: CreateUserDto) {
+    const roles = this.parseRoles(dto.roles);
+    if (dto.roles?.length && roles.length === 0) {
+      throw new BadRequestException('Roles are invalid.');
+    }
+
+    const password = dto.password.trim();
+    if (!password) {
+      throw new BadRequestException('Password is required');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const created = await this.users.create({
+      name: dto.name.trim(),
+      email: dto.email.trim(),
+      passwordHash,
+      roles: roles.length ? roles : undefined,
+      sites: dto.sites,
+    });
+
+    return {
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      roles: created.roles,
+      sites: created.sites ?? [],
+      isActive: created.isActive,
+    };
   }
 
   private async importFromExcel(filePath: string) {
@@ -219,10 +252,11 @@ export class SuperadminUsersController {
     return String(value ?? '').trim().toLowerCase();
   }
 
-  private parseRoles(value: string) {
+  private parseRoles(value?: string | string[]) {
     if (!value) return [];
-    const rawRoles = value
-      .split(/[,\|;/]/)
+    const rawItems = Array.isArray(value) ? value : [value];
+    const rawRoles = rawItems
+      .flatMap((item) => item.split(/[,\|;/]/))
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
 
