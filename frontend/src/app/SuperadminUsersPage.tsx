@@ -8,6 +8,7 @@ type SuperadminUserApi = {
   name?: string
   email?: string
   roles?: string[]
+  sites?: string[]
   isActive?: boolean
   createdAt?: string
 }
@@ -17,6 +18,7 @@ type SuperadminUser = {
   name: string
   email: string
   roles: string[]
+  sites: string[]
   isActive: boolean
   createdAt: string
 }
@@ -46,7 +48,7 @@ const SuperadminUsersPage = () => {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', email: '' })
+  const [editForm, setEditForm] = useState({ name: '', email: '', sites: '' })
   const [editError, setEditError] = useState('')
   const [passwordId, setPasswordId] = useState<string | null>(null)
   const [password, setPassword] = useState('')
@@ -91,6 +93,7 @@ const SuperadminUsersPage = () => {
           name: item.name ?? '',
           email: item.email ?? '',
           roles: item.roles ?? [],
+          sites: item.sites ?? [],
           isActive: item.isActive ?? true,
           createdAt: item.createdAt ?? '',
         }))
@@ -125,7 +128,11 @@ const SuperadminUsersPage = () => {
 
   const startEdit = (target: SuperadminUser) => {
     setEditingId(target.id)
-    setEditForm({ name: target.name, email: target.email })
+    setEditForm({
+      name: target.name,
+      email: target.email,
+      sites: target.sites.join(', '),
+    })
     setEditError('')
     setMessage('')
   }
@@ -135,7 +142,7 @@ const SuperadminUsersPage = () => {
     setEditError('')
   }
 
-  const handleEditChange = (field: 'name' | 'email', value: string) => {
+  const handleEditChange = (field: 'name' | 'email' | 'sites', value: string) => {
     setEditForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -143,6 +150,10 @@ const SuperadminUsersPage = () => {
     if (!editingId) return
     const nextName = editForm.name.trim()
     const nextEmail = editForm.email.trim()
+    const nextSites = editForm.sites
+      .split(',')
+      .map((site) => site.trim())
+      .filter(Boolean)
     if (!nextName || !nextEmail) {
       setEditError('Please complete name and email before saving.')
       return
@@ -153,7 +164,11 @@ const SuperadminUsersPage = () => {
         `/superadmin/users/${editingId}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({ name: nextName, email: nextEmail }),
+          body: JSON.stringify({
+            name: nextName,
+            email: nextEmail,
+            sites: nextSites,
+          }),
         },
         accessToken ?? undefined,
       )
@@ -447,6 +462,7 @@ const SuperadminUsersPage = () => {
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Email</th>
                   <th className="px-5 py-4 font-semibold">Roles</th>
+                  <th className="px-5 py-4 font-semibold">Sites</th>
                   <th className="px-5 py-4 font-semibold">Status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
@@ -454,13 +470,13 @@ const SuperadminUsersPage = () => {
               <tbody>
                 {meta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       Loading users...
                     </td>
                   </tr>
                 ) : users.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {meta.error ? meta.error : 'No users found.'}
                     </td>
                   </tr>
@@ -500,6 +516,23 @@ const SuperadminUsersPage = () => {
                       </td>
                       <td className="px-5 py-4">
                         {item.roles.length ? item.roles.join(', ') : '-'}
+                      </td>
+                      <td className="px-5 py-4">
+                        {editingId === item.id ? (
+                          <input
+                            type="text"
+                            value={editForm.sites}
+                            onChange={(event) =>
+                              handleEditChange('sites', event.target.value)
+                            }
+                            placeholder="e.g. Jakarta, Bandung"
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          />
+                        ) : item.sites.length ? (
+                          item.sites.join(', ')
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         {item.isActive ? 'Active' : 'Disabled'}

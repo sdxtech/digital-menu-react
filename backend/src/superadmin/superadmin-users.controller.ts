@@ -53,7 +53,11 @@ export class SuperadminUsersController {
   @Patch(':id')
   @Roles(AppRole.Superadmin)
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.users.updateById(id, { name: dto.name, email: dto.email });
+    return this.users.updateById(id, {
+      name: dto.name,
+      email: dto.email,
+      sites: dto.sites,
+    });
   }
 
   @Patch(':id/password')

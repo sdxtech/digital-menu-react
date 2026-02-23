@@ -20,6 +20,7 @@ type CreateUserInput = {
 type UpdateUserInput = {
   name?: string;
   email?: string;
+  sites?: string[];
 };
 
 type ListUsersQuery = {
@@ -90,8 +91,10 @@ export class UsersService {
 
     const nextName = input.name?.trim();
     const nextEmail = input.email?.trim().toLowerCase();
+    const nextSites = this.normalizeSites(input.sites);
+    const hasSitesUpdate = input.sites !== undefined;
 
-    if (!nextName && !nextEmail) {
+    if (!nextName && !nextEmail && !hasSitesUpdate) {
       throw new BadRequestException('No changes provided');
     }
 
@@ -103,6 +106,9 @@ export class UsersService {
 
     if (nextName) {
       user.name = nextName;
+    }
+    if (hasSitesUpdate) {
+      user.sites = nextSites;
     }
 
     await user.save();
@@ -137,5 +143,10 @@ export class UsersService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private normalizeSites(sites?: string[]) {
+    if (!Array.isArray(sites)) return [];
+    return sites.map((site) => site.trim()).filter(Boolean);
   }
 }

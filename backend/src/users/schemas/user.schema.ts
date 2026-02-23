@@ -23,6 +23,9 @@ export class User {
   })
   roles: AppRole[];
 
+  @Prop({ type: [String], default: [] })
+  sites: string[];
+
   @Prop({ default: true })
   isActive: boolean;
 }
