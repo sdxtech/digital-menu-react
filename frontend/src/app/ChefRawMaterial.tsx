@@ -17,7 +17,7 @@ const ChefRawMaterial = () => {
           <h1 className="text-2xl font-semibold">Raw Material Data</h1>
         </div>
 
-        <div className="rounded-3xl border border-border bg-surface shadow-sm">
+        <div className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {rawMaterials.length} of {rawMaterialsMeta.total} items

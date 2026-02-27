@@ -254,7 +254,7 @@ const ChefMenuCycle = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
               Pending approval
             </p>
@@ -265,7 +265,7 @@ const ChefMenuCycle = () => {
               Menus not reviewed by the Unit Manager yet.
             </p>
           </div>
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
               Approved
             </p>
@@ -276,7 +276,7 @@ const ChefMenuCycle = () => {
               Menus ready for Store Request.
             </p>
           </div>
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Total menus
             </p>
@@ -290,7 +290,7 @@ const ChefMenuCycle = () => {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -313,7 +313,7 @@ const ChefMenuCycle = () => {
           </div>
         </div>
 
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-border">
+        <div className="mt-6 overflow-x-auto rounded-md border border-border">
           <table className="min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -400,12 +400,12 @@ const ChefMenuCycle = () => {
                       <tr className="border-t border-border bg-background">
                         <td colSpan={6} className="px-4 py-4">
                           {!selectedRecipe ? (
-                            <div className="rounded-2xl border border-border bg-surface p-4 text-sm text-muted">
+                            <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
                               Select a menu to view recipe details.
                             </div>
                           ) : (
                             <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-                              <div className="rounded-2xl border border-border bg-surface p-4">
+                              <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                   Recipe
                                 </p>
@@ -434,7 +434,7 @@ const ChefMenuCycle = () => {
                                 </div>
                               </div>
 
-                              <div className="rounded-2xl border border-border bg-surface p-4">
+                              <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                   Ingredients
                                 </p>
@@ -445,11 +445,11 @@ const ChefMenuCycle = () => {
                                   Qty listed per base pax.
                                 </p>
                                 {ingredients.length === 0 ? (
-                                  <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                  <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                                     No ingredients for this recipe yet.
                                   </div>
                                 ) : (
-                                  <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                                  <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -545,7 +545,7 @@ const ChefMenuCycle = () => {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -594,11 +594,11 @@ const ChefMenuCycle = () => {
         ) : null}
 
         {timelineLoading ? (
-          <div className="mt-6 rounded-2xl border border-border bg-background p-6 text-center text-sm text-muted">
+          <div className="mt-6 rounded-md border border-border bg-background p-6 text-center text-sm text-muted">
             Loading production timeline...
           </div>
         ) : timelineGroups.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-border bg-background p-6 text-center text-sm text-muted">
+          <div className="mt-6 rounded-md border border-border bg-background p-6 text-center text-sm text-muted">
             No menus in the production timeline yet.
           </div>
         ) : (
@@ -608,7 +608,7 @@ const ChefMenuCycle = () => {
               return (
                 <div
                   key={group.date}
-                  className="rounded-2xl border border-border bg-background p-4"
+                  className="rounded-md border border-border bg-background p-4"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -629,7 +629,7 @@ const ChefMenuCycle = () => {
                   </div>
 
                   {isExpanded ? (
-                    <div className="mt-3 overflow-x-auto rounded-xl border border-border">
+                    <div className="mt-3 overflow-x-auto rounded-md border border-border">
                       <table className="min-w-full bg-white text-sm">
                         <thead className="bg-background">
                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

@@ -160,9 +160,9 @@ const UnitManagerPage = () => {
           ) : null}
         </div>
 
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Approval Recipe</h2>
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+          <div className="mt-4 overflow-x-auto rounded-md border border-border">
             <table className="min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -248,18 +248,18 @@ const UnitManagerPage = () => {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Approval Menu Production</h2>
         <div className="mt-4 space-y-4">
           {menuProductionGroups.length === 0 ? (
-            <div className="rounded-2xl border border-border bg-background px-4 py-6 text-center text-sm text-muted">
+            <div className="rounded-md border border-border bg-background px-4 py-6 text-center text-sm text-muted">
               No production menus pending approval.
             </div>
           ) : (
             menuProductionGroups.map((group) => (
               <div
                 key={group.date}
-                className="rounded-2xl border border-border bg-background p-4"
+                className="rounded-md border border-border bg-background p-4"
               >
                 {(() => {
                   const isExpanded = expandedDates.includes(group.date)
@@ -308,11 +308,11 @@ const UnitManagerPage = () => {
 
                       {isExpanded ? (
                         <div className="mt-4 grid gap-4 lg:grid-cols-12">
-                          <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-5">
+                          <div className="rounded-md border border-border bg-background p-4 lg:col-span-5">
                             <p className="text-xs uppercase tracking-[0.2em] text-muted">
                               Menu list
                             </p>
-                            <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                            <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                               <table className="min-w-full text-sm">
                                 <thead className="bg-background">
                                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -354,11 +354,11 @@ const UnitManagerPage = () => {
                             ) : null}
                           </div>
 
-                          <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-7">
+                          <div className="rounded-md border border-border bg-background p-4 lg:col-span-7">
                             <p className="text-xs uppercase tracking-[0.2em] text-muted">
                               Ingredient summary
                             </p>
-                            <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                            <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                               <table className="min-w-full text-sm">
                                 <thead className="bg-background">
                                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

@@ -224,7 +224,7 @@ const ChefStoreRequest = () => {
           <h1 className="text-2xl font-semibold">Store Request</h1>
         </div>
 
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -265,7 +265,7 @@ const ChefStoreRequest = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-3xl border border-border bg-surface shadow-sm">
+      <div className="overflow-x-auto rounded-md border border-border bg-surface shadow-sm">
         <table className="min-w-full text-sm">
           <thead className="bg-background">
             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -360,7 +360,7 @@ const ChefStoreRequest = () => {
                                   key={menu.id}
                                   className="grid gap-4 lg:grid-cols-12"
                                 >
-                                  <div className="rounded-2xl border border-border bg-surface p-4 lg:col-span-5">
+                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                     <div className="flex items-center justify-between gap-3">
                                       <div>
                                         <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -395,7 +395,7 @@ const ChefStoreRequest = () => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-2xl border border-border bg-surface p-4 lg:col-span-7">
+                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
                                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                       Ingredients
                                     </p>
@@ -409,17 +409,17 @@ const ChefStoreRequest = () => {
                                     </p>
 
                                     {menu.missingRecipe ? (
-                                      <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                      <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                                         Recipe not found in the recipe list. Make
                                         sure the menu name matches the created
                                         recipe.
                                       </div>
                                     ) : ingredients.length === 0 ? (
-                                      <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                      <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                                         No ingredients for this recipe yet.
                                       </div>
                                     ) : (
-                                      <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                                      <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                                         <table className="min-w-full text-sm">
                                           <thead className="bg-background">
                                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -474,7 +474,7 @@ const ChefStoreRequest = () => {
                               )
                             })}
 
-                            <div className="rounded-2xl border border-border bg-surface p-4">
+                            <div className="rounded-md border border-border bg-surface p-4">
                               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                 Summary
                               </p>
@@ -486,11 +486,11 @@ const ChefStoreRequest = () => {
                               </p>
 
                               {summaryItems.length === 0 ? (
-                                <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                                <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                                   No ingredient summary available yet.
                                 </div>
                               ) : (
-                                <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                                   <table className="min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

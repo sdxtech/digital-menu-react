@@ -152,7 +152,7 @@ const LoginPage = () => {
                 </button>
               </form>
 
-              <div className="relative mt-8 rounded-2xl border border-dashed border-border bg-background p-4 text-xs text-muted">
+              <div className="relative mt-8 rounded-md border border-dashed border-border bg-background p-4 text-xs text-muted">
                 Need access? Contact your supervisor to activate your account.
               </div>
             </div>

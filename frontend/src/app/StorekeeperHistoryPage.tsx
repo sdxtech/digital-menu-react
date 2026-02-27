@@ -71,7 +71,7 @@ const StorekeeperHistoryPage = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <h1 className="text-xl font-semibold">History</h1>
           <p className="mt-3 text-sm text-muted">
             This data contains completed ingredient issuances.
@@ -83,18 +83,18 @@ const StorekeeperHistoryPage = () => {
 
         <div className="space-y-6">
           {loading ? (
-            <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
+            <div className="rounded-md border border-border bg-surface p-6 text-sm text-muted shadow-sm">
               Loading issuance history...
             </div>
           ) : groups.length === 0 ? (
-            <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-muted shadow-sm">
+            <div className="rounded-md border border-border bg-surface p-6 text-sm text-muted shadow-sm">
               No ingredient issuance history yet.
             </div>
           ) : (
             groups.map((group) => (
               <div
                 key={group.date}
-                className="rounded-3xl border border-border bg-surface p-6 shadow-sm"
+                className="rounded-md border border-border bg-surface p-6 shadow-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -109,11 +109,11 @@ const StorekeeperHistoryPage = () => {
                 </div>
 
                 <div className="mt-5 grid gap-4 lg:grid-cols-12">
-                  <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-5">
+                  <div className="rounded-md border border-border bg-background p-4 lg:col-span-5">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
                       Menu list
                     </p>
-                    <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                    <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                       <table className="min-w-full text-sm">
                         <thead className="bg-background">
                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -146,11 +146,11 @@ const StorekeeperHistoryPage = () => {
                     ) : null}
                   </div>
 
-                  <div className="rounded-2xl border border-border bg-background p-4 lg:col-span-7">
+                  <div className="rounded-md border border-border bg-background p-4 lg:col-span-7">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
                       Ingredient summary
                     </p>
-                    <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+                    <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                       <table className="min-w-full text-sm">
                         <thead className="bg-background">
                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

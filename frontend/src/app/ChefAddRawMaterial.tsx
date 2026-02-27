@@ -265,7 +265,7 @@ const ChefAddRawMaterial = () => {
         {importOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
@@ -342,7 +342,7 @@ const ChefAddRawMaterial = () => {
         {importResult ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-md rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              className="w-full max-w-md rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
@@ -386,7 +386,7 @@ const ChefAddRawMaterial = () => {
         ) : null}
 
         <div className="grid gap-6 lg:grid-cols-12">
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm lg:col-span-12">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-12">
             <h3 className="text-lg font-semibold">Material details</h3>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">

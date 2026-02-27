@@ -466,7 +466,7 @@ const ChefCreateMenu = () => {
         {importOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
@@ -531,7 +531,7 @@ const ChefCreateMenu = () => {
           </div>
         ) : null}
 
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <h3 className="text-lg font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
@@ -595,7 +595,7 @@ const ChefCreateMenu = () => {
           </p>
           <h4 className="mt-2 text-lg font-semibold">Add ingredients</h4>
 
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-border">
+          <div className="mt-4 overflow-x-auto rounded-md border border-border">
             <datalist id="raw-material-code-options">
               {rawMaterialOptions.map((item) => (
                 <option

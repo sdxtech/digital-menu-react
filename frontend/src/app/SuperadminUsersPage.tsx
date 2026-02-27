@@ -410,7 +410,7 @@ const SuperadminUsersPage = () => {
           {createOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
               <div
-                className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+                className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
                 role="dialog"
                 aria-modal="true"
               >
@@ -535,7 +535,7 @@ const SuperadminUsersPage = () => {
           {importOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
               <div
-                className="w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-xl"
+                className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
                 role="dialog"
                 aria-modal="true"
               >
@@ -561,7 +561,7 @@ const SuperadminUsersPage = () => {
                   </button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+                <div className="mt-4 rounded-md border border-border bg-background p-4 text-sm text-muted">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted">
                     Required columns
                   </p>
@@ -606,7 +606,7 @@ const SuperadminUsersPage = () => {
             </div>
           ) : null}
 
-          <div className="rounded-3xl border border-border bg-surface shadow-sm">
+          <div className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <input

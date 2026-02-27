@@ -60,7 +60,7 @@ const ChefDashboard = () => {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
               Menus scheduled today
             </p>
@@ -71,7 +71,7 @@ const ChefDashboard = () => {
               {formatDelta(summary?.menusTodayDelta)}
             </p>
           </div>
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
               Menus approved today
             </p>
@@ -82,7 +82,7 @@ const ChefDashboard = () => {
               Pending {summary?.pendingToday ?? 0} menus
             </p>
           </div>
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <p className="text-xs uppercase tracking-[0.2em] text-primary">
               Store requests pending
             </p>
@@ -97,7 +97,7 @@ const ChefDashboard = () => {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-12">
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm lg:col-span-7">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-7">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -113,14 +113,14 @@ const ChefDashboard = () => {
           </div>
           <div className="mt-6 space-y-4">
             {(data?.priority ?? []).length === 0 ? (
-              <div className="rounded-2xl border border-border bg-background px-4 py-3 text-sm text-muted">
+              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
                 No menus scheduled for today yet.
               </div>
             ) : (
               (data?.priority ?? []).map((item) => (
                 <div
                   key={`${item.name}-${item.value}`}
-                  className="flex items-center justify-between rounded-2xl border border-border bg-background px-4 py-3 text-sm"
+                  className="flex items-center justify-between rounded-md border border-border bg-background px-4 py-3 text-sm"
                 >
                   <div>
                     <p className="font-medium text-foreground">{item.name}</p>
@@ -135,7 +135,7 @@ const ChefDashboard = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm lg:col-span-5">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-5">
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Production progress
           </p>
@@ -144,14 +144,14 @@ const ChefDashboard = () => {
           </h3>
           <div className="mt-6 space-y-4">
             {(data?.progress ?? []).length === 0 ? (
-              <div className="rounded-2xl border border-border bg-background px-4 py-3 text-sm text-muted">
+              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
                 No progress data yet.
               </div>
             ) : (
               (data?.progress ?? []).map((task) => (
                 <div
                   key={task.label}
-                  className="rounded-2xl border border-border bg-background px-4 py-3 text-sm"
+                  className="rounded-md border border-border bg-background px-4 py-3 text-sm"
                 >
                   <p className="font-medium text-foreground">{task.label}</p>
                   <p className="mt-1 text-xs text-muted">{task.value}</p>

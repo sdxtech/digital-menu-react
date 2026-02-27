@@ -401,7 +401,7 @@ const ChefMenuBank = () => {
       {photoModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div
-            className="w-full max-w-lg rounded-3xl border border-border bg-surface p-6 shadow-xl"
+            className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
             role="dialog"
             aria-modal="true"
           >
@@ -429,7 +429,7 @@ const ChefMenuBank = () => {
             </div>
 
             <div className="mt-5 space-y-4">
-              <div className="rounded-2xl border border-border bg-background p-4">
+              <div className="rounded-md border border-border bg-background p-4">
                 {previewPhotoUrl ? (
                   <img
                     src={previewPhotoUrl}
@@ -527,7 +527,7 @@ const ChefMenuBank = () => {
               </button>
 
               {filterOpen ? (
-                <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-border bg-white p-4 text-sm shadow-xl">
+                <div className="absolute right-0 z-20 mt-2 w-72 rounded-md border border-border bg-white p-4 text-sm shadow-xl">
                   <div className="flex items-center justify-between">
                     <p className="text-xs uppercase tracking-[0.3em] text-muted">
                       Status
@@ -611,7 +611,7 @@ const ChefMenuBank = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-border bg-surface shadow-sm">
+        <div className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {recipes.length} of {totalItems} recipes
@@ -701,7 +701,7 @@ const ChefMenuBank = () => {
       </div>
 
       {selectedRecipe ? (
-        <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -743,7 +743,7 @@ const ChefMenuBank = () => {
                   : undefined
               }
             />
-            <div className="rounded-2xl border border-border bg-background p-4">
+            <div className="rounded-md border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Category
               </p>
@@ -752,7 +752,7 @@ const ChefMenuBank = () => {
               </p>
             </div>
             {/* TODO: Re-enable price card when pricing is finalized. */}
-            {/* <div className="rounded-2xl border border-border bg-background p-4">
+            {/* <div className="rounded-md border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Price
               </p>
@@ -760,7 +760,7 @@ const ChefMenuBank = () => {
                 IDR {selectedRecipe.price}
               </p>
             </div> */}
-            <div className="rounded-2xl border border-border bg-background p-4">
+            <div className="rounded-md border border-border bg-background p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted">
                 Base pax
               </p>
@@ -779,11 +779,11 @@ const ChefMenuBank = () => {
             </h4>
 
             {selectedRecipe.ingredients.length === 0 ? (
-              <div className="mt-3 rounded-2xl border border-border bg-background p-4 text-sm text-muted">
+              <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                 No ingredients for this recipe yet.
               </div>
             ) : (
-              <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-white">
+              <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
                 <table className="min-w-full text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
