@@ -50,7 +50,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-2xl border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+                className="rounded-md border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
               >
                 Logout
               </button>
@@ -77,7 +77,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
               <button
                 type="button"
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-primary transition hover:bg-primary-soft"
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-primary transition hover:bg-primary-soft"
                 aria-label={sidebarOpen ? 'Collapse menu' : 'Expand menu'}
               >
                 <i

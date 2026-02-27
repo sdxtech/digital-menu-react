@@ -88,7 +88,7 @@ const MenuPhotoFrame = ({
       onClick={onClick}
       disabled={!onClick}
       aria-label={actionLabel}
-      className={`flex items-center justify-center rounded-xl border-2 ${borderStyle} border-border bg-background ${frameClasses} ${interactiveClasses} ${photoUrl ? 'overflow-hidden' : ''}`}
+      className={`flex items-center justify-center rounded-md border-2 ${borderStyle} border-border bg-background ${frameClasses} ${interactiveClasses} ${photoUrl ? 'overflow-hidden' : ''}`}
     >
       {photoUrl ? (
         <img src={photoUrl} alt={label} className="h-full w-full object-cover" />
@@ -422,7 +422,7 @@ const ChefMenuBank = () => {
               <button
                 type="button"
                 onClick={closePhotoModal}
-                className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
               >
                 Close
               </button>
@@ -470,14 +470,14 @@ const ChefMenuBank = () => {
                   type="button"
                   onClick={handleDeletePhoto}
                   disabled={!activePhotoUrl || photoSaving || photoDeleting}
-                  className="rounded-2xl border border-danger/40 bg-background px-4 py-2 text-xs font-semibold text-danger disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md border border-danger/40 bg-background px-4 py-2 text-xs font-semibold text-danger disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {photoDeleting ? 'Deleting...' : 'Delete photo'}
                 </button>
                 <button
                   type="button"
                   onClick={closePhotoModal}
-                  className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
                 >
                   Cancel
                 </button>
@@ -485,7 +485,7 @@ const ChefMenuBank = () => {
                   type="button"
                   onClick={handleSavePhoto}
                   disabled={!photoDraftFile || photoSaving || photoDeleting}
-                  className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {photoSaving ? 'Uploading...' : 'Save photo'}
                 </button>
@@ -511,7 +511,7 @@ const ChefMenuBank = () => {
               <button
                 type="button"
                 onClick={() => setFilterOpen((prev) => !prev)}
-                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
               >
                 <span className="flex items-center gap-2">
                   <span>
@@ -612,7 +612,7 @@ const ChefMenuBank = () => {
         </div>
 
         <div className="rounded-md border border-border bg-surface shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {recipes.length} of {totalItems} recipes
             </span>
@@ -621,7 +621,7 @@ const ChefMenuBank = () => {
                 type="button"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={page === 1 || loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Prev
               </button>
@@ -632,7 +632,7 @@ const ChefMenuBank = () => {
                 type="button"
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={page === totalPages || loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>
@@ -718,7 +718,7 @@ const ChefMenuBank = () => {
               <button
                 type="button"
                 onClick={() => handleCreateFromRecipe(selectedRecipe)}
-                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
               >
                 Create menu from this recipe
               </button>

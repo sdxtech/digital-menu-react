@@ -456,7 +456,7 @@ const ChefCreateMenu = () => {
           <button
             type="button"
             onClick={openImportModal}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
           >
             <i className="bi bi-upload text-base" aria-hidden="true" />
             <span>Import recipes</span>
@@ -485,7 +485,7 @@ const ChefCreateMenu = () => {
                 <button
                   type="button"
                   onClick={closeImportModal}
-                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                 >
                   Close
                 </button>
@@ -522,7 +522,7 @@ const ChefCreateMenu = () => {
                 <button
                   type="button"
                   onClick={handleImportRecipes}
-                  className="h-fit self-end rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+                  className="h-fit self-end rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
                 >
                   Import recipes
                 </button>
@@ -641,7 +641,7 @@ const ChefCreateMenu = () => {
                         <button
                           type="button"
                           onClick={() => handleRemoveIngredientRow(row.id)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
                           aria-label="Remove ingredient row"
                           title="Remove ingredient row"
                         >
@@ -728,7 +728,7 @@ const ChefCreateMenu = () => {
                       <button
                         type="button"
                         onClick={handleAddIngredientRow}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                        className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
                       >
                         <span>+</span>
                         <span>Add ingredient</span>
@@ -753,7 +753,7 @@ const ChefCreateMenu = () => {
           <button
             type="button"
             onClick={handleCreateRecipe}
-            className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
+            className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
           >
             Save & submit to Unit Manager
           </button>

@@ -427,7 +427,7 @@ const SuperadminUsersPage = () => {
                   <button
                     type="button"
                     onClick={closeCreateModal}
-                    className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                   >
                     Close
                   </button>
@@ -515,14 +515,14 @@ const SuperadminUsersPage = () => {
                     <button
                       type="button"
                       onClick={saveCreate}
-                      className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white"
+                      className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
                     >
                       Create user
                     </button>
                     <button
                       type="button"
                       onClick={closeCreateModal}
-                      className="rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+                      className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
                     >
                       Cancel
                     </button>
@@ -555,7 +555,7 @@ const SuperadminUsersPage = () => {
                     type="button"
                     onClick={() => setImportOpen(false)}
                     disabled={importing}
-                    className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Close
                   </button>
@@ -619,14 +619,14 @@ const SuperadminUsersPage = () => {
               <button
                 type="button"
                 onClick={applySearch}
-                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white"
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
               >
                 Search
               </button>
               <button
                 type="button"
                 onClick={resetSearch}
-                className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
               >
                 Reset
               </button>
@@ -635,7 +635,7 @@ const SuperadminUsersPage = () => {
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
               >
                 <span className="flex items-center gap-2">
                   <i className="bi bi-person-plus text-base" aria-hidden="true" />
@@ -645,7 +645,7 @@ const SuperadminUsersPage = () => {
               <button
                 type="button"
                 onClick={openImportModal}
-                className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
               >
                 <span className="flex items-center gap-2">
                   <i className="bi bi-upload text-base" aria-hidden="true" />
@@ -657,7 +657,7 @@ const SuperadminUsersPage = () => {
                 onClick={() => fetchUsers(meta.page, meta.limit, search)}
                 aria-label="Refresh users"
                 title="Refresh users"
-                className="rounded-2xl border border-border bg-background p-2 text-primary"
+                className="rounded-md border border-border bg-background p-2 text-primary"
               >
                 <i
                   className="bi bi-arrow-clockwise text-base"
@@ -667,7 +667,7 @@ const SuperadminUsersPage = () => {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {users.length} of {meta.total} users
             </span>
@@ -676,7 +676,7 @@ const SuperadminUsersPage = () => {
                 type="button"
                 onClick={() => fetchUsers(meta.page - 1, meta.limit, search)}
                 disabled={meta.page <= 1 || meta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Prev
               </button>
@@ -687,7 +687,7 @@ const SuperadminUsersPage = () => {
                 type="button"
                 onClick={() => fetchUsers(meta.page + 1, meta.limit, search)}
                 disabled={meta.page >= meta.totalPages || meta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>
@@ -783,14 +783,14 @@ const SuperadminUsersPage = () => {
                             <button
                               type="button"
                               onClick={saveEdit}
-                              className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                              className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                             >
                               Save
                             </button>
                             <button
                               type="button"
                               onClick={cancelEdit}
-                              className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                              className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                             >
                               Cancel
                             </button>
@@ -800,7 +800,7 @@ const SuperadminUsersPage = () => {
                             <button
                               type="button"
                               onClick={() => startEdit(item)}
-                              className="rounded-full border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                              className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
                               aria-label="Edit user"
                               title="Edit user"
                             >
@@ -824,14 +824,14 @@ const SuperadminUsersPage = () => {
                                   <button
                                     type="button"
                                     onClick={savePassword}
-                                    className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                    className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                                   >
                                     Update
                                   </button>
                                   <button
                                     type="button"
                                     onClick={cancelPassword}
-                                    className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                                   >
                                     Cancel
                                   </button>
@@ -841,7 +841,7 @@ const SuperadminUsersPage = () => {
                               <button
                                 type="button"
                                 onClick={() => openPasswordEditor(item.id)}
-                                className="rounded-full border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                                className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
                                 aria-label="Change password"
                                 title="Change password"
                               >
@@ -851,7 +851,7 @@ const SuperadminUsersPage = () => {
                             <button
                               type="button"
                               onClick={() => deleteUser(item.id, item.email)}
-                              className="rounded-full border border-border bg-background p-2 text-danger transition hover:bg-danger/10"
+                              className="rounded-md border border-border bg-background p-2 text-danger transition hover:bg-danger/10"
                               aria-label="Delete user"
                               title="Delete user"
                             >

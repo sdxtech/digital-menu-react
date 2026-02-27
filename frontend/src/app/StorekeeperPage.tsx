@@ -222,7 +222,7 @@ const StorekeeperPage = () => {
                     <button
                       type="button"
                       onClick={() => handleExportMenusByDate(group)}
-                      className="rounded-2xl border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
+                      className="rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
                     >
                       Export (Excel)
                     </button>
@@ -247,7 +247,7 @@ const StorekeeperPage = () => {
                           setLoadError(message)
                         }
                       }}
-                      className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                      className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
                     >
                       Complete & send to kitchen
                     </button>

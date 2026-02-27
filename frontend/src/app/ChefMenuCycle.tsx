@@ -338,7 +338,7 @@ const ChefMenuCycle = () => {
                           <button
                             type="button"
                             onClick={() => handleRemoveMenuRow(row.id)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
                             aria-label="Remove menu row"
                             title="Remove menu row"
                           >
@@ -389,7 +389,7 @@ const ChefMenuCycle = () => {
                             if (!selectedRecipe) return
                             toggleMenuRowDetails(row.id)
                           }}
-                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                          className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
                           aria-expanded={isDetailsOpen}
                         >
                           {isDetailsOpen ? 'Hide details' : 'View details'}
@@ -514,7 +514,7 @@ const ChefMenuCycle = () => {
                     <button
                       type="button"
                       onClick={handleAddMenuRow}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
                     >
                       <span>+</span>
                       <span>Add menu</span>
@@ -538,7 +538,7 @@ const ChefMenuCycle = () => {
           <button
             type="button"
             onClick={handleSubmitToTimeline}
-            className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+            className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
           >
             Submit to Unit Manager
           </button>
@@ -561,7 +561,7 @@ const ChefMenuCycle = () => {
         ) : null}
 
         {timelineTotalPages > 1 ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {timelineGroups.length} production dates
             </span>
@@ -570,7 +570,7 @@ const ChefMenuCycle = () => {
                 type="button"
                 onClick={() => setTimelinePage((prev) => Math.max(1, prev - 1))}
                 disabled={timelinePage === 1 || timelineLoading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Prev
               </button>
@@ -585,7 +585,7 @@ const ChefMenuCycle = () => {
                   )
                 }
                 disabled={timelinePage === timelineTotalPages || timelineLoading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>
@@ -622,7 +622,7 @@ const ChefMenuCycle = () => {
                     <button
                       type="button"
                       onClick={() => toggleExpanded(group.date)}
-                      className="rounded-full border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
+                      className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
                     >
                       {isExpanded ? 'Hide details' : 'View details'}
                     </button>

@@ -247,7 +247,7 @@ const ChefStoreRequest = () => {
               }}
               aria-label="Refresh approvals"
               title="Refresh approvals"
-              className="rounded-2xl border border-border bg-background p-2 text-primary"
+              className="rounded-md border border-border bg-background p-2 text-primary"
             >
               <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
             </button>
@@ -318,7 +318,7 @@ const ChefStoreRequest = () => {
                               event.stopPropagation()
                               toggleExpanded(date)
                             }}
-                            className="rounded-full border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
+                            className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
@@ -345,7 +345,7 @@ const ChefStoreRequest = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleExportMenusByDate(group)}
-                                  className="rounded-2xl border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
+                                  className="rounded-md border border-border bg-white px-4 py-2 text-xs font-semibold text-primary"
                                 >
                                   Export menu (Excel)
                                 </button>

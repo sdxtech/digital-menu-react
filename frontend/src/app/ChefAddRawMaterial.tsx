@@ -255,7 +255,7 @@ const ChefAddRawMaterial = () => {
           <button
             type="button"
             onClick={openImportModal}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
           >
             <i className="bi bi-upload text-base" aria-hidden="true" />
             <span>Import raw materials</span>
@@ -284,7 +284,7 @@ const ChefAddRawMaterial = () => {
                 <button
                   type="button"
                   onClick={closeImportModal}
-                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                 >
                   Close
                 </button>
@@ -325,7 +325,7 @@ const ChefAddRawMaterial = () => {
                   type="button"
                   onClick={handleImportRawMaterials}
                   disabled={importing}
-                  className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Import raw materials
                 </button>
@@ -367,7 +367,7 @@ const ChefAddRawMaterial = () => {
                 <button
                   type="button"
                   onClick={closeImportResult}
-                  className="rounded-2xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                 >
                   Close
                 </button>
@@ -376,7 +376,7 @@ const ChefAddRawMaterial = () => {
                 <button
                   type="button"
                   onClick={closeImportResult}
-                  className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white"
+                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
                 >
                   Ok
                 </button>
@@ -441,7 +441,7 @@ const ChefAddRawMaterial = () => {
               <button
                 type="button"
                 onClick={handleSaveRawMaterial}
-                className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)] sm:w-auto"
+                className="w-full rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)] sm:w-auto"
               >
                 Save material
               </button>

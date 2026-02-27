@@ -214,7 +214,7 @@ const UnitManagerPage = () => {
                                 )
                               }
                             }}
-                            className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                            className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                           >
                             Approve
                           </button>
@@ -233,7 +233,7 @@ const UnitManagerPage = () => {
                                 )
                               }
                             }}
-                            className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                            className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                           >
                             Reject
                           </button>
@@ -281,7 +281,7 @@ const UnitManagerPage = () => {
                           <button
                             type="button"
                             onClick={() => toggleExpandedDate(group.date)}
-                            className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                            className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
@@ -290,7 +290,7 @@ const UnitManagerPage = () => {
                             onClick={() =>
                               handleBulkApproval(group.date, group.items, 'approve')
                             }
-                            className="rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white"
+                            className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                           >
                             Approve all
                           </button>
@@ -299,7 +299,7 @@ const UnitManagerPage = () => {
                             onClick={() =>
                               handleBulkApproval(group.date, group.items, 'reject')
                             }
-                            className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                            className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
                           >
                             Reject all
                           </button>

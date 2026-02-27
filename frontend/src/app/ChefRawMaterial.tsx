@@ -18,7 +18,7 @@ const ChefRawMaterial = () => {
         </div>
 
         <div className="rounded-md border border-border bg-surface shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {rawMaterials.length} of {rawMaterialsMeta.total} items
             </span>
@@ -32,7 +32,7 @@ const ChefRawMaterial = () => {
                   )
                 }
                 disabled={rawMaterialsMeta.page <= 1 || rawMaterialsMeta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Prev
               </button>
@@ -50,7 +50,7 @@ const ChefRawMaterial = () => {
                 disabled={
                   rawMaterialsMeta.page >= totalPages || rawMaterialsMeta.loading
                 }
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>

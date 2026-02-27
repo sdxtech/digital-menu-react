@@ -146,7 +146,7 @@ const LoginPage = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)] transition hover:bg-primary-hover"
+                  className="w-full rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)] transition hover:bg-primary-hover"
                 >
                   Sign in
                 </button>
