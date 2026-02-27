@@ -27,6 +27,9 @@ export class Recipe {
   @Prop({ trim: true })
   description?: string;
 
+  @Prop({ trim: true })
+  imageUrl?: string;
+
   @Prop({ type: Number, default: 0 })
   price: number;
 
@@ -58,6 +61,21 @@ export class Recipe {
 
   @Prop({ type: String, index: true })
   createdBy?: string;
+
+  @Prop({ type: String, trim: true })
+  createdByName?: string;
+
+  @Prop({ type: String, trim: true, lowercase: true })
+  createdByEmail?: string;
+
+  @Prop({ type: String, index: true })
+  updatedBy?: string;
+
+  @Prop({ type: String, trim: true })
+  updatedByName?: string;
+
+  @Prop({ type: String, trim: true, lowercase: true })
+  updatedByEmail?: string;
 }
 
 export const RecipeSchema = SchemaFactory.createForClass(Recipe);

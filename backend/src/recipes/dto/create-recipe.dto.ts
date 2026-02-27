@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -41,6 +42,14 @@ export class CreateRecipeDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsUrl({
+    require_protocol: true,
+    require_tld: false,
+    protocols: ['http', 'https'],
+  })
+  imageUrl?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -319,9 +319,8 @@ export class MenuProductionsService {
       return { items: [] as StoreRequestGroup[] };
     }
 
-    const recipeFilter =
-      Object.keys(siteFilter).length > 0 ? siteFilter : {};
-    const recipes = await this.recipeModel.find(recipeFilter).lean();
+    // Recipes are shared across sites, so use the full recipe list.
+    const recipes = await this.recipeModel.find({}).lean();
     const recipeByName = new Map<string, RecipeDocument>();
     recipes.forEach((recipe) => {
       const key = this.normalizeName(recipe.name ?? '');

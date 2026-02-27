@@ -43,6 +43,22 @@ export class UsersService {
     return this.userModel.findById(id);
   }
 
+  async findNamesByIds(ids: string[]) {
+    const validIds = ids.filter((id) => Types.ObjectId.isValid(id));
+    if (validIds.length === 0) return new Map<string, string>();
+
+    const users = await this.userModel
+      .find({ _id: { $in: validIds } })
+      .select({ name: 1 })
+      .lean();
+
+    const map = new Map<string, string>();
+    users.forEach((user) => {
+      map.set(String(user._id), user.name);
+    });
+    return map;
+  }
+
   async create(input: CreateUserInput) {
     const exists = await this.userModel.exists({ email: input.email.toLowerCase().trim() });
     if (exists) throw new ConflictException('Email already registered');

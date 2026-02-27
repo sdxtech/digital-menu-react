@@ -26,12 +26,20 @@ export type Recipe = {
   name: string
   category: string
   description: string
+  imageUrl?: string
   price: number
   portionSize: number
   status: RecipeStatus
   approvalStatus: ApprovalStatus
   ingredients: RecipeIngredient[]
   createdAt: string
+  updatedAt?: string
+  createdBy?: string
+  createdByName?: string
+  createdByEmail?: string
+  updatedBy?: string
+  updatedByName?: string
+  updatedByEmail?: string
 }
 
 export type MenuProduction = {
@@ -66,6 +74,7 @@ type CreateRecipeInput = {
   name: string
   category: string
   description: string
+  imageUrl?: string
   price: number
   portionSize: number
   status: RecipeStatus
@@ -143,6 +152,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     name: item.name ?? '',
     category: item.category ?? '',
     description: item.description ?? '',
+    imageUrl: item.imageUrl ?? undefined,
     price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
     portionSize: Number.isFinite(Number(item.portionSize))
       ? Number(item.portionSize)
@@ -160,6 +170,13 @@ const mapRecipe = (item: RecipeApi): Recipe => {
         }))
       : [],
     createdAt: item.createdAt ?? new Date().toISOString(),
+    updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+    createdBy: item.createdBy ?? '',
+    createdByName: item.createdByName ?? '',
+    createdByEmail: item.createdByEmail ?? '',
+    updatedBy: item.updatedBy ?? '',
+    updatedByName: item.updatedByName ?? '',
+    updatedByEmail: item.updatedByEmail ?? '',
   }
 }
 

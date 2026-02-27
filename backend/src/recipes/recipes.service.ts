@@ -9,35 +9,54 @@ import {
   RecipeDocument,
   RecipeIngredient,
 } from './schemas/recipe.schema';
+import { UsersService } from '../users/users.service';
 
-const DEFAULT_SITE = 'A1';
+type RecipeActor = {
+  id?: string;
+  name?: string;
+  email?: string;
+  site?: string;
+};
+
+type RecipeAuditFields = {
+  createdBy?: string;
+  updatedBy?: string;
+  createdByName?: string;
+  updatedByName?: string;
+};
 
 @Injectable()
 export class RecipesService {
   constructor(
     @InjectModel(Recipe.name) private readonly recipeModel: Model<RecipeDocument>,
+    private readonly users: UsersService,
   ) {}
 
-  async create(input: CreateRecipeDto, createdBy?: string, site?: string) {
+  async create(input: CreateRecipeDto, actor?: RecipeActor) {
     const ingredients = (input.ingredients ?? []).map((item) => ({
       productCode: item.productCode.trim(),
       name: item.name.trim(),
       unitOfMeasures: item.unitOfMeasures.trim(),
       qty: item.qty,
     }));
+    const imageUrl = input.imageUrl?.trim();
 
-    const normalizedSite = this.normalizeSite(site);
+    const normalizedSite = this.normalizeSite(actor?.site);
+    const createdFields = this.buildActorFields(actor, 'created');
+    const updatedFields = this.buildActorFields(actor, 'updated');
 
     return this.recipeModel.create({
       name: input.name.trim(),
       category: input.category.trim(),
       description: input.description?.trim(),
+      imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
       status: input.status ?? 'draft',
       approvalStatus: 'pending',
       ingredients,
-      createdBy,
+      ...createdFields,
+      ...updatedFields,
       ...(normalizedSite ? { site: normalizedSite } : {}),
     });
   }
@@ -45,10 +64,7 @@ export class RecipesService {
   async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
-    const siteFilter = this.buildSiteFilter(site);
-    if (Object.keys(siteFilter).length) {
-      andFilters.push(siteFilter);
-    }
+    // Recipes are shared across sites, so we don't apply site scoping.
 
     if (query.search?.trim()) {
       const text = query.search.trim();
@@ -98,10 +114,10 @@ export class RecipesService {
         item.approvalStatus === 'approved' && item.status !== 'active',
     );
     if (needsSync) {
-      const syncFilter = this.withSiteFilter(
-        { approvalStatus: 'approved', status: { $ne: 'active' } },
-        site,
-      );
+      const syncFilter = {
+        approvalStatus: 'approved',
+        status: { $ne: 'active' },
+      };
       await this.recipeModel.updateMany(syncFilter, { $set: { status: 'active' } });
       items.forEach((item) => {
         if (item.approvalStatus === 'approved' && item.status !== 'active') {
@@ -109,6 +125,8 @@ export class RecipesService {
         }
       });
     }
+
+    await this.attachActorNames(items);
 
     return {
       items,
@@ -119,14 +137,20 @@ export class RecipesService {
     };
   }
 
-  async setApprovalStatus(id: string, status: ApprovalStatus, site?: string) {
+  async setApprovalStatus(id: string, status: ApprovalStatus, actor?: RecipeActor) {
     // BACKEND LOGIC: approval updates also update recipe status.
     const nextStatus = status === 'approved' ? 'active' : 'draft';
-    const filter = this.withSiteFilter({ _id: id }, site);
+    const filter = { _id: id };
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updatePayload = {
+      approvalStatus: status,
+      status: nextStatus,
+      ...updatedFields,
+    };
     const updated = await this.recipeModel
       .findOneAndUpdate(
         filter,
-        { approvalStatus: status, status: nextStatus },
+        updatePayload,
         { new: true },
       )
       .lean();
@@ -136,20 +160,24 @@ export class RecipesService {
 
   async bulkCreate(records: Array<Omit<CreateRecipeDto, 'ingredients'> & {
     ingredients?: RecipeIngredient[];
-  }>, createdBy?: string, site?: string) {
+  }>, actor?: RecipeActor) {
     if (!records.length) return [];
 
-    const normalizedSite = this.normalizeSite(site);
+    const normalizedSite = this.normalizeSite(actor?.site);
+    const createdFields = this.buildActorFields(actor, 'created');
+    const updatedFields = this.buildActorFields(actor, 'updated');
     const payload = records.map((record) => ({
       name: record.name.trim(),
       category: record.category.trim(),
       description: record.description?.trim(),
+      imageUrl: record.imageUrl?.trim(),
       price: record.price ?? 0,
       portionSize: record.portionSize ?? 1,
       status: record.status ?? 'draft',
       approvalStatus: 'pending',
       ingredients: record.ingredients ?? [],
-      createdBy,
+      ...createdFields,
+      ...updatedFields,
       ...(normalizedSite ? { site: normalizedSite } : {}),
     }));
 
@@ -170,7 +198,7 @@ export class RecipesService {
 
   // BACKEND LOGIC: category list for frontend filters.
   async listCategories(site?: string) {
-    const filter = this.withSiteFilter({ category: { $ne: '' } }, site);
+    const filter = { category: { $ne: '' } };
     const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
       .map((item) => String(item).trim())
@@ -178,27 +206,96 @@ export class RecipesService {
       .sort((a, b) => a.localeCompare(b));
   }
 
+  private buildActorFields(actor: RecipeActor | undefined, prefix: 'created' | 'updated') {
+    if (!actor) return {};
+    const fields: Record<string, string> = {};
+    if (actor.id) fields[`${prefix}By`] = actor.id;
+    if (actor.name) fields[`${prefix}ByName`] = actor.name.trim();
+    if (actor.email) fields[`${prefix}ByEmail`] = actor.email.trim().toLowerCase();
+    return fields;
+  }
+
+  private async attachActorNames(items: RecipeAuditFields[]) {
+    const ids = new Set<string>();
+    items.forEach((item) => {
+      const createdBy = item.createdBy;
+      const updatedBy = item.updatedBy;
+      const createdByName = item.createdByName;
+      const updatedByName = item.updatedByName;
+      const hasCreatedName =
+        typeof createdByName === 'string' && createdByName.trim().length > 0;
+      const hasUpdatedName =
+        typeof updatedByName === 'string' && updatedByName.trim().length > 0;
+      if (!hasCreatedName && typeof createdBy === 'string' && createdBy) {
+        ids.add(createdBy);
+      }
+      if (!hasUpdatedName && typeof updatedBy === 'string' && updatedBy) {
+        ids.add(updatedBy);
+      }
+    });
+
+    if (ids.size === 0) return;
+
+    const nameMap = await this.users.findNamesByIds(Array.from(ids));
+    if (nameMap.size === 0) return;
+
+    items.forEach((item) => {
+      const createdByName = item.createdByName;
+      const updatedByName = item.updatedByName;
+      const hasCreatedName =
+        typeof createdByName === 'string' && createdByName.trim().length > 0;
+      const hasUpdatedName =
+        typeof updatedByName === 'string' && updatedByName.trim().length > 0;
+
+      if (!hasCreatedName && typeof item.createdBy === 'string') {
+        const name = nameMap.get(item.createdBy);
+        if (name) item.createdByName = name;
+      }
+      if (!hasUpdatedName && typeof item.updatedBy === 'string') {
+        const name = nameMap.get(item.updatedBy);
+        if (name) item.updatedByName = name;
+      }
+    });
+  }
+
   private normalizeSite(site?: string) {
     const trimmed = site?.trim();
     return trimmed ? trimmed : undefined;
   }
 
-  private buildSiteFilter(site?: string) {
-    if (!site) return {};
-    if (site === DEFAULT_SITE) {
-      return {
-        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
-      };
-    }
-    return { site };
+  async setImageUrl(id: string, imageUrl: string, actor?: RecipeActor) {
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updatePayload = {
+      imageUrl: imageUrl.trim(),
+      ...updatedFields,
+    };
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        { _id: id },
+        updatePayload,
+        { new: true },
+      )
+      .lean();
+
+    if (!updated) throw new NotFoundException('Recipe not found');
+    return updated;
   }
 
-  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
-    const siteFilter = this.buildSiteFilter(site);
-    if (!Object.keys(siteFilter).length) return filter;
-    if ('$or' in siteFilter) {
-      return { $and: [filter, siteFilter] };
+  async clearImageUrl(id: string, actor?: RecipeActor) {
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updatePayload: Record<string, unknown> = { $unset: { imageUrl: '' } };
+    if (Object.keys(updatedFields).length) {
+      updatePayload.$set = updatedFields;
     }
-    return { ...filter, ...siteFilter };
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        { _id: id },
+        updatePayload,
+        { new: true },
+      )
+      .lean();
+
+    if (!updated) throw new NotFoundException('Recipe not found');
+    return updated;
   }
 }

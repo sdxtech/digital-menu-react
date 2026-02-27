@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -22,6 +23,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
+import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { RecipesService } from './recipes.service';
 
 const RECIPE_HEADER_ALIASES = {
@@ -40,7 +42,7 @@ export class RecipesController {
 
   @Post()
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateRecipeDto) {
-    return this.recipes.create(dto, req.user.sub, req.user.site);
+    return this.recipes.create(dto, this.buildActor(req));
   }
 
   // BACKEND LOGIC: provide category options for recipe filters.
@@ -56,12 +58,26 @@ export class RecipesController {
 
   @Patch(':id/approve')
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'approved', req.user.site);
+    return this.recipes.setApprovalStatus(id, 'approved', this.buildActor(req));
   }
 
   @Patch(':id/reject')
   reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'rejected', req.user.site);
+    return this.recipes.setApprovalStatus(id, 'rejected', this.buildActor(req));
+  }
+
+  @Patch(':id/photo')
+  updatePhoto(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateRecipePhotoDto,
+  ) {
+    return this.recipes.setImageUrl(id, dto.imageUrl, this.buildActor(req));
+  }
+
+  @Delete(':id/photo')
+  removePhoto(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.clearImageUrl(id, this.buildActor(req));
   }
 
   @Post('import')
@@ -97,8 +113,7 @@ export class RecipesController {
     try {
       const insertedCount = await this.importFromExcel(
         file.path,
-        req.user.sub,
-        req.user.site,
+        this.buildActor(req),
       );
       return { insertedCount };
     } finally {
@@ -106,7 +121,12 @@ export class RecipesController {
     }
   }
 
-  private async importFromExcel(filePath: string, createdBy: string, site?: string) {
+  private async importFromExcel(filePath: string, actor: {
+    id?: string;
+    name?: string;
+    email?: string;
+    site?: string;
+  }) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.worksheets[0];
@@ -158,7 +178,7 @@ export class RecipesController {
     });
 
     if (!rows.length) return 0;
-    const created = await this.recipes.bulkCreate(rows, createdBy, site);
+    const created = await this.recipes.bulkCreate(rows, actor);
     return created.length;
   }
 
@@ -194,5 +214,14 @@ export class RecipesController {
     const normalized = value.trim().toLowerCase();
     if (normalized === 'active' || normalized === 'aktif') return 'active';
     return 'draft';
+  }
+
+  private buildActor(req: AuthenticatedRequest) {
+    return {
+      id: req.user.sub,
+      name: req.user.name,
+      email: req.user.email,
+      site: req.user.site,
+    };
   }
 }
