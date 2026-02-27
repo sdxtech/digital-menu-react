@@ -560,6 +560,39 @@ const ChefMenuCycle = () => {
           <p className="mt-4 text-xs font-medium text-primary">{timelineMessage}</p>
         ) : null}
 
+        {timelineTotalPages > 1 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+            <span className="text-muted">
+              Showing {timelineGroups.length} production dates
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTimelinePage((prev) => Math.max(1, prev - 1))}
+                disabled={timelinePage === 1 || timelineLoading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold text-foreground">
+                Page {timelinePage} / {timelineTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setTimelinePage((prev) =>
+                    Math.min(timelineTotalPages, prev + 1),
+                  )
+                }
+                disabled={timelinePage === timelineTotalPages || timelineLoading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {timelineLoading ? (
           <div className="mt-6 rounded-2xl border border-border bg-background p-6 text-center text-sm text-muted">
             Loading production timeline...
@@ -633,38 +666,6 @@ const ChefMenuCycle = () => {
           </div>
         )}
 
-        {timelineTotalPages > 1 ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
-            <span className="text-muted">
-              Showing {timelineGroups.length} production dates
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTimelinePage((prev) => Math.max(1, prev - 1))}
-                disabled={timelinePage === 1 || timelineLoading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-semibold text-foreground">
-                Page {timelinePage} / {timelineTotalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setTimelinePage((prev) =>
-                    Math.min(timelineTotalPages, prev + 1),
-                  )
-                }
-                disabled={timelinePage === timelineTotalPages || timelineLoading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   )

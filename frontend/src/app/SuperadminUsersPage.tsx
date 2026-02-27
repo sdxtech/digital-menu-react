@@ -667,6 +667,33 @@ const SuperadminUsersPage = () => {
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+            <span className="text-muted">
+              Showing {users.length} of {meta.total} users
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fetchUsers(meta.page - 1, meta.limit, search)}
+                disabled={meta.page <= 1 || meta.loading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold text-foreground">
+                Page {meta.page} / {meta.totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => fetchUsers(meta.page + 1, meta.limit, search)}
+                disabled={meta.page >= meta.totalPages || meta.loading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-background">
@@ -873,33 +900,6 @@ const SuperadminUsersPage = () => {
               {importMessage}
             </p>
           ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
-            <span className="text-muted">
-              Showing {users.length} of {meta.total} users
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => fetchUsers(meta.page - 1, meta.limit, search)}
-                disabled={meta.page <= 1 || meta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-semibold text-foreground">
-                Page {meta.page} / {meta.totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => fetchUsers(meta.page + 1, meta.limit, search)}
-                disabled={meta.page >= meta.totalPages || meta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Next
-              </button>
-            </div>
-          </div>
         </div>
       </div>
       </div>

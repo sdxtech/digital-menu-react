@@ -18,6 +18,44 @@ const ChefRawMaterial = () => {
         </div>
 
         <div className="rounded-3xl border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-white px-5 py-4 text-xs">
+            <span className="text-muted">
+              Showing {rawMaterials.length} of {rawMaterialsMeta.total} items
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  fetchRawMaterials(
+                    rawMaterialsMeta.page - 1,
+                    rawMaterialsMeta.limit,
+                  )
+                }
+                disabled={rawMaterialsMeta.page <= 1 || rawMaterialsMeta.loading}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold text-foreground">
+                Page {rawMaterialsMeta.page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  fetchRawMaterials(
+                    rawMaterialsMeta.page + 1,
+                    rawMaterialsMeta.limit,
+                  )
+                }
+                disabled={
+                  rawMaterialsMeta.page >= totalPages || rawMaterialsMeta.loading
+                }
+                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Next
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-background">
@@ -61,44 +99,6 @@ const ChefRawMaterial = () => {
                 )}
               </tbody>
             </table>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-5 py-4 text-xs">
-            <span className="text-muted">
-              Showing {rawMaterials.length} of {rawMaterialsMeta.total} items
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  fetchRawMaterials(
-                    rawMaterialsMeta.page - 1,
-                    rawMaterialsMeta.limit,
-                  )
-                }
-                disabled={rawMaterialsMeta.page <= 1 || rawMaterialsMeta.loading}
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Prev
-              </button>
-              <span className="text-xs font-semibold text-foreground">
-                Page {rawMaterialsMeta.page} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  fetchRawMaterials(
-                    rawMaterialsMeta.page + 1,
-                    rawMaterialsMeta.limit,
-                  )
-                }
-                disabled={
-                  rawMaterialsMeta.page >= totalPages || rawMaterialsMeta.loading
-                }
-                className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Next
-              </button>
-            </div>
           </div>
         </div>
       </div>
