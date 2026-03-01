@@ -47,6 +47,12 @@ export class UpdateRecipeDto {
   portionSize?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  foodCostRecipe?: number;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RecipeIngredientDto)

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import ExcelJS, { type CellValue, type Worksheet } from 'exceljs';
 import { Model } from 'mongoose';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
@@ -14,6 +15,10 @@ import {
   RecipeDocument,
   RecipeIngredient,
 } from './schemas/recipe.schema';
+import {
+  RawMaterialsService,
+  type RawMaterialLookup,
+} from '../raw-materials/raw-materials.service';
 import { UsersService } from '../users/users.service';
 
 type RecipeActor = {
@@ -30,21 +35,122 @@ type RecipeAuditFields = {
   updatedByName?: string;
 };
 
+type ImportWarningCode =
+  | 'missing_product_code'
+  | 'missing_uom'
+  | 'raw_material_not_found'
+  | 'conversion_not_possible'
+  | 'invalid_portion'
+  | 'missing_name'
+  | 'missing_header'
+  | 'legacy_row_skipped';
+
+type RecipeImportWarning = {
+  code: ImportWarningCode;
+  message: string;
+  row?: number;
+  recipeName?: string;
+};
+
+type RecipeImportFallbackRows = {
+  missingProductCode: number;
+  missingUom: number;
+  rawMaterialNotFound: number;
+  conversionNotPossible: number;
+};
+
+export type RecipeImportResult = {
+  insertedCount: number;
+  ingredientsCount: number;
+  warningsCount: number;
+  warnings?: RecipeImportWarning[];
+  fallbackRows: RecipeImportFallbackRows;
+};
+
+type RecipeImportParseResult = {
+  records: ImportRecipeRecord[];
+  warnings: RecipeImportWarning[];
+  fallbackRows: RecipeImportFallbackRows;
+  ingredientsCount: number;
+};
+
+type ImportRecipeRecord = Omit<CreateRecipeDto, 'ingredients'> & {
+  ingredients?: RecipeIngredient[];
+};
+
+type RecipeCardHeaderMap = {
+  headerRow: number;
+  qtyCol: number;
+  productCodeCol: number;
+  ingredientCol?: number;
+  productDescriptionCol?: number;
+  unitLeftCol?: number;
+  unitRightCol?: number;
+  priceUomCol?: number;
+  foodCostCol?: number;
+};
+
+type RecipeCardBlock = {
+  index: number;
+  startRow: number;
+  endRow: number;
+};
+
+type BlockMeta = {
+  recipeName: string;
+  category: string;
+  portionSize: number;
+};
+
+const DEFAULT_WARNING_LIMIT = 120;
+
+const LEGACY_HEADER_ALIASES = {
+  name: ['name', 'nama', 'menu', 'menu name'],
+  category: ['category', 'kategori', 'jenis'],
+  description: ['description', 'deskripsi', 'desc'],
+  price: ['price', 'harga'],
+  status: ['status', 'state'],
+  portionSize: ['portion', 'portions', 'porsi', 'serving', 'servings', 'yield'],
+  foodCostRecipe: ['food cost recipe', 'food cost', 'total cost'],
+} as const;
+
+const UOM_ALIASES: Record<string, string> = {
+  g: 'gram',
+  gr: 'gram',
+  gram: 'gram',
+  grams: 'gram',
+  kg: 'kg',
+  kgs: 'kg',
+  kilogram: 'kg',
+  kilograms: 'kg',
+  ml: 'ml',
+  milliliter: 'ml',
+  milliliters: 'ml',
+  l: 'liter',
+  lt: 'liter',
+  ltr: 'liter',
+  liter: 'liter',
+  litre: 'liter',
+  litres: 'liter',
+  liters: 'liter',
+  pcs: 'pcs',
+  pc: 'pcs',
+  piece: 'pcs',
+  pieces: 'pcs',
+  unit: 'pcs',
+};
+
 @Injectable()
 export class RecipesService {
   constructor(
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
+    private readonly rawMaterials: RawMaterialsService,
     private readonly users: UsersService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
-    const ingredients = (input.ingredients ?? []).map((item) => ({
-      productCode: item.productCode.trim(),
-      name: item.name.trim(),
-      unitOfMeasures: item.unitOfMeasures.trim(),
-      qty: item.qty,
-    }));
+    const ingredients = this.normalizeIngredients(input.ingredients);
     const imageUrl = input.imageUrl?.trim();
 
     const normalizedSite = this.normalizeSite(actor?.site);
@@ -58,6 +164,7 @@ export class RecipesService {
       imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
+      foodCostRecipe: this.normalizeOptionalNumber(input.foodCostRecipe),
       status: input.status ?? 'draft',
       approvalStatus: 'pending',
       ingredients,
@@ -207,13 +314,12 @@ export class RecipesService {
       $set.portionSize = input.portionSize;
     }
 
+    if (input.foodCostRecipe !== undefined) {
+      $set.foodCostRecipe = input.foodCostRecipe;
+    }
+
     if (input.ingredients !== undefined) {
-      $set.ingredients = input.ingredients.map((item) => ({
-        productCode: item.productCode.trim(),
-        name: item.name.trim(),
-        unitOfMeasures: item.unitOfMeasures.trim(),
-        qty: item.qty,
-      }));
+      $set.ingredients = this.normalizeIngredients(input.ingredients);
     }
 
     if (Object.keys($set).length === 0 && Object.keys($unset).length === 0) {
@@ -225,9 +331,6 @@ export class RecipesService {
       $set: {
         ...$set,
         ...updatedFields,
-        // Any recipe content update must be re-approved.
-        approvalStatus: 'pending',
-        status: 'draft',
       },
     };
 
@@ -263,6 +366,7 @@ export class RecipesService {
       imageUrl: record.imageUrl?.trim(),
       price: record.price ?? 0,
       portionSize: record.portionSize ?? 1,
+      foodCostRecipe: this.normalizeOptionalNumber(record.foodCostRecipe),
       status: record.status ?? 'draft',
       approvalStatus: 'pending',
       ingredients: record.ingredients ?? [],
@@ -272,6 +376,813 @@ export class RecipesService {
     }));
 
     return this.recipeModel.insertMany(payload, { ordered: false });
+  }
+
+  async importFromExcel(
+    filePath: string,
+    actor?: RecipeActor,
+  ): Promise<RecipeImportResult> {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) throw new BadRequestException('Sheet tidak ditemukan.');
+
+    const parseResult = await this.parseImportWorksheet(worksheet);
+    if (!parseResult.records.length) {
+      return {
+        insertedCount: 0,
+        ingredientsCount: 0,
+        warningsCount: parseResult.warnings.length,
+        warnings: parseResult.warnings.slice(0, DEFAULT_WARNING_LIMIT),
+        fallbackRows: parseResult.fallbackRows,
+      };
+    }
+
+    const created = await this.bulkCreate(parseResult.records, actor);
+    return {
+      insertedCount: created.length,
+      ingredientsCount: parseResult.ingredientsCount,
+      warningsCount: parseResult.warnings.length,
+      warnings: parseResult.warnings.slice(0, DEFAULT_WARNING_LIMIT),
+      fallbackRows: parseResult.fallbackRows,
+    };
+  }
+
+  private async parseImportWorksheet(
+    worksheet: Worksheet,
+  ): Promise<RecipeImportParseResult> {
+    const blockStarts = this.findRecipeCardBlockStarts(worksheet);
+    if (blockStarts.length > 0) {
+      return this.parseRecipeCardWorksheet(worksheet, blockStarts);
+    }
+    return this.parseLegacyWorksheet(worksheet);
+  }
+
+  private async parseRecipeCardWorksheet(
+    worksheet: Worksheet,
+    blockStarts: number[],
+  ): Promise<RecipeImportParseResult> {
+    const records: ImportRecipeRecord[] = [];
+    const warnings: RecipeImportWarning[] = [];
+    const fallbackRows = this.createFallbackRowsCounter();
+    let ingredientsCount = 0;
+
+    const blocks: RecipeCardBlock[] = blockStarts.map((startRow, index) => ({
+      index,
+      startRow,
+      endRow:
+        index < blockStarts.length - 1
+          ? blockStarts[index + 1] - 1
+          : worksheet.rowCount,
+    }));
+
+    const rawMaterialCache = new Map<string, RawMaterialLookup | null>();
+
+    for (const block of blocks) {
+      const header = this.findRecipeCardHeaderMap(
+        worksheet,
+        block.startRow,
+        block.endRow,
+      );
+      if (!header) {
+        warnings.push({
+          code: 'missing_header',
+          row: block.startRow,
+          message: `Recipe card block ${block.index + 1} skipped because QTY/PRODUCT CODE header was not found.`,
+        });
+        continue;
+      }
+
+      const meta = this.extractRecipeCardMeta(worksheet, block, warnings);
+      const ingredients: RecipeIngredient[] = [];
+      const summaryCost = this.extractSummaryCost(worksheet, block, header);
+
+      // Complex parser: reads one card block and applies row-level fallback rules.
+      for (
+        let rowNumber = header.headerRow + 1;
+        rowNumber <= block.endRow;
+        rowNumber += 1
+      ) {
+        const rowValues = this.readRowCells(worksheet, rowNumber, 20);
+        if (this.shouldStopRecipeCardIngredientRows(rowValues)) {
+          break;
+        }
+
+        const qtyRaw = this.cellToNumber(rowValues[header.qtyCol] ?? null);
+        const qty =
+          qtyRaw !== undefined && Number.isFinite(qtyRaw) && qtyRaw > 0
+            ? qtyRaw
+            : undefined;
+
+        const productCodeRaw = this.cellToText(
+          rowValues[header.productCodeCol] ?? null,
+        );
+        const ingredientText = header.ingredientCol
+          ? this.cellToText(rowValues[header.ingredientCol] ?? null)
+          : '';
+        const productDescription = header.productDescriptionCol
+          ? this.cellToText(rowValues[header.productDescriptionCol] ?? null)
+          : '';
+        const name = productDescription || ingredientText;
+        if (!productCodeRaw) {
+          fallbackRows.missingProductCode += 1;
+          warnings.push({
+            code: 'missing_product_code',
+            row: rowNumber,
+            recipeName: meta.recipeName,
+            message:
+              'Product code kosong. Data tetap diimport dengan productCode kosong.',
+          });
+        }
+
+        const unitLeftRaw = header.unitLeftCol
+          ? this.cellToText(rowValues[header.unitLeftCol] ?? null)
+          : '';
+        const unitRightRaw = header.unitRightCol
+          ? this.cellToText(rowValues[header.unitRightCol] ?? null)
+          : '';
+        const unitLeft = this.normalizeImportedUnit(unitLeftRaw);
+        const unitRight = this.normalizeImportedUnit(unitRightRaw);
+
+        const priceUom = header.priceUomCol
+          ? this.cellToNumber(rowValues[header.priceUomCol] ?? null)
+          : undefined;
+        const foodCost = header.foodCostCol
+          ? this.cellToNumber(rowValues[header.foodCostCol] ?? null)
+          : undefined;
+
+        const hasAnyIngredientData =
+          qty !== undefined ||
+          !!productCodeRaw ||
+          !!name ||
+          !!unitLeftRaw ||
+          !!unitRightRaw ||
+          priceUom !== undefined ||
+          foodCost !== undefined;
+        if (!hasAnyIngredientData) {
+          continue;
+        }
+
+        if (!name) {
+          warnings.push({
+            code: 'missing_name',
+            row: rowNumber,
+            recipeName: meta.recipeName,
+            message:
+              'Nama ingredient kosong. Data tetap diimport dengan name kosong.',
+          });
+        }
+
+        let finalQty = qty;
+        let finalUnit = unitRight || unitLeft || '';
+        let resolvedRawMaterial: RawMaterialLookup | null = null;
+
+        if (productCodeRaw) {
+          resolvedRawMaterial = await this.resolveRawMaterial(
+            productCodeRaw,
+            rawMaterialCache,
+          );
+        }
+
+        if (resolvedRawMaterial) {
+          const targetUnitRaw = resolvedRawMaterial.unitOfMeasures.trim();
+          const targetUnitNormalized =
+            this.normalizeImportedUnit(targetUnitRaw);
+          const canTryConversion =
+            qty !== undefined &&
+            !!unitLeft &&
+            !!targetUnitNormalized &&
+            Number.isFinite(qty);
+          const conversion = canTryConversion
+            ? this.convertQty(qty, unitLeft, targetUnitNormalized)
+            : undefined;
+          if (conversion !== undefined && canTryConversion) {
+            finalQty = conversion;
+            finalUnit = targetUnitRaw || targetUnitNormalized || finalUnit;
+          } else if (canTryConversion) {
+            fallbackRows.conversionNotPossible += 1;
+            warnings.push({
+              code: 'conversion_not_possible',
+              row: rowNumber,
+              recipeName: meta.recipeName,
+              message: `Could not convert ${qty} ${unitLeft || '(missing unit)'} to ${targetUnitRaw || '(missing target unit)'}.`,
+            });
+          }
+        } else if (productCodeRaw) {
+          fallbackRows.rawMaterialNotFound += 1;
+          warnings.push({
+            code: 'raw_material_not_found',
+            row: rowNumber,
+            recipeName: meta.recipeName,
+            message: `Raw material not found for product code ${productCodeRaw}.`,
+          });
+        }
+
+        if (!unitRight && !unitLeft) {
+          fallbackRows.missingUom += 1;
+          warnings.push({
+            code: 'missing_uom',
+            row: rowNumber,
+            recipeName: meta.recipeName,
+            message: 'Unit kosong. Data tetap diimport dengan unit kosong.',
+          });
+        }
+
+        const ingredient: RecipeIngredient = {
+          productCode: productCodeRaw.trim(),
+          name: name.trim(),
+          unitOfMeasures: finalUnit,
+          ...(finalQty !== undefined ? { qty: finalQty } : {}),
+          ...(priceUom !== undefined ? { priceUom } : {}),
+          ...(foodCost !== undefined ? { foodCost } : {}),
+        };
+
+        ingredients.push(ingredient);
+      }
+
+      const ingredientFoodCostSum = ingredients.reduce((sum, item) => {
+        return sum + (item.foodCost ?? 0);
+      }, 0);
+      const foodCostRecipe =
+        summaryCost.totalCost ??
+        summaryCost.subTotalCost ??
+        (ingredientFoodCostSum > 0 ? ingredientFoodCostSum : undefined);
+
+      records.push({
+        name: meta.recipeName,
+        category: meta.category,
+        portionSize: meta.portionSize,
+        status: 'draft',
+        ingredients,
+        price: 0,
+        ...(foodCostRecipe !== undefined ? { foodCostRecipe } : {}),
+      });
+      ingredientsCount += ingredients.length;
+    }
+
+    return { records, warnings, fallbackRows, ingredientsCount };
+  }
+
+  private parseLegacyWorksheet(worksheet: Worksheet): RecipeImportParseResult {
+    const warnings: RecipeImportWarning[] = [];
+    const fallbackRows = this.createFallbackRowsCounter();
+    const records: ImportRecipeRecord[] = [];
+
+    const headerValues = this.readRowCells(worksheet, 1, 20);
+    const headerMap = this.buildLegacyHeaderMap(headerValues);
+    if (!headerMap.name) {
+      throw new BadRequestException(
+        'Header harus berisi name untuk import recipe.',
+      );
+    }
+
+    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+      const values = this.readRowCells(worksheet, rowNumber, 20);
+      const name = this.cellToText(values[headerMap.name] ?? null);
+      const category = headerMap.category
+        ? this.cellToText(values[headerMap.category] ?? null)
+        : '';
+      if (!name) {
+        if (category) {
+          warnings.push({
+            code: 'legacy_row_skipped',
+            row: rowNumber,
+            message: 'Legacy row skipped because name is empty.',
+          });
+        }
+        continue;
+      }
+
+      const description = headerMap.description
+        ? this.cellToText(values[headerMap.description] ?? null)
+        : '';
+      const price = headerMap.price
+        ? this.cellToNumber(values[headerMap.price] ?? null)
+        : undefined;
+      const portionSize = headerMap.portionSize
+        ? this.cellToNumber(values[headerMap.portionSize] ?? null)
+        : undefined;
+      const statusRaw = headerMap.status
+        ? this.cellToText(values[headerMap.status] ?? null)
+        : '';
+      const foodCostRecipe = headerMap.foodCostRecipe
+        ? this.cellToNumber(values[headerMap.foodCostRecipe] ?? null)
+        : undefined;
+
+      records.push({
+        name,
+        category,
+        description: description || undefined,
+        price: price !== undefined && price >= 0 ? price : 0,
+        portionSize:
+          portionSize !== undefined && portionSize >= 1 ? portionSize : 1,
+        status: this.normalizeStatus(statusRaw),
+        ingredients: [],
+        ...(foodCostRecipe !== undefined ? { foodCostRecipe } : {}),
+      });
+    }
+
+    return {
+      records,
+      warnings,
+      fallbackRows,
+      ingredientsCount: 0,
+    };
+  }
+
+  private findRecipeCardBlockStarts(worksheet: Worksheet) {
+    const starts: number[] = [];
+    for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+      const rowValues = this.readRowCells(worksheet, rowNumber, 3);
+      const firstCell = this.normalizeLabel(
+        this.cellToText(rowValues[1] ?? null),
+      );
+      if (firstCell.includes('recipe card')) {
+        starts.push(rowNumber);
+      }
+    }
+    return starts;
+  }
+
+  private findRecipeCardHeaderMap(
+    worksheet: Worksheet,
+    startRow: number,
+    endRow: number,
+  ): RecipeCardHeaderMap | undefined {
+    const maxRow = Math.min(endRow, startRow + 80);
+    for (let rowNumber = startRow; rowNumber <= maxRow; rowNumber += 1) {
+      const rowValues = this.readRowCells(worksheet, rowNumber, 20);
+      const normalizedCells: Array<{ col: number; value: string }> = [];
+      for (let col = 1; col < rowValues.length; col += 1) {
+        const normalized = this.normalizeLabel(
+          this.cellToText(rowValues[col] ?? null),
+        );
+        if (normalized) normalizedCells.push({ col, value: normalized });
+      }
+
+      const qtyCol = this.findColumnForHeader(normalizedCells, ['qty']);
+      const productCodeCol = this.findColumnForHeader(normalizedCells, [
+        'product code',
+        'product code/item',
+        'productcode',
+      ]);
+      if (!qtyCol || !productCodeCol) continue;
+
+      const ingredientCol = this.findColumnForHeader(normalizedCells, [
+        'ingredient',
+      ]);
+      const productDescriptionCol = this.findColumnForHeader(normalizedCells, [
+        'product description',
+      ]);
+
+      if (!ingredientCol && !productDescriptionCol) continue;
+
+      const unitCols = normalizedCells
+        .filter((item) => item.value === 'unit')
+        .map((item) => item.col)
+        .sort((a, b) => a - b);
+      const anchorCol = Math.max(
+        productCodeCol,
+        ingredientCol ?? 0,
+        productDescriptionCol ?? 0,
+      );
+
+      const unitLeftCol = unitCols.find((col) => col < productCodeCol);
+      const unitRightCol =
+        unitCols.find((col) => col > anchorCol) ??
+        (unitCols.length > 1 ? unitCols[1] : undefined);
+
+      const priceUomCol = this.findColumnForHeader(normalizedCells, [
+        'price uom',
+        'price/uom',
+      ]);
+      const foodCostCol = this.findColumnForHeader(normalizedCells, [
+        'food cost recipe',
+        'food cost',
+      ]);
+
+      return {
+        headerRow: rowNumber,
+        qtyCol,
+        productCodeCol,
+        ingredientCol,
+        productDescriptionCol,
+        unitLeftCol,
+        unitRightCol,
+        priceUomCol,
+        foodCostCol,
+      };
+    }
+
+    return undefined;
+  }
+
+  private extractRecipeCardMeta(
+    worksheet: Worksheet,
+    block: RecipeCardBlock,
+    warnings: RecipeImportWarning[],
+  ): BlockMeta {
+    const recipeNameCell = this.findLabelCell(
+      worksheet,
+      block.startRow,
+      block.endRow,
+      ['recipe name'],
+    );
+    const recipeName =
+      recipeNameCell &&
+      (this.readAdjacentText(
+        worksheet,
+        recipeNameCell.row,
+        recipeNameCell.col,
+        20,
+      ) ||
+        this.readNearbyText(
+          worksheet,
+          recipeNameCell.row + 1,
+          recipeNameCell.col,
+          20,
+        ));
+    const normalizedName =
+      recipeName && recipeName.trim()
+        ? recipeName.trim()
+        : `Imported Recipe ${block.index + 1}`;
+
+    const categoryCell = this.findLabelCell(
+      worksheet,
+      block.startRow,
+      block.endRow,
+      ['food type'],
+    );
+    const rawCategory =
+      (categoryCell &&
+        this.readAdjacentText(
+          worksheet,
+          categoryCell.row,
+          categoryCell.col,
+          20,
+        )) ||
+      '';
+    const normalizedCategory = this.normalizeLabel(rawCategory);
+    const category =
+      normalizedCategory === 'food type' ? '' : rawCategory.trim();
+
+    const portionCell = this.findLabelCell(
+      worksheet,
+      block.startRow,
+      block.endRow,
+      ['portion'],
+    );
+    const portionValue =
+      portionCell &&
+      (this.cellToNumber(
+        this.readRowCells(worksheet, portionCell.row + 1, 20)[
+          portionCell.col
+        ] ?? null,
+      ) ??
+        this.cellToNumber(
+          this.readRowCells(worksheet, portionCell.row, 20)[
+            portionCell.col + 1
+          ] ?? null,
+        ));
+
+    const portionSize =
+      portionValue !== undefined && portionValue > 0 ? portionValue : 1;
+    if (portionCell && (portionValue === undefined || portionValue <= 0)) {
+      warnings.push({
+        code: 'invalid_portion',
+        row: portionCell.row,
+        recipeName: normalizedName,
+        message: 'Invalid portion value. Defaulted to 1.',
+      });
+    }
+
+    return {
+      recipeName: normalizedName,
+      category,
+      portionSize,
+    };
+  }
+
+  private extractSummaryCost(
+    worksheet: Worksheet,
+    block: RecipeCardBlock,
+    header: RecipeCardHeaderMap,
+  ) {
+    let totalCost: number | undefined;
+    let subTotalCost: number | undefined;
+
+    for (
+      let rowNumber = header.headerRow + 1;
+      rowNumber <= block.endRow;
+      rowNumber += 1
+    ) {
+      const rowValues = this.readRowCells(worksheet, rowNumber, 20);
+      const rowLabel = this.normalizeLabel(
+        rowValues
+          .slice(1, 10)
+          .map((value) => this.cellToText(value ?? null))
+          .join(' '),
+      );
+
+      if (rowLabel.includes('sub total cost')) {
+        subTotalCost = this.findNumericInRow(rowValues, header.foodCostCol);
+        continue;
+      }
+
+      if (rowLabel.includes('total cost')) {
+        totalCost = this.findNumericInRow(rowValues, header.foodCostCol);
+      }
+    }
+
+    return { totalCost, subTotalCost };
+  }
+
+  private shouldStopRecipeCardIngredientRows(values: CellValue[]) {
+    const joined = this.normalizeLabel(
+      values
+        .slice(1, 10)
+        .map((value) => this.cellToText(value ?? null))
+        .join(' '),
+    );
+    if (!joined) return false;
+
+    return (
+      joined.includes('recipe card') ||
+      joined.includes('method') ||
+      joined.includes('remarks') ||
+      joined.includes('remark') ||
+      joined.includes('sub total cost') ||
+      joined.includes('total cost') ||
+      joined.includes('food cost %')
+    );
+  }
+
+  private findColumnForHeader(
+    cells: Array<{ col: number; value: string }>,
+    aliases: string[],
+  ) {
+    for (const cell of cells) {
+      if (
+        aliases.some(
+          (alias) => cell.value === alias || cell.value.includes(alias),
+        )
+      ) {
+        return cell.col;
+      }
+    }
+    return undefined;
+  }
+
+  private findLabelCell(
+    worksheet: Worksheet,
+    startRow: number,
+    endRow: number,
+    aliases: string[],
+  ) {
+    const maxRow = Math.min(endRow, startRow + 40);
+    for (let row = startRow; row <= maxRow; row += 1) {
+      const rowValues = this.readRowCells(worksheet, row, 20);
+      for (let col = 1; col < rowValues.length; col += 1) {
+        const label = this.normalizeLabel(
+          this.cellToText(rowValues[col] ?? null),
+        );
+        if (!label) continue;
+        if (aliases.some((alias) => label === alias || label.includes(alias))) {
+          return { row, col };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private readAdjacentText(
+    worksheet: Worksheet,
+    row: number,
+    col: number,
+    maxCol: number,
+  ) {
+    const values = this.readRowCells(worksheet, row, maxCol);
+    for (let idx = col + 1; idx <= maxCol; idx += 1) {
+      const text = this.cellToText(values[idx] ?? null);
+      if (text) return text;
+    }
+    return '';
+  }
+
+  private readNearbyText(
+    worksheet: Worksheet,
+    row: number,
+    col: number,
+    maxCol: number,
+  ) {
+    const values = this.readRowCells(worksheet, row, maxCol);
+    for (let idx = col; idx <= maxCol; idx += 1) {
+      const text = this.cellToText(values[idx] ?? null);
+      if (text) return text;
+    }
+    return '';
+  }
+
+  private buildLegacyHeaderMap(values: CellValue[]) {
+    const map: Record<string, number> = {};
+    for (let idx = 1; idx < values.length; idx += 1) {
+      const header = this.normalizeLabel(this.cellToText(values[idx] ?? null));
+      if (!header) continue;
+      for (const [key, aliases] of Object.entries(LEGACY_HEADER_ALIASES)) {
+        if (
+          aliases.some((alias) => header === alias || header.includes(alias))
+        ) {
+          map[key] = idx;
+        }
+      }
+    }
+    return map;
+  }
+
+  private readRowCells(
+    worksheet: Worksheet,
+    rowNumber: number,
+    maxCol: number,
+  ) {
+    const row = worksheet.getRow(rowNumber);
+    const values: CellValue[] = [];
+    for (let col = 1; col <= maxCol; col += 1) {
+      values[col] = row.getCell(col).value;
+    }
+    return values;
+  }
+
+  private cellToText(value: CellValue | null) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? String(value) : '';
+    }
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (value instanceof Date) return value.toISOString();
+
+    if (typeof value === 'object') {
+      if ('richText' in value && Array.isArray(value.richText)) {
+        return value.richText
+          .map((item) => (typeof item.text === 'string' ? item.text : ''))
+          .join('')
+          .trim();
+      }
+      if ('text' in value && typeof value.text === 'string') {
+        return value.text.trim();
+      }
+      if ('result' in value) {
+        return this.cellToText(value.result as CellValue);
+      }
+      if ('hyperlink' in value && typeof value.hyperlink === 'string') {
+        return value.hyperlink.trim();
+      }
+    }
+
+    return '';
+  }
+
+  private cellToNumber(value: CellValue | null): number | undefined {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'string') {
+      return this.parseTextNumber(value);
+    }
+    if (typeof value === 'object') {
+      if ('result' in value) {
+        return this.cellToNumber(value.result as CellValue);
+      }
+      if ('text' in value && typeof value.text === 'string') {
+        return this.parseTextNumber(value.text);
+      }
+      if ('richText' in value && Array.isArray(value.richText)) {
+        const text = value.richText
+          .map((item) => (typeof item.text === 'string' ? item.text : ''))
+          .join('');
+        return this.parseTextNumber(text);
+      }
+    }
+    return undefined;
+  }
+
+  private parseTextNumber(raw: string): number | undefined {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+
+    const compact = trimmed.replace(/\s/g, '');
+    const filtered = compact.replace(/[^0-9,.-]/g, '');
+    if (!filtered) return undefined;
+
+    const normalized =
+      filtered.includes(',') && !filtered.includes('.')
+        ? filtered.replace(',', '.')
+        : filtered.replace(/,/g, '');
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return undefined;
+    return parsed;
+  }
+
+  private normalizeLabel(value: string) {
+    return value.toLowerCase().replace(/[:]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  private normalizeImportedUnit(value?: string) {
+    const trimmed = value?.trim();
+    if (!trimmed) return undefined;
+    const normalized = trimmed.toLowerCase().replace(/\./g, '');
+    if (UOM_ALIASES[normalized]) {
+      return UOM_ALIASES[normalized];
+    }
+
+    const tokenized = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!tokenized) return undefined;
+    const tokens = tokenized.split(/\s+/);
+    for (const token of tokens) {
+      if (UOM_ALIASES[token]) {
+        return UOM_ALIASES[token];
+      }
+    }
+    return tokenized;
+  }
+
+  private convertQty(qty: number, from?: string, to?: string) {
+    if (!Number.isFinite(qty)) return undefined;
+    if (!from || !to) return undefined;
+    if (from === to) return qty;
+
+    if (from === 'gram' && to === 'kg') return Number((qty / 1000).toFixed(6));
+    if (from === 'kg' && to === 'gram') return Number((qty * 1000).toFixed(6));
+    if (from === 'ml' && to === 'liter') return Number((qty / 1000).toFixed(6));
+    if (from === 'liter' && to === 'ml') return Number((qty * 1000).toFixed(6));
+
+    return undefined;
+  }
+
+  private async resolveRawMaterial(
+    productCode: string,
+    cache: Map<string, RawMaterialLookup | null>,
+  ) {
+    const normalized = productCode.trim().toLowerCase();
+    if (!normalized) return null;
+    if (cache.has(normalized)) return cache.get(normalized) ?? null;
+
+    const item = await this.rawMaterials.findLookupByNormalizedCode(normalized);
+    cache.set(normalized, item ?? null);
+    return item ?? null;
+  }
+
+  private findNumericInRow(values: CellValue[], preferredColumn?: number) {
+    if (preferredColumn) {
+      const preferred = this.cellToNumber(values[preferredColumn] ?? null);
+      if (preferred !== undefined) return preferred;
+    }
+
+    for (let col = values.length - 1; col >= 1; col -= 1) {
+      const parsed = this.cellToNumber(values[col] ?? null);
+      if (parsed !== undefined) return parsed;
+    }
+    return undefined;
+  }
+
+  private createFallbackRowsCounter(): RecipeImportFallbackRows {
+    return {
+      missingProductCode: 0,
+      missingUom: 0,
+      rawMaterialNotFound: 0,
+      conversionNotPossible: 0,
+    };
+  }
+
+  private normalizeIngredients(
+    input?: Array<{
+      productCode: string;
+      name: string;
+      unitOfMeasures: string;
+      qty: number;
+      priceUom?: number;
+      foodCost?: number;
+    }>,
+  ): RecipeIngredient[] {
+    return (input ?? []).map((item) => {
+      const priceUom = this.normalizeOptionalNumber(item.priceUom);
+      const foodCost = this.normalizeOptionalNumber(item.foodCost);
+      return {
+        productCode: item.productCode.trim(),
+        name: item.name.trim(),
+        unitOfMeasures: item.unitOfMeasures.trim(),
+        qty: item.qty,
+        ...(priceUom !== undefined ? { priceUom } : {}),
+        ...(foodCost !== undefined ? { foodCost } : {}),
+      };
+    });
+  }
+
+  private normalizeOptionalNumber(value?: number) {
+    return typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
   }
 
   private escapeRegExp(value: string) {
@@ -284,6 +1195,12 @@ export class RecipesService {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  private normalizeStatus(value: string) {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'active' || normalized === 'aktif') return 'active';
+    return 'draft';
   }
 
   // BACKEND LOGIC: category list for frontend filters.

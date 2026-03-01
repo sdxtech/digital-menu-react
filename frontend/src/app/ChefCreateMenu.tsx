@@ -449,7 +449,7 @@ const ChefCreateMenu = () => {
       setSubmitError('')
       setSubmitMessage(
         isEditMode
-          ? 'Recipe updated and resubmitted for Unit Manager approval.'
+          ? 'Recipe updated successfully.'
           : 'Recipe saved and submitted to the Unit Manager.',
       )
     } catch (error) {
@@ -773,7 +773,7 @@ const ChefCreateMenu = () => {
             onClick={handleSaveRecipe}
             className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
           >
-            {isEditMode ? 'Update & resubmit' : 'Save & submit to Unit Manager'}
+            {isEditMode ? 'Update recipe' : 'Save & submit to Unit Manager'}
           </button>
         </div>
       </div>

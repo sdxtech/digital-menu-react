@@ -28,6 +28,18 @@ export class RecipeIngredientDto {
   @IsNumber()
   @Min(0)
   qty: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  priceUom?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  foodCost?: number;
 }
 
 export class CreateRecipeDto {
@@ -62,6 +74,12 @@ export class CreateRecipeDto {
   @IsNumber()
   @Min(1)
   portionSize?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  foodCostRecipe?: number;
 
   @IsOptional()
   @IsIn(['draft', 'active'])

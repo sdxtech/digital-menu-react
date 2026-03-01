@@ -27,6 +27,13 @@ type ListRawMaterialsQuery = {
   search?: string;
 };
 
+export type RawMaterialLookup = {
+  productCode: string;
+  productCodeNormalized: string;
+  unitOfMeasures: string;
+  name: string;
+};
+
 @Injectable()
 export class RawMaterialsService {
   constructor(
@@ -82,6 +89,19 @@ export class RawMaterialsService {
     const item = await this.rawMaterialModel.findById(id).lean();
     if (!item) throw new NotFoundException('Raw material not found');
     return item;
+  }
+
+  async findLookupByNormalizedCode(productCode: string) {
+    const normalizedCode = this.normalizeProductCode(productCode);
+    return this.rawMaterialModel
+      .findOne({ productCodeNormalized: normalizedCode })
+      .select({
+        productCode: 1,
+        productCodeNormalized: 1,
+        unitOfMeasures: 1,
+        name: 1,
+      })
+      .lean<RawMaterialLookup>();
   }
 
   async updateById(id: string, input: RawMaterialUpsertInput) {

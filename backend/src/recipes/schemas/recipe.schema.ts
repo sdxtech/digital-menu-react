@@ -7,10 +7,12 @@ export type RecipeStatus = 'draft' | 'active';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export type RecipeIngredient = {
-  productCode: string;
-  name: string;
-  unitOfMeasures: string;
-  qty: number;
+  productCode?: string;
+  name?: string;
+  unitOfMeasures?: string;
+  qty?: number;
+  priceUom?: number;
+  foodCost?: number;
 };
 
 @Schema({ timestamps: true })
@@ -18,7 +20,7 @@ export class Recipe {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ required: true, trim: true })
+  @Prop({ trim: true, default: '' })
   category: string;
 
   @Prop({ type: String, trim: true, index: true })
@@ -36,6 +38,9 @@ export class Recipe {
   @Prop({ type: Number, default: 1 })
   portionSize: number;
 
+  @Prop({ type: Number })
+  foodCostRecipe?: number;
+
   @Prop({ enum: ['draft', 'active'], default: 'draft' })
   status: RecipeStatus;
 
@@ -49,10 +54,12 @@ export class Recipe {
   @Prop({
     type: [
       {
-        productCode: { type: String, required: true, trim: true },
-        name: { type: String, required: true, trim: true },
-        unitOfMeasures: { type: String, required: true, trim: true },
-        qty: { type: Number, required: true },
+        productCode: { type: String, trim: true },
+        name: { type: String, trim: true },
+        unitOfMeasures: { type: String, trim: true },
+        qty: { type: Number },
+        priceUom: { type: Number },
+        foodCost: { type: Number },
       },
     ],
     default: [],

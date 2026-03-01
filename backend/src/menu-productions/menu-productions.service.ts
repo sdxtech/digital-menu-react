@@ -378,26 +378,30 @@ export class MenuProductionsService {
         const multiplier = Number(menu.portion) / portionSize;
 
         ingredients = (recipe.ingredients ?? []).map((ingredient) => {
-          const qty = Number(ingredient.qty) * multiplier;
+          const productCode = ingredient.productCode?.trim() ?? '';
+          const name = ingredient.name?.trim() ?? '';
+          const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
+          const baseQty = Number(ingredient.qty);
+          const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
           const normalizedKey = `${this.normalizeName(
-            ingredient.productCode,
-          )}__${this.normalizeName(ingredient.unitOfMeasures)}`;
+            productCode || name,
+          )}__${this.normalizeName(unitOfMeasures)}`;
           const existing = group.summaryMap.get(normalizedKey);
           if (existing) {
             existing.qty += qty;
           } else {
             group.summaryMap.set(normalizedKey, {
-              productCode: ingredient.productCode,
-              name: ingredient.name,
-              unitOfMeasures: ingredient.unitOfMeasures,
+              productCode,
+              name,
+              unitOfMeasures,
               qty,
             });
           }
 
           return {
-            productCode: ingredient.productCode,
-            name: ingredient.name,
-            unitOfMeasures: ingredient.unitOfMeasures,
+            productCode,
+            name,
+            unitOfMeasures,
             qty,
           };
         });
