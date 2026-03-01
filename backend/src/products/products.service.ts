@@ -37,7 +37,10 @@ export type ExportProductRow = {
 
 @Injectable()
 export class ProductsService {
-  constructor(@InjectModel(Product.name) private readonly productModel: Model<ProductDocument>) {}
+  constructor(
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
+  ) {}
 
   async create(input: CreateProductInput, site?: string) {
     const normalizedSite = this.normalizeSite(site);
@@ -58,14 +61,20 @@ export class ProductsService {
       ...input,
     };
     if (updateFields.name) updateFields.name = updateFields.name.trim();
-    if (updateFields.description) updateFields.description = updateFields.description.trim();
-    if (updateFields.imageUrl) updateFields.imageUrl = updateFields.imageUrl.trim();
+    if (updateFields.description)
+      updateFields.description = updateFields.description.trim();
+    if (updateFields.imageUrl)
+      updateFields.imageUrl = updateFields.imageUrl.trim();
     if (normalizedSite) updateFields.site = normalizedSite;
 
     const filter = this.withSiteFilter({ _id: id }, site);
-    const updated = await this.productModel.findOneAndUpdate(filter, updateFields, {
-      new: true,
-    });
+    const updated = await this.productModel.findOneAndUpdate(
+      filter,
+      updateFields,
+      {
+        new: true,
+      },
+    );
     if (!updated) throw new NotFoundException('Product not found');
     return updated;
   }
@@ -116,7 +125,12 @@ export class ProductsService {
     const skip = (query.page - 1) * query.limit;
 
     const [items, total] = await Promise.all([
-      this.productModel.find(filter).sort(sort).skip(skip).limit(query.limit).lean(),
+      this.productModel
+        .find(filter)
+        .sort(sort)
+        .skip(skip)
+        .limit(query.limit)
+        .lean(),
       this.productModel.countDocuments(filter),
     ]);
 
@@ -130,7 +144,9 @@ export class ProductsService {
 
   async findByNameInsensitive(name: string, site?: string) {
     const filter = this.withSiteFilter({ name }, site);
-    return this.productModel.findOne(filter).collation({ locale: 'en', strength: 2 });
+    return this.productModel
+      .findOne(filter)
+      .collation({ locale: 'en', strength: 2 });
   }
 
   async findActiveForExport(site?: string): Promise<ExportProductRow[]> {
@@ -155,7 +171,11 @@ export class ProductsService {
     if (!site) return {};
     if (site === DEFAULT_SITE) {
       return {
-        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+        $or: [
+          { site: DEFAULT_SITE },
+          { site: { $exists: false } },
+          { site: '' },
+        ],
       };
     }
     return { site };

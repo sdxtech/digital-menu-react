@@ -28,17 +28,20 @@ class QueueLifecycle implements OnModuleDestroy {
     {
       provide: IMPORTS_QUEUE,
       inject: [REDIS_OPTIONS],
-      useFactory: (options: RedisOptions) => new Queue('imports', { connection: options }),
+      useFactory: (options: RedisOptions) =>
+        new Queue('imports', { connection: options }),
     },
     {
       provide: EXPORTS_QUEUE,
       inject: [REDIS_OPTIONS],
-      useFactory: (options: RedisOptions) => new Queue('exports', { connection: options }),
+      useFactory: (options: RedisOptions) =>
+        new Queue('exports', { connection: options }),
     },
     {
       provide: MAIL_QUEUE,
       inject: [REDIS_OPTIONS],
-      useFactory: (options: RedisOptions) => new Queue('mail', { connection: options }),
+      useFactory: (options: RedisOptions) =>
+        new Queue('mail', { connection: options }),
     },
     QueueLifecycle,
   ],

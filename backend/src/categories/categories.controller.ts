@@ -36,13 +36,19 @@ export class CategoriesController {
   }
 
   @Get()
-  list(@Req() req: AuthenticatedRequest, @Query() query: ListCategoriesQueryDto) {
-    return this.categories.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-      search: query.search,
-      isActive: query.isActive ?? true,
-    }, req.user.site);
+  list(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListCategoriesQueryDto,
+  ) {
+    return this.categories.findAll(
+      {
+        page: query.page ?? 1,
+        limit: query.limit ?? 20,
+        search: query.search,
+        isActive: query.isActive ?? true,
+      },
+      req.user.site,
+    );
   }
 
   @Patch(':id')
@@ -61,7 +67,10 @@ export class CategoriesController {
 
   @Delete(':id')
   @Roles(AppRole.Superadmin)
-  remove(@Req() req: AuthenticatedRequest, @Param() params: CategoryIdParamDto) {
+  remove(
+    @Req() req: AuthenticatedRequest,
+    @Param() params: CategoryIdParamDto,
+  ) {
     return this.categories.softDelete(params.id, req.user.site);
   }
 }

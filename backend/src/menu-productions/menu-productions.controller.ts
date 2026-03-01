@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
@@ -23,6 +25,7 @@ export class MenuProductionsController {
   constructor(private readonly menuProductions: MenuProductionsService) {}
 
   @Post()
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   create(
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionDto,
@@ -31,6 +34,7 @@ export class MenuProductionsController {
   }
 
   @Post('bulk')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   createBulk(
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionBulkDto,
@@ -44,6 +48,7 @@ export class MenuProductionsController {
 
   // BACKEND LOGIC: store-request aggregation lives here (qty multiplier + summary)
   @Get('store-requests')
+  @Roles(...ALL_APP_ROLES)
   storeRequests(
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
@@ -53,6 +58,7 @@ export class MenuProductionsController {
 
   // BACKEND LOGIC: timeline grouping + approval stats for production menus.
   @Get('timeline')
+  @Roles(...ALL_APP_ROLES)
   timeline(
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
@@ -61,22 +67,40 @@ export class MenuProductionsController {
   }
 
   @Get()
-  list(@Req() req: AuthenticatedRequest, @Query() query: ListMenuProductionsQueryDto) {
+  @Roles(...ALL_APP_ROLES)
+  list(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListMenuProductionsQueryDto,
+  ) {
     return this.menuProductions.findAll(query, req.user.site);
   }
 
   @Patch(':id/approve')
+  @Roles(AppRole.UnitManager, AppRole.Superadmin)
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.menuProductions.setApprovalStatus(id, 'approved', req.user.site);
+    return this.menuProductions.setApprovalStatus(
+      id,
+      'approved',
+      req.user.site,
+    );
   }
 
   @Patch(':id/reject')
+  @Roles(AppRole.UnitManager, AppRole.Superadmin)
   reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.menuProductions.setApprovalStatus(id, 'rejected', req.user.site);
+    return this.menuProductions.setApprovalStatus(
+      id,
+      'rejected',
+      req.user.site,
+    );
   }
 
   @Patch(':id/store-request')
-  markStoreRequested(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  markStoreRequested(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
     return this.menuProductions.setStoreRequestStatus(
       id,
       'requested',
@@ -85,7 +109,11 @@ export class MenuProductionsController {
   }
 
   @Patch(':id/fulfill')
-  markStoreFulfilled(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin)
+  markStoreFulfilled(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
     return this.menuProductions.setStoreRequestStatus(
       id,
       'fulfilled',

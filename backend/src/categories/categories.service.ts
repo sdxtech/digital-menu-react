@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
@@ -22,7 +26,8 @@ export type ListCategoriesQuery = {
 @Injectable()
 export class CategoriesService {
   constructor(
-    @InjectModel(Category.name) private readonly categoryModel: Model<CategoryDocument>,
+    @InjectModel(Category.name)
+    private readonly categoryModel: Model<CategoryDocument>,
   ) {}
 
   async create(input: CreateCategoryInput, site?: string) {
@@ -65,9 +70,13 @@ export class CategoriesService {
       if (normalizedSite) updateFields.site = normalizedSite;
 
       const filter = this.withSiteFilter({ _id: id }, site);
-      const updated = await this.categoryModel.findOneAndUpdate(filter, updateFields, {
-        new: true,
-      });
+      const updated = await this.categoryModel.findOneAndUpdate(
+        filter,
+        updateFields,
+        {
+          new: true,
+        },
+      );
       if (!updated) throw new NotFoundException('Category not found');
       return updated;
     } catch (error) {
@@ -104,7 +113,9 @@ export class CategoriesService {
       andFilters.push(siteFilter);
     }
     if (query.search) {
-      andFilters.push({ name: new RegExp(this.escapeRegExp(query.search), 'i') });
+      andFilters.push({
+        name: new RegExp(this.escapeRegExp(query.search), 'i'),
+      });
     }
     if (query.isActive !== undefined) {
       filter.isActive = query.isActive;
@@ -134,7 +145,9 @@ export class CategoriesService {
 
   async findByNameInsensitive(name: string, site?: string) {
     const filter = this.withSiteFilter({ name }, site);
-    return this.categoryModel.findOne(filter).collation({ locale: 'en', strength: 2 });
+    return this.categoryModel
+      .findOne(filter)
+      .collation({ locale: 'en', strength: 2 });
   }
 
   async findOrCreateByName(name: string, site?: string) {
@@ -170,7 +183,11 @@ export class CategoriesService {
     if (!site) return {};
     if (site === DEFAULT_SITE) {
       return {
-        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+        $or: [
+          { site: DEFAULT_SITE },
+          { site: { $exists: false } },
+          { site: '' },
+        ],
       };
     }
     return { site };

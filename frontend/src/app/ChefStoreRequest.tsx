@@ -39,7 +39,7 @@ const xmlEscape = (value: unknown) => {
 }
 
 const sanitizeWorksheetName = (value: string) => {
-  const cleaned = value.replace(/[\\/:*?\[\]]/g, '-')
+  const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
   return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
 }
 

@@ -9,7 +9,13 @@ import { QueueModule } from '../queue/queue.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [QueueModule, ProductsModule, FilesModule, NotificationsModule, AuthModule],
+  imports: [
+    QueueModule,
+    ProductsModule,
+    FilesModule,
+    NotificationsModule,
+    AuthModule,
+  ],
   controllers: [ExportsController],
   providers: [ExportsService, ExportsProcessor],
 })

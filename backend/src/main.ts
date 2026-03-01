@@ -1,9 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { parseCorsOrigins } from './common/cors.utils';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
+
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=()',
+    );
+    next();
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -13,18 +27,14 @@ async function bootstrap() {
     }),
   );
 
-  const corsOrigin = process.env.CORS_ORIGIN;
-  if (!corsOrigin || corsOrigin === '*') {
-    app.enableCors({ origin: true, credentials: true });
-  } else {
-    const origins = corsOrigin
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean);
-    app.enableCors({ origin: origins, credentials: true });
-  }
+  const origins = parseCorsOrigins(config.getOrThrow<string>('CORS_ORIGIN'));
+  app.enableCors({
+    origin: origins,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  });
 
-  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const port = Number(config.getOrThrow<string>('PORT'));
   await app.listen(port);
 }
-bootstrap();
+void bootstrap();

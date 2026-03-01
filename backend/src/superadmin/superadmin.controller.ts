@@ -20,6 +20,10 @@ export class SuperadminController {
   @Post('test-email')
   @Roles(AppRole.Superadmin)
   testEmail(@Body() dto: TestEmailDto) {
-    return this.mail.enqueue(dto.to, 'Test Email', 'Ini email test dari Digital Menu.');
+    return this.mail.enqueue(
+      dto.to,
+      'Test Email',
+      'Ini email test dari Digital Menu.',
+    );
   }
 }

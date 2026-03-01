@@ -10,7 +10,10 @@ export const parseRedisUrl = (rawUrl?: string): RedisOptions => {
 
   const url = new URL(normalized);
   const port = url.port ? Number(url.port) : 6379;
-  const db = url.pathname && url.pathname !== '/' ? Number(url.pathname.slice(1)) : undefined;
+  const db =
+    url.pathname && url.pathname !== '/'
+      ? Number(url.pathname.slice(1))
+      : undefined;
 
   return {
     host: url.hostname,

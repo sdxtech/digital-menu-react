@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
+import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import {
   ApprovalStatus,
   Recipe,
@@ -28,7 +33,8 @@ type RecipeAuditFields = {
 @Injectable()
 export class RecipesService {
   constructor(
-    @InjectModel(Recipe.name) private readonly recipeModel: Model<RecipeDocument>,
+    @InjectModel(Recipe.name)
+    private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
   ) {}
 
@@ -61,7 +67,7 @@ export class RecipesService {
     });
   }
 
-  async findAll(query: ListRecipesQueryDto, site?: string) {
+  async findAll(query: ListRecipesQueryDto, _site?: string) {
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
     // Recipes are shared across sites, so we don't apply site scoping.
@@ -110,15 +116,16 @@ export class RecipesService {
     ]);
 
     const needsSync = items.some(
-      (item) =>
-        item.approvalStatus === 'approved' && item.status !== 'active',
+      (item) => item.approvalStatus === 'approved' && item.status !== 'active',
     );
     if (needsSync) {
       const syncFilter = {
         approvalStatus: 'approved',
         status: { $ne: 'active' },
       };
-      await this.recipeModel.updateMany(syncFilter, { $set: { status: 'active' } });
+      await this.recipeModel.updateMany(syncFilter, {
+        $set: { status: 'active' },
+      });
       items.forEach((item) => {
         if (item.approvalStatus === 'approved' && item.status !== 'active') {
           item.status = 'active';
@@ -137,7 +144,11 @@ export class RecipesService {
     };
   }
 
-  async setApprovalStatus(id: string, status: ApprovalStatus, actor?: RecipeActor) {
+  async setApprovalStatus(
+    id: string,
+    status: ApprovalStatus,
+    actor?: RecipeActor,
+  ) {
     // BACKEND LOGIC: approval updates also update recipe status.
     const nextStatus = status === 'approved' ? 'active' : 'draft';
     const filter = { _id: id };
@@ -148,19 +159,98 @@ export class RecipesService {
       ...updatedFields,
     };
     const updated = await this.recipeModel
-      .findOneAndUpdate(
-        filter,
-        updatePayload,
-        { new: true },
-      )
+      .findOneAndUpdate(filter, updatePayload, { new: true })
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
     return updated;
   }
 
-  async bulkCreate(records: Array<Omit<CreateRecipeDto, 'ingredients'> & {
-    ingredients?: RecipeIngredient[];
-  }>, actor?: RecipeActor) {
+  async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
+    const $set: Record<string, unknown> = {};
+    const $unset: Record<string, unknown> = {};
+
+    if (input.name !== undefined) {
+      const name = input.name.trim();
+      if (!name) throw new BadRequestException('Recipe name is required.');
+      $set.name = name;
+    }
+
+    if (input.category !== undefined) {
+      const category = input.category.trim();
+      if (!category) throw new BadRequestException('Category is required.');
+      $set.category = category;
+    }
+
+    if (input.description !== undefined) {
+      const description = input.description.trim();
+      if (!description) {
+        $unset.description = '';
+      } else {
+        $set.description = description;
+      }
+    }
+
+    if (input.imageUrl !== undefined) {
+      const imageUrl = input.imageUrl.trim();
+      if (!imageUrl) {
+        $unset.imageUrl = '';
+      } else {
+        $set.imageUrl = imageUrl;
+      }
+    }
+
+    if (input.price !== undefined) {
+      $set.price = input.price;
+    }
+
+    if (input.portionSize !== undefined) {
+      $set.portionSize = input.portionSize;
+    }
+
+    if (input.ingredients !== undefined) {
+      $set.ingredients = input.ingredients.map((item) => ({
+        productCode: item.productCode.trim(),
+        name: item.name.trim(),
+        unitOfMeasures: item.unitOfMeasures.trim(),
+        qty: item.qty,
+      }));
+    }
+
+    if (Object.keys($set).length === 0 && Object.keys($unset).length === 0) {
+      throw new BadRequestException('No fields to update.');
+    }
+
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updatePayload: Record<string, unknown> = {
+      $set: {
+        ...$set,
+        ...updatedFields,
+        // Any recipe content update must be re-approved.
+        approvalStatus: 'pending',
+        status: 'draft',
+      },
+    };
+
+    if (Object.keys($unset).length) {
+      updatePayload.$unset = $unset;
+    }
+
+    const updated = await this.recipeModel
+      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe not found');
+
+    return updated;
+  }
+
+  async bulkCreate(
+    records: Array<
+      Omit<CreateRecipeDto, 'ingredients'> & {
+        ingredients?: RecipeIngredient[];
+      }
+    >,
+    actor?: RecipeActor,
+  ) {
     if (!records.length) return [];
 
     const normalizedSite = this.normalizeSite(actor?.site);
@@ -197,7 +287,7 @@ export class RecipesService {
   }
 
   // BACKEND LOGIC: category list for frontend filters.
-  async listCategories(site?: string) {
+  async listCategories(_site?: string) {
     const filter = { category: { $ne: '' } };
     const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
@@ -206,12 +296,16 @@ export class RecipesService {
       .sort((a, b) => a.localeCompare(b));
   }
 
-  private buildActorFields(actor: RecipeActor | undefined, prefix: 'created' | 'updated') {
+  private buildActorFields(
+    actor: RecipeActor | undefined,
+    prefix: 'created' | 'updated',
+  ) {
     if (!actor) return {};
     const fields: Record<string, string> = {};
     if (actor.id) fields[`${prefix}By`] = actor.id;
     if (actor.name) fields[`${prefix}ByName`] = actor.name.trim();
-    if (actor.email) fields[`${prefix}ByEmail`] = actor.email.trim().toLowerCase();
+    if (actor.email)
+      fields[`${prefix}ByEmail`] = actor.email.trim().toLowerCase();
     return fields;
   }
 
@@ -270,11 +364,7 @@ export class RecipesService {
       ...updatedFields,
     };
     const updated = await this.recipeModel
-      .findOneAndUpdate(
-        { _id: id },
-        updatePayload,
-        { new: true },
-      )
+      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
       .lean();
 
     if (!updated) throw new NotFoundException('Recipe not found');
@@ -288,11 +378,7 @@ export class RecipesService {
       updatePayload.$set = updatedFields;
     }
     const updated = await this.recipeModel
-      .findOneAndUpdate(
-        { _id: id },
-        updatePayload,
-        { new: true },
-      )
+      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
       .lean();
 
     if (!updated) throw new NotFoundException('Recipe not found');

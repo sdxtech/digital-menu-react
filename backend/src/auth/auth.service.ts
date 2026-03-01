@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { resolveExpiresIn } from './jwt.utils';
 import { AppRole } from './roles.constants';
@@ -18,9 +19,17 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await this.users.create({ name, email, passwordHash });
 
-    const roles = user.roles as AppRole[];
-    const site = this.resolveUserSite(roles, user.sites);
-    return this.issueTokens(user.id, user.name, user.email, roles, site);
+    const roles = user.roles;
+    const site = this.resolveUserSite(user.sites);
+    const tokens = await this.issueTokens(
+      user.id,
+      user.name,
+      user.email,
+      roles,
+      site,
+    );
+    await this.users.setRefreshToken(user.id, tokens.refreshToken);
+    return tokens;
   }
 
   async login(email: string, password: string) {
@@ -31,25 +40,50 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) throw new UnauthorizedException('User disabled');
 
-    const roles = user.roles as AppRole[];
-    const site = this.resolveUserSite(roles, user.sites);
-    return this.issueTokens(user.id, user.name, user.email, roles, site);
+    const roles = user.roles;
+    const site = this.resolveUserSite(user.sites);
+    const tokens = await this.issueTokens(
+      user.id,
+      user.name,
+      user.email,
+      roles,
+      site,
+    );
+    await this.users.setRefreshToken(user.id, tokens.refreshToken);
+    return tokens;
   }
 
   async refresh(refreshToken: string) {
     try {
-      const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(refreshToken, {
-        secret: refreshSecret,
-      });
+      const refreshSecret =
+        this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
+      const payload = await this.jwt.verifyAsync<{ sub: string }>(
+        refreshToken,
+        {
+          secret: refreshSecret,
+        },
+      );
 
-      const user = await this.users.findById(payload.sub);
-      if (!user || !user.isActive) throw new UnauthorizedException('Invalid refresh token');
+      const user = await this.users.findByIdWithRefreshToken(payload.sub);
+      if (!user || !user.isActive)
+        throw new UnauthorizedException('Invalid refresh token');
+      if (!user.refreshTokenHash)
+        throw new UnauthorizedException('Invalid refresh token');
 
-      // TODO: allowlist + hash refresh token untuk produksi (rotation/revocation).
-      const roles = user.roles as AppRole[];
-      const site = this.resolveUserSite(roles, user.sites);
-      return this.issueTokens(user.id, user.name, user.email, roles, site);
+      const matches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+      if (!matches) throw new UnauthorizedException('Invalid refresh token');
+
+      const roles = user.roles;
+      const site = this.resolveUserSite(user.sites);
+      const tokens = await this.issueTokens(
+        user.id,
+        user.name,
+        user.email,
+        roles,
+        site,
+      );
+      await this.users.setRefreshToken(user.id, tokens.refreshToken);
+      return tokens;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -64,9 +98,9 @@ export class AuthService {
     return 'chef';
   }
 
-  private resolveUserSite(_roles: AppRole[] = [], sites?: string[]) {
+  private resolveUserSite(sites?: string[]) {
     const normalized = (sites ?? []).map((site) => site.trim()).filter(Boolean);
-    return normalized[0] ?? 'A1';
+    return normalized[0];
   }
 
   private async issueTokens(
@@ -84,15 +118,16 @@ export class AuthService {
       this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
       '7d',
     );
-    const refreshSecret = this.config.get<string>('JWT_REFRESH_SECRET');
+    const refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
     const appRole = this.resolveAppRole(roles);
+    const refreshTokenId = randomUUID();
 
     const accessToken = await this.jwt.signAsync(
       { sub, name, email, roles, appRole, site },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(
-      { sub },
+      { sub, jti: refreshTokenId },
       { secret: refreshSecret, expiresIn: refreshExpiresIn },
     );
 

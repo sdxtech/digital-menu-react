@@ -1,13 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { RawMaterial, RawMaterialDocument } from './schemas/raw-material.schema';
+import {
+  RawMaterial,
+  RawMaterialDocument,
+} from './schemas/raw-material.schema';
 
 export type RawMaterialUpsertInput = {
   productCode: string;
   name: string;
   unitOfMeasures: string;
-  site?: string;
   vendor?: string;
   currency?: string;
   minimumQuantity?: number;
@@ -30,7 +36,6 @@ export class RawMaterialsService {
 
   async create(input: RawMaterialUpsertInput) {
     const normalizedCode = this.normalizeProductCode(input.productCode);
-    const site = this.normalizeOptionalText(input.site);
     const vendor = this.normalizeOptionalText(input.vendor);
     const currency = this.normalizeOptionalText(input.currency);
     const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
@@ -42,7 +47,6 @@ export class RawMaterialsService {
       name: input.name.trim(),
       unitOfMeasures: input.unitOfMeasures.trim(),
     };
-    if (site !== undefined) updateFields.site = site;
     if (vendor !== undefined) updateFields.vendor = vendor;
     if (currency !== undefined) updateFields.currency = currency;
     if (minimumQuantity !== undefined) {
@@ -66,7 +70,6 @@ export class RawMaterialsService {
       productCodeNormalized: normalizedCode,
       name: input.name.trim(),
       unitOfMeasures: input.unitOfMeasures.trim(),
-      ...(site !== undefined ? { site } : {}),
       ...(vendor !== undefined ? { vendor } : {}),
       ...(currency !== undefined ? { currency } : {}),
       ...(minimumQuantity !== undefined ? { minimumQuantity } : {}),
@@ -89,7 +92,6 @@ export class RawMaterialsService {
     const name = input.name.trim();
     const unitOfMeasures = input.unitOfMeasures.trim();
     const normalizedCode = this.normalizeProductCode(productCode);
-    const site = this.normalizeOptionalText(input.site);
     const vendor = this.normalizeOptionalText(input.vendor);
     const currency = this.normalizeOptionalText(input.currency);
     const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
@@ -109,7 +111,6 @@ export class RawMaterialsService {
     item.productCodeNormalized = normalizedCode;
     item.name = name;
     item.unitOfMeasures = unitOfMeasures;
-    if (site !== undefined) item.site = site;
     if (vendor !== undefined) item.vendor = vendor;
     if (currency !== undefined) item.currency = currency;
     if (minimumQuantity !== undefined) item.minimumQuantity = minimumQuantity;
@@ -167,7 +168,6 @@ export class RawMaterialsService {
       const name = row.name.trim();
       const unitOfMeasures = row.unitOfMeasures.trim();
       const normalizedCode = this.normalizeProductCode(productCode);
-      const site = this.normalizeOptionalText(row.site);
       const vendor = this.normalizeOptionalText(row.vendor);
       const currency = this.normalizeOptionalText(row.currency);
       const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
@@ -177,7 +177,6 @@ export class RawMaterialsService {
         name,
         unitOfMeasures,
       };
-      if (site !== undefined) updateFields.site = site;
       if (vendor !== undefined) updateFields.vendor = vendor;
       if (currency !== undefined) updateFields.currency = currency;
       if (minimumQuantity !== undefined) {
@@ -224,7 +223,9 @@ export class RawMaterialsService {
   }
 
   private normalizeOptionalNumber(value?: number) {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    return typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
   }
 
   private escapeRegExp(value: string) {

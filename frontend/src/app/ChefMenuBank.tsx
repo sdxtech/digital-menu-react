@@ -234,6 +234,24 @@ const ChefMenuBank = () => {
     })
   }
 
+  const handleEditRecipe = (recipe: Recipe) => {
+    const recipeId = getRecipeId(recipe)
+    if (!recipeId) return
+
+    navigate('/chef/menu-create', {
+      state: {
+        baseRecipe: {
+          id: recipeId,
+          name: recipe.name,
+          category: recipe.category,
+          description: recipe.description ?? '',
+          portionSize: recipe.portionSize,
+          ingredients: recipe.ingredients ?? [],
+        },
+      },
+    })
+  }
+
   const openPhotoModal = (recipeId: string) => {
     if (photoDraftUrl) {
       URL.revokeObjectURL(photoDraftUrl)
@@ -326,6 +344,7 @@ const ChefMenuBank = () => {
           body: JSON.stringify({
             contentType,
             prefix: `recipes/${photoModalRecipeId}`,
+            fileSize: photoDraftFile.size,
           }),
         },
         accessToken,
@@ -721,6 +740,13 @@ const ChefMenuBank = () => {
                 className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
               >
                 Create menu from this recipe
+              </button>
+              <button
+                type="button"
+                onClick={() => handleEditRecipe(selectedRecipe)}
+                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+              >
+                Edit recipe
               </button>
               <button
                 type="button"

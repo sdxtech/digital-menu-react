@@ -15,8 +15,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
 import { promises as fs } from 'fs';
+import type { Request } from 'express';
 import ExcelJS from 'exceljs';
 import * as bcrypt from 'bcrypt';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -35,6 +37,13 @@ const USER_HEADER_ALIASES = {
   password: ['password', 'pass', 'pwd', 'kata sandi', 'katasandi'],
   roles: ['roles', 'role', 'jabatan', 'posisi'],
 };
+
+const USER_IMPORT_EXTENSIONS = new Set(['.xlsx', '.xls']);
+const USER_IMPORT_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/octet-stream',
+]);
 
 @Controller('superadmin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -87,16 +96,34 @@ export class SuperadminUsersController {
         filename: (_req, file, cb) => {
           const ext = extname(file.originalname);
           const safeExt = ext || '.xlsx';
-          const filename = `${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2)}${safeExt}`;
+          const filename = `${randomUUID()}${safeExt}`;
           cb(null, filename);
         },
       }),
+      fileFilter: (
+        _req: Request,
+        file: { originalname: string; mimetype: string },
+        cb,
+      ) => {
+        const ext = extname(file.originalname || '').toLowerCase();
+        const isValidExt = USER_IMPORT_EXTENSIONS.has(ext);
+        const mime = (file.mimetype || '').toLowerCase();
+        const isValidMime = USER_IMPORT_MIME_TYPES.has(mime);
+        if (!isValidExt || !isValidMime) {
+          cb(
+            new BadRequestException('Only .xlsx or .xls files are allowed'),
+            false,
+          );
+          return;
+        }
+        cb(null, true);
+      },
       limits: { fileSize: 20 * 1024 * 1024 },
     }),
   )
-  async importUsers(@UploadedFile() file?: { path: string; originalname: string }) {
+  async importUsers(
+    @UploadedFile() file?: { path: string; originalname: string },
+  ) {
     if (!file) {
       throw new BadRequestException('file is required');
     }
@@ -249,14 +276,16 @@ export class SuperadminUsersController {
   }
 
   private normalizeHeader(value: unknown) {
-    return String(value ?? '').trim().toLowerCase();
+    return String(value ?? '')
+      .trim()
+      .toLowerCase();
   }
 
   private parseRoles(value?: string | string[]) {
     if (!value) return [];
     const rawItems = Array.isArray(value) ? value : [value];
     const rawRoles = rawItems
-      .flatMap((item) => item.split(/[,\|;/]/))
+      .flatMap((item) => item.split(/[,|;/]/))
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
 

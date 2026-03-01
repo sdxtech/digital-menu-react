@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
 import { apiFetch } from './api'
 
 export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'
@@ -17,7 +24,6 @@ type AuthContextValue = {
 
 const STORAGE_KEY = 'dm-auth-user'
 const TOKEN_KEY = 'dm-auth-token'
-const REFRESH_KEY = 'dm-auth-refresh'
 
 const rolePaths: Record<Role, string> = {
   chef: '/chef',
@@ -42,7 +48,7 @@ const readStoredUser = (): User | null => {
 
 export const readStoredToken = (): string | null => {
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    return sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY)
   } catch {
     return null
   }
@@ -55,9 +61,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   )
 
   const login = async (email: string, password: string) => {
-    const { accessToken: nextAccessToken, refreshToken } = await apiFetch<{
+    const { accessToken: nextAccessToken } = await apiFetch<{
       accessToken: string
-      refreshToken: string
     }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -84,18 +89,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(nextUser)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
     setAccessToken(nextAccessToken)
-    localStorage.setItem(TOKEN_KEY, nextAccessToken)
-    localStorage.setItem(REFRESH_KEY, refreshToken)
+    sessionStorage.setItem(TOKEN_KEY, nextAccessToken)
+    localStorage.removeItem(TOKEN_KEY)
     return nextUser
   }
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    const token = accessToken ?? readStoredToken()
+    if (token) {
+      apiFetch('/auth/logout', { method: 'POST' }, token).catch(() => null)
+    }
     setUser(null)
     localStorage.removeItem(STORAGE_KEY)
     setAccessToken(null)
     localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(REFRESH_KEY)
-  }
+    sessionStorage.removeItem(TOKEN_KEY)
+  }, [accessToken])
 
   const value = useMemo(
     () => ({
@@ -104,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       accessToken,
     }),
-    [user, accessToken],
+    [user, accessToken, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

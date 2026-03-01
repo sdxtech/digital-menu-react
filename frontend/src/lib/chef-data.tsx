@@ -81,6 +81,16 @@ type CreateRecipeInput = {
   ingredients: RecipeIngredient[]
 }
 
+type UpdateRecipeInput = {
+  name?: string
+  category?: string
+  description?: string
+  imageUrl?: string
+  price?: number
+  portionSize?: number
+  ingredients?: RecipeIngredient[]
+}
+
 type AddMenuProductionInput = {
   menuName: string
   category: string
@@ -107,6 +117,7 @@ type RawMaterialsMeta = {
 
 type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<void>
+  updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
   importRecipesFromExcel: (file: File) => Promise<number>
   approveRecipe: (id: string) => Promise<void>
   rejectRecipe: (id: string) => Promise<void>
@@ -272,6 +283,26 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       accessToken,
     )
     const mapped = mapRecipe(created)
+    setState((prev) => ({
+      ...prev,
+      recipes: upsertById(prev.recipes, mapped),
+    }))
+  }
+
+  const updateRecipe = async (id: string, input: UpdateRecipeInput) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+
+    const updated = await apiFetch<RecipeApi>(
+      `/recipes/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+    const mapped = mapRecipe(updated)
     setState((prev) => ({
       ...prev,
       recipes: upsertById(prev.recipes, mapped),
@@ -569,6 +600,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       addRawMaterial,
       updateRawMaterial,
       createRecipe,
+      updateRecipe,
       importRecipesFromExcel,
       approveRecipe,
       rejectRecipe,
@@ -590,6 +622,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       approveMenuProduction,
       approveRecipe,
       createRecipe,
+      updateRecipe,
       fetchMenuProductions,
       fetchRawMaterials,
       fetchRecipes,

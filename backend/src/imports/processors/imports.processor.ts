@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { parse } from 'csv-parse';
@@ -32,7 +37,6 @@ type RawMaterialHeaderMap = {
   productCode: number;
   name: number;
   unitOfMeasures: number;
-  site: number;
   vendor: number;
   currency: number;
   minimumQuantity: number;
@@ -139,16 +143,26 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         failCount,
       });
       const stream = await this.files.getObjectStream(fileKey);
-      const parser = parse({ columns: true, skip_empty_lines: true, trim: true });
+      const parser = parse({
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      });
       const rows = stream.pipe(parser);
 
       for await (const record of rows) {
         processed += 1;
         const name = String(record.name || '').trim();
         const priceValue = Number(record.price);
-        const categoryRaw = record.category ? String(record.category).trim() : '';
-        const description = record.description ? String(record.description).trim() : undefined;
-        const imageUrl = record.imageUrl ? String(record.imageUrl).trim() : undefined;
+        const categoryRaw = record.category
+          ? String(record.category).trim()
+          : '';
+        const description = record.description
+          ? String(record.description).trim()
+          : undefined;
+        const imageUrl = record.imageUrl
+          ? String(record.imageUrl).trim()
+          : undefined;
 
         if (!name) {
           pushError({ row: processed, reason: 'Name is required' });
@@ -174,21 +188,27 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           if (cached) {
             categoryId = cached;
           } else {
-            const category = await this.categories.findOrCreateByName(categoryRaw, site);
+            const category = await this.categories.findOrCreateByName(
+              categoryRaw,
+              site,
+            );
             categoryId = category.id;
             categoryCache.set(key, categoryId);
           }
         }
 
         try {
-          await this.products.create({
-            name,
-            price: priceValue,
-            categoryId,
-            description,
-            imageUrl,
-            isActive: true,
-          }, site);
+          await this.products.create(
+            {
+              name,
+              price: priceValue,
+              categoryId,
+              description,
+              imageUrl,
+              isActive: true,
+            },
+            site,
+          );
           successCount += 1;
         } catch (error) {
           this.logger.warn(`Import row failed: ${(error as Error).message}`);
@@ -243,7 +263,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode: string;
         name: string;
         unitOfMeasures: string;
-        site?: string;
         vendor?: string;
         currency?: string;
         minimumQuantity?: number;
@@ -260,28 +279,28 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               productCode,
               name,
               unitOfMeasures,
-              site,
               vendor,
               currency,
               minimumQuantity,
               price,
               extraFields,
             }) => ({
-            productCode,
-            name,
-            unitOfMeasures,
-            site,
-            vendor,
-            currency,
-            minimumQuantity,
-            price,
-            extraFields,
-          }),
+              productCode,
+              name,
+              unitOfMeasures,
+              vendor,
+              currency,
+              minimumQuantity,
+              price,
+              extraFields,
+            }),
           ),
         );
         successCount += result.upsertedCount + result.matchedCount;
       } catch (error) {
-        this.logger.warn(`Raw material batch failed: ${(error as Error).message}`);
+        this.logger.warn(
+          `Raw material batch failed: ${(error as Error).message}`,
+        );
         batch.forEach((item) =>
           pushError({
             row: item.row,
@@ -317,7 +336,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode: string;
           name: string;
           unitOfMeasures: string;
-          site?: string;
           vendor?: string;
           currency?: string;
           minimumQuantity?: number;
@@ -333,7 +351,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const productCode = record.productCode.trim();
         const name = record.name.trim();
         const unitOfMeasures = record.unitOfMeasures.trim();
-        const site = record.site;
         const vendor = record.vendor;
         const currency = record.currency;
         const minimumQuantity = record.minimumQuantity;
@@ -354,7 +371,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode,
           name,
           unitOfMeasures,
-          site,
           vendor,
           currency,
           minimumQuantity,
@@ -412,27 +428,41 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
     for await (const record of rows) {
       rowNumber += 1;
-      const normalized = this.normalizeRecord(record as Record<string, unknown>);
-      const productCode = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.productCode);
+      const normalized = this.normalizeRecord(
+        record as Record<string, unknown>,
+      );
+      const productCode = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.productCode,
+      );
       const name = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.name);
       const unitOfMeasures = this.pickValue(
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
       );
-      const site = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.site);
-      const vendor = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.vendor);
-      const currency = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.currency);
+      const vendor = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.vendor,
+      );
+      const currency = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.currency,
+      );
       const minimumQuantityRaw = this.pickValue(
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.minimumQuantity,
       );
-      const priceRaw = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.price);
+      const priceRaw = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.price,
+      );
       const minimumQuantity = this.parseNumber(minimumQuantityRaw);
       const price = this.parseNumber(priceRaw);
       const extraFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(normalized)) {
         if (!key || RAW_MATERIAL_RESERVED_HEADERS.has(key)) continue;
-        const text = value === undefined || value === null ? '' : String(value).trim();
+        const text =
+          value === undefined || value === null ? '' : String(value).trim();
         extraFields[key] = text;
       }
 
@@ -441,7 +471,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode,
         name,
         unitOfMeasures,
-        site: this.normalizeOptionalText(site),
         vendor: this.normalizeOptionalText(vendor),
         currency: this.normalizeOptionalText(currency),
         minimumQuantity,
@@ -472,11 +501,16 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
         const productCode = this.getCellValue(values, headerMap.productCode);
         const name = this.getCellValue(values, headerMap.name);
-        const unitOfMeasures = this.getCellValue(values, headerMap.unitOfMeasures);
-        const site = this.getCellValue(values, headerMap.site);
+        const unitOfMeasures = this.getCellValue(
+          values,
+          headerMap.unitOfMeasures,
+        );
         const vendor = this.getCellValue(values, headerMap.vendor);
         const currency = this.getCellValue(values, headerMap.currency);
-        const minimumQuantityRaw = this.getCellValue(values, headerMap.minimumQuantity);
+        const minimumQuantityRaw = this.getCellValue(
+          values,
+          headerMap.minimumQuantity,
+        );
         const priceRaw = this.getCellValue(values, headerMap.price);
         const minimumQuantity = this.parseNumber(minimumQuantityRaw);
         const price = this.parseNumber(priceRaw);
@@ -490,7 +524,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode,
           name,
           unitOfMeasures,
-          site: this.normalizeOptionalText(site),
           vendor: this.normalizeOptionalText(vendor),
           currency: this.normalizeOptionalText(currency),
           minimumQuantity,
@@ -531,7 +564,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       productCode: 0,
       name: 0,
       unitOfMeasures: 0,
-      site: 0,
       vendor: 0,
       currency: 0,
       minimumQuantity: 0,
@@ -555,7 +587,6 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.site.includes(header)) {
-        map.site = idx;
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.vendor.includes(header)) {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../lib/auth'
@@ -7,7 +7,7 @@ type NavItem = {
   label: string
   to: string
   end?: boolean
-  icon: (className: string) => JSX.Element
+  icon: (className: string) => ReactNode
 }
 
 type RoleLayoutProps = {

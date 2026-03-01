@@ -1,11 +1,33 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 
 type UploadResult = { key: string; url: string; publicUrl: string };
+
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const ALLOWED_UPLOAD_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+]);
+const ALLOWED_PREFIX_ROOTS = new Set([
+  'recipes',
+  'products',
+  'imports',
+  'exports',
+  'raw-materials',
+]);
 
 @Injectable()
 export class FilesService {
@@ -28,19 +50,36 @@ export class FilesService {
     });
   }
 
-  async presignUpload(contentType: string, prefix?: string): Promise<UploadResult> {
-    if (!contentType?.trim()) {
+  async presignUpload(
+    contentType: string,
+    prefix?: string,
+    fileSize?: number,
+  ): Promise<UploadResult> {
+    const normalizedContentType = this.normalizeContentType(contentType);
+    if (!normalizedContentType) {
       throw new BadRequestException('contentType is required');
+    }
+    if (!ALLOWED_UPLOAD_CONTENT_TYPES.has(normalizedContentType)) {
+      throw new BadRequestException('contentType is not allowed');
+    }
+    if (fileSize !== undefined) {
+      if (!Number.isInteger(fileSize) || fileSize <= 0) {
+        throw new BadRequestException('fileSize must be a positive integer');
+      }
+      if (fileSize > MAX_UPLOAD_BYTES) {
+        throw new BadRequestException(
+          `fileSize must not exceed ${MAX_UPLOAD_BYTES} bytes`,
+        );
+      }
     }
 
     const key = this.buildKey(prefix);
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
-      ContentType: contentType,
+      ContentType: normalizedContentType,
+      ...(fileSize !== undefined ? { ContentLength: fileSize } : {}),
     });
-
-    // TODO: enforce content-length and antivirus scan before processing uploads.
     const url = await getSignedUrl(this.s3, command, { expiresIn: 300 });
     const publicUrl = this.getPublicUrl(key);
     return { key, url, publicUrl };
@@ -60,7 +99,11 @@ export class FilesService {
     return Readable.from(response.Body as AsyncIterable<Uint8Array>);
   }
 
-  async uploadObject(key: string, body: Readable | string, contentType: string) {
+  async uploadObject(
+    key: string,
+    body: Readable | string,
+    contentType: string,
+  ) {
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,
@@ -98,6 +141,15 @@ export class FilesService {
       throw new BadRequestException('prefix is invalid');
     }
 
+    const [root] = segments;
+    if (!root || !ALLOWED_PREFIX_ROOTS.has(root)) {
+      throw new BadRequestException('prefix is not allowed');
+    }
+
     return normalized;
+  }
+
+  private normalizeContentType(contentType: string) {
+    return contentType?.trim().toLowerCase().split(';')[0]?.trim();
   }
 }

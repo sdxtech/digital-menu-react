@@ -32,7 +32,9 @@ type ListUsersQuery = {
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+  ) {}
 
   async findByEmail(email: string, withPassword = false) {
     const q = this.userModel.findOne({ email: email.toLowerCase().trim() });
@@ -41,6 +43,10 @@ export class UsersService {
 
   async findById(id: string) {
     return this.userModel.findById(id);
+  }
+
+  async findByIdWithRefreshToken(id: string) {
+    return this.userModel.findById(id).select('+refreshTokenHash');
   }
 
   async findNamesByIds(ids: string[]) {
@@ -60,7 +66,9 @@ export class UsersService {
   }
 
   async create(input: CreateUserInput) {
-    const exists = await this.userModel.exists({ email: input.email.toLowerCase().trim() });
+    const exists = await this.userModel.exists({
+      email: input.email.toLowerCase().trim(),
+    });
     if (exists) throw new ConflictException('Email already registered');
 
     const created = await this.userModel.create({
@@ -117,7 +125,10 @@ export class UsersService {
     }
 
     if (nextEmail && nextEmail !== user.email) {
-      const exists = await this.userModel.exists({ email: nextEmail, _id: { $ne: id } });
+      const exists = await this.userModel.exists({
+        email: nextEmail,
+        _id: { $ne: id },
+      });
       if (exists) throw new ConflictException('Email already registered');
       user.email = nextEmail;
     }
@@ -146,6 +157,20 @@ export class UsersService {
     await user.save();
 
     return { id: user.id, email: user.email, name: user.name };
+  }
+
+  async setRefreshToken(id: string, refreshToken: string | null) {
+    const user = await this.userModel.findById(id).select('+refreshTokenHash');
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!refreshToken) {
+      user.refreshTokenHash = undefined;
+      await user.save();
+      return;
+    }
+
+    user.refreshTokenHash = await bcrypt.hash(refreshToken, 12);
+    await user.save();
   }
 
   async deleteById(id: string) {

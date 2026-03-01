@@ -29,27 +29,33 @@ export class ProductsController {
   @Post()
   @Roles(AppRole.Superadmin)
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateProductDto) {
-    return this.products.create({
-      name: dto.name,
-      price: dto.price,
-      categoryId: dto.categoryId,
-      description: dto.description,
-      imageUrl: dto.imageUrl,
-      isActive: dto.isActive,
-    }, req.user.site);
+    return this.products.create(
+      {
+        name: dto.name,
+        price: dto.price,
+        categoryId: dto.categoryId,
+        description: dto.description,
+        imageUrl: dto.imageUrl,
+        isActive: dto.isActive,
+      },
+      req.user.site,
+    );
   }
 
   @Get()
   list(@Req() req: AuthenticatedRequest, @Query() query: ListProductsQueryDto) {
-    return this.products.findAll({
-      page: query.page ?? 1,
-      limit: query.limit ?? 20,
-      search: query.search,
-      categoryId: query.categoryId,
-      isActive: query.isActive ?? true,
-      sortBy: query.sortBy ?? 'createdAt',
-      sortDir: query.sortDir ?? 'desc',
-    }, req.user.site);
+    return this.products.findAll(
+      {
+        page: query.page ?? 1,
+        limit: query.limit ?? 20,
+        search: query.search,
+        categoryId: query.categoryId,
+        isActive: query.isActive ?? true,
+        sortBy: query.sortBy ?? 'createdAt',
+        sortDir: query.sortDir ?? 'desc',
+      },
+      req.user.site,
+    );
   }
 
   @Get(':id')
@@ -64,14 +70,18 @@ export class ProductsController {
     @Param() params: ProductIdParamDto,
     @Body() dto: UpdateProductDto,
   ) {
-    return this.products.update(params.id, {
-      name: dto.name,
-      price: dto.price,
-      categoryId: dto.categoryId,
-      description: dto.description,
-      imageUrl: dto.imageUrl,
-      isActive: dto.isActive,
-    }, req.user.site);
+    return this.products.update(
+      params.id,
+      {
+        name: dto.name,
+        price: dto.price,
+        categoryId: dto.categoryId,
+        description: dto.description,
+        imageUrl: dto.imageUrl,
+        isActive: dto.isActive,
+      },
+      req.user.site,
+    );
   }
 
   @Delete(':id')

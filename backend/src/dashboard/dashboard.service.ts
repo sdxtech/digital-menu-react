@@ -22,8 +22,7 @@ export class DashboardService {
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = this.formatDateKey(yesterdayDate);
     const siteFilter = this.buildSiteFilter(site);
-    const baseFilter =
-      Object.keys(siteFilter).length > 0 ? siteFilter : {};
+    const baseFilter = Object.keys(siteFilter).length > 0 ? siteFilter : {};
 
     const [
       menusToday,
@@ -87,8 +86,14 @@ export class DashboardService {
     const progress = [
       { label: 'Pending approvals', value: `${pendingToday} menus` },
       { label: 'Approved menus', value: `${approvedToday} menus` },
-      { label: 'Store requests pending', value: `${storeRequestedToday} menus` },
-      { label: 'Store requests fulfilled', value: `${storeFulfilledToday} menus` },
+      {
+        label: 'Store requests pending',
+        value: `${storeRequestedToday} menus`,
+      },
+      {
+        label: 'Store requests fulfilled',
+        value: `${storeFulfilledToday} menus`,
+      },
     ];
 
     return { summary, priority, progress };
@@ -116,7 +121,11 @@ export class DashboardService {
     if (!site) return {};
     if (site === DEFAULT_SITE) {
       return {
-        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+        $or: [
+          { site: DEFAULT_SITE },
+          { site: { $exists: false } },
+          { site: '' },
+        ],
       };
     }
     return { site };

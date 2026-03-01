@@ -3,7 +3,10 @@ import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { Inject } from '@nestjs/common';
-import { ExportProductRow, ProductsService } from '../../products/products.service';
+import {
+  ExportProductRow,
+  ProductsService,
+} from '../../products/products.service';
 import { FilesService } from '../../files/files.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { randomUUID } from 'crypto';
@@ -40,7 +43,10 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
   private async handle(job: Job<ExportJob>) {
     const { userId, site } = job.data;
     try {
-      this.notifications.emitJobProgress(userId, { jobId: job.id, stage: 'start' });
+      this.notifications.emitJobProgress(userId, {
+        jobId: job.id,
+        stage: 'start',
+      });
       const products = await this.products.findActiveForExport(site);
       const csv = this.buildCsv(products);
 
@@ -79,7 +85,7 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
     for (const product of products) {
       const categoryName =
         product.categoryId && typeof product.categoryId === 'object'
-          ? product.categoryId.name ?? ''
+          ? (product.categoryId.name ?? '')
           : '';
       lines.push(
         [

@@ -13,18 +13,35 @@ import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
 import fs from 'fs';
+import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AppRole } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { ImportDto } from './dto/import.dto';
 import { ImportsService } from './imports.service';
 
+const RAW_MATERIAL_IMPORT_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv']);
+const RAW_MATERIAL_IMPORT_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+  'application/csv',
+  'application/octet-stream',
+]);
+
 @Controller('imports')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ImportsController {
   constructor(private readonly importsService: ImportsService) {}
 
   @Post('products')
-  async importProducts(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
+  @Roles(AppRole.Superadmin)
+  async importProducts(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ImportDto,
+  ) {
     return this.importsService.enqueueProducts(
       req.user.sub,
       dto.fileKey,
@@ -35,7 +52,11 @@ export class ImportsController {
   }
 
   @Post('raw-materials')
-  async importRawMaterials(@Req() req: AuthenticatedRequest, @Body() dto: ImportDto) {
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  async importRawMaterials(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ImportDto,
+  ) {
     return this.importsService.enqueueRawMaterials(
       req.user.sub,
       dto.fileKey,
@@ -45,6 +66,7 @@ export class ImportsController {
   }
 
   @Post('raw-materials/upload')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -58,12 +80,33 @@ export class ImportsController {
           cb(null, `${randomUUID()}${ext}`);
         },
       }),
-      limits: { fileSize: 200 * 1024 * 1024 },
+      fileFilter: (
+        _req: Request,
+        file: { originalname: string; mimetype: string },
+        cb,
+      ) => {
+        const ext = extname(file.originalname || '').toLowerCase();
+        const isValidExt = RAW_MATERIAL_IMPORT_EXTENSIONS.has(ext);
+        const mime = (file.mimetype || '').toLowerCase();
+        const isValidMime = RAW_MATERIAL_IMPORT_MIME_TYPES.has(mime);
+        if (!isValidExt || !isValidMime) {
+          cb(
+            new BadRequestException(
+              'Only .xlsx, .xls, or .csv files are allowed',
+            ),
+            false,
+          );
+          return;
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 20 * 1024 * 1024 },
     }),
   )
   async importRawMaterialsUpload(
     @Req() req: AuthenticatedRequest,
-    @UploadedFile() file?: { path: string; originalname: string; mimetype: string },
+    @UploadedFile()
+    file?: { path: string; originalname: string; mimetype: string },
   ) {
     if (!file) {
       throw new BadRequestException('file is required');

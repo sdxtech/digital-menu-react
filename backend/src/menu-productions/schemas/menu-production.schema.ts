@@ -41,5 +41,6 @@ export class MenuProduction {
   createdBy?: string;
 }
 
-export const MenuProductionSchema = SchemaFactory.createForClass(MenuProduction);
+export const MenuProductionSchema =
+  SchemaFactory.createForClass(MenuProduction);
 MenuProductionSchema.index({ createdAt: -1 });

@@ -19,4 +19,3 @@ export class ListRawMaterialsQueryDto {
   @IsString()
   search?: string;
 }
-

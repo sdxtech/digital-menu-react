@@ -9,6 +9,7 @@ import { resolveExpiresIn } from './jwt.utils';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 
 @Module({
   imports: [
@@ -23,14 +24,20 @@ import { RolesGuard } from './guards/roles.guard';
         );
 
         return {
-          secret: config.get<string>('JWT_ACCESS_SECRET'),
+          secret: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
           signOptions: { expiresIn: accessExpiresIn },
         };
       },
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    AuthThrottleGuard,
+  ],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],
 })
 export class AuthModule {}

@@ -15,15 +15,20 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
 import { promises as fs } from 'fs';
+import type { Request } from 'express';
 import ExcelJS from 'exceljs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
+import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import { RecipesService } from './recipes.service';
 
 const RECIPE_HEADER_ALIASES = {
@@ -35,38 +40,61 @@ const RECIPE_HEADER_ALIASES = {
   portionSize: ['portion', 'portions', 'porsi', 'serving', 'servings', 'yield'],
 };
 
+const RECIPE_IMPORT_EXTENSIONS = new Set(['.xlsx', '.xls']);
+const RECIPE_IMPORT_MIME_TYPES = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/octet-stream',
+]);
+
 @Controller('recipes')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class RecipesController {
   constructor(private readonly recipes: RecipesService) {}
 
   @Post()
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateRecipeDto) {
     return this.recipes.create(dto, this.buildActor(req));
   }
 
   // BACKEND LOGIC: provide category options for recipe filters.
   @Get('categories')
+  @Roles(...ALL_APP_ROLES)
   listCategories(@Req() req: AuthenticatedRequest) {
     return this.recipes.listCategories(req.user.site);
   }
 
   @Get()
+  @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
     return this.recipes.findAll(query, req.user.site);
   }
 
+  @Patch(':id')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  update(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateRecipeDto,
+  ) {
+    return this.recipes.updateById(id, dto, this.buildActor(req));
+  }
+
   @Patch(':id/approve')
+  @Roles(AppRole.UnitManager, AppRole.Superadmin)
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.setApprovalStatus(id, 'approved', this.buildActor(req));
   }
 
   @Patch(':id/reject')
+  @Roles(AppRole.UnitManager, AppRole.Superadmin)
   reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.setApprovalStatus(id, 'rejected', this.buildActor(req));
   }
 
   @Patch(':id/photo')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   updatePhoto(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -76,11 +104,13 @@ export class RecipesController {
   }
 
   @Delete(':id/photo')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   removePhoto(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.clearImageUrl(id, this.buildActor(req));
   }
 
   @Post('import')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -93,13 +123,29 @@ export class RecipesController {
         filename: (_req, file, cb) => {
           const ext = extname(file.originalname);
           const safeExt = ext || '.xlsx';
-          const filename = `${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2)}${safeExt}`;
+          const filename = `${randomUUID()}${safeExt}`;
           cb(null, filename);
         },
       }),
-      limits: { fileSize: 50 * 1024 * 1024 },
+      fileFilter: (
+        _req: Request,
+        file: { originalname: string; mimetype: string },
+        cb,
+      ) => {
+        const ext = extname(file.originalname || '').toLowerCase();
+        const isValidExt = RECIPE_IMPORT_EXTENSIONS.has(ext);
+        const mime = (file.mimetype || '').toLowerCase();
+        const isValidMime = RECIPE_IMPORT_MIME_TYPES.has(mime);
+        if (!isValidExt || !isValidMime) {
+          cb(
+            new BadRequestException('Only .xlsx or .xls files are allowed'),
+            false,
+          );
+          return;
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 20 * 1024 * 1024 },
     }),
   )
   async importRecipes(
@@ -121,12 +167,15 @@ export class RecipesController {
     }
   }
 
-  private async importFromExcel(filePath: string, actor: {
-    id?: string;
-    name?: string;
-    email?: string;
-    site?: string;
-  }) {
+  private async importFromExcel(
+    filePath: string,
+    actor: {
+      id?: string;
+      name?: string;
+      email?: string;
+      site?: string;
+    },
+  ) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.worksheets[0];
@@ -207,7 +256,9 @@ export class RecipesController {
   }
 
   private normalizeHeader(value: unknown) {
-    return String(value ?? '').trim().toLowerCase();
+    return String(value ?? '')
+      .trim()
+      .toLowerCase();
   }
 
   private normalizeStatus(value: string) {

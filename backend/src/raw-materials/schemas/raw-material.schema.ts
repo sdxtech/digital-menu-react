@@ -8,7 +8,13 @@ export class RawMaterial {
   @Prop({ required: true, trim: true })
   productCode: string;
 
-  @Prop({ required: true, trim: true, lowercase: true, index: true, unique: true })
+  @Prop({
+    required: true,
+    trim: true,
+    lowercase: true,
+    index: true,
+    unique: true,
+  })
   productCodeNormalized: string;
 
   @Prop({ required: true, trim: true })
@@ -16,9 +22,6 @@ export class RawMaterial {
 
   @Prop({ required: true, trim: true })
   unitOfMeasures: string;
-
-  @Prop({ trim: true })
-  site?: string;
 
   @Prop({ trim: true })
   vendor?: string;

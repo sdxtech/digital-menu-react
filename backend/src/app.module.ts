@@ -19,14 +19,19 @@ import { CategoriesModule } from './categories/categories.module';
 import { RawMaterialsModule } from './raw-materials/raw-materials.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { MenuProductionsModule } from './menu-productions/menu-productions.module';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+      validate: validateEnv,
+    }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGO_URI'),
+        uri: config.getOrThrow<string>('MONGO_URI'),
       }),
     }),
     RedisModule,

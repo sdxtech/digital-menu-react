@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateRawMaterialDto {
   @IsString()
@@ -13,10 +19,6 @@ export class CreateRawMaterialDto {
   @IsString()
   @IsNotEmpty()
   unitOfMeasures: string;
-
-  @IsOptional()
-  @IsString()
-  site?: string;
 
   @IsOptional()
   @IsString()

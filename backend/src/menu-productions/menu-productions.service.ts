@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
@@ -125,7 +129,8 @@ export class MenuProductionsService {
       filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
-    if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.storeRequestStatus)
+      filter.storeRequestStatus = query.storeRequestStatus;
     if (query.productionDate) filter.productionDate = query.productionDate;
 
     const page = query.page ?? 1;
@@ -208,7 +213,9 @@ export class MenuProductionsService {
         throw new BadRequestException('Menu production is not approved yet.');
       }
       if (item.storeRequestStatus !== 'requested') {
-        throw new BadRequestException('Store request has not been submitted yet.');
+        throw new BadRequestException(
+          'Store request has not been submitted yet.',
+        );
       }
     }
     item.storeRequestStatus = status;
@@ -236,7 +243,8 @@ export class MenuProductionsService {
       filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
-    if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.storeRequestStatus)
+      filter.storeRequestStatus = query.storeRequestStatus;
     if (query.productionDate) filter.productionDate = query.productionDate;
 
     const items = await this.menuProductionModel
@@ -270,9 +278,11 @@ export class MenuProductionsService {
     const pagedGroups = groups.slice(start, start + limit);
 
     const stats: TimelineStats = {
-      approved: items.filter((item) => item.approvalStatus === 'approved').length,
+      approved: items.filter((item) => item.approvalStatus === 'approved')
+        .length,
       pending: items.filter((item) => item.approvalStatus === 'pending').length,
-      rejected: items.filter((item) => item.approvalStatus === 'rejected').length,
+      rejected: items.filter((item) => item.approvalStatus === 'rejected')
+        .length,
       total: items.length,
     };
 
@@ -287,7 +297,10 @@ export class MenuProductionsService {
   }
 
   // BACKEND LOGIC: compute ingredient multipliers + summary for store requests.
-  async buildStoreRequestGroups(query: ListMenuProductionsQueryDto, site?: string) {
+  async buildStoreRequestGroups(
+    query: ListMenuProductionsQueryDto,
+    site?: string,
+  ) {
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
@@ -307,7 +320,8 @@ export class MenuProductionsService {
       filter.$and = andFilters;
     }
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
-    if (query.storeRequestStatus) filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.storeRequestStatus)
+      filter.storeRequestStatus = query.storeRequestStatus;
     if (query.productionDate) filter.productionDate = query.productionDate;
 
     const items = await this.menuProductionModel
@@ -434,7 +448,11 @@ export class MenuProductionsService {
     if (!site) return {};
     if (site === DEFAULT_SITE) {
       return {
-        $or: [{ site: DEFAULT_SITE }, { site: { $exists: false } }, { site: '' }],
+        $or: [
+          { site: DEFAULT_SITE },
+          { site: { $exists: false } },
+          { site: '' },
+        ],
       };
     }
     return { site };

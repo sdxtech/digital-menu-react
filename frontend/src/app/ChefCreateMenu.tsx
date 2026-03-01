@@ -23,6 +23,7 @@ type IngredientRow = {
 }
 
 type BaseRecipe = {
+  id?: string
   name: string
   category: string
   description?: string
@@ -51,12 +52,15 @@ const ChefCreateMenu = () => {
   const location = useLocation()
   const {
     createRecipe,
+    updateRecipe,
     importRecipesFromExcel,
     searchRawMaterials,
   } = useChefData()
 
   const baseRecipe = (location.state as { baseRecipe?: BaseRecipe } | null)
     ?.baseRecipe
+  const editingRecipeId = baseRecipe?.id ?? ''
+  const isEditMode = Boolean(editingRecipeId)
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -359,7 +363,7 @@ const ChefCreateMenu = () => {
     }
   }
 
-  const handleCreateRecipe = async () => {
+  const handleSaveRecipe = async () => {
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
@@ -422,20 +426,32 @@ const ChefCreateMenu = () => {
     }
 
     try {
-      await createRecipe({
+      const basePayload = {
         name: nextName,
         category: nextCategory,
         description: nextDescription,
         price: 0,
         portionSize,
-        status: 'draft',
         ingredients: parsedIngredients,
-      })
+      }
 
-      setRecipeForm(initialRecipeForm)
-      setIngredientRows([createIngredientRow()])
+      if (isEditMode && editingRecipeId) {
+        await updateRecipe(editingRecipeId, basePayload)
+      } else {
+        await createRecipe({
+          ...basePayload,
+          status: 'draft',
+        })
+        setRecipeForm(initialRecipeForm)
+        setIngredientRows([createIngredientRow()])
+      }
+
       setSubmitError('')
-      setSubmitMessage('Recipe saved and submitted to the Unit Manager.')
+      setSubmitMessage(
+        isEditMode
+          ? 'Recipe updated and resubmitted for Unit Manager approval.'
+          : 'Recipe saved and submitted to the Unit Manager.',
+      )
     } catch (error) {
       const message =
         error instanceof Error
@@ -451,7 +467,9 @@ const ChefCreateMenu = () => {
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Create New Recipe</h1>
+            <h1 className="text-2xl font-semibold">
+              {isEditMode ? 'Edit Recipe' : 'Create New Recipe'}
+            </h1>
           </div>
           <button
             type="button"
@@ -752,10 +770,10 @@ const ChefCreateMenu = () => {
           </div>
           <button
             type="button"
-            onClick={handleCreateRecipe}
+            onClick={handleSaveRecipe}
             className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
           >
-            Save & submit to Unit Manager
+            {isEditMode ? 'Update & resubmit' : 'Save & submit to Unit Manager'}
           </button>
         </div>
       </div>
