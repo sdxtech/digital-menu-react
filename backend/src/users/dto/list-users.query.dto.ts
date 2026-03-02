@@ -18,4 +18,12 @@ export class ListUsersQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  site?: string;
+
+  @IsOptional()
+  @IsString()
+  sites?: string;
 }

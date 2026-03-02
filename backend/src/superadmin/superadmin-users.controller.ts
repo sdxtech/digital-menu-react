@@ -50,6 +50,14 @@ const USER_IMPORT_MIME_TYPES = new Set([
 export class SuperadminUsersController {
   constructor(private readonly users: UsersService) {}
 
+  @Get('sites')
+  @Roles(AppRole.Superadmin)
+  async listSites() {
+    return {
+      items: await this.users.listSites(),
+    };
+  }
+
   @Get()
   @Roles(AppRole.Superadmin)
   list(@Query() query: ListUsersQueryDto) {
@@ -57,6 +65,7 @@ export class SuperadminUsersController {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       search: query.search,
+      sites: query.sites ?? query.site,
     });
   }
 

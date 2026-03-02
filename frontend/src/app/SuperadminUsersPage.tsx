@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -47,6 +47,10 @@ const SuperadminUsersPage = () => {
   })
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [selectedSites, setSelectedSites] = useState<string[]>([])
+  const [siteOptions, setSiteOptions] = useState<string[]>([])
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filterRef = useRef<HTMLDivElement | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ name: '', email: '', sites: '' })
   const [editError, setEditError] = useState('')
@@ -88,6 +92,9 @@ const SuperadminUsersPage = () => {
         if (searchValue.trim()) {
           params.set('search', searchValue.trim())
         }
+        if (selectedSites.length) {
+          params.set('sites', selectedSites.join(','))
+        }
 
         const data = await apiFetch<{
           items: SuperadminUserApi[]
@@ -128,12 +135,63 @@ const SuperadminUsersPage = () => {
         }))
       }
     },
-    [accessToken],
+    [accessToken, selectedSites],
   )
 
   useEffect(() => {
     fetchUsers(1, DEFAULT_LIMIT, search).catch(() => null)
   }, [fetchUsers, search])
+
+  const fetchSiteOptions = useCallback(async () => {
+    if (!accessToken) {
+      setSiteOptions([])
+      setSelectedSites([])
+      return
+    }
+
+    try {
+      const data = await apiFetch<{ items?: string[] }>(
+        '/superadmin/users/sites',
+        undefined,
+        accessToken,
+      )
+      const normalized = Array.from(
+        new Set(
+          (data.items ?? [])
+            .map((site) => site.trim())
+            .filter(Boolean),
+        ),
+      )
+      setSiteOptions(normalized)
+      setSelectedSites((prev) =>
+        prev.filter((site) => normalized.includes(site)),
+      )
+    } catch {
+      setSiteOptions([])
+      setSelectedSites([])
+    }
+  }, [accessToken])
+
+  useEffect(() => {
+    fetchSiteOptions().catch(() => null)
+  }, [fetchSiteOptions])
+
+  useEffect(() => {
+    if (!filterOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (filterRef.current && !filterRef.current.contains(target)) {
+        setFilterOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [filterOpen])
 
   const startEdit = (target: SuperadminUser) => {
     setEditingId(target.id)
@@ -185,6 +243,7 @@ const SuperadminUsersPage = () => {
       setMessage('User updated.')
       setEditError('')
       fetchUsers(meta.page, meta.limit, search).catch(() => null)
+      fetchSiteOptions().catch(() => null)
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : 'Failed to update user.'
@@ -250,6 +309,7 @@ const SuperadminUsersPage = () => {
       setPasswordId(null)
       setMessage('User deleted.')
       fetchUsers(meta.page, meta.limit, search).catch(() => null)
+      fetchSiteOptions().catch(() => null)
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : 'Failed to delete user.'
@@ -259,12 +319,21 @@ const SuperadminUsersPage = () => {
 
   const applySearch = () => {
     setSearch(searchInput.trim())
+    setFilterOpen(false)
     setMeta((prev) => ({ ...prev, page: 1 }))
   }
 
-  const resetSearch = () => {
-    setSearchInput('')
-    setSearch('')
+  const toggleSiteFilter = (site: string) => {
+    setSelectedSites((prev) =>
+      prev.includes(site)
+        ? prev.filter((item) => item !== site)
+        : [...prev, site],
+    )
+    setMeta((prev) => ({ ...prev, page: 1 }))
+  }
+
+  const clearSiteFilter = () => {
+    setSelectedSites([])
     setMeta((prev) => ({ ...prev, page: 1 }))
   }
 
@@ -330,6 +399,7 @@ const SuperadminUsersPage = () => {
       setMessage('User created.')
       setCreateError('')
       fetchUsers(meta.page, meta.limit, search).catch(() => null)
+      fetchSiteOptions().catch(() => null)
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : 'Failed to create user.'
@@ -387,6 +457,7 @@ const SuperadminUsersPage = () => {
         `${result.insertedCount} users imported${skipped ? `, ${skipped} skipped` : ''}.`,
       )
       fetchUsers(meta.page, meta.limit, search).catch(() => null)
+      fetchSiteOptions().catch(() => null)
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : 'Failed to import users.'
@@ -623,13 +694,62 @@ const SuperadminUsersPage = () => {
               >
                 Search
               </button>
-              <button
-                type="button"
-                onClick={resetSearch}
-                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
-              >
-                Reset
-              </button>
+              <div className="relative" ref={filterRef}>
+                <button
+                  type="button"
+                  onClick={() => setFilterOpen((prev) => !prev)}
+                  aria-expanded={filterOpen}
+                  aria-haspopup="menu"
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                >
+                  <span className="flex items-center gap-2">
+                    <span>
+                      {selectedSites.length
+                        ? `Filter (${selectedSites.length})`
+                        : 'Filter'}
+                    </span>
+                    <i
+                      className={`bi bi-chevron-down text-[10px] transition-transform ${filterOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
+                {filterOpen ? (
+                  <div className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-white p-3 shadow-lg">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-muted">Sites</p>
+                      <button
+                        type="button"
+                        onClick={clearSiteFilter}
+                        disabled={selectedSites.length === 0}
+                        className="text-[11px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {siteOptions.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted">No site data yet.</p>
+                    ) : (
+                      <div className="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
+                        {siteOptions.map((site) => (
+                          <label
+                            key={site}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-background"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedSites.includes(site)}
+                              onChange={() => toggleSiteFilter(site)}
+                              className="h-4 w-4 rounded border-border text-primary focus:ring-accent-blue"
+                            />
+                            <span>{site}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button

@@ -28,6 +28,7 @@ type ListUsersQuery = {
   page: number;
   limit: number;
   search?: string;
+  sites?: string;
 };
 
 @Injectable()
@@ -90,6 +91,17 @@ export class UsersService {
         { email: new RegExp(this.escapeRegExp(text), 'i') },
       ];
     }
+    const selectedSites = Array.from(
+      new Set(
+        (query.sites ?? '')
+          .split(',')
+          .map((site) => site.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (selectedSites.length) {
+      filter.sites = { $in: selectedSites };
+    }
 
     const skip = (query.page - 1) * query.limit;
     const [items, total] = await Promise.all([
@@ -109,6 +121,14 @@ export class UsersService {
       limit: query.limit,
       totalPages: Math.max(1, Math.ceil(total / query.limit)),
     };
+  }
+
+  async listSites() {
+    const rawSites = await this.userModel.distinct('sites');
+    return rawSites
+      .map((site) => String(site).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }
 
   async updateById(id: string, input: UpdateUserInput) {
