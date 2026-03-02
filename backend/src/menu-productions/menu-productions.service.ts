@@ -322,7 +322,10 @@ export class MenuProductionsService {
     if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
     if (query.storeRequestStatus)
       filter.storeRequestStatus = query.storeRequestStatus;
-    if (query.productionDate) filter.productionDate = query.productionDate;
+    const productionDateFilter = this.buildProductionDateFilter(query);
+    if (productionDateFilter) {
+      filter.productionDate = productionDateFilter;
+    }
 
     const items = await this.menuProductionModel
       .find(filter)
@@ -435,6 +438,28 @@ export class MenuProductionsService {
     return { items: grouped };
   }
 
+  async listStoreRequestSites() {
+    const [rawSites, hasLegacyDefaultSiteRows] = await Promise.all([
+      this.menuProductionModel.distinct('site', { approvalStatus: 'approved' }),
+      this.menuProductionModel.exists({
+        approvalStatus: 'approved',
+        $or: [{ site: { $exists: false } }, { site: '' }],
+      }),
+    ]);
+
+    const normalized = rawSites
+      .map((site) => String(site).trim())
+      .filter(Boolean);
+
+    if (hasLegacyDefaultSiteRows) {
+      normalized.push(DEFAULT_SITE);
+    }
+
+    return Array.from(new Set(normalized)).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+  }
+
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -446,6 +471,20 @@ export class MenuProductionsService {
   private normalizeSite(site?: string) {
     const trimmed = site?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private buildProductionDateFilter(query: ListMenuProductionsQueryDto) {
+    const exactDate = query.productionDate?.trim();
+    if (exactDate) return exactDate;
+
+    const startDate = query.startDate?.trim();
+    const endDate = query.endDate?.trim();
+    if (!startDate && !endDate) return undefined;
+
+    const range: Record<string, string> = {};
+    if (startDate) range.$gte = startDate;
+    if (endDate) range.$lte = endDate;
+    return range;
   }
 
   private buildSiteFilter(site?: string) {

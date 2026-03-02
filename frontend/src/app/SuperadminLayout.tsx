@@ -9,6 +9,13 @@ const navItems = [
       <i className={`bi bi-people ${className}`} aria-hidden="true" />
     ),
   },
+  {
+    label: 'Store Export',
+    to: '/superadmin/store-request-export',
+    icon: (className: string) => (
+      <i className={`bi bi-box-arrow-down ${className}`} aria-hidden="true" />
+    ),
+  },
 ]
 
 const SuperadminLayout = () => {

@@ -16,6 +16,7 @@ import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerPage from './app/UnitManagerPage'
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
+import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 
 const RequireAuth = () => {
   const { user } = useAuth()
@@ -86,6 +87,10 @@ function App() {
         <Route element={<RequireRole role="superadmin" />}>
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route index element={<SuperadminUsersPage />} />
+            <Route
+              path="store-request-export"
+              element={<SuperadminStoreRequestExportPage />}
+            />
           </Route>
         </Route>
       </Route>
