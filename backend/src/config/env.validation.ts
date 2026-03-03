@@ -46,6 +46,21 @@ const assertSecret = (value: string, key: string) => {
   }
 };
 
+const looksLikePlaceholder = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.startsWith('change_me') ||
+    normalized.startsWith('your_') ||
+    normalized.includes('example.com')
+  );
+};
+
+const assertNotPlaceholderInProduction = (value: string, key: string) => {
+  if (looksLikePlaceholder(value)) {
+    throw new Error(`${key} cannot use placeholder value in production`);
+  }
+};
+
 export const validateEnv = (rawEnv: Record<string, unknown>) => {
   const env = rawEnv as Record<string, string | undefined>;
 
@@ -82,8 +97,27 @@ export const validateEnv = (rawEnv: Record<string, unknown>) => {
     env[key] = value;
   }
 
+  env.SMTP_PORT = parsePositiveInt(
+    (env.SMTP_PORT as string).trim(),
+    'SMTP_PORT',
+  );
+
   assertSecret(env.JWT_ACCESS_SECRET as string, 'JWT_ACCESS_SECRET');
   assertSecret(env.JWT_REFRESH_SECRET as string, 'JWT_REFRESH_SECRET');
+
+  if (nodeEnv === 'production') {
+    const sensitiveKeys = [
+      'S3_ACCESS_KEY',
+      'S3_SECRET_KEY',
+      'SMTP_HOST',
+      'SMTP_USER',
+      'SMTP_PASS',
+    ] as const;
+
+    for (const key of sensitiveKeys) {
+      assertNotPlaceholderInProduction(env[key] as string, key);
+    }
+  }
 
   if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
     throw new Error(

@@ -1,6 +1,12 @@
-export const apiBaseUrl =
-  (import.meta.env.VITE_API_URL as string | undefined) ??
-  'http://localhost:3000'
+const configuredApiBaseUrl = (
+  import.meta.env.VITE_API_URL as string | undefined
+)?.trim()
+
+if (import.meta.env.PROD && !configuredApiBaseUrl) {
+  throw new Error('VITE_API_URL must be defined for production builds.')
+}
+
+export const apiBaseUrl = configuredApiBaseUrl ?? 'http://localhost:3000'
 
 export class ApiError extends Error {
   status: number
