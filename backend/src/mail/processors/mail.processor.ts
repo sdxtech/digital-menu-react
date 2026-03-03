@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
-import nodemailer from 'nodemailer';
+import { createTransport } from 'nodemailer';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { Inject } from '@nestjs/common';
 
@@ -30,7 +30,7 @@ export class MailProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    const transport = nodemailer.createTransport({
+    const transport = createTransport({
       host: this.config.getOrThrow<string>('SMTP_HOST'),
       port: Number(this.config.getOrThrow<string>('SMTP_PORT')),
       secure: Number(this.config.getOrThrow<string>('SMTP_PORT')) === 465,

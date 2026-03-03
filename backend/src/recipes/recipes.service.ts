@@ -114,6 +114,10 @@ const LEGACY_HEADER_ALIASES = {
   foodCostRecipe: ['food cost recipe', 'food cost', 'total cost'],
 } as const;
 
+type LegacyHeaderKey = keyof typeof LEGACY_HEADER_ALIASES;
+type LegacyHeaderMap = Partial<Record<LegacyHeaderKey, number>>;
+type LabelCell = { row: number; col: number };
+
 const UOM_ALIASES: Record<string, string> = {
   g: 'gram',
   gr: 'gram',
@@ -690,7 +694,7 @@ export class RecipesService {
     };
   }
 
-  private findRecipeCardBlockStarts(worksheet: Worksheet) {
+  private findRecipeCardBlockStarts(worksheet: Worksheet): number[] {
     const starts: number[] = [];
     for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
       const rowValues = this.readRowCells(worksheet, rowNumber, 3);
@@ -867,7 +871,7 @@ export class RecipesService {
     worksheet: Worksheet,
     block: RecipeCardBlock,
     header: RecipeCardHeaderMap,
-  ) {
+  ): { totalCost?: number; subTotalCost?: number } {
     let totalCost: number | undefined;
     let subTotalCost: number | undefined;
 
@@ -897,7 +901,7 @@ export class RecipesService {
     return { totalCost, subTotalCost };
   }
 
-  private shouldStopRecipeCardIngredientRows(values: CellValue[]) {
+  private shouldStopRecipeCardIngredientRows(values: CellValue[]): boolean {
     const joined = this.normalizeLabel(
       values
         .slice(1, 10)
@@ -920,7 +924,7 @@ export class RecipesService {
   private findColumnForHeader(
     cells: Array<{ col: number; value: string }>,
     aliases: string[],
-  ) {
+  ): number | undefined {
     for (const cell of cells) {
       if (
         aliases.some(
@@ -938,7 +942,7 @@ export class RecipesService {
     startRow: number,
     endRow: number,
     aliases: string[],
-  ) {
+  ): LabelCell | undefined {
     const maxRow = Math.min(endRow, startRow + 40);
     for (let row = startRow; row <= maxRow; row += 1) {
       const rowValues = this.readRowCells(worksheet, row, 20);
@@ -960,7 +964,7 @@ export class RecipesService {
     row: number,
     col: number,
     maxCol: number,
-  ) {
+  ): string {
     const values = this.readRowCells(worksheet, row, maxCol);
     for (let idx = col + 1; idx <= maxCol; idx += 1) {
       const text = this.cellToText(values[idx] ?? null);
@@ -974,7 +978,7 @@ export class RecipesService {
     row: number,
     col: number,
     maxCol: number,
-  ) {
+  ): string {
     const values = this.readRowCells(worksheet, row, maxCol);
     for (let idx = col; idx <= maxCol; idx += 1) {
       const text = this.cellToText(values[idx] ?? null);
@@ -983,12 +987,15 @@ export class RecipesService {
     return '';
   }
 
-  private buildLegacyHeaderMap(values: CellValue[]) {
-    const map: Record<string, number> = {};
+  private buildLegacyHeaderMap(values: CellValue[]): LegacyHeaderMap {
+    const map: LegacyHeaderMap = {};
+    const aliasEntries = Object.entries(LEGACY_HEADER_ALIASES) as Array<
+      [LegacyHeaderKey, readonly string[]]
+    >;
     for (let idx = 1; idx < values.length; idx += 1) {
       const header = this.normalizeLabel(this.cellToText(values[idx] ?? null));
       if (!header) continue;
-      for (const [key, aliases] of Object.entries(LEGACY_HEADER_ALIASES)) {
+      for (const [key, aliases] of aliasEntries) {
         if (
           aliases.some((alias) => header === alias || header.includes(alias))
         ) {
@@ -1003,7 +1010,7 @@ export class RecipesService {
     worksheet: Worksheet,
     rowNumber: number,
     maxCol: number,
-  ) {
+  ): CellValue[] {
     const row = worksheet.getRow(rowNumber);
     const values: CellValue[] = [];
     for (let col = 1; col <= maxCol; col += 1) {
@@ -1012,7 +1019,7 @@ export class RecipesService {
     return values;
   }
 
-  private cellToText(value: CellValue | null) {
+  private cellToText(value: CellValue | null): string {
     if (value === null || value === undefined) return '';
     if (typeof value === 'string') return value.trim();
     if (typeof value === 'number') {
@@ -1032,7 +1039,8 @@ export class RecipesService {
         return value.text.trim();
       }
       if ('result' in value) {
-        return this.cellToText(value.result as CellValue);
+        const result = (value as { result?: CellValue }).result;
+        return this.cellToText(result ?? null);
       }
       if ('hyperlink' in value && typeof value.hyperlink === 'string') {
         return value.hyperlink.trim();
@@ -1052,7 +1060,8 @@ export class RecipesService {
     }
     if (typeof value === 'object') {
       if ('result' in value) {
-        return this.cellToNumber(value.result as CellValue);
+        const result = (value as { result?: CellValue }).result;
+        return this.cellToNumber(result ?? null);
       }
       if ('text' in value && typeof value.text === 'string') {
         return this.parseTextNumber(value.text);
@@ -1084,11 +1093,11 @@ export class RecipesService {
     return parsed;
   }
 
-  private normalizeLabel(value: string) {
+  private normalizeLabel(value: string): string {
     return value.toLowerCase().replace(/[:]/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  private normalizeImportedUnit(value?: string) {
+  private normalizeImportedUnit(value?: string): string | undefined {
     const trimmed = value?.trim();
     if (!trimmed) return undefined;
     const normalized = trimmed.toLowerCase().replace(/\./g, '');
@@ -1107,7 +1116,11 @@ export class RecipesService {
     return tokenized;
   }
 
-  private convertQty(qty: number, from?: string, to?: string) {
+  private convertQty(
+    qty: number,
+    from?: string,
+    to?: string,
+  ): number | undefined {
     if (!Number.isFinite(qty)) return undefined;
     if (!from || !to) return undefined;
     if (from === to) return qty;
@@ -1123,7 +1136,7 @@ export class RecipesService {
   private async resolveRawMaterial(
     productCode: string,
     cache: Map<string, RawMaterialLookup | null>,
-  ) {
+  ): Promise<RawMaterialLookup | null> {
     const normalized = productCode.trim().toLowerCase();
     if (!normalized) return null;
     if (cache.has(normalized)) return cache.get(normalized) ?? null;
@@ -1133,7 +1146,10 @@ export class RecipesService {
     return item ?? null;
   }
 
-  private findNumericInRow(values: CellValue[], preferredColumn?: number) {
+  private findNumericInRow(
+    values: CellValue[],
+    preferredColumn?: number,
+  ): number | undefined {
     if (preferredColumn) {
       const preferred = this.cellToNumber(values[preferredColumn] ?? null);
       if (preferred !== undefined) return preferred;
@@ -1179,17 +1195,17 @@ export class RecipesService {
     });
   }
 
-  private normalizeOptionalNumber(value?: number) {
+  private normalizeOptionalNumber(value?: number): number | undefined {
     return typeof value === 'number' && Number.isFinite(value)
       ? value
       : undefined;
   }
 
-  private escapeRegExp(value: string) {
+  private escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private parseCsv(value?: string) {
+  private parseCsv(value?: string): string[] {
     if (!value?.trim()) return [];
     return value
       .split(',')
@@ -1197,14 +1213,14 @@ export class RecipesService {
       .filter(Boolean);
   }
 
-  private normalizeStatus(value: string) {
+  private normalizeStatus(value: string): 'active' | 'draft' {
     const normalized = value.trim().toLowerCase();
     if (normalized === 'active' || normalized === 'aktif') return 'active';
     return 'draft';
   }
 
   // BACKEND LOGIC: category list for frontend filters.
-  async listCategories(_site?: string) {
+  async listCategories(_site?: string): Promise<string[]> {
     const filter = { category: { $ne: '' } };
     const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
@@ -1216,7 +1232,7 @@ export class RecipesService {
   private buildActorFields(
     actor: RecipeActor | undefined,
     prefix: 'created' | 'updated',
-  ) {
+  ): Record<string, string> {
     if (!actor) return {};
     const fields: Record<string, string> = {};
     if (actor.id) fields[`${prefix}By`] = actor.id;
@@ -1226,7 +1242,7 @@ export class RecipesService {
     return fields;
   }
 
-  private async attachActorNames(items: RecipeAuditFields[]) {
+  private async attachActorNames(items: RecipeAuditFields[]): Promise<void> {
     const ids = new Set<string>();
     items.forEach((item) => {
       const createdBy = item.createdBy;
@@ -1269,7 +1285,7 @@ export class RecipesService {
     });
   }
 
-  private normalizeSite(site?: string) {
+  private normalizeSite(site?: string): string | undefined {
     const trimmed = site?.trim();
     return trimmed ? trimmed : undefined;
   }

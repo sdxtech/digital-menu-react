@@ -14,8 +14,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
 import { promises as fs } from 'fs';
 import type { Request } from 'express';
@@ -36,6 +34,8 @@ const RECIPE_IMPORT_MIME_TYPES = new Set([
   'application/vnd.ms-excel',
   'application/octet-stream',
 ]);
+
+type UploadFilterCallback = (error: Error | null, acceptFile: boolean) => void;
 
 @Controller('recipes')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -103,24 +103,11 @@ export class RecipesController {
   @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          const uploadDir = join(process.cwd(), 'uploads');
-          fs.mkdir(uploadDir, { recursive: true })
-            .then(() => cb(null, uploadDir))
-            .catch((error) => cb(error, uploadDir));
-        },
-        filename: (_req, file, cb) => {
-          const ext = extname(file.originalname);
-          const safeExt = ext || '.xlsx';
-          const filename = `${randomUUID()}${safeExt}`;
-          cb(null, filename);
-        },
-      }),
+      dest: join(process.cwd(), 'uploads'),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },
-        cb,
+        cb: UploadFilterCallback,
       ) => {
         const ext = extname(file.originalname || '').toLowerCase();
         const isValidExt = RECIPE_IMPORT_EXTENSIONS.has(ext);

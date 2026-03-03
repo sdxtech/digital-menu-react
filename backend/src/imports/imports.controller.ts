@@ -9,10 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { randomUUID } from 'crypto';
 import { extname, join } from 'path';
-import fs from 'fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,6 +27,8 @@ const RAW_MATERIAL_IMPORT_MIME_TYPES = new Set([
   'application/csv',
   'application/octet-stream',
 ]);
+
+type UploadFilterCallback = (error: Error | null, acceptFile: boolean) => void;
 
 @Controller('imports')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -69,21 +68,11 @@ export class ImportsController {
   @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          const uploadDir = join(process.cwd(), 'uploads');
-          fs.mkdirSync(uploadDir, { recursive: true });
-          cb(null, uploadDir);
-        },
-        filename: (_req, file, cb) => {
-          const ext = extname(file.originalname);
-          cb(null, `${randomUUID()}${ext}`);
-        },
-      }),
+      dest: join(process.cwd(), 'uploads'),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },
-        cb,
+        cb: UploadFilterCallback,
       ) => {
         const ext = extname(file.originalname || '').toLowerCase();
         const isValidExt = RAW_MATERIAL_IMPORT_EXTENSIONS.has(ext);

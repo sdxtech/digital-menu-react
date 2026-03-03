@@ -33,6 +33,8 @@ type ImportError = {
   reason: string;
 };
 
+type ProductImportCsvRecord = Record<string, unknown>;
+
 type RawMaterialHeaderMap = {
   productCode: number;
   name: number;
@@ -148,21 +150,19 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         skip_empty_lines: true,
         trim: true,
       });
-      const rows = stream.pipe(parser);
+      const rows = stream.pipe(parser) as AsyncIterable<ProductImportCsvRecord>;
 
       for await (const record of rows) {
         processed += 1;
-        const name = String(record.name || '').trim();
-        const priceValue = Number(record.price);
-        const categoryRaw = record.category
-          ? String(record.category).trim()
-          : '';
-        const description = record.description
-          ? String(record.description).trim()
-          : undefined;
-        const imageUrl = record.imageUrl
-          ? String(record.imageUrl).trim()
-          : undefined;
+        const name = this.getRecordText(record, 'name');
+        const priceValue = Number(this.getRecordText(record, 'price'));
+        const categoryRaw = this.getRecordText(record, 'category');
+        const description = this.normalizeOptionalText(
+          this.getRecordText(record, 'description'),
+        );
+        const imageUrl = this.normalizeOptionalText(
+          this.getRecordText(record, 'imageUrl'),
+        );
 
         if (!name) {
           pushError({ row: processed, reason: 'Name is required' });
@@ -461,9 +461,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       const extraFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(normalized)) {
         if (!key || RAW_MATERIAL_RESERVED_HEADERS.has(key)) continue;
-        const text =
-          value === undefined || value === null ? '' : String(value).trim();
-        extraFields[key] = text;
+        extraFields[key] = this.toText(value);
       }
 
       yield {
@@ -551,9 +549,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   private pickValue(record: Record<string, unknown>, aliases: string[]) {
     for (const alias of aliases) {
       if (alias in record) {
-        const value = record[alias];
-        if (value === undefined || value === null) return '';
-        return String(value).trim();
+        return this.toText(record[alias]);
       }
     }
     return '';
@@ -621,9 +617,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     const cell = values[index];
     if (cell === undefined || cell === null) return '';
     if (typeof cell === 'object' && cell && 'text' in cell) {
-      return String((cell as { text?: unknown }).text ?? '').trim();
+      const text = (cell as { text?: unknown }).text;
+      return typeof text === 'string' ? text.trim() : '';
     }
-    return String(cell).trim();
+    return this.toText(cell);
   }
 
   private isExcelFile(fileName?: string, contentType?: string) {
@@ -633,11 +630,29 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizeHeader(value: unknown) {
-    return String(value ?? '')
+    return this.toText(value)
       .trim()
       .toLowerCase()
       .replace(/\./g, '_')
       .replace(/\$/g, '');
+  }
+
+  private getRecordText(record: ProductImportCsvRecord, key: string) {
+    return this.toText(record[key]);
+  }
+
+  private toText(value: unknown) {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value).trim();
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'object' && 'text' in value) {
+      const text = (value as { text?: unknown }).text;
+      return typeof text === 'string' ? text.trim() : '';
+    }
+    return '';
   }
 
   private normalizeOptionalText(value: string) {
