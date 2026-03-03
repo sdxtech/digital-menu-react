@@ -7,6 +7,7 @@ import { parseCorsOrigins } from './common/cors.utils';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
   const config = app.get(ConfigService);
 
   app.use((_req: Request, res: Response, next: NextFunction) => {

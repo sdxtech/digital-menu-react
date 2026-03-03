@@ -20,6 +20,7 @@ import { RawMaterialsModule } from './raw-materials/raw-materials.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { MenuProductionsModule } from './menu-productions/menu-productions.module';
 import { validateEnv } from './config/env.validation';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { validateEnv } from './config/env.validation';
     MailModule,
     DashboardModule,
     SuperadminModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

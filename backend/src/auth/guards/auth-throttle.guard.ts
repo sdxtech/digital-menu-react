@@ -3,22 +3,24 @@ import {
   ExecutionContext,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
-type ThrottleBucket = {
-  count: number;
-  resetAt: number;
-};
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../redis/redis.constants';
 
 @Injectable()
 export class AuthThrottleGuard implements CanActivate {
-  private readonly buckets = new Map<string, ThrottleBucket>();
+  private readonly logger = new Logger(AuthThrottleGuard.name);
   private readonly maxRequests: number;
   private readonly windowMs: number;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {
     const configuredMax = Number(
       this.config.get<string>('AUTH_RATE_LIMIT_MAX'),
     );
@@ -36,7 +38,7 @@ export class AuthThrottleGuard implements CanActivate {
         : 60_000;
   }
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
       ip?: string;
       path?: string;
@@ -52,30 +54,31 @@ export class AuthThrottleGuard implements CanActivate {
     const ip = forwardedIp || request.ip || 'unknown';
     const route = request.route?.path || request.path || 'auth';
     const key = `${route}:${ip}`;
-    const now = Date.now();
+    const bucketKey = `throttle:auth:${key}`;
 
-    const existing = this.buckets.get(key);
-    if (!existing || existing.resetAt <= now) {
-      this.buckets.set(key, { count: 1, resetAt: now + this.windowMs });
-      this.pruneBuckets(now);
-      return true;
-    }
+    try {
+      const count = await this.redis.incr(bucketKey);
+      if (count === 1) {
+        await this.redis.pexpire(bucketKey, this.windowMs);
+      }
 
-    if (existing.count >= this.maxRequests) {
-      throw new HttpException(
-        'Too many auth requests. Please try again later.',
-        HttpStatus.TOO_MANY_REQUESTS,
+      if (count > this.maxRequests) {
+        throw new HttpException(
+          'Too many auth requests. Please try again later.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error(
+        `Failed to apply auth throttle, allowing request: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
       );
     }
 
-    existing.count += 1;
     return true;
-  }
-
-  private pruneBuckets(now: number) {
-    if (this.buckets.size < 500) return;
-    for (const [key, bucket] of this.buckets.entries()) {
-      if (bucket.resetAt <= now) this.buckets.delete(key);
-    }
   }
 }

@@ -36,7 +36,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "require('http').get('http://127.0.0.1:3000/',(res)=>process.exit(res.statusCode < 500 ? 0 : 1)).on('error',()=>process.exit(1));",
+          "require('http').get('http://127.0.0.1:3000/health/live',(res)=>process.exit(res.statusCode < 500 ? 0 : 1)).on('error',()=>process.exit(1));",
         ]
       interval: 30s
       timeout: 5s

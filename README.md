@@ -41,6 +41,10 @@ npm run test:e2e -- --runInBand
 
 Use `docker-compose.prod.example.yml` as a template and provide environment values from your deploy system or `.env` file.
 
+Health endpoints:
+- `GET /health/live`
+- `GET /health/ready`
+
 Minimum required values:
 - `CORS_ORIGIN`
 - `MONGO_URI`
