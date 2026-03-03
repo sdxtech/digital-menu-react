@@ -10,12 +10,11 @@ import { Server, Socket } from 'socket.io';
 import type { JwtPayload } from '../auth/types/jwt-payload.type';
 import { parseCorsOrigins } from '../common/cors.utils';
 
-const DEFAULT_WS_ORIGIN = 'http://localhost:5173';
-
 @WebSocketGateway({
   namespace: '/ws',
   cors: {
-    origin: parseCorsOrigins(process.env.CORS_ORIGIN ?? DEFAULT_WS_ORIGIN),
+    // Validate origin in handleConnection using ConfigService-backed list.
+    origin: true,
     credentials: true,
   },
 })
@@ -39,7 +38,7 @@ export class NotificationsGateway implements OnGatewayConnection {
     this.server.to(`user:${userId}`).emit(event, payload);
   }
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     const origin = client.handshake.headers?.origin;
     if (typeof origin !== 'string' || !this.allowedOrigins.includes(origin)) {
       this.logger.warn(
@@ -57,8 +56,9 @@ export class NotificationsGateway implements OnGatewayConnection {
 
     try {
       const payload = this.jwt.verify<JwtPayload>(token);
-      client.data.userId = payload.sub;
-      client.join(`user:${payload.sub}`);
+      const data = client.data as { userId?: string };
+      data.userId = payload.sub;
+      await client.join(`user:${payload.sub}`);
     } catch {
       client.disconnect(true);
     }
@@ -70,12 +70,18 @@ export class NotificationsGateway implements OnGatewayConnection {
       return this.normalizeToken(header);
     }
 
-    const authToken = client.handshake.auth?.token;
+    const authToken = this.extractAuthToken(client.handshake.auth);
     if (typeof authToken === 'string' && authToken.trim()) {
       return this.normalizeToken(authToken);
     }
 
     return undefined;
+  }
+
+  private extractAuthToken(auth: unknown) {
+    if (!auth || typeof auth !== 'object') return undefined;
+    const token = (auth as Record<string, unknown>).token;
+    return typeof token === 'string' ? token : undefined;
   }
 
   private normalizeToken(value: string) {
