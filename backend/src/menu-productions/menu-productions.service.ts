@@ -61,6 +61,11 @@ type TimelineStats = {
   total: number;
 };
 
+type RecipeEligibilityInput = {
+  menuName: string;
+  category: string;
+};
+
 const DEFAULT_SITE = 'A1';
 
 @Injectable()
@@ -77,10 +82,14 @@ export class MenuProductionsService {
     createdBy?: string,
     site?: string,
   ) {
+    const menuName = input.menuName.trim();
+    const category = input.category.trim();
+    await this.assertRecipesEligible([{ menuName, category }]);
+
     const normalizedSite = this.normalizeSite(site);
     return this.menuProductionModel.create({
-      menuName: input.menuName.trim(),
-      category: input.category.trim(),
+      menuName,
+      category,
       portion: input.portion,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
@@ -96,10 +105,22 @@ export class MenuProductionsService {
     site?: string,
   ) {
     if (!inputs.length) return [];
-    const normalizedSite = this.normalizeSite(site);
-    const payload = inputs.map((input) => ({
+    const normalizedInputs = inputs.map((input) => ({
+      ...input,
       menuName: input.menuName.trim(),
       category: input.category.trim(),
+    }));
+    await this.assertRecipesEligible(
+      normalizedInputs.map((item) => ({
+        menuName: item.menuName,
+        category: item.category,
+      })),
+    );
+
+    const normalizedSite = this.normalizeSite(site);
+    const payload = normalizedInputs.map((input) => ({
+      menuName: input.menuName,
+      category: input.category,
       portion: input.portion,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
@@ -473,6 +494,62 @@ export class MenuProductionsService {
     return Array.from(new Set(normalized)).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     );
+  }
+
+  private async assertRecipesEligible(inputs: RecipeEligibilityInput[]) {
+    const uniqueItems = Array.from(
+      new Map(
+        inputs.map((item) => {
+          const menuName = item.menuName.trim();
+          const category = item.category.trim();
+          return [
+            `${this.normalizeName(menuName)}__${this.normalizeName(category)}`,
+            { menuName, category },
+          ];
+        }),
+      ).values(),
+    ).filter((item) => item.menuName && item.category);
+
+    if (uniqueItems.length === 0) {
+      throw new BadRequestException(
+        'Menu production requires a valid approved recipe.',
+      );
+    }
+
+    const eligibleRecipes = await this.recipeModel
+      .find({
+        approvalStatus: 'approved',
+        status: 'active',
+        $or: uniqueItems.map((item) => ({
+          name: new RegExp(`^${this.escapeRegExp(item.menuName)}$`, 'i'),
+          category: new RegExp(`^${this.escapeRegExp(item.category)}$`, 'i'),
+        })),
+      })
+      .select({ name: 1, category: 1 })
+      .lean();
+
+    const eligibleKeys = new Set(
+      eligibleRecipes.map(
+        (item) =>
+          `${this.normalizeName(item.name ?? '')}__${this.normalizeName(item.category ?? '')}`,
+      ),
+    );
+
+    const missing = uniqueItems.filter(
+      (item) =>
+        !eligibleKeys.has(
+          `${this.normalizeName(item.menuName)}__${this.normalizeName(item.category)}`,
+        ),
+    );
+
+    if (missing.length > 0) {
+      const blockedMenus = missing
+        .map((item) => `${item.menuName} (${item.category})`)
+        .join(', ');
+      throw new BadRequestException(
+        `Only approved recipes can be used for menu production. Not eligible: ${blockedMenus}.`,
+      );
+    }
   }
 
   private escapeRegExp(value: string) {

@@ -269,7 +269,7 @@ const ChefStoreRequest = () => {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
@@ -423,7 +423,7 @@ const ChefStoreRequest = () => {
                                       </div>
                                     ) : (
                                       <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                                        <table className="min-w-full text-sm">
+                                        <table className="dm-table min-w-full text-sm">
                                           <thead className="bg-background">
                                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                               <th className="w-12 px-4 py-3 font-semibold">
@@ -494,7 +494,7 @@ const ChefStoreRequest = () => {
                                 </div>
                               ) : (
                                 <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                                  <table className="min-w-full text-sm">
+                                  <table className="dm-table min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                         <th className="w-12 px-4 py-3 font-semibold">
@@ -561,3 +561,4 @@ const ChefStoreRequest = () => {
 }
 
 export default ChefStoreRequest
+

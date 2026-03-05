@@ -264,12 +264,12 @@ const StorekeeperPage = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-16 px-5 py-4 font-semibold">No</th>
-                <th className="px-5 py-4 font-semibold">Production date</th>
-                <th className="px-5 py-4 font-semibold">Store request status</th>
+                <th className="w-16 px-3 py-1.5 font-semibold">No</th>
+                <th className="px-3 py-1.5 font-semibold">Production date</th>
+                <th className="px-3 py-1.5 font-semibold">Store request status</th>
               </tr>
             </thead>
             <tbody>
@@ -296,11 +296,11 @@ const StorekeeperPage = () => {
                         className="cursor-pointer border-t border-border"
                         onClick={() => toggleExpanded(group.date)}
                       >
-                        <td className="px-5 py-4 text-sm text-muted">
+                        <td className="px-3 py-1.5 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
-                        <td className="px-5 py-4">{group.date}</td>
-                        <td className="px-5 py-4">
+                        <td className="px-3 py-1.5">{group.date}</td>
+                        <td className="px-3 py-1.5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2 text-sm">
                               <span>Requested</span>
@@ -323,7 +323,7 @@ const StorekeeperPage = () => {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={3} className="px-5 py-5">
+                          <td colSpan={3} className="px-4 py-4">
                             <div className="space-y-6">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
@@ -364,19 +364,19 @@ const StorekeeperPage = () => {
                                     Menu list
                                   </p>
                                   <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                                    <table className="min-w-full text-sm">
+                                    <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
+                                          <th className="w-12 px-3 py-1.5 font-semibold">
                                             No
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Menu
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Category
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Portion
                                           </th>
                                         </tr>
@@ -387,16 +387,16 @@ const StorekeeperPage = () => {
                                             key={menu.id}
                                             className="border-t border-border"
                                           >
-                                            <td className="px-4 py-3 text-sm text-muted">
+                                            <td className="px-3 py-1.5 text-sm text-muted">
                                               {idx + 1}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-3 py-1.5">
                                               {menu.menuName}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-3 py-1.5">
                                               {menu.category}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-3 py-1.5">
                                               {menu.portion}
                                             </td>
                                           </tr>
@@ -417,22 +417,22 @@ const StorekeeperPage = () => {
                                     Ingredient summary
                                   </p>
                                   <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                                    <table className="min-w-full text-sm">
+                                    <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
+                                          <th className="w-12 px-3 py-1.5 font-semibold">
                                             No
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Product code
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Ingredient name
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Qty
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
                                         </tr>
@@ -454,19 +454,19 @@ const StorekeeperPage = () => {
                                               key={`${item.productCode}-${item.unitOfMeasures}-${idx}`}
                                               className="border-t border-border"
                                             >
-                                              <td className="px-4 py-3 text-sm text-muted">
+                                              <td className="px-3 py-1.5 text-sm text-muted">
                                                 {idx + 1}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-1.5">
                                                 {item.productCode}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-1.5">
                                                 {item.name}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-1.5">
                                                 {formatQuantity(item.qty)}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-1.5">
                                                 {formatUnitLabel(
                                                   item.unitOfMeasures,
                                                 )}
@@ -496,3 +496,4 @@ const StorekeeperPage = () => {
 }
 
 export default StorekeeperPage
+

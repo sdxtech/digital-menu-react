@@ -49,3 +49,32 @@ body {
     animation: none;
   }
 }
+
+@layer components {
+  .dm-table :is(th, td) {
+    @apply px-3 py-1.5;
+  }
+
+  .dm-table thead th,
+  .dm-table thead th * {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .dm-table tbody td,
+  .dm-table tbody td * {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .dm-table thead,
+  .dm-table thead.bg-background {
+    background-color: var(--dm-primary);
+  }
+
+  .dm-table thead tr.text-muted,
+  .dm-table thead th {
+    color: var(--dm-surface);
+  }
+}
+

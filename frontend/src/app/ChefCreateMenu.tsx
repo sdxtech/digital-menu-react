@@ -632,7 +632,7 @@ const ChefCreateMenu = () => {
                 />
               ))}
             </datalist>
-            <table className="min-w-full bg-white text-sm">
+            <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-20 px-2 py-3 font-semibold" />
@@ -783,3 +783,4 @@ const ChefCreateMenu = () => {
 }
 
 export default ChefCreateMenu
+

@@ -163,7 +163,7 @@ const UnitManagerPage = () => {
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Approval Recipe</h2>
           <div className="mt-4 overflow-x-auto rounded-md border border-border">
-            <table className="min-w-full bg-white text-sm">
+            <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-12 px-4 py-3 font-semibold">No</th>
@@ -313,7 +313,7 @@ const UnitManagerPage = () => {
                               Menu list
                             </p>
                             <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                              <table className="min-w-full text-sm">
+                              <table className="dm-table min-w-full text-sm">
                                 <thead className="bg-background">
                                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                     <th className="w-12 px-4 py-3 font-semibold">
@@ -359,7 +359,7 @@ const UnitManagerPage = () => {
                               Ingredient summary
                             </p>
                             <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                              <table className="min-w-full text-sm">
+                              <table className="dm-table min-w-full text-sm">
                                 <thead className="bg-background">
                                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                     <th className="w-12 px-4 py-3 font-semibold">
@@ -426,3 +426,4 @@ const UnitManagerPage = () => {
 }
 
 export default UnitManagerPage
+

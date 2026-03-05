@@ -65,12 +65,24 @@ const ChefMenuCycle = () => {
   const [timelineLoading, setTimelineLoading] = useState(false)
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
 
+  const availableRecipes = useMemo(
+    () =>
+      recipes.filter(
+        (recipe) =>
+          recipe.approvalStatus === 'approved' && recipe.status === 'active',
+      ),
+    [recipes],
+  )
+
   const recipeById = useMemo(() => {
-    return recipes.reduce<Record<string, (typeof recipes)[number]>>((acc, recipe) => {
-      acc[recipe.id] = recipe
-      return acc
-    }, {})
-  }, [recipes])
+    return availableRecipes.reduce<Record<string, (typeof availableRecipes)[number]>>(
+      (acc, recipe) => {
+        acc[recipe.id] = recipe
+        return acc
+      },
+      {},
+    )
+  }, [availableRecipes])
 
   // FRONTEND VIEW: timeline groups + stats come from backend.
   const fetchTimeline = useCallback(async () => {
@@ -214,7 +226,9 @@ const ChefMenuCycle = () => {
 
       const recipe = recipeById[row.recipeId]
       if (!recipe) {
-        setInputError('There is an invalid menu. Please select again.')
+        setInputError(
+          'There is an invalid menu. Only approved recipes can be submitted.',
+        )
         setInputMessage('')
         return
       }
@@ -299,6 +313,9 @@ const ChefMenuCycle = () => {
             <h3 className="mt-2 text-lg font-semibold">
               Enter menus to be produced
             </h3>
+            <p className="mt-3 text-xs text-muted">
+              Only recipes approved by the Unit Manager can be selected.
+            </p>
           </div>
           <div>
             <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
@@ -314,7 +331,7 @@ const ChefMenuCycle = () => {
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-md border border-border">
-          <table className="min-w-full bg-white text-sm">
+          <table className="dm-table min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-20 px-2 py-3 font-semibold" />
@@ -330,6 +347,14 @@ const ChefMenuCycle = () => {
                 const selectedRecipe = recipeById[row.recipeId]
                 const isDetailsOpen = expandedMenuRows.includes(row.id)
                 const ingredients = selectedRecipe?.ingredients ?? []
+                const basePax =
+                  selectedRecipe && selectedRecipe.portionSize > 0
+                    ? selectedRecipe.portionSize
+                    : 1
+                const portionForPreview =
+                  typeof row.portion === 'number' && row.portion > 0
+                    ? row.portion
+                    : null
                 return (
                   <Fragment key={row.id}>
                     <tr className="border-t border-border">
@@ -357,8 +382,12 @@ const ChefMenuCycle = () => {
                           }
                           className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         >
-                          <option value="">Select menu</option>
-                          {recipes.map((recipe) => (
+                          <option value="">
+                            {availableRecipes.length === 0
+                              ? 'No approved menu available'
+                              : 'Select menu'}
+                          </option>
+                          {availableRecipes.map((recipe) => (
                             <option key={recipe.id} value={recipe.id}>
                               {recipe.name}
                             </option>
@@ -404,37 +433,7 @@ const ChefMenuCycle = () => {
                               Select a menu to view recipe details.
                             </div>
                           ) : (
-                            <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-                              <div className="rounded-md border border-border bg-surface p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                                  Recipe
-                                </p>
-                                <h4 className="mt-2 text-base font-semibold">
-                                  {selectedRecipe.name}
-                                </h4>
-                                <p className="mt-1 text-xs text-muted">
-                                  {selectedRecipe.category}
-                                </p>
-                                {selectedRecipe.description ? (
-                                  <p className="mt-3 text-sm text-muted">
-                                    {selectedRecipe.description}
-                                  </p>
-                                ) : (
-                                  <p className="mt-3 text-sm text-muted">
-                                    No description added.
-                                  </p>
-                                )}
-                                <div className="mt-4 flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
-                                    Base pax: {selectedRecipe.portionSize}
-                                  </span>
-                                  <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-muted">
-                                    Ingredients: {ingredients.length}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="rounded-md border border-border bg-surface p-4">
+                            <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                   Ingredients
                                 </p>
@@ -442,7 +441,9 @@ const ChefMenuCycle = () => {
                                   Recipe ingredients
                                 </h4>
                                 <p className="mt-1 text-xs text-muted">
-                                  Qty listed per base pax.
+                                  {portionForPreview === null
+                                    ? `Qty listed per base pax (${basePax}). Enter portion to preview calculated qty.`
+                                    : `Qty calculated from base pax (${basePax}) for ${portionForPreview} portions.`}
                                 </p>
                                 {ingredients.length === 0 ? (
                                   <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
@@ -450,7 +451,7 @@ const ChefMenuCycle = () => {
                                   </div>
                                 ) : (
                                   <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                                    <table className="min-w-full text-sm">
+                                    <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                           <th className="w-12 px-4 py-3 font-semibold">
@@ -471,35 +472,41 @@ const ChefMenuCycle = () => {
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {ingredients.map((ingredient, idx) => (
-                                          <tr
-                                            key={`${ingredient.productCode}-${idx}`}
-                                            className="border-t border-border"
-                                          >
-                                            <td className="px-4 py-3 text-sm text-muted">
-                                              {idx + 1}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {ingredient.productCode}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {ingredient.name}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {formatQuantity(ingredient.qty)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {formatUnitLabel(
-                                                ingredient.unitOfMeasures,
-                                              )}
-                                            </td>
-                                          </tr>
-                                        ))}
+                                        {ingredients.map((ingredient, idx) => {
+                                          const scaledQty =
+                                            portionForPreview === null
+                                              ? ingredient.qty
+                                              : (ingredient.qty * portionForPreview) /
+                                                basePax
+                                          return (
+                                            <tr
+                                              key={`${ingredient.productCode}-${idx}`}
+                                              className="border-t border-border"
+                                            >
+                                              <td className="px-4 py-3 text-sm text-muted">
+                                                {idx + 1}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.productCode}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.name}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {formatQuantity(scaledQty)}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {formatUnitLabel(
+                                                  ingredient.unitOfMeasures,
+                                                )}
+                                              </td>
+                                            </tr>
+                                          )
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
                                 )}
-                              </div>
                             </div>
                           )}
                         </td>
@@ -630,7 +637,7 @@ const ChefMenuCycle = () => {
 
                   {isExpanded ? (
                     <div className="mt-3 overflow-x-auto rounded-md border border-border">
-                      <table className="min-w-full bg-white text-sm">
+                      <table className="dm-table min-w-full bg-white text-sm">
                         <thead className="bg-background">
                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                             <th className="w-12 px-4 py-3 font-semibold">No</th>
@@ -672,3 +679,4 @@ const ChefMenuCycle = () => {
 }
 
 export default ChefMenuCycle
+

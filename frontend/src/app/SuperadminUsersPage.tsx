@@ -815,7 +815,7 @@ const SuperadminUsersPage = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="dm-table min-w-full text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
@@ -1028,3 +1028,4 @@ const SuperadminUsersPage = () => {
 }
 
 export default SuperadminUsersPage
+

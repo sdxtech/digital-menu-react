@@ -658,7 +658,7 @@ const ChefMenuBank = () => {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="dm-table min-w-full text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
@@ -682,36 +682,39 @@ const ChefMenuBank = () => {
                     </td>
                   </tr>
                 ) : (
-                  recipes.map((recipe, index) => (
-                    <tr
-                      key={recipe.id ?? recipe._id}
-                      className="border-t border-border"
-                    >
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {(page - 1) * ITEMS_PER_PAGE + index + 1}
-                      </td>
-                      <td className="px-5 py-4 font-medium">{recipe.name}</td>
-                      <td className="px-5 py-4">{recipe.category}</td>
-                      <td className="px-5 py-4">
-                        <span>{statusLabel(recipe.status)}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelectedRecipeId((prev) =>
-                              prev === (recipe.id ?? recipe._id)
-                                ? null
-                                : (recipe.id ?? recipe._id ?? null),
-                            )
-                          }
-                          className="text-xs font-semibold text-primary"
-                        >
-                          View recipe details
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  recipes.map((recipe, index) => {
+                    const recipeKey = recipe.id ?? recipe._id ?? null
+                    const isSelected = selectedRecipeId === recipeKey
+
+                    return (
+                      <tr
+                        key={recipe.id ?? recipe._id}
+                        className="border-t border-border"
+                      >
+                        <td className="px-5 py-4 text-sm text-muted">
+                          {(page - 1) * ITEMS_PER_PAGE + index + 1}
+                        </td>
+                        <td className="px-5 py-4">{recipe.name}</td>
+                        <td className="px-5 py-4">{recipe.category}</td>
+                        <td className="px-5 py-4">
+                          <span>{statusLabel(recipe.status)}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedRecipeId((prev) =>
+                                prev === recipeKey ? null : recipeKey,
+                              )
+                            }
+                            className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
+                          >
+                            {isSelected ? 'Hide details' : 'View details'}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -810,7 +813,7 @@ const ChefMenuBank = () => {
               </div>
             ) : (
               <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                <table className="min-w-full text-sm">
+                <table className="dm-table min-w-full text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                       <th className="w-16 px-4 py-3 font-semibold">No</th>
@@ -862,3 +865,4 @@ const ChefMenuBank = () => {
 }
 
 export default ChefMenuBank
+
