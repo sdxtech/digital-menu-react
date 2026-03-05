@@ -331,20 +331,14 @@ const ChefStoreRequest = () => {
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
                         <td colSpan={3} className="px-5 py-5">
-                          <div className="space-y-6">
+                          <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">
                                   Menu details
-                                </p>
-                                <p className="mt-2 text-sm text-muted">
-                                  Production date: {date}
                                 </p>
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-primary">
-                                  Auto-requested after approval
-                                </div>
                                 <button
                                   type="button"
                                   onClick={() => handleExportMenusByDate(group)}
@@ -361,9 +355,9 @@ const ChefStoreRequest = () => {
                               return (
                                 <div
                                   key={menu.id}
-                                  className="grid gap-4 lg:grid-cols-12"
+                                  className="grid gap-3 lg:grid-cols-12"
                                 >
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
+                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-3">
                                     <div className="flex items-center justify-between gap-3">
                                       <div>
                                         <p className="text-xs uppercase tracking-[0.2em] text-muted">
@@ -398,7 +392,7 @@ const ChefStoreRequest = () => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
+                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-9">
                                     <p className="text-xs uppercase tracking-[0.2em] text-muted">
                                       Ingredients
                                     </p>

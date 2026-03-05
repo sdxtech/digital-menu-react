@@ -77,7 +77,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
               <button
                 type="button"
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-primary transition hover:bg-primary-soft"
+                className="dm-x-button"
                 aria-label={sidebarOpen ? 'Collapse menu' : 'Expand menu'}
               >
                 <i

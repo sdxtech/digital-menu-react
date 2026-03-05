@@ -363,7 +363,7 @@ const ChefMenuCycle = () => {
                           <button
                             type="button"
                             onClick={() => handleRemoveMenuRow(row.id)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                            className="dm-x-button text-sm font-semibold leading-none"
                             aria-label="Remove menu row"
                             title="Remove menu row"
                           >
@@ -600,78 +600,135 @@ const ChefMenuCycle = () => {
           </div>
         ) : null}
 
-        {timelineLoading ? (
-          <div className="mt-6 rounded-md border border-border bg-background p-6 text-center text-sm text-muted">
-            Loading production timeline...
-          </div>
-        ) : timelineGroups.length === 0 ? (
-          <div className="mt-6 rounded-md border border-border bg-background p-6 text-center text-sm text-muted">
-            No menus in the production timeline yet.
-          </div>
-        ) : (
-          <div className="mt-6 space-y-4">
-            {timelineGroups.map((group) => {
-              const isExpanded = expandedDates.includes(group.date)
-              return (
-                <div
-                  key={group.date}
-                  className="rounded-md border border-border bg-background p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                        {group.date}
-                      </p>
-                      <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                        {group.items.length} menus
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(group.date)}
-                      className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
-                    >
-                      {isExpanded ? 'Hide details' : 'View details'}
-                    </button>
-                  </div>
+        <div className="mt-6 overflow-x-auto rounded-md border border-border">
+          <table className="dm-table min-w-full bg-white text-sm">
+            <thead className="bg-background">
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-16 px-4 py-3 font-semibold">No</th>
+                <th className="px-4 py-3 font-semibold">Production date</th>
+                <th className="px-4 py-3 font-semibold">Approval status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timelineLoading ? (
+                <tr className="border-t border-border">
+                  <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                    Loading production timeline...
+                  </td>
+                </tr>
+              ) : timelineGroups.length === 0 ? (
+                <tr className="border-t border-border">
+                  <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                    No menus in the production timeline yet.
+                  </td>
+                </tr>
+              ) : (
+                timelineGroups.map((group, index) => {
+                  const isExpanded = expandedDates.includes(group.date)
+                  const approvedCount = group.items.filter(
+                    (item) => item.approvalStatus === 'approved',
+                  ).length
+                  const pendingCount = group.items.filter(
+                    (item) => item.approvalStatus === 'pending',
+                  ).length
+                  const rejectedCount = group.items.filter(
+                    (item) => item.approvalStatus === 'rejected',
+                  ).length
 
-                  {isExpanded ? (
-                    <div className="mt-3 overflow-x-auto rounded-md border border-border">
-                      <table className="dm-table min-w-full bg-white text-sm">
-                        <thead className="bg-background">
-                          <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                            <th className="w-12 px-4 py-3 font-semibold">No</th>
-                            <th className="px-4 py-3 font-semibold">Menu</th>
-                            <th className="px-4 py-3 font-semibold">Category</th>
-                            <th className="px-4 py-3 font-semibold">Portion</th>
-                            <th className="px-4 py-3 font-semibold">Approval</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.items.map((item, index) => (
-                            <tr key={item.id} className="border-t border-border">
-                              <td className="px-4 py-3 text-sm text-muted">
-                                {index + 1}
-                              </td>
-                              <td className="px-4 py-3">{item.menuName}</td>
-                              <td className="px-4 py-3">{item.category}</td>
-                              <td className="px-4 py-3">{item.portion}</td>
-                              <td className="px-4 py-3">
-                                <span className="text-xs font-medium">
-                                  {approvalLabel(item.approvalStatus)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        )}
+                  return (
+                    <Fragment key={group.date}>
+                      <tr
+                        className="cursor-pointer border-t border-border"
+                        onClick={() => toggleExpanded(group.date)}
+                      >
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {(timelinePage - 1) * TIMELINE_ITEMS_PER_PAGE + index + 1}
+                        </td>
+                        <td className="px-4 py-3">{group.date}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                                {group.items.length} menus
+                              </span>
+                              <span className="text-muted">
+                                Approved: {approvedCount} | Pending: {pendingCount} |
+                                Rejected: {rejectedCount}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleExpanded(group.date)
+                              }}
+                              className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="border-t border-border bg-background">
+                          <td colSpan={3} className="px-4 py-4">
+                            <div className="overflow-x-auto rounded-md border border-border">
+                              <table className="dm-table min-w-full bg-white text-sm">
+                                <thead className="bg-background">
+                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                    <th className="w-12 px-4 py-3 font-semibold">
+                                      No
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">Menu</th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Category
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Portion
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Approval
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {group.items.map((item, itemIndex) => (
+                                    <tr
+                                      key={item.id}
+                                      className="border-t border-border"
+                                    >
+                                      <td className="px-4 py-3 text-sm text-muted">
+                                        {itemIndex + 1}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        {item.menuName}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        {item.category}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        {item.portion}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className="text-xs font-medium">
+                                          {approvalLabel(item.approvalStatus)}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
       </div>
     </div>

@@ -659,7 +659,7 @@ const ChefCreateMenu = () => {
                         <button
                           type="button"
                           onClick={() => handleRemoveIngredientRow(row.id)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-danger/40 bg-surface text-sm font-bold text-danger shadow-sm transition hover:bg-danger hover:text-white hover:shadow-md"
+                          className="dm-x-button text-sm font-semibold leading-none"
                           aria-label="Remove ingredient row"
                           title="Remove ingredient row"
                         >

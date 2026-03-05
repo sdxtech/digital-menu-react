@@ -756,9 +756,9 @@ const ChefMenuBank = () => {
                 onClick={() => setSelectedRecipeId(null)}
                 aria-label="Close recipe detail"
                 title="Close"
-                className="rounded-md border border-border bg-background p-2 text-primary"
+                className="dm-x-button"
               >
-                <i className="bi bi-x-lg text-base" aria-hidden="true" />
+                <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
               </button>
             </div>
           </div>

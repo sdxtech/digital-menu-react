@@ -51,6 +51,14 @@ body {
 }
 
 @layer components {
+  .dm-x-button {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-primary transition;
+  }
+
+  .dm-x-button:hover {
+    background-color: var(--dm-primary-soft);
+  }
+
   .dm-table :is(th, td) {
     @apply px-3 py-1.5;
   }
