@@ -33,6 +33,7 @@ type StoreRequestMenu = {
   portionSize: number;
   ingredients: StoreRequestIngredient[];
   missingRecipe: boolean;
+  fulfilledBy?: string;
 };
 
 type StoreRequestGroup = {
@@ -187,7 +188,13 @@ export class MenuProductionsService {
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
         filter,
-        { approvalStatus: status, storeRequestStatus: nextStoreStatus },
+        {
+          $set: {
+            approvalStatus: status,
+            storeRequestStatus: nextStoreStatus,
+          },
+          $unset: { fulfilledBy: 1 },
+        },
         { new: true },
       )
       .lean();
@@ -199,6 +206,7 @@ export class MenuProductionsService {
     id: string,
     status: StoreRequestStatus,
     site?: string,
+    fulfilledBy?: string,
   ) {
     const filter = this.withSiteFilter({ _id: id }, site);
     const item = await this.menuProductionModel.findOne(filter);
@@ -219,6 +227,12 @@ export class MenuProductionsService {
       }
     }
     item.storeRequestStatus = status;
+    if (status === 'fulfilled') {
+      const actor = fulfilledBy?.trim();
+      item.fulfilledBy = actor || 'Unknown user';
+    } else {
+      item.fulfilledBy = undefined;
+    }
     return item.save();
   }
 
@@ -421,6 +435,7 @@ export class MenuProductionsService {
         portionSize,
         ingredients,
         missingRecipe,
+        fulfilledBy: menu.fulfilledBy,
       });
 
       groups.set(date, group);

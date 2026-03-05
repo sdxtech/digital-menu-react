@@ -118,6 +118,7 @@ export class MenuProductionsController {
       id,
       'fulfilled',
       req.user.site,
+      req.user.name || req.user.email,
     );
   }
 }

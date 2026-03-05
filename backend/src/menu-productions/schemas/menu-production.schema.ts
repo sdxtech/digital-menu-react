@@ -37,6 +37,9 @@ export class MenuProduction {
   })
   storeRequestStatus: StoreRequestStatus;
 
+  @Prop({ type: String, trim: true })
+  fulfilledBy?: string;
+
   @Prop({ type: String, index: true })
   createdBy?: string;
 }
