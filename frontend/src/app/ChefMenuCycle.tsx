@@ -269,34 +269,34 @@ const ChefMenuCycle = () => {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-xs uppercase tracking-[0.2em] text-muted">
               Pending approval
-            </p>
-            <h3 className="mt-2 text-xl font-semibold">
-              {timelineStats.pending}
             </h3>
+            <p className="mt-2 text-xl font-semibold">
+              {timelineStats.pending}
+            </p>
             <p className="mt-3 text-sm text-muted">
               Menus not reviewed by the Unit Manager yet.
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-xs uppercase tracking-[0.2em] text-muted">
               Approved
-            </p>
-            <h3 className="mt-2 text-xl font-semibold">
-              {timelineStats.approved}
             </h3>
+            <p className="mt-2 text-xl font-semibold">
+              {timelineStats.approved}
+            </p>
             <p className="mt-3 text-sm text-muted">
               Menus ready for Store Request.
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+            <h3 className="text-xs uppercase tracking-[0.2em] text-primary">
               Total menus
-            </p>
-            <h3 className="mt-2 text-xl font-semibold text-primary">
-              {timelineStats.total}
             </h3>
+            <p className="mt-2 text-xl font-semibold text-primary">
+              {timelineStats.total}
+            </p>
             <p className="mt-3 text-sm text-muted">
               {timelineStats.rejected} menus are rejected.
             </p>
@@ -307,12 +307,12 @@ const ChefMenuCycle = () => {
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-lg font-semibold text-foreground">
               Production input
-            </p>
-            <h3 className="mt-2 text-lg font-semibold">
-              Enter menus to be produced
             </h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+              Enter menus to be produced
+            </p>
             <p className="mt-3 text-xs text-muted">
               Only recipes approved by the Unit Manager can be selected.
             </p>
@@ -434,12 +434,12 @@ const ChefMenuCycle = () => {
                             </div>
                           ) : (
                             <div className="rounded-md border border-border bg-surface p-4">
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                <h3 className="text-lg font-semibold text-foreground">
                                   Ingredients
-                                </p>
-                                <h4 className="mt-2 text-base font-semibold">
+                                </h3>
+                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
                                   Recipe ingredients
-                                </h4>
+                                </p>
                                 <p className="mt-1 text-xs text-muted">
                                   {portionForPreview === null
                                     ? `Qty listed per base pax (${basePax}). Enter portion to preview calculated qty.`
@@ -555,12 +555,12 @@ const ChefMenuCycle = () => {
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-lg font-semibold text-foreground">
               Timeline
-            </p>
-            <h3 className="mt-2 text-lg font-semibold">
-              Scheduled production menus
             </h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+              Scheduled production menus
+            </p>
           </div>
         </div>
         {timelineMessage ? (

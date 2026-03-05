@@ -271,12 +271,12 @@ const ChefAddRawMaterial = () => {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                  <h3 className="text-lg font-semibold text-foreground">
                     Import Raw Material
-                  </p>
-                  <h3 className="mt-2 text-lg font-semibold">
-                    Upload Excel file
                   </h3>
+                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                    Upload Excel file
+                  </p>
                   <p className="mt-2 text-sm text-muted">
                     Upload an Excel file to add multiple raw materials at once.
                   </p>

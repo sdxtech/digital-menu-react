@@ -426,12 +426,12 @@ const ChefMenuBank = () => {
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                <h3 className="text-lg font-semibold text-foreground">
                   Recipe Photo
-                </p>
-                <h3 className="mt-2 text-lg font-semibold">
-                  {activePhotoUrl ? 'Edit photo' : 'Add photo'}
                 </h3>
+                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                  {activePhotoUrl ? 'Edit photo' : 'Add photo'}
+                </p>
                 <p className="mt-2 text-sm text-muted">
                   {activePhotoUrl
                     ? 'Replace the current photo with a new one.'
@@ -726,12 +726,12 @@ const ChefMenuBank = () => {
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              <h3 className="text-lg font-semibold text-foreground">
                 Recipe Detail
-              </p>
-              <h3 className="mt-2 text-lg font-semibold">
-                {selectedRecipe.name}
               </h3>
+              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                {selectedRecipe.name}
+              </p>
               <p className="mt-2 text-sm text-muted">
                 {selectedRecipe.description}
               </p>
@@ -800,12 +800,12 @@ const ChefMenuBank = () => {
           </div>
 
           <div className="mt-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-lg font-semibold text-foreground">
               Ingredients
-            </p>
-            <h4 className="mt-2 text-base font-semibold">
+            </h3>
+            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
               Ingredient requirements
-            </h4>
+            </p>
 
             {selectedRecipe.ingredients.length === 0 ? (
               <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">

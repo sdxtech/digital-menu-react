@@ -360,12 +360,12 @@ const ChefStoreRequest = () => {
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-3">
                                     <div className="flex items-center justify-between gap-3">
                                       <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                        <h3 className="text-lg font-semibold text-foreground">
                                           Menu
-                                        </p>
-                                        <h4 className="mt-2 text-lg font-semibold">
+                                        </h3>
+                                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
                                           {menu.menuName}
-                                        </h4>
+                                        </p>
                                         <p className="mt-1 text-xs text-muted">
                                           {menu.category}
                                         </p>
@@ -393,12 +393,12 @@ const ChefStoreRequest = () => {
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-9">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                    <h3 className="text-lg font-semibold text-foreground">
                                       Ingredients
-                                    </p>
-                                    <h4 className="mt-2 text-base font-semibold">
+                                    </h3>
+                                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
                                       Ingredient requirements
-                                    </h4>
+                                    </p>
                                     <p className="mt-1 text-xs text-muted">
                                       Qty calculated from base pax (
                                       {menu.portionSize ?? 1}) for {menu.portion}{' '}
@@ -472,12 +472,12 @@ const ChefStoreRequest = () => {
                             })}
 
                             <div className="rounded-md border border-border bg-surface p-4">
-                              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                              <h3 className="text-lg font-semibold text-foreground">
                                 Summary
-                              </p>
-                              <h4 className="mt-2 text-base font-semibold">
+                              </h3>
+                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
                                 Ingredient summary
-                              </h4>
+                              </p>
                               <p className="mt-1 text-xs text-muted">
                                 Combined ingredients for all menus on {date}.
                               </p>

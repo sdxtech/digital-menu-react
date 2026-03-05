@@ -267,12 +267,12 @@ const UnitManagerPage = () => {
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                          <h3 className="text-lg font-semibold text-foreground">
                             Production date
-                          </p>
-                          <h3 className="mt-2 text-lg font-semibold">
-                            {group.date}
                           </h3>
+                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                            {group.date}
+                          </p>
                           <p className="mt-1 text-xs text-muted">
                             {group.items.length} menus pending
                           </p>

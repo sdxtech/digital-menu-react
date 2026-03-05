@@ -490,12 +490,12 @@ const ChefCreateMenu = () => {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                  <h3 className="text-lg font-semibold text-foreground">
                     Import Recipe
-                  </p>
-                  <h3 className="mt-2 text-lg font-semibold">
-                    Import recipes from Excel
                   </h3>
+                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                    Import recipes from Excel
+                  </p>
                   <p className="mt-2 text-sm text-muted">
                     Use .xlsx or .xls to import multiple recipes at once.
                   </p>
@@ -608,10 +608,12 @@ const ChefCreateMenu = () => {
         </div>
 
         <div className="mt-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
+          <h3 className="text-lg font-semibold text-foreground">
             Ingredients
+          </h3>
+          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+            Add ingredients
           </p>
-          <h4 className="mt-2 text-lg font-semibold">Add ingredients</h4>
 
           <div className="mt-4 overflow-x-auto rounded-md border border-border">
             <datalist id="raw-material-code-options">

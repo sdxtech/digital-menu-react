@@ -63,12 +63,12 @@ const LoginPage = () => {
               <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-accent-cyan/20 blur-3xl" />
 
               <div className="relative">
-                <p className="text-xs uppercase tracking-[0.4em] text-muted">
+                <h3 className="text-xs uppercase tracking-[0.4em] text-muted">
                   Login
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold">
+                </h3>
+                <p className="mt-2 text-2xl font-semibold">
                   Sign in to your dashboard
-                </h2>
+                </p>
                 <p className="mt-3 text-sm text-muted">
                   Use the email and password registered by the superadmin.
                 </p>

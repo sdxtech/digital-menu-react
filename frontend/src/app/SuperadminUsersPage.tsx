@@ -487,10 +487,12 @@ const SuperadminUsersPage = () => {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                    <h3 className="text-lg font-semibold text-foreground">
                       Create account
+                    </h3>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                      New user
                     </p>
-                    <h3 className="mt-2 text-lg font-semibold">New user</h3>
                     <p className="mt-2 text-sm text-muted">
                       Add a new user and assign their role.
                     </p>
@@ -612,12 +614,12 @@ const SuperadminUsersPage = () => {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                    <h3 className="text-lg font-semibold text-foreground">
                       Import accounts
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold">
-                      Upload Excel file
                     </h3>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                      Upload Excel file
+                    </p>
                     <p className="mt-2 text-sm text-muted">
                       Import multiple user accounts at once using .xlsx or .xls.
                     </p>

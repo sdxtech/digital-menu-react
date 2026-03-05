@@ -333,12 +333,12 @@ const SuperadminStoreRequestExportPage = () => {
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-muted">
+            <h3 className="text-xs uppercase tracking-[0.3em] text-muted">
               Superadmin export
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold">
+            </h3>
+            <p className="mt-2 text-2xl font-semibold">
               Store Request Export
-            </h1>
+            </p>
             <p className="mt-2 text-sm text-muted">
               Export store request data by site for all dates or by date range.
             </p>

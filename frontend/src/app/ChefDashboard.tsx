@@ -100,12 +100,12 @@ const ChefDashboard = () => {
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-7">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              <h3 className="text-lg font-semibold text-foreground">
                 Priority
-              </p>
-              <h3 className="mt-2 text-lg font-semibold">
-                Menus that must be ready
               </h3>
+              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                Menus that must be ready
+              </p>
             </div>
             <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary">
               {data?.priority.length ?? 0} items
@@ -136,12 +136,12 @@ const ChefDashboard = () => {
         </div>
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-5">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
+          <h3 className="text-lg font-semibold text-foreground">
             Production progress
-          </p>
-          <h3 className="mt-2 text-lg font-semibold">
-            Today's status
           </h3>
+          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+            Today's status
+          </p>
           <div className="mt-6 space-y-4">
             {(data?.progress ?? []).length === 0 ? (
               <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
