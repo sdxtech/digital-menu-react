@@ -13,11 +13,13 @@ type StoreRequestIngredient = {
 
 type StoreRequestMenu = {
   id: string
+  productionCode?: string
   menuName: string
   category: string
   portion: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  fulfilledBy?: string
   portionSize: number
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
@@ -338,19 +340,20 @@ const ChefStoreRequest = () => {
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Approval status</th>
                 <th className="px-5 py-4 font-semibold">Total menu</th>
+                <th className="px-5 py-4 font-semibold">Storekeeper</th>
                 <th className="px-5 py-4 font-semibold">Store request status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
                     No production menus approved or rejected by the Unit Manager yet.
                   </td>
                 </tr>
@@ -375,6 +378,16 @@ const ChefStoreRequest = () => {
                 const hasPendingApproval = items.some(
                   (item) => item.storeRequestStatus === 'not-requested',
                 )
+                const fulfilledByNames = Array.from(
+                  new Set(
+                    items
+                      .map((item) => item.fulfilledBy?.trim())
+                      .filter((name): name is string => Boolean(name)),
+                  ),
+                )
+                const fulfilledByLabel = fulfilledByNames.length
+                  ? fulfilledByNames.join(', ')
+                  : '-'
 
                 return (
                   <Fragment key={date}>
@@ -397,6 +410,9 @@ const ChefStoreRequest = () => {
                         </div>
                       </td>
                       <td className="px-5 py-4 text-sm font-medium">{items.length}</td>
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {fulfilledByLabel}
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -425,7 +441,7 @@ const ChefStoreRequest = () => {
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={5} className="px-5 py-5">
+                        <td colSpan={6} className="px-5 py-5">
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -461,6 +477,9 @@ const ChefStoreRequest = () => {
                                         <h3 className="font-semibold text-foreground">
                                           Menu
                                         </h3>
+                                        <p className="mt-1 text-xs text-muted">
+                                          ID: {menu.productionCode ?? '-'}
+                                        </p>
                                         <p className="mt-1 text-xs text-muted">
                                           {menu.menuName}
                                         </p>

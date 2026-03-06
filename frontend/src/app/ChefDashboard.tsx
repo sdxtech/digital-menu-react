@@ -61,35 +61,35 @@ const ChefDashboard = () => {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-muted">
+            <p className="text-xs text-foreground">
               Menus scheduled today
             </p>
             <p className="mt-3 text-3xl font-semibold">
               {summary?.menusToday ?? 0}
             </p>
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-foreground">
               {formatDelta(summary?.menusTodayDelta)}
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-muted">
+            <p className="text-xs text-foreground">
               Menus approved today
             </p>
             <p className="mt-3 text-3xl font-semibold">
               {summary?.approvedToday ?? 0}
             </p>
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-foreground">
               Submitted {summary?.pendingToday ?? 0} menus
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-primary">
+            <p className="text-xs text-foreground">
               Store requests pending
             </p>
-            <p className="mt-3 text-3xl font-semibold text-primary">
+            <p className="mt-3 text-3xl font-semibold text-foreground">
               {summary?.storeRequestedToday ?? 0}
             </p>
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-foreground">
               Fulfilled {summary?.storeFulfilledToday ?? 0} menus
             </p>
           </div>

@@ -17,10 +17,12 @@ type MenuInputRow = {
 
 type TimelineItem = {
   id: string
+  productionCode?: string
   menuName: string
   category: string
   portion: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
 }
 
 type TimelineGroup = {
@@ -286,35 +288,35 @@ const ChefMenuCycle = () => {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="uppercase tracking-[0.2em] text-muted">
-              Submitted
+            <h3 className="text-foreground">
+              Pending
             </h3>
             <p className="mt-2 text-xl font-semibold">
               {timelineStats.pending}
             </p>
-            <p className="mt-3 text-sm text-muted">
+            <p className="mt-3 text-sm text-foreground">
               Menus awaiting Unit Manager approval.
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="uppercase tracking-[0.2em] text-muted">
+            <h3 className="text-foreground">
               Approved
             </h3>
             <p className="mt-2 text-xl font-semibold">
               {timelineStats.approved}
             </p>
-            <p className="mt-3 text-sm text-muted">
+            <p className="mt-3 text-sm text-foreground">
               Menus ready for Store Request.
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="uppercase tracking-[0.2em] text-primary">
+            <h3 className="text-foreground">
               Total menus
             </h3>
-            <p className="mt-2 text-xl font-semibold text-primary">
+            <p className="mt-2 text-xl font-semibold text-foreground">
               {timelineStats.total}
             </p>
-            <p className="mt-3 text-sm text-muted">
+            <p className="mt-3 text-sm text-foreground">
               {timelineStats.rejected} menus are rejected.
             </p>
           </div>
@@ -335,7 +337,7 @@ const ChefMenuCycle = () => {
             </p>
           </div>
           <div>
-            <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted">
+            <label className="text-xs font-medium text-muted">
               Production date (pick once)
             </label>
             <input
@@ -413,7 +415,9 @@ const ChefMenuCycle = () => {
                           </option>
                           {availableRecipes.map((recipe) => (
                             <option key={recipe.id} value={recipe.id}>
-                              {recipe.name}
+                              {recipe.recipeCode
+                                ? `${recipe.recipeCode} ${recipe.name}`
+                                : recipe.name}
                             </option>
                           ))}
                         </select>
@@ -606,34 +610,72 @@ const ChefMenuCycle = () => {
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-4 py-3 font-semibold">No</th>
                 <th className="px-4 py-3 font-semibold">Production date</th>
+                <th className="px-4 py-3 font-semibold">Production code</th>
                 <th className="px-4 py-3 font-semibold">Approval status</th>
+                <th className="px-4 py-3 font-semibold">Reviewed by</th>
+                <th className="px-4 py-3 font-semibold">Total menu</th>
+                <th className="px-4 py-3 text-right font-semibold">Action</th>
               </tr>
               </thead>
               <tbody>
               {timelineLoading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
                     Loading production timeline...
                   </td>
                 </tr>
               ) : timelineGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
                     No menus in the production timeline yet.
                   </td>
                 </tr>
               ) : (
                 timelineGroups.map((group, index) => {
                   const isExpanded = expandedDates.includes(group.date)
-                  const approvedCount = group.items.filter(
+                  const hasApproved = group.items.some(
                     (item) => item.approvalStatus === 'approved',
-                  ).length
-                  const pendingCount = group.items.filter(
+                  )
+                  const hasPending = group.items.some(
                     (item) => item.approvalStatus === 'pending',
-                  ).length
-                  const rejectedCount = group.items.filter(
+                  )
+                  const hasRejected = group.items.some(
                     (item) => item.approvalStatus === 'rejected',
-                  ).length
+                  )
+                  const approvalStatusLabel = hasPending
+                    ? 'Pending'
+                    : hasRejected
+                      ? 'Rejected'
+                      : hasApproved
+                        ? 'Approved'
+                        : 'Pending'
+                  const approvalStatusClassName = hasPending
+                    ? 'text-muted'
+                    : hasRejected
+                      ? 'text-danger'
+                      : hasApproved
+                        ? 'text-primary'
+                        : 'text-muted'
+                  const reviewedByNames = Array.from(
+                    new Set(
+                      group.items
+                        .map((item) => item.reviewedBy?.trim())
+                        .filter((name): name is string => Boolean(name)),
+                    ),
+                  )
+                  const reviewedByLabel = reviewedByNames.length
+                    ? reviewedByNames.join(', ')
+                    : '-'
+                  const productionCodes = Array.from(
+                    new Set(
+                      group.items
+                        .map((item) => item.productionCode?.trim())
+                        .filter((code): code is string => Boolean(code)),
+                    ),
+                  )
+                  const productionCodeLabel = productionCodes.length
+                    ? productionCodes.join(', ')
+                    : '-'
 
                   return (
                     <Fragment key={group.date}>
@@ -645,39 +687,47 @@ const ChefMenuCycle = () => {
                           {(timelinePage - 1) * TIMELINE_ITEMS_PER_PAGE + index + 1}
                         </td>
                         <td className="px-4 py-3">{group.date}</td>
+                        <td className="px-4 py-3 text-xs text-muted">
+                          {productionCodeLabel}
+                        </td>
                         <td className="px-4 py-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
-                              <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                                {group.items.length} menus
-                              </span>
-                              <span className="text-muted">
-                                Approved: {approvedCount} | Submitted: {pendingCount} |
-                                Rejected: {rejectedCount}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleExpanded(group.date)
-                              }}
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                            >
-                              {isExpanded ? 'Hide details' : 'View details'}
-                            </button>
-                          </div>
+                          <span className={`text-sm font-medium ${approvalStatusClassName}`}>
+                            {approvalStatusLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {reviewedByLabel}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                            {group.items.length} menus
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleExpanded(group.date)
+                            }}
+                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                          >
+                            {isExpanded ? 'Hide details' : 'View details'}
+                          </button>
                         </td>
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={3} className="px-4 py-4">
+                          <td colSpan={7} className="px-4 py-4">
                             <div className="overflow-x-auto rounded-md border border-border">
                               <table className="dm-table min-w-full bg-white text-sm">
                                 <thead className="bg-background">
                                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                     <th className="w-12 px-4 py-3 font-semibold">
                                       No
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Menu ID
                                     </th>
                                     <th className="px-4 py-3 font-semibold">Menu</th>
                                     <th className="px-4 py-3 font-semibold">
@@ -699,6 +749,9 @@ const ChefMenuCycle = () => {
                                     >
                                       <td className="px-4 py-3 text-sm text-muted">
                                         {itemIndex + 1}
+                                      </td>
+                                      <td className="px-4 py-3 font-medium">
+                                        {item.productionCode ?? '-'}
                                       </td>
                                       <td className="px-4 py-3">
                                         {item.menuName}

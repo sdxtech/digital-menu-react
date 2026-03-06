@@ -16,6 +16,10 @@ import {
   RecipeIngredient,
 } from './schemas/recipe.schema';
 import {
+  RecipeCodeCounter,
+  RecipeCodeCounterDocument,
+} from './schemas/recipe-code-counter.schema';
+import {
   RawMaterialsService,
   type RawMaterialLookup,
 } from '../raw-materials/raw-materials.service';
@@ -144,11 +148,17 @@ const UOM_ALIASES: Record<string, string> = {
   unit: 'pcs',
 };
 
+const RECIPE_CODE_PREFIX = 'RCP';
+const RECIPE_CODE_MIN_DIGITS = 4;
+const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
+
 @Injectable()
 export class RecipesService {
   constructor(
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
+    @InjectModel(RecipeCodeCounter.name)
+    private readonly recipeCodeCounterModel: Model<RecipeCodeCounterDocument>,
     private readonly rawMaterials: RawMaterialsService,
     private readonly users: UsersService,
   ) {}
@@ -156,12 +166,14 @@ export class RecipesService {
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
     const ingredients = this.normalizeIngredients(input.ingredients);
     const imageUrl = input.imageUrl?.trim();
+    const recipeCode = await this.nextRecipeCode();
 
     const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
     const updatedFields = this.buildActorFields(actor, 'updated');
 
     return this.recipeModel.create({
+      recipeCode,
       name: input.name.trim(),
       category: input.category.trim(),
       description: input.description?.trim(),
@@ -183,10 +195,13 @@ export class RecipesService {
     const andFilters: Record<string, unknown>[] = [];
     // Recipes are shared across sites, so we don't apply site scoping.
 
+    await this.backfillMissingRecipeCodes();
+
     if (query.search?.trim()) {
       const text = query.search.trim();
       andFilters.push({
         $or: [
+          { recipeCode: new RegExp(this.escapeRegExp(text), 'i') },
           { name: new RegExp(this.escapeRegExp(text), 'i') },
           { category: new RegExp(this.escapeRegExp(text), 'i') },
         ],
@@ -363,7 +378,9 @@ export class RecipesService {
     const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
     const updatedFields = this.buildActorFields(actor, 'updated');
-    const payload = records.map((record) => ({
+    const recipeCodes = await this.allocateRecipeCodes(records.length);
+    const payload = records.map((record, index) => ({
+      recipeCode: recipeCodes[index],
       name: record.name.trim(),
       category: record.category.trim(),
       description: record.description?.trim(),
@@ -1211,6 +1228,86 @@ export class RecipesService {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  private formatRecipeCode(sequence: number): string {
+    const safeNumber = Number.isFinite(sequence) && sequence > 0 ? sequence : 1;
+    return `${RECIPE_CODE_PREFIX}${String(Math.floor(safeNumber)).padStart(
+      RECIPE_CODE_MIN_DIGITS,
+      '0',
+    )}`;
+  }
+
+  private async reserveRecipeCodeRange(count: number): Promise<{
+    start: number;
+    end: number;
+  }> {
+    if (!Number.isInteger(count) || count < 1) {
+      throw new BadRequestException('Recipe code range count must be >= 1.');
+    }
+
+    const counter = await this.recipeCodeCounterModel.findOneAndUpdate(
+      { key: RECIPE_CODE_COUNTER_KEY },
+      {
+        $inc: { seq: count },
+        $setOnInsert: { key: RECIPE_CODE_COUNTER_KEY },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    if (!counter) {
+      throw new BadRequestException('Failed to reserve recipe code range.');
+    }
+
+    const end = Number(counter.seq);
+    const start = end - count + 1;
+    return { start, end };
+  }
+
+  private async allocateRecipeCodes(count: number): Promise<string[]> {
+    if (!count) return [];
+    const { start } = await this.reserveRecipeCodeRange(count);
+    return Array.from({ length: count }, (_, index) =>
+      this.formatRecipeCode(start + index),
+    );
+  }
+
+  private async nextRecipeCode(): Promise<string> {
+    const codes = await this.allocateRecipeCodes(1);
+    return codes[0];
+  }
+
+  private async backfillMissingRecipeCodes(): Promise<void> {
+    const missingRecipes = await this.recipeModel
+      .find({
+        $or: [
+          { recipeCode: { $exists: false } },
+          { recipeCode: '' },
+          { recipeCode: null },
+        ],
+      })
+      .select({ _id: 1 })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+
+    if (missingRecipes.length === 0) return;
+
+    const codes = await this.allocateRecipeCodes(missingRecipes.length);
+    await this.recipeModel.bulkWrite(
+      missingRecipes.map((item, index) => ({
+        updateOne: {
+          filter: {
+            _id: item._id,
+            $or: [
+              { recipeCode: { $exists: false } },
+              { recipeCode: '' },
+              { recipeCode: null },
+            ],
+          },
+          update: { $set: { recipeCode: codes[index] } },
+        },
+      })),
+      { ordered: false },
+    );
   }
 
   private normalizeStatus(value: string): 'active' | 'draft' {

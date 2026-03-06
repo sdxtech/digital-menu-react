@@ -82,6 +82,7 @@ export class MenuProductionsController {
       id,
       'approved',
       req.user.site,
+      req.user.name || req.user.email,
     );
   }
 
@@ -92,6 +93,7 @@ export class MenuProductionsController {
       id,
       'rejected',
       req.user.site,
+      req.user.name || req.user.email,
     );
   }
 

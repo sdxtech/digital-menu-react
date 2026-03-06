@@ -22,6 +22,7 @@ export type RecipeIngredient = {
 
 export type Recipe = {
   id: string
+  recipeCode?: string
   name: string
   category: string
   description: string
@@ -43,6 +44,7 @@ export type Recipe = {
 
 export type MenuProduction = {
   id: string
+  productionCode?: string
   menuName: string
   category: string
   portion: number
@@ -159,6 +161,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
 
   return {
     id: pickId(item.id ?? item._id, 'recipe'),
+    recipeCode: item.recipeCode ?? undefined,
     name: item.name ?? '',
     category: item.category ?? '',
     description: item.description ?? '',
@@ -192,6 +195,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
 
 const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   id: pickId(item.id ?? item._id, 'menu-production'),
+  productionCode: item.productionCode ?? undefined,
   menuName: item.menuName ?? '',
   category: item.category ?? '',
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,

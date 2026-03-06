@@ -12,6 +12,7 @@ const MENU_GROUP_ITEMS_PER_PAGE = 10
 type Recipe = {
   id?: string
   _id?: string
+  recipeCode?: string
   name: string
   category: string
   status: 'draft' | 'active'
@@ -27,6 +28,7 @@ type StoreRequestIngredient = {
 
 type StoreRequestMenu = {
   id: string
+  productionCode?: string
   menuName: string
   category: string
   portion: number
@@ -213,6 +215,7 @@ const UnitManagerPage = () => {
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-12 px-4 py-3 font-semibold">No</th>
+                  <th className="px-4 py-3 font-semibold">Recipe ID</th>
                   <th className="px-4 py-3 font-semibold">Name</th>
                   <th className="px-4 py-3 font-semibold">Category</th>
                   <th className="px-4 py-3 font-semibold">Recipe status</th>
@@ -222,7 +225,7 @@ const UnitManagerPage = () => {
               <tbody>
                 {pendingRecipes.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-muted">
+                    <td colSpan={6} className="px-4 py-6 text-center text-muted">
                       No recipes pending approval.
                     </td>
                   </tr>
@@ -231,6 +234,9 @@ const UnitManagerPage = () => {
                     <tr key={item.id ?? item._id} className="border-t border-border">
                       <td className="px-4 py-3 text-sm text-muted">
                         {(recipePage - 1) * RECIPE_ITEMS_PER_PAGE + index + 1}
+                      </td>
+                      <td className="px-4 py-3 font-medium">
+                        {item.recipeCode ?? '-'}
                       </td>
                       <td className="px-4 py-3">{item.name}</td>
                       <td className="px-4 py-3">{item.category}</td>
@@ -374,6 +380,7 @@ const UnitManagerPage = () => {
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                         <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                        <th className="px-4 py-3 font-semibold">Menu ID</th>
                                         <th className="px-4 py-3 font-semibold">Menu</th>
                                         <th className="px-4 py-3 font-semibold">Category</th>
                                         <th className="px-4 py-3 font-semibold">Portion</th>
@@ -383,7 +390,7 @@ const UnitManagerPage = () => {
                                       {group.items.length === 0 ? (
                                         <tr className="border-t border-border">
                                           <td
-                                            colSpan={4}
+                                            colSpan={5}
                                             className="px-4 py-6 text-center text-muted"
                                           >
                                             No menus pending in this group.
@@ -394,6 +401,9 @@ const UnitManagerPage = () => {
                                           <tr key={item.id} className="border-t border-border">
                                             <td className="px-4 py-3 text-sm text-muted">
                                               {itemIndex + 1}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium">
+                                              {item.productionCode ?? '-'}
                                             </td>
                                             <td className="px-4 py-3">{item.menuName}</td>
                                             <td className="px-4 py-3">{item.category}</td>

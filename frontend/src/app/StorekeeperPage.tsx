@@ -13,6 +13,7 @@ type StoreRequestIngredient = {
 
 type StoreRequestMenu = {
   id: string
+  productionCode?: string
   menuName: string
   category: string
   portion: number
@@ -374,6 +375,9 @@ const StorekeeperPage = () => {
                                             No
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
+                                            Menu ID
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Menu
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
@@ -392,6 +396,9 @@ const StorekeeperPage = () => {
                                           >
                                             <td className="px-3 py-1.5 text-sm text-muted">
                                               {idx + 1}
+                                            </td>
+                                            <td className="px-3 py-1.5 font-medium">
+                                              {menu.productionCode ?? '-'}
                                             </td>
                                             <td className="px-3 py-1.5">
                                               {menu.menuName}

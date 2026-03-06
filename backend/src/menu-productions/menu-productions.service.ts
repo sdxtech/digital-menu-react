@@ -9,6 +9,10 @@ import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 import {
+  MenuProductionCodeCounter,
+  MenuProductionCodeCounterDocument,
+} from './schemas/menu-production-code-counter.schema';
+import {
   ApprovalStatus,
   MenuProduction,
   MenuProductionDocument,
@@ -24,6 +28,7 @@ type StoreRequestIngredient = {
 
 type StoreRequestMenu = {
   id: string;
+  productionCode?: string;
   menuName: string;
   category: string;
   portion: number;
@@ -47,10 +52,12 @@ type TimelineGroup = {
   date: string;
   items: Array<{
     id: string;
+    productionCode?: string;
     menuName: string;
     category: string;
     portion: number;
     approvalStatus: ApprovalStatus;
+    reviewedBy?: string;
   }>;
 };
 
@@ -67,12 +74,17 @@ type RecipeEligibilityInput = {
 };
 
 const DEFAULT_SITE = 'A1';
+const MENU_PRODUCTION_CODE_PREFIX = 'MPR';
+const MENU_PRODUCTION_CODE_MIN_DIGITS = 4;
+const MENU_PRODUCTION_CODE_COUNTER_KEY = 'menu_production_code';
 
 @Injectable()
 export class MenuProductionsService {
   constructor(
     @InjectModel(MenuProduction.name)
     private readonly menuProductionModel: Model<MenuProductionDocument>,
+    @InjectModel(MenuProductionCodeCounter.name)
+    private readonly menuProductionCodeCounterModel: Model<MenuProductionCodeCounterDocument>,
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
   ) {}
@@ -85,9 +97,11 @@ export class MenuProductionsService {
     const menuName = input.menuName.trim();
     const category = input.category.trim();
     await this.assertRecipesEligible([{ menuName, category }]);
+    const productionCode = await this.nextMenuProductionCode();
 
     const normalizedSite = this.normalizeSite(site);
     return this.menuProductionModel.create({
+      productionCode,
       menuName,
       category,
       portion: input.portion,
@@ -118,7 +132,11 @@ export class MenuProductionsService {
     );
 
     const normalizedSite = this.normalizeSite(site);
-    const payload = normalizedInputs.map((input) => ({
+    const productionCodes = await this.allocateMenuProductionCodes(
+      normalizedInputs.length,
+    );
+    const payload = normalizedInputs.map((input, index) => ({
+      productionCode: productionCodes[index],
       menuName: input.menuName,
       category: input.category,
       portion: input.portion,
@@ -132,6 +150,8 @@ export class MenuProductionsService {
   }
 
   async findAll(query: ListMenuProductionsQueryDto, site?: string) {
+    await this.backfillMissingMenuProductionCodes();
+
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
@@ -142,6 +162,7 @@ export class MenuProductionsService {
       const text = query.search.trim();
       andFilters.push({
         $or: [
+          { productionCode: new RegExp(this.escapeRegExp(text), 'i') },
           { menuName: new RegExp(this.escapeRegExp(text), 'i') },
           { category: new RegExp(this.escapeRegExp(text), 'i') },
         ],
@@ -201,10 +222,16 @@ export class MenuProductionsService {
     };
   }
 
-  async setApprovalStatus(id: string, status: ApprovalStatus, site?: string) {
+  async setApprovalStatus(
+    id: string,
+    status: ApprovalStatus,
+    site?: string,
+    reviewedBy?: string,
+  ) {
     // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
+    const actor = reviewedBy?.trim();
     const filter = this.withSiteFilter({ _id: id }, site);
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
@@ -213,6 +240,7 @@ export class MenuProductionsService {
           $set: {
             approvalStatus: status,
             storeRequestStatus: nextStoreStatus,
+            ...(actor ? { reviewedBy: actor } : {}),
           },
           $unset: { fulfilledBy: 1 },
         },
@@ -259,6 +287,8 @@ export class MenuProductionsService {
 
   // BACKEND LOGIC: production timeline grouping + approval stats.
   async buildTimeline(query: ListMenuProductionsQueryDto, site?: string) {
+    await this.backfillMissingMenuProductionCodes();
+
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
@@ -269,6 +299,7 @@ export class MenuProductionsService {
       const text = query.search.trim();
       andFilters.push({
         $or: [
+          { productionCode: new RegExp(this.escapeRegExp(text), 'i') },
           { menuName: new RegExp(this.escapeRegExp(text), 'i') },
           { category: new RegExp(this.escapeRegExp(text), 'i') },
         ],
@@ -293,10 +324,12 @@ export class MenuProductionsService {
       const bucket = grouped.get(date) ?? { date, items: [] };
       bucket.items.push({
         id: String(item._id ?? item.id ?? ''),
+        productionCode: item.productionCode,
         menuName: item.menuName,
         category: item.category,
         portion: item.portion,
         approvalStatus: item.approvalStatus,
+        reviewedBy: item.reviewedBy,
       });
       grouped.set(date, bucket);
     });
@@ -336,6 +369,8 @@ export class MenuProductionsService {
     query: ListMenuProductionsQueryDto,
     site?: string,
   ) {
+    await this.backfillMissingMenuProductionCodes();
+
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
@@ -346,6 +381,7 @@ export class MenuProductionsService {
       const text = query.search.trim();
       andFilters.push({
         $or: [
+          { productionCode: new RegExp(this.escapeRegExp(text), 'i') },
           { menuName: new RegExp(this.escapeRegExp(text), 'i') },
           { category: new RegExp(this.escapeRegExp(text), 'i') },
         ],
@@ -447,6 +483,7 @@ export class MenuProductionsService {
 
       group.items.push({
         id: String(menu._id ?? menu.id ?? ''),
+        productionCode: menu.productionCode,
         menuName: menu.menuName,
         category: menu.category,
         portion: menu.portion,
@@ -558,6 +595,90 @@ export class MenuProductionsService {
 
   private normalizeName(value: string) {
     return value ? value.trim().toLowerCase() : '';
+  }
+
+  private formatMenuProductionCode(sequence: number): string {
+    const safeNumber = Number.isFinite(sequence) && sequence > 0 ? sequence : 1;
+    return `${MENU_PRODUCTION_CODE_PREFIX}${String(
+      Math.floor(safeNumber),
+    ).padStart(MENU_PRODUCTION_CODE_MIN_DIGITS, '0')}`;
+  }
+
+  private async reserveMenuProductionCodeRange(count: number): Promise<{
+    start: number;
+    end: number;
+  }> {
+    if (!Number.isInteger(count) || count < 1) {
+      throw new BadRequestException(
+        'Menu production code range count must be >= 1.',
+      );
+    }
+
+    const counter = await this.menuProductionCodeCounterModel.findOneAndUpdate(
+      { key: MENU_PRODUCTION_CODE_COUNTER_KEY },
+      {
+        $inc: { seq: count },
+        $setOnInsert: { key: MENU_PRODUCTION_CODE_COUNTER_KEY },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+
+    if (!counter) {
+      throw new BadRequestException(
+        'Failed to reserve menu production code range.',
+      );
+    }
+
+    const end = Number(counter.seq);
+    const start = end - count + 1;
+    return { start, end };
+  }
+
+  private async allocateMenuProductionCodes(count: number): Promise<string[]> {
+    if (!count) return [];
+    const { start } = await this.reserveMenuProductionCodeRange(count);
+    return Array.from({ length: count }, (_, index) =>
+      this.formatMenuProductionCode(start + index),
+    );
+  }
+
+  private async nextMenuProductionCode(): Promise<string> {
+    const codes = await this.allocateMenuProductionCodes(1);
+    return codes[0];
+  }
+
+  private async backfillMissingMenuProductionCodes(): Promise<void> {
+    const missingMenus = await this.menuProductionModel
+      .find({
+        $or: [
+          { productionCode: { $exists: false } },
+          { productionCode: '' },
+          { productionCode: null },
+        ],
+      })
+      .select({ _id: 1 })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+
+    if (missingMenus.length === 0) return;
+
+    const codes = await this.allocateMenuProductionCodes(missingMenus.length);
+    await this.menuProductionModel.bulkWrite(
+      missingMenus.map((item, index) => ({
+        updateOne: {
+          filter: {
+            _id: item._id,
+            $or: [
+              { productionCode: { $exists: false } },
+              { productionCode: '' },
+              { productionCode: null },
+            ],
+          },
+          update: { $set: { productionCode: codes[index] } },
+        },
+      })),
+      { ordered: false },
+    );
   }
 
   private normalizeSite(site?: string) {

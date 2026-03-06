@@ -16,6 +16,7 @@ type RecipeIngredient = {
 type Recipe = {
   id?: string
   _id?: string
+  recipeCode?: string
   name: string
   category: string
   description?: string
@@ -663,6 +664,7 @@ const ChefMenuBank = () => {
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
+                  <th className="px-5 py-4 font-semibold">Recipe ID</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
@@ -672,13 +674,13 @@ const ChefMenuBank = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes yet.'}
                     </td>
                   </tr>
@@ -694,6 +696,9 @@ const ChefMenuBank = () => {
                       >
                         <td className="px-5 py-4 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
+                        </td>
+                        <td className="px-5 py-4 font-medium">
+                          {recipe.recipeCode ?? '-'}
                         </td>
                         <td className="px-5 py-4">{recipe.name}</td>
                         <td className="px-5 py-4">{recipe.category}</td>
@@ -730,6 +735,9 @@ const ChefMenuBank = () => {
               <h3 className="font-semibold text-foreground">
                 Recipe Detail
               </h3>
+              <p className="mt-1 text-xs text-muted">
+                ID: {selectedRecipe.recipeCode ?? '-'}
+              </p>
               <p className="mt-1 text-xs text-muted">
                 {selectedRecipe.name}
               </p>

@@ -17,6 +17,15 @@ export type RecipeIngredient = {
 
 @Schema({ timestamps: true })
 export class Recipe {
+  @Prop({
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true,
+    index: true,
+  })
+  recipeCode?: string;
+
   @Prop({ required: true, trim: true })
   name: string;
 

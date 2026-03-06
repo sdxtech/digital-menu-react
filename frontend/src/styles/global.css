@@ -6,7 +6,7 @@
   --dm-background: #f7f9fc;
   --dm-surface: #ffffff;
   --dm-border: #e5eaf2;
-  --dm-foreground: #0f172a;
+  --dm-foreground: #000000;
   --dm-muted: #475569;
 
   --dm-primary: #0b2957;
@@ -92,6 +92,12 @@ body {
 }
 
 @layer components {
+  .dm-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+
   .dm-x-button {
     @apply inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-primary transition;
   }
@@ -102,6 +108,23 @@ body {
 
   .dm-table :is(th, td) {
     @apply px-3 py-1.5;
+    white-space: nowrap;
+  }
+
+  .dm-table thead th:first-child,
+  .dm-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+  }
+
+  .dm-table thead th:first-child {
+    z-index: 3;
+    background-color: var(--dm-primary);
+  }
+
+  .dm-table tbody td:first-child {
+    z-index: 2;
+    background-color: var(--dm-surface);
   }
 
   .dm-table thead th,
@@ -124,6 +147,16 @@ body {
   .dm-table thead tr.text-muted,
   .dm-table thead th {
     color: var(--dm-surface);
+  }
+
+  .rounded-md.border.border-border.bg-surface > p.text-xs:first-of-type {
+    @apply font-semibold;
+  }
+
+  @supports selector(:has(> table.dm-table)) {
+    :where(div, section, article):has(> table.dm-table) {
+      overflow-x: auto;
+    }
   }
 }
 

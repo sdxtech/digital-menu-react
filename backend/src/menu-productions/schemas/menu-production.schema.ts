@@ -8,6 +8,15 @@ export type StoreRequestStatus = 'not-requested' | 'requested' | 'fulfilled';
 
 @Schema({ timestamps: true })
 export class MenuProduction {
+  @Prop({
+    type: String,
+    trim: true,
+    unique: true,
+    sparse: true,
+    index: true,
+  })
+  productionCode?: string;
+
   @Prop({ required: true, trim: true })
   menuName: string;
 
@@ -29,6 +38,9 @@ export class MenuProduction {
     index: true,
   })
   approvalStatus: ApprovalStatus;
+
+  @Prop({ type: String, trim: true })
+  reviewedBy?: string;
 
   @Prop({
     enum: ['not-requested', 'requested', 'fulfilled'],
