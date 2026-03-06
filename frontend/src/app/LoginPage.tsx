@@ -63,7 +63,7 @@ const LoginPage = () => {
               <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-accent-cyan/20 blur-3xl" />
 
               <div className="relative">
-                <h3 className="text-xs uppercase tracking-[0.4em] text-muted">
+                <h3 className="uppercase tracking-[0.4em] text-muted">
                   Login
                 </h3>
                 <p className="mt-2 text-2xl font-semibold">

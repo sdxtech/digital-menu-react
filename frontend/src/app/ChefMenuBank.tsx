@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ITEMS_PER_PAGE = 10
+const RECIPE_INGREDIENTS_PER_PAGE = 8
 
 type RecipeIngredient = {
   productCode: string
@@ -127,6 +129,7 @@ const ChefMenuBank = () => {
   const [photoSaving, setPhotoSaving] = useState(false)
   const [photoDeleting, setPhotoDeleting] = useState(false)
   const [photoInputKey, setPhotoInputKey] = useState(0)
+  const [ingredientPage, setIngredientPage] = useState(1)
 
   const activeFilterCount = statusFilters.length + categoryFilters.length
 
@@ -194,6 +197,10 @@ const ChefMenuBank = () => {
     setPage(1)
   }, [searchTerm, statusFilters, categoryFilters])
 
+  useEffect(() => {
+    setIngredientPage(1)
+  }, [selectedRecipeId])
+
   const selectedRecipe =
     selectedRecipeId === null
       ? null
@@ -218,6 +225,15 @@ const ChefMenuBank = () => {
     ? recipes.find((item) => getRecipeId(item) === photoModalRecipeId) ?? null
     : null
   const activePhotoUrl = photoModalRecipe?.imageUrl ?? null
+  const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
+  const ingredientTotalPages = Math.max(
+    1,
+    Math.ceil(selectedRecipeIngredients.length / RECIPE_INGREDIENTS_PER_PAGE),
+  )
+  const paginatedSelectedRecipeIngredients = selectedRecipeIngredients.slice(
+    (ingredientPage - 1) * RECIPE_INGREDIENTS_PER_PAGE,
+    ingredientPage * RECIPE_INGREDIENTS_PER_PAGE,
+  )
   const previewPhotoUrl = photoDraftUrl ?? activePhotoUrl
 
   const handleCreateFromRecipe = (recipe: Recipe) => {
@@ -426,10 +442,10 @@ const ChefMenuBank = () => {
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">
+                <h3 className="font-semibold text-foreground">
                   Recipe Photo
                 </h3>
-                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                <p className="mt-1 text-xs text-muted">
                   {activePhotoUrl ? 'Edit photo' : 'Add photo'}
                 </p>
                 <p className="mt-2 text-sm text-muted">
@@ -548,7 +564,7 @@ const ChefMenuBank = () => {
               {filterOpen ? (
                 <div className="absolute right-0 z-20 mt-2 w-72 rounded-md border border-border bg-white p-4 text-sm shadow-xl">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                    <p className="text-xs text-muted">
                       Status
                     </p>
                     {statusFilters.length ? (
@@ -585,7 +601,7 @@ const ChefMenuBank = () => {
                   </div>
 
                   <div className="mt-4 flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.3em] text-muted">
+                    <p className="text-xs text-muted">
                       Category
                     </p>
                     {categoryFilters.length ? (
@@ -726,10 +742,10 @@ const ChefMenuBank = () => {
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">
+              <h3 className="font-semibold text-foreground">
                 Recipe Detail
               </h3>
-              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+              <p className="mt-1 text-xs text-muted">
                 {selectedRecipe.name}
               </p>
               <p className="mt-2 text-sm text-muted">
@@ -773,7 +789,7 @@ const ChefMenuBank = () => {
               }
             />
             <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              <p className="text-xs text-muted">
                 Category
               </p>
               <p className="mt-2 text-sm font-medium">
@@ -782,7 +798,7 @@ const ChefMenuBank = () => {
             </div>
             {/* TODO: Re-enable price card when pricing is finalized. */}
             {/* <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              <p className="text-xs text-muted">
                 Price
               </p>
               <p className="mt-2 text-sm font-medium">
@@ -790,7 +806,7 @@ const ChefMenuBank = () => {
               </p>
             </div> */}
             <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted">
+              <p className="text-xs text-muted">
                 Base pax
               </p>
               <p className="mt-2 text-sm font-medium">
@@ -800,14 +816,14 @@ const ChefMenuBank = () => {
           </div>
 
           <div className="mt-6">
-            <h3 className="text-lg font-semibold text-foreground">
+            <h3 className="font-semibold text-foreground">
               Ingredients
             </h3>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+            <p className="mt-1 text-xs text-muted">
               Ingredient requirements
             </p>
 
-            {selectedRecipe.ingredients.length === 0 ? (
+            {selectedRecipeIngredients.length === 0 ? (
               <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                 No ingredients for this recipe yet.
               </div>
@@ -824,13 +840,15 @@ const ChefMenuBank = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedRecipe.ingredients.map((ingredient, idx) => (
+                    {paginatedSelectedRecipeIngredients.map((ingredient, idx) => (
                       <tr
                         key={`${ingredient.productCode}-${idx}`}
                         className="border-t border-border"
                       >
                         <td className="px-4 py-3 text-sm text-muted">
-                          {idx + 1}
+                          {(ingredientPage - 1) * RECIPE_INGREDIENTS_PER_PAGE +
+                            idx +
+                            1}
                         </td>
                         <td className="px-4 py-3">{ingredient.productCode}</td>
                         <td className="px-4 py-3">{ingredient.name}</td>
@@ -842,6 +860,13 @@ const ChefMenuBank = () => {
                     ))}
                   </tbody>
                 </table>
+                <TablePagination
+                  page={ingredientPage}
+                  totalPages={ingredientTotalPages}
+                  onPageChange={setIngredientPage}
+                  summary={`Showing ${paginatedSelectedRecipeIngredients.length} of ${selectedRecipeIngredients.length} ingredients`}
+                  className="px-4 py-3"
+                />
               </div>
             )}
 

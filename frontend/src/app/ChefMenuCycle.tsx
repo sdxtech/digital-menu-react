@@ -1,10 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const TIMELINE_ITEMS_PER_PAGE = 10
+const INPUT_ROWS_PER_PAGE = 8
+const RECIPE_DETAIL_ROWS_PER_PAGE = 8
+const TIMELINE_DETAIL_ROWS_PER_PAGE = 8
 
 type MenuInputRow = {
   id: string
@@ -64,6 +68,11 @@ const ChefMenuCycle = () => {
   const [timelineTotalPages, setTimelineTotalPages] = useState(1)
   const [timelineLoading, setTimelineLoading] = useState(false)
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
+  const [inputPage, setInputPage] = useState(1)
+  const [menuDetailPages, setMenuDetailPages] = useState<Record<string, number>>({})
+  const [timelineDetailPages, setTimelineDetailPages] = useState<
+    Record<string, number>
+  >({})
 
   const availableRecipes = useMemo(
     () =>
@@ -127,6 +136,29 @@ const ChefMenuCycle = () => {
     setTimelinePage((prev) => Math.min(prev, timelineTotalPages))
   }, [timelineTotalPages])
 
+  useEffect(() => {
+    const nextTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
+    setInputPage((prev) => Math.min(prev, nextTotalPages))
+  }, [menuRows.length])
+
+  useEffect(() => {
+    const activeMenuRowIds = new Set(menuRows.map((row) => row.id))
+    setMenuDetailPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([rowId]) => activeMenuRowIds.has(rowId)),
+      ),
+    )
+  }, [menuRows])
+
+  useEffect(() => {
+    const activeDates = new Set(timelineGroups.map((group) => group.date))
+    setTimelineDetailPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+  }, [timelineGroups])
+
   const toggleExpanded = (date: string) => {
     setExpandedDates((prev) =>
       prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
@@ -172,7 +204,12 @@ const ChefMenuCycle = () => {
       return
     }
 
-    setMenuRows((prev) => [...prev, createMenuInputRow()])
+    setMenuRows((prev) => {
+      const nextRows = [...prev, createMenuInputRow()]
+      const nextTotalPages = Math.max(1, Math.ceil(nextRows.length / INPUT_ROWS_PER_PAGE))
+      setInputPage(nextTotalPages)
+      return nextRows
+    })
     setInputError('')
     setInputMessage('New menu row added.')
   }
@@ -260,6 +297,12 @@ const ChefMenuCycle = () => {
     }
   }
 
+  const inputTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
+  const paginatedMenuRows = menuRows.slice(
+    (inputPage - 1) * INPUT_ROWS_PER_PAGE,
+    inputPage * INPUT_ROWS_PER_PAGE,
+  )
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -269,7 +312,7 @@ const ChefMenuCycle = () => {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="uppercase tracking-[0.2em] text-muted">
               Pending approval
             </h3>
             <p className="mt-2 text-xl font-semibold">
@@ -280,7 +323,7 @@ const ChefMenuCycle = () => {
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-xs uppercase tracking-[0.2em] text-muted">
+            <h3 className="uppercase tracking-[0.2em] text-muted">
               Approved
             </h3>
             <p className="mt-2 text-xl font-semibold">
@@ -291,7 +334,7 @@ const ChefMenuCycle = () => {
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-xs uppercase tracking-[0.2em] text-primary">
+            <h3 className="uppercase tracking-[0.2em] text-primary">
               Total menus
             </h3>
             <p className="mt-2 text-xl font-semibold text-primary">
@@ -307,10 +350,10 @@ const ChefMenuCycle = () => {
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">
+            <h3 className="font-semibold text-foreground">
               Production input
             </h3>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+            <p className="mt-1 text-xs text-muted">
               Enter menus to be produced
             </p>
             <p className="mt-3 text-xs text-muted">
@@ -325,12 +368,19 @@ const ChefMenuCycle = () => {
               type="date"
               value={productionDate}
               onChange={(event) => setProductionDate(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              className="mt-2 w-full max-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
           </div>
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-md border border-border">
+          <TablePagination
+            page={inputPage}
+            totalPages={inputTotalPages}
+            onPageChange={setInputPage}
+            summary={`Showing ${paginatedMenuRows.length} of ${menuRows.length} menu rows`}
+            className="rounded-t-md border-b border-border bg-white px-4 py-3"
+          />
           <table className="dm-table min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -343,10 +393,22 @@ const ChefMenuCycle = () => {
               </tr>
             </thead>
             <tbody>
-              {menuRows.map((row, index) => {
+              {paginatedMenuRows.map((row, index) => {
                 const selectedRecipe = recipeById[row.recipeId]
                 const isDetailsOpen = expandedMenuRows.includes(row.id)
                 const ingredients = selectedRecipe?.ingredients ?? []
+                const ingredientTotalPages = Math.max(
+                  1,
+                  Math.ceil(ingredients.length / RECIPE_DETAIL_ROWS_PER_PAGE),
+                )
+                const ingredientPage = Math.min(
+                  menuDetailPages[row.id] ?? 1,
+                  ingredientTotalPages,
+                )
+                const paginatedIngredients = ingredients.slice(
+                  (ingredientPage - 1) * RECIPE_DETAIL_ROWS_PER_PAGE,
+                  ingredientPage * RECIPE_DETAIL_ROWS_PER_PAGE,
+                )
                 const basePax =
                   selectedRecipe && selectedRecipe.portionSize > 0
                     ? selectedRecipe.portionSize
@@ -372,7 +434,7 @@ const ChefMenuCycle = () => {
                         </div>
                       </td>
                       <td className="px-2 py-3 text-center text-sm text-muted">
-                        {index + 1}
+                        {(inputPage - 1) * INPUT_ROWS_PER_PAGE + index + 1}
                       </td>
                       <td className="px-4 py-3">
                         <select
@@ -434,10 +496,10 @@ const ChefMenuCycle = () => {
                             </div>
                           ) : (
                             <div className="rounded-md border border-border bg-surface p-4">
-                                <h3 className="text-lg font-semibold text-foreground">
+                                <h3 className="font-semibold text-foreground">
                                   Ingredients
                                 </h3>
-                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                                <p className="mt-1 text-xs text-muted">
                                   Recipe ingredients
                                 </p>
                                 <p className="mt-1 text-xs text-muted">
@@ -472,7 +534,7 @@ const ChefMenuCycle = () => {
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {ingredients.map((ingredient, idx) => {
+                                        {paginatedIngredients.map((ingredient, idx) => {
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty
@@ -484,7 +546,10 @@ const ChefMenuCycle = () => {
                                               className="border-t border-border"
                                             >
                                               <td className="px-4 py-3 text-sm text-muted">
-                                                {idx + 1}
+                                                {(ingredientPage - 1) *
+                                                  RECIPE_DETAIL_ROWS_PER_PAGE +
+                                                  idx +
+                                                  1}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {ingredient.productCode}
@@ -505,6 +570,18 @@ const ChefMenuCycle = () => {
                                         })}
                                       </tbody>
                                     </table>
+                                    <TablePagination
+                                      page={ingredientPage}
+                                      totalPages={ingredientTotalPages}
+                                      onPageChange={(nextPage) =>
+                                        setMenuDetailPages((prev) => ({
+                                          ...prev,
+                                          [row.id]: nextPage,
+                                        }))
+                                      }
+                                      summary={`Showing ${paginatedIngredients.length} of ${ingredients.length} ingredients`}
+                                      className="px-4 py-3"
+                                    />
                                   </div>
                                 )}
                             </div>
@@ -555,10 +632,10 @@ const ChefMenuCycle = () => {
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">
+            <h3 className="font-semibold text-foreground">
               Timeline
             </h3>
-            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+            <p className="mt-1 text-xs text-muted">
               Scheduled production menus
             </p>
           </div>
@@ -625,6 +702,18 @@ const ChefMenuCycle = () => {
               ) : (
                 timelineGroups.map((group, index) => {
                   const isExpanded = expandedDates.includes(group.date)
+                  const timelineDetailTotalPages = Math.max(
+                    1,
+                    Math.ceil(group.items.length / TIMELINE_DETAIL_ROWS_PER_PAGE),
+                  )
+                  const timelineDetailPage = Math.min(
+                    timelineDetailPages[group.date] ?? 1,
+                    timelineDetailTotalPages,
+                  )
+                  const paginatedTimelineItems = group.items.slice(
+                    (timelineDetailPage - 1) * TIMELINE_DETAIL_ROWS_PER_PAGE,
+                    timelineDetailPage * TIMELINE_DETAIL_ROWS_PER_PAGE,
+                  )
                   const approvedCount = group.items.filter(
                     (item) => item.approvalStatus === 'approved',
                   ).length
@@ -692,13 +781,16 @@ const ChefMenuCycle = () => {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {group.items.map((item, itemIndex) => (
+                                  {paginatedTimelineItems.map((item, itemIndex) => (
                                     <tr
                                       key={item.id}
                                       className="border-t border-border"
                                     >
                                       <td className="px-4 py-3 text-sm text-muted">
-                                        {itemIndex + 1}
+                                        {(timelineDetailPage - 1) *
+                                          TIMELINE_DETAIL_ROWS_PER_PAGE +
+                                          itemIndex +
+                                          1}
                                       </td>
                                       <td className="px-4 py-3">
                                         {item.menuName}
@@ -718,6 +810,18 @@ const ChefMenuCycle = () => {
                                   ))}
                                 </tbody>
                               </table>
+                              <TablePagination
+                                page={timelineDetailPage}
+                                totalPages={timelineDetailTotalPages}
+                                onPageChange={(nextPage) =>
+                                  setTimelineDetailPages((prev) => ({
+                                    ...prev,
+                                    [group.date]: nextPage,
+                                  }))
+                                }
+                                summary={`Showing ${paginatedTimelineItems.length} of ${group.items.length} menus`}
+                                className="px-4 py-3"
+                              />
                             </div>
                           </td>
                         </tr>

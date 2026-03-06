@@ -61,7 +61,7 @@ const ChefDashboard = () => {
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <p className="text-xs text-muted">
               Menus scheduled today
             </p>
             <p className="mt-3 text-3xl font-semibold">
@@ -72,7 +72,7 @@ const ChefDashboard = () => {
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            <p className="text-xs text-muted">
               Menus approved today
             </p>
             <p className="mt-3 text-3xl font-semibold">
@@ -83,7 +83,7 @@ const ChefDashboard = () => {
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+            <p className="text-xs text-primary">
               Store requests pending
             </p>
             <p className="mt-3 text-3xl font-semibold text-primary">
@@ -100,10 +100,10 @@ const ChefDashboard = () => {
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-7">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">
+              <h3 className="font-semibold text-foreground">
                 Priority
               </h3>
-              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+              <p className="mt-1 text-xs text-muted">
                 Menus that must be ready
               </p>
             </div>
@@ -136,10 +136,10 @@ const ChefDashboard = () => {
         </div>
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-5">
-          <h3 className="text-lg font-semibold text-foreground">
+          <h3 className="font-semibold text-foreground">
             Production progress
           </h3>
-          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+          <p className="mt-1 text-xs text-muted">
             Today's status
           </p>
           <div className="mt-6 space-y-4">

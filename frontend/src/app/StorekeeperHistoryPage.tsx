@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
@@ -26,6 +27,8 @@ type StoreRequestGroup = {
 }
 
 const ITEMS_PER_PAGE = 10
+const GROUP_MENU_ITEMS_PER_PAGE = 8
+const GROUP_SUMMARY_ITEMS_PER_PAGE = 8
 
 const StorekeeperHistoryPage = () => {
   const { accessToken } = useAuth()
@@ -34,6 +37,10 @@ const StorekeeperHistoryPage = () => {
   const [expandedDates, setExpandedDates] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [groupMenuPages, setGroupMenuPages] = useState<Record<string, number>>({})
+  const [groupSummaryPages, setGroupSummaryPages] = useState<
+    Record<string, number>
+  >({})
 
   // FRONTEND VIEW: backend returns fulfilled requests grouped by date.
   const fetchHistory = useCallback(async () => {
@@ -74,6 +81,20 @@ const StorekeeperHistoryPage = () => {
     )
     setPage((prev) => Math.min(prev, nextTotalPages))
   }, [groups.length])
+
+  useEffect(() => {
+    const activeDates = new Set(groups.map((group) => group.date))
+    setGroupMenuPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+    setGroupSummaryPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+  }, [groups])
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -159,6 +180,30 @@ const StorekeeperHistoryPage = () => {
                 paginatedGroups.map((group, index) => {
                   const isExpanded = expandedDates.includes(group.date)
                   const summaryItems = group.summary ?? []
+                  const groupMenuTotalPages = Math.max(
+                    1,
+                    Math.ceil(group.items.length / GROUP_MENU_ITEMS_PER_PAGE),
+                  )
+                  const groupMenuPage = Math.min(
+                    groupMenuPages[group.date] ?? 1,
+                    groupMenuTotalPages,
+                  )
+                  const paginatedGroupItems = group.items.slice(
+                    (groupMenuPage - 1) * GROUP_MENU_ITEMS_PER_PAGE,
+                    groupMenuPage * GROUP_MENU_ITEMS_PER_PAGE,
+                  )
+                  const groupSummaryTotalPages = Math.max(
+                    1,
+                    Math.ceil(summaryItems.length / GROUP_SUMMARY_ITEMS_PER_PAGE),
+                  )
+                  const groupSummaryPage = Math.min(
+                    groupSummaryPages[group.date] ?? 1,
+                    groupSummaryTotalPages,
+                  )
+                  const paginatedSummaryItems = summaryItems.slice(
+                    (groupSummaryPage - 1) * GROUP_SUMMARY_ITEMS_PER_PAGE,
+                    groupSummaryPage * GROUP_SUMMARY_ITEMS_PER_PAGE,
+                  )
                   const completedBy = Array.from(
                     new Set(
                       group.items
@@ -203,7 +248,7 @@ const StorekeeperHistoryPage = () => {
                           <td colSpan={3} className="px-4 py-4">
                             <div className="space-y-6">
                               <div>
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                <p className="text-xs text-muted">
                                   History details
                                 </p>
                                 <p className="mt-2 text-sm text-muted">
@@ -213,7 +258,7 @@ const StorekeeperHistoryPage = () => {
 
                               <div className="space-y-4">
                                 <div className="rounded-md border border-border bg-surface p-4">
-                                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                  <p className="text-xs text-muted">
                                     Menu list
                                   </p>
                                   <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
@@ -235,13 +280,16 @@ const StorekeeperHistoryPage = () => {
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((menu, idx) => (
+                                        {paginatedGroupItems.map((menu, idx) => (
                                           <tr
                                             key={menu.id}
                                             className="border-t border-border"
                                           >
                                             <td className="px-3 py-1.5 text-sm text-muted">
-                                              {idx + 1}
+                                              {(groupMenuPage - 1) *
+                                                GROUP_MENU_ITEMS_PER_PAGE +
+                                                idx +
+                                                1}
                                             </td>
                                             <td className="px-3 py-1.5">
                                               {menu.menuName}
@@ -256,6 +304,18 @@ const StorekeeperHistoryPage = () => {
                                         ))}
                                       </tbody>
                                     </table>
+                                    <TablePagination
+                                      page={groupMenuPage}
+                                      totalPages={groupMenuTotalPages}
+                                      onPageChange={(nextPage) =>
+                                        setGroupMenuPages((prev) => ({
+                                          ...prev,
+                                          [group.date]: nextPage,
+                                        }))
+                                      }
+                                      summary={`Showing ${paginatedGroupItems.length} of ${group.items.length} menus`}
+                                      className="px-4 py-3"
+                                    />
                                   </div>
                                   {group.missingRecipes.length > 0 ? (
                                     <p className="mt-3 text-xs text-danger">
@@ -266,7 +326,7 @@ const StorekeeperHistoryPage = () => {
                                 </div>
 
                                 <div className="rounded-md border border-border bg-surface p-4">
-                                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                  <p className="text-xs text-muted">
                                     Ingredient summary
                                   </p>
                                   <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
@@ -302,13 +362,16 @@ const StorekeeperHistoryPage = () => {
                                             </td>
                                           </tr>
                                         ) : (
-                                          summaryItems.map((item, idx) => (
+                                          paginatedSummaryItems.map((item, idx) => (
                                             <tr
                                               key={`${item.productCode}-${item.unitOfMeasures}-${idx}`}
                                               className="border-t border-border"
                                             >
                                               <td className="px-3 py-1.5 text-sm text-muted">
-                                                {idx + 1}
+                                                {(groupSummaryPage - 1) *
+                                                  GROUP_SUMMARY_ITEMS_PER_PAGE +
+                                                  idx +
+                                                  1}
                                               </td>
                                               <td className="px-3 py-1.5">
                                                 {item.productCode}
@@ -329,6 +392,18 @@ const StorekeeperHistoryPage = () => {
                                         )}
                                       </tbody>
                                     </table>
+                                    <TablePagination
+                                      page={groupSummaryPage}
+                                      totalPages={groupSummaryTotalPages}
+                                      onPageChange={(nextPage) =>
+                                        setGroupSummaryPages((prev) => ({
+                                          ...prev,
+                                          [group.date]: nextPage,
+                                        }))
+                                      }
+                                      summary={`Showing ${paginatedSummaryItems.length} of ${summaryItems.length} ingredients`}
+                                      className="px-4 py-3"
+                                    />
                                   </div>
                                   <p className="mt-3 text-xs text-muted">
                                     Completed by:{' '}

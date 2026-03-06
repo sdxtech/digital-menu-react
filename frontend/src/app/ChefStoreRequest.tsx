@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -29,6 +30,8 @@ type StoreRequestGroup = {
 }
 
 const ITEMS_PER_PAGE = 10
+const DETAIL_INGREDIENTS_PER_PAGE = 8
+const SUMMARY_ITEMS_PER_PAGE = 8
 
 const xmlEscape = (value: unknown) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -111,6 +114,10 @@ const ChefStoreRequest = () => {
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [menuIngredientPages, setMenuIngredientPages] = useState<
+    Record<string, number>
+  >({})
+  const [summaryPages, setSummaryPages] = useState<Record<string, number>>({})
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -226,6 +233,21 @@ const ChefStoreRequest = () => {
     setPage((prev) => Math.min(prev, nextTotalPages))
   }, [groups.length])
 
+  useEffect(() => {
+    const activeDates = new Set(groups.map((group) => group.date))
+    const activeMenuIds = new Set(groups.flatMap((group) => group.items.map((item) => item.id)))
+    setSummaryPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+    setMenuIngredientPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([menuId]) => activeMenuIds.has(menuId)),
+      ),
+    )
+  }, [groups])
+
   const totalPages = Math.max(1, Math.ceil(groups.length / ITEMS_PER_PAGE))
   const paginatedGroups = groups.slice(
     (page - 1) * ITEMS_PER_PAGE,
@@ -296,6 +318,18 @@ const ChefStoreRequest = () => {
                 const items = group.items
                 const summaryItems = group.summary ?? []
                 const isExpanded = expandedDates.includes(date)
+                const summaryTotalPages = Math.max(
+                  1,
+                  Math.ceil(summaryItems.length / SUMMARY_ITEMS_PER_PAGE),
+                )
+                const summaryPage = Math.min(
+                  summaryPages[date] ?? 1,
+                  summaryTotalPages,
+                )
+                const paginatedSummaryItems = summaryItems.slice(
+                  (summaryPage - 1) * SUMMARY_ITEMS_PER_PAGE,
+                  summaryPage * SUMMARY_ITEMS_PER_PAGE,
+                )
 
                 return (
                   <Fragment key={date}>
@@ -334,7 +368,7 @@ const ChefStoreRequest = () => {
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted">
+                                <p className="text-xs font-bold text-muted">
                                   Menu details
                                 </p>
                               </div>
@@ -351,6 +385,21 @@ const ChefStoreRequest = () => {
 
                             {items.map((menu) => {
                               const ingredients = menu.ingredients ?? []
+                              const ingredientTotalPages = Math.max(
+                                1,
+                                Math.ceil(
+                                  ingredients.length / DETAIL_INGREDIENTS_PER_PAGE,
+                                ),
+                              )
+                              const ingredientPage = Math.min(
+                                menuIngredientPages[menu.id] ?? 1,
+                                ingredientTotalPages,
+                              )
+                              const paginatedIngredients = ingredients.slice(
+                                (ingredientPage - 1) *
+                                  DETAIL_INGREDIENTS_PER_PAGE,
+                                ingredientPage * DETAIL_INGREDIENTS_PER_PAGE,
+                              )
 
                               return (
                                 <div
@@ -360,10 +409,10 @@ const ChefStoreRequest = () => {
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-3">
                                     <div className="flex items-center justify-between gap-3">
                                       <div>
-                                        <h3 className="text-lg font-semibold text-foreground">
+                                        <h3 className="font-semibold text-foreground">
                                           Menu
                                         </h3>
-                                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                                        <p className="mt-1 text-xs text-muted">
                                           {menu.menuName}
                                         </p>
                                         <p className="mt-1 text-xs text-muted">
@@ -377,7 +426,7 @@ const ChefStoreRequest = () => {
 
                                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                                       <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                                        <p className="text-xs text-muted">
                                           Store request
                                         </p>
                                         <p className="mt-1 text-sm font-medium">
@@ -393,10 +442,10 @@ const ChefStoreRequest = () => {
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-9">
-                                    <h3 className="text-lg font-semibold text-foreground">
+                                    <h3 className="font-semibold text-foreground">
                                       Ingredients
                                     </h3>
-                                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                                    <p className="mt-1 text-xs text-muted">
                                       Ingredient requirements
                                     </p>
                                     <p className="mt-1 text-xs text-muted">
@@ -438,13 +487,16 @@ const ChefStoreRequest = () => {
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {ingredients.map((ingredient, idx) => (
+                                            {paginatedIngredients.map((ingredient, idx) => (
                                               <tr
                                                 key={`${ingredient.productCode}-${idx}`}
                                                 className="border-t border-border"
                                               >
                                                 <td className="px-4 py-3 text-sm text-muted">
-                                                  {idx + 1}
+                                                  {(ingredientPage - 1) *
+                                                    DETAIL_INGREDIENTS_PER_PAGE +
+                                                    idx +
+                                                    1}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   {ingredient.productCode}
@@ -464,6 +516,18 @@ const ChefStoreRequest = () => {
                                             ))}
                                           </tbody>
                                         </table>
+                                        <TablePagination
+                                          page={ingredientPage}
+                                          totalPages={ingredientTotalPages}
+                                          onPageChange={(nextPage) =>
+                                            setMenuIngredientPages((prev) => ({
+                                              ...prev,
+                                              [menu.id]: nextPage,
+                                            }))
+                                          }
+                                          summary={`Showing ${paginatedIngredients.length} of ${ingredients.length} ingredients`}
+                                          className="px-4 py-3"
+                                        />
                                       </div>
                                     )}
                                   </div>
@@ -472,10 +536,10 @@ const ChefStoreRequest = () => {
                             })}
 
                             <div className="rounded-md border border-border bg-surface p-4">
-                              <h3 className="text-lg font-semibold text-foreground">
+                              <h3 className="font-semibold text-foreground">
                                 Summary
                               </h3>
-                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                              <p className="mt-1 text-xs text-muted">
                                 Ingredient summary
                               </p>
                               <p className="mt-1 text-xs text-muted">
@@ -509,13 +573,16 @@ const ChefStoreRequest = () => {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {summaryItems.map((ingredient, idx) => (
+                                      {paginatedSummaryItems.map((ingredient, idx) => (
                                         <tr
                                           key={`${ingredient.productCode}-${idx}`}
                                           className="border-t border-border"
                                         >
                                           <td className="px-4 py-3 text-sm text-muted">
-                                            {idx + 1}
+                                            {(summaryPage - 1) *
+                                              SUMMARY_ITEMS_PER_PAGE +
+                                              idx +
+                                              1}
                                           </td>
                                           <td className="px-4 py-3">
                                             {ingredient.productCode}
@@ -535,6 +602,18 @@ const ChefStoreRequest = () => {
                                       ))}
                                     </tbody>
                                   </table>
+                                  <TablePagination
+                                    page={summaryPage}
+                                    totalPages={summaryTotalPages}
+                                    onPageChange={(nextPage) =>
+                                      setSummaryPages((prev) => ({
+                                        ...prev,
+                                        [date]: nextPage,
+                                      }))
+                                    }
+                                    summary={`Showing ${paginatedSummaryItems.length} of ${summaryItems.length} ingredients`}
+                                    className="px-4 py-3"
+                                  />
                                 </div>
                               )}
                             </div>

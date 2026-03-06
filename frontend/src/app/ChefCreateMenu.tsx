@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useLocation } from 'react-router-dom'
+import TablePagination from '../components/TablePagination'
 import {
   useChefData,
   type RawMaterial,
   type RecipeIngredient,
 } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+
+const INGREDIENT_ROWS_PER_PAGE = 8
 
 type RecipeForm = {
   name: string
@@ -69,6 +72,7 @@ const ChefCreateMenu = () => {
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
+  const [ingredientPage, setIngredientPage] = useState(1)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
@@ -140,6 +144,14 @@ const ChefCreateMenu = () => {
         setRawMaterialOptions([])
       })
   }, [searchRawMaterials])
+
+  useEffect(() => {
+    const nextTotalPages = Math.max(
+      1,
+      Math.ceil(ingredientRows.length / INGREDIENT_ROWS_PER_PAGE),
+    )
+    setIngredientPage((prev) => Math.min(prev, nextTotalPages))
+  }, [ingredientRows.length])
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
   const findRawMaterialByCode = (value: string) => {
@@ -297,7 +309,15 @@ const ChefCreateMenu = () => {
   }
 
   const handleAddIngredientRow = () => {
-    setIngredientRows((prev) => [...prev, createIngredientRow()])
+    setIngredientRows((prev) => {
+      const nextRows = [...prev, createIngredientRow()]
+      const nextTotalPages = Math.max(
+        1,
+        Math.ceil(nextRows.length / INGREDIENT_ROWS_PER_PAGE),
+      )
+      setIngredientPage(nextTotalPages)
+      return nextRows
+    })
     setSubmitError('')
     setSubmitMessage('')
   }
@@ -462,6 +482,15 @@ const ChefCreateMenu = () => {
     }
   }
 
+  const ingredientTotalPages = Math.max(
+    1,
+    Math.ceil(ingredientRows.length / INGREDIENT_ROWS_PER_PAGE),
+  )
+  const paginatedIngredientRows = ingredientRows.slice(
+    (ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE,
+    ingredientPage * INGREDIENT_ROWS_PER_PAGE,
+  )
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -490,10 +519,10 @@ const ChefCreateMenu = () => {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">
+                  <h3 className="font-semibold text-foreground">
                     Import Recipe
                   </h3>
-                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                  <p className="mt-1 text-xs text-muted">
                     Import recipes from Excel
                   </p>
                   <p className="mt-2 text-sm text-muted">
@@ -550,7 +579,7 @@ const ChefCreateMenu = () => {
         ) : null}
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-        <h3 className="text-lg font-semibold">Recipe details</h3>
+        <h3 className="font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
             <label className="text-sm font-medium text-foreground">
@@ -608,12 +637,19 @@ const ChefCreateMenu = () => {
         </div>
 
         <div className="mt-6">
-          <h3 className="text-lg font-semibold text-foreground">
+          <h3 className="font-semibold text-foreground">
             Ingredients
           </h3>
-          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+          <p className="mt-1 text-xs text-muted">
             Add ingredients
           </p>
+          <TablePagination
+            page={ingredientPage}
+            totalPages={ingredientTotalPages}
+            onPageChange={setIngredientPage}
+            summary={`Showing ${paginatedIngredientRows.length} of ${ingredientRows.length} ingredient rows`}
+            className="mt-3"
+          />
 
           <div className="mt-4 overflow-x-auto rounded-md border border-border">
             <datalist id="raw-material-code-options">
@@ -654,7 +690,7 @@ const ChefCreateMenu = () => {
                 </tr>
               </thead>
               <tbody>
-                {ingredientRows.map((row, index) => (
+                {paginatedIngredientRows.map((row, index) => (
                   <tr key={row.id} className="border-t border-border">
                     <td className="px-2 py-3">
                       <div className="flex justify-center">
@@ -665,12 +701,15 @@ const ChefCreateMenu = () => {
                           aria-label="Remove ingredient row"
                           title="Remove ingredient row"
                         >
-                          X
+                          <i
+                            className="bi bi-trash3 text-sm leading-none"
+                            aria-hidden="true"
+                          />
                         </button>
                       </div>
                     </td>
                     <td className="px-2 py-3 text-center text-sm text-muted">
-                      {index + 1}
+                      {(ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE + index + 1}
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -706,7 +745,7 @@ const ChefCreateMenu = () => {
                           autoComplete="off"
                           placeholder="Oat Milk"
                           list="raw-material-name-options"
-                          className="peer col-start-1 row-start-1 h-full w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-muted focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
+                          className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
                         />
                         <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
                           {row.name}

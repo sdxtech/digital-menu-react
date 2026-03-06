@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+
+const RECIPE_ITEMS_PER_PAGE = 10
+const MENU_GROUP_ITEMS_PER_PAGE = 10
+const GROUP_MENU_ITEMS_PER_PAGE = 8
+const GROUP_SUMMARY_ITEMS_PER_PAGE = 8
 
 type Recipe = {
   id?: string
@@ -55,6 +61,12 @@ const UnitManagerPage = () => {
     StoreRequestGroup[]
   >([])
   const [expandedDates, setExpandedDates] = useState<string[]>([])
+  const [recipePage, setRecipePage] = useState(1)
+  const [menuGroupPage, setMenuGroupPage] = useState(1)
+  const [groupMenuPages, setGroupMenuPages] = useState<Record<string, number>>({})
+  const [groupSummaryPages, setGroupSummaryPages] = useState<
+    Record<string, number>
+  >({})
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
@@ -89,6 +101,36 @@ const UnitManagerPage = () => {
     setActionMessage('')
     fetchPending().catch(() => null)
   }, [fetchPending])
+
+  useEffect(() => {
+    const nextTotalPages = Math.max(
+      1,
+      Math.ceil(pendingRecipes.length / RECIPE_ITEMS_PER_PAGE),
+    )
+    setRecipePage((prev) => Math.min(prev, nextTotalPages))
+  }, [pendingRecipes.length])
+
+  useEffect(() => {
+    const nextTotalPages = Math.max(
+      1,
+      Math.ceil(menuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+    )
+    setMenuGroupPage((prev) => Math.min(prev, nextTotalPages))
+  }, [menuProductionGroups.length])
+
+  useEffect(() => {
+    const activeDates = new Set(menuProductionGroups.map((group) => group.date))
+    setGroupMenuPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+    setGroupSummaryPages((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => activeDates.has(date)),
+      ),
+    )
+  }, [menuProductionGroups])
 
   const toggleExpandedDate = (date: string) => {
     setExpandedDates((prev) =>
@@ -126,9 +168,7 @@ const UnitManagerPage = () => {
       )
     }
     if (failedCount > 0) {
-      setActionError(
-        `${failedCount} menu failed to ${action} for ${date}.`,
-      )
+      setActionError(`${failedCount} menu failed to ${action} for ${date}.`)
     }
 
     fetchPending().catch(() => null)
@@ -139,6 +179,24 @@ const UnitManagerPage = () => {
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
+
+  const recipeTotalPages = Math.max(
+    1,
+    Math.ceil(pendingRecipes.length / RECIPE_ITEMS_PER_PAGE),
+  )
+  const paginatedRecipes = pendingRecipes.slice(
+    (recipePage - 1) * RECIPE_ITEMS_PER_PAGE,
+    recipePage * RECIPE_ITEMS_PER_PAGE,
+  )
+
+  const menuGroupTotalPages = Math.max(
+    1,
+    Math.ceil(menuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+  )
+  const paginatedMenuGroups = menuProductionGroups.slice(
+    (menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE,
+    menuGroupPage * MENU_GROUP_ITEMS_PER_PAGE,
+  )
 
   return (
     <div className="space-y-6">
@@ -162,6 +220,13 @@ const UnitManagerPage = () => {
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Approval Recipe</h2>
+          <TablePagination
+            page={recipePage}
+            totalPages={recipeTotalPages}
+            onPageChange={setRecipePage}
+            summary={`Showing ${paginatedRecipes.length} of ${pendingRecipes.length} recipes`}
+            className="mt-4"
+          />
           <div className="mt-4 overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
@@ -176,21 +241,15 @@ const UnitManagerPage = () => {
               <tbody>
                 {pendingRecipes.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-6 text-center text-muted"
-                    >
+                    <td colSpan={5} className="px-4 py-6 text-center text-muted">
                       No recipes pending approval.
                     </td>
                   </tr>
                 ) : (
-                  pendingRecipes.map((item, index) => (
-                    <tr
-                      key={item.id ?? item._id}
-                      className="border-t border-border"
-                    >
+                  paginatedRecipes.map((item, index) => (
+                    <tr key={item.id ?? item._id} className="border-t border-border">
                       <td className="px-4 py-3 text-sm text-muted">
-                        {index + 1}
+                        {(recipePage - 1) * RECIPE_ITEMS_PER_PAGE + index + 1}
                       </td>
                       <td className="px-4 py-3">{item.name}</td>
                       <td className="px-4 py-3">{item.category}</td>
@@ -250,175 +309,243 @@ const UnitManagerPage = () => {
 
       <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Approval Menu Production</h2>
-        <div className="mt-4 space-y-4">
-          {menuProductionGroups.length === 0 ? (
-            <div className="rounded-md border border-border bg-background px-4 py-6 text-center text-sm text-muted">
-              No production menus pending approval.
-            </div>
-          ) : (
-            menuProductionGroups.map((group) => (
-              <div
-                key={group.date}
-                className="rounded-md border border-border bg-background p-4"
-              >
-                {(() => {
+        <TablePagination
+          page={menuGroupPage}
+          totalPages={menuGroupTotalPages}
+          onPageChange={setMenuGroupPage}
+          summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionGroups.length} production dates`}
+          className="mt-4"
+        />
+        <div className="mt-4 overflow-x-auto rounded-md border border-border">
+          <table className="dm-table min-w-full bg-white text-sm">
+            <thead className="bg-background">
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-16 px-4 py-3 font-semibold">No</th>
+                <th className="px-4 py-3 font-semibold">Production date</th>
+                <th className="px-4 py-3 font-semibold">Approval status</th>
+                <th className="px-4 py-3 font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {menuProductionGroups.length === 0 ? (
+                <tr className="border-t border-border">
+                  <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                    No production menus pending approval.
+                  </td>
+                </tr>
+              ) : (
+                paginatedMenuGroups.map((group, index) => {
                   const isExpanded = expandedDates.includes(group.date)
-                  return (
-                    <>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h3 className="text-lg font-semibold text-foreground">
-                            Production date
-                          </h3>
-                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
-                            {group.date}
-                          </p>
-                          <p className="mt-1 text-xs text-muted">
-                            {group.items.length} menus pending
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleExpandedDate(group.date)}
-                            className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
-                          >
-                            {isExpanded ? 'Hide details' : 'View details'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleBulkApproval(group.date, group.items, 'approve')
-                            }
-                            className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                          >
-                            Approve all
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleBulkApproval(group.date, group.items, 'reject')
-                            }
-                            className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
-                          >
-                            Reject all
-                          </button>
-                        </div>
-                      </div>
-
-                      {isExpanded ? (
-                        <div className="mt-4 grid gap-4 lg:grid-cols-12">
-                          <div className="rounded-md border border-border bg-background p-4 lg:col-span-5">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                              Menu list
-                            </p>
-                            <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                              <table className="dm-table min-w-full text-sm">
-                                <thead className="bg-background">
-                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                    <th className="w-12 px-4 py-3 font-semibold">
-                                      No
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Menu
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Category
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Portion
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.items.map((item, index) => (
-                                    <tr key={item.id} className="border-t border-border">
-                                      <td className="px-4 py-3 text-sm text-muted">
-                                        {index + 1}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        {item.menuName}
-                                      </td>
-                                      <td className="px-4 py-3">{item.category}</td>
-                                      <td className="px-4 py-3">{item.portion}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                            {group.missingRecipes.length > 0 ? (
-                              <p className="mt-3 text-xs text-danger">
-                                Recipe not found for:{' '}
-                                {group.missingRecipes.join(', ')}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="rounded-md border border-border bg-background p-4 lg:col-span-7">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted">
-                              Ingredient summary
-                            </p>
-                            <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
-                              <table className="dm-table min-w-full text-sm">
-                                <thead className="bg-background">
-                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                    <th className="w-12 px-4 py-3 font-semibold">
-                                      No
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Product code
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Ingredient name
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">Qty</th>
-                                    <th className="px-4 py-3 font-semibold">Unit</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.summary.length === 0 ? (
-                                    <tr className="border-t border-border">
-                                      <td
-                                        colSpan={5}
-                                        className="px-4 py-6 text-center text-muted"
-                                      >
-                                        No ingredients available to calculate.
-                                      </td>
-                                    </tr>
-                                  ) : (
-                                    group.summary.map((item, index) => (
-                                      <tr
-                                        key={`${item.productCode}-${item.unitOfMeasures}`}
-                                        className="border-t border-border"
-                                      >
-                                        <td className="px-4 py-3 text-sm text-muted">
-                                          {index + 1}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          {item.productCode}
-                                        </td>
-                                        <td className="px-4 py-3">{item.name}</td>
-                                        <td className="px-4 py-3">
-                                          {formatQuantity(item.qty)}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          {formatUnitLabel(item.unitOfMeasures)}
-                                        </td>
-                                      </tr>
-                                    ))
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
+                  const menuItemsTotalPages = Math.max(
+                    1,
+                    Math.ceil(group.items.length / GROUP_MENU_ITEMS_PER_PAGE),
                   )
-                })()}
-              </div>
-            ))
-          )}
+                  const menuItemsPage = Math.min(
+                    groupMenuPages[group.date] ?? 1,
+                    menuItemsTotalPages,
+                  )
+                  const paginatedMenuItems = group.items.slice(
+                    (menuItemsPage - 1) * GROUP_MENU_ITEMS_PER_PAGE,
+                    menuItemsPage * GROUP_MENU_ITEMS_PER_PAGE,
+                  )
+
+                  const summaryTotalPages = Math.max(
+                    1,
+                    Math.ceil(group.summary.length / GROUP_SUMMARY_ITEMS_PER_PAGE),
+                  )
+                  const summaryPage = Math.min(
+                    groupSummaryPages[group.date] ?? 1,
+                    summaryTotalPages,
+                  )
+                  const paginatedSummaryItems = group.summary.slice(
+                    (summaryPage - 1) * GROUP_SUMMARY_ITEMS_PER_PAGE,
+                    summaryPage * GROUP_SUMMARY_ITEMS_PER_PAGE,
+                  )
+
+                  return (
+                    <Fragment key={group.date}>
+                      <tr className="border-t border-border">
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {(menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE + index + 1}
+                        </td>
+                        <td className="px-4 py-3">{group.date}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                              Pending
+                            </span>
+                            <span className="text-muted">{group.items.length} menus</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandedDate(group.date)}
+                              className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleBulkApproval(group.date, group.items, 'approve')
+                              }
+                              className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                            >
+                              Approve all
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleBulkApproval(group.date, group.items, 'reject')
+                              }
+                              className="rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-primary"
+                            >
+                              Reject all
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="border-t border-border bg-background">
+                          <td colSpan={4} className="px-4 py-4">
+                            <div className="grid gap-4 lg:grid-cols-12">
+                              <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
+                                <p className="text-xs text-muted">Menu list</p>
+                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <table className="dm-table min-w-full text-sm">
+                                    <thead className="bg-background">
+                                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                        <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                        <th className="px-4 py-3 font-semibold">Menu</th>
+                                        <th className="px-4 py-3 font-semibold">Category</th>
+                                        <th className="px-4 py-3 font-semibold">Portion</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {group.items.length === 0 ? (
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-6 text-center text-muted"
+                                          >
+                                            No menus pending in this group.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        paginatedMenuItems.map((item, itemIndex) => (
+                                          <tr key={item.id} className="border-t border-border">
+                                            <td className="px-4 py-3 text-sm text-muted">
+                                              {(menuItemsPage - 1) *
+                                                GROUP_MENU_ITEMS_PER_PAGE +
+                                                itemIndex +
+                                                1}
+                                            </td>
+                                            <td className="px-4 py-3">{item.menuName}</td>
+                                            <td className="px-4 py-3">{item.category}</td>
+                                            <td className="px-4 py-3">{item.portion}</td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <TablePagination
+                                  page={menuItemsPage}
+                                  totalPages={menuItemsTotalPages}
+                                  onPageChange={(nextPage) =>
+                                    setGroupMenuPages((prev) => ({
+                                      ...prev,
+                                      [group.date]: nextPage,
+                                    }))
+                                  }
+                                  summary={`Showing ${paginatedMenuItems.length} of ${group.items.length} menus`}
+                                  className="mt-3"
+                                />
+                                {group.missingRecipes.length > 0 ? (
+                                  <p className="mt-3 text-xs text-danger">
+                                    Recipe not found for: {group.missingRecipes.join(', ')}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
+                                <p className="text-xs text-muted">Ingredient summary</p>
+                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <table className="dm-table min-w-full text-sm">
+                                    <thead className="bg-background">
+                                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                        <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Product code
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Ingredient name
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">Qty</th>
+                                        <th className="px-4 py-3 font-semibold">Unit</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {group.summary.length === 0 ? (
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-6 text-center text-muted"
+                                          >
+                                            No ingredients available to calculate.
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        paginatedSummaryItems.map((item, itemIndex) => (
+                                          <tr
+                                            key={`${item.productCode}-${item.unitOfMeasures}-${itemIndex}`}
+                                            className="border-t border-border"
+                                          >
+                                            <td className="px-4 py-3 text-sm text-muted">
+                                              {(summaryPage - 1) *
+                                                GROUP_SUMMARY_ITEMS_PER_PAGE +
+                                                itemIndex +
+                                                1}
+                                            </td>
+                                            <td className="px-4 py-3">{item.productCode}</td>
+                                            <td className="px-4 py-3">{item.name}</td>
+                                            <td className="px-4 py-3">
+                                              {formatQuantity(item.qty)}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {formatUnitLabel(item.unitOfMeasures)}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <TablePagination
+                                  page={summaryPage}
+                                  totalPages={summaryTotalPages}
+                                  onPageChange={(nextPage) =>
+                                    setGroupSummaryPages((prev) => ({
+                                      ...prev,
+                                      [group.date]: nextPage,
+                                    }))
+                                  }
+                                  summary={`Showing ${paginatedSummaryItems.length} of ${group.summary.length} ingredients`}
+                                  className="mt-3"
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -426,4 +553,3 @@ const UnitManagerPage = () => {
 }
 
 export default UnitManagerPage
-

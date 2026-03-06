@@ -40,7 +40,7 @@ const RoleLanding = () => {
 const NotFound = () => (
   <div className="min-h-screen bg-primary-soft text-foreground">
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-4 px-6 text-center">
-      <p className="text-xs uppercase tracking-[0.4em] text-muted">
+      <p className="text-xs text-muted">
         404
       </p>
       <h1 className="text-3xl font-semibold">Page not found</h1>

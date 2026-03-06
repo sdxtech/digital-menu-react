@@ -487,10 +487,10 @@ const SuperadminUsersPage = () => {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-foreground">
+                    <h3 className="font-semibold text-foreground">
                       Create account
                     </h3>
-                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                    <p className="mt-1 text-xs text-muted">
                       New user
                     </p>
                     <p className="mt-2 text-sm text-muted">
@@ -614,10 +614,10 @@ const SuperadminUsersPage = () => {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-foreground">
+                    <h3 className="font-semibold text-foreground">
                       Import accounts
                     </h3>
-                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                    <p className="mt-1 text-xs text-muted">
                       Upload Excel file
                     </p>
                     <p className="mt-2 text-sm text-muted">
@@ -635,7 +635,7 @@ const SuperadminUsersPage = () => {
                 </div>
 
                 <div className="mt-4 rounded-md border border-border bg-background p-4 text-sm text-muted">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                  <p className="text-xs text-muted">
                     Required columns
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">

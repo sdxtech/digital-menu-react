@@ -50,6 +50,47 @@ body {
   }
 }
 
+@layer base {
+  h1 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    font-size: 18px;
+    line-height: 28px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  h3 {
+    font-size: 14px !important;
+    line-height: 20px !important;
+    font-weight: 600;
+    letter-spacing: normal;
+  }
+
+  p {
+    font-size: 13px !important;
+    line-height: 20px !important;
+    letter-spacing: normal !important;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+  select {
+    height: 2.5rem !important;
+    min-height: 2.5rem;
+  }
+
+  select {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    line-height: 1.25rem;
+  }
+}
+
 @layer components {
   .dm-x-button {
     @apply inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-primary transition;

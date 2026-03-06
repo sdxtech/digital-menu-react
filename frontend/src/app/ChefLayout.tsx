@@ -77,7 +77,7 @@ const ChefLayout = () => {
                 DM
               </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-white/70">
+              <p className="text-xs text-white/70">
                 Chef Workspace
               </p>
             </div>

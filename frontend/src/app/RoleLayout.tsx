@@ -38,7 +38,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
                 DM
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-white/70">
+                <p className="text-xs text-white/70">
                   {workspaceLabel}
                 </p>
               </div>

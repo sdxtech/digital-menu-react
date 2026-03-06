@@ -271,10 +271,10 @@ const ChefAddRawMaterial = () => {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">
+                  <h3 className="font-semibold text-foreground">
                     Import Raw Material
                   </h3>
-                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                  <p className="mt-1 text-xs text-muted">
                     Upload Excel file
                   </p>
                   <p className="mt-2 text-sm text-muted">
@@ -348,7 +348,7 @@ const ChefAddRawMaterial = () => {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted">
+                  <p className="text-xs text-muted">
                     Import Raw Material
                   </p>
                   <h3
@@ -387,7 +387,7 @@ const ChefAddRawMaterial = () => {
 
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-12">
-            <h3 className="text-lg font-semibold">Material details</h3>
+            <h3 className="font-semibold">Material details</h3>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="text-sm font-medium text-foreground">
