@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type StoreRequestIngredient = {
@@ -15,6 +16,7 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
   portionSize: number
   ingredients: StoreRequestIngredient[]
@@ -29,6 +31,60 @@ type StoreRequestGroup = {
 }
 
 const ITEMS_PER_PAGE = 10
+
+const ingredientSummaryKey = (ingredient: StoreRequestIngredient) =>
+  `${(ingredient.productCode || ingredient.name).trim().toLowerCase()}__${ingredient.unitOfMeasures
+    .trim()
+    .toLowerCase()}`
+
+const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
+  const groupedByDate = new Map<
+    string,
+    {
+      date: string
+      items: StoreRequestMenu[]
+      summaryMap: Map<string, StoreRequestIngredient>
+      missingRecipes: Set<string>
+    }
+  >()
+
+  groups.forEach((group) => {
+    const bucket = groupedByDate.get(group.date) ?? {
+      date: group.date,
+      items: [],
+      summaryMap: new Map<string, StoreRequestIngredient>(),
+      missingRecipes: new Set<string>(),
+    }
+
+    bucket.items.push(...group.items)
+
+    group.summary.forEach((ingredient) => {
+      const key = ingredientSummaryKey(ingredient)
+      const existing = bucket.summaryMap.get(key)
+      if (existing) {
+        existing.qty += ingredient.qty
+      } else {
+        bucket.summaryMap.set(key, { ...ingredient })
+      }
+    })
+
+    group.missingRecipes.forEach((item) => {
+      const value = item.trim()
+      if (value) bucket.missingRecipes.add(value)
+    })
+
+    groupedByDate.set(group.date, bucket)
+  })
+
+  return Array.from(groupedByDate.values())
+    .map((group) => ({
+      date: group.date,
+      items: group.items,
+      summary: Array.from(group.summaryMap.values()),
+      missingRecipes: Array.from(group.missingRecipes.values()),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
 
 const xmlEscape = (value: unknown) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -118,14 +174,6 @@ const ChefStoreRequest = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
-  const storeRequestStatusLabel = (
-    status: StoreRequestMenu['storeRequestStatus'],
-  ) => {
-    if (status === 'fulfilled') return 'Delivered to kitchen'
-    if (status === 'requested') return 'Auto-requested'
-    return 'Waiting for auto request'
-  }
-
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
     const header = [
       'Production Date',
@@ -133,6 +181,7 @@ const ChefStoreRequest = () => {
       'Category',
       'Portions',
       'Base Pax',
+      'Approval Status',
       'Store Request Status',
       'Notes',
       'Product Code',
@@ -155,7 +204,8 @@ const ChefStoreRequest = () => {
         menu.category,
         String(menu.portion),
         String(menu.portionSize ?? 1),
-        storeRequestStatusLabel(menu.storeRequestStatus),
+        getApprovalStatusLabel(menu.approvalStatus),
+        getStoreRequestStatusLabel(menu.storeRequestStatus),
         note,
       ]
 
@@ -193,12 +243,24 @@ const ChefStoreRequest = () => {
     setLoading(true)
     setErrorMessage('')
     try {
-      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        '/menu-productions/store-requests?approvalStatus=approved',
-        undefined,
-        accessToken,
-      )
-      setGroups(data.items ?? [])
+      const [approvedData, rejectedData] = await Promise.all([
+        apiFetch<{ items: StoreRequestGroup[] }>(
+          '/menu-productions/store-requests?approvalStatus=approved',
+          undefined,
+          accessToken,
+        ),
+        apiFetch<{ items: StoreRequestGroup[] }>(
+          '/menu-productions/store-requests?approvalStatus=rejected',
+          undefined,
+          accessToken,
+        ),
+      ])
+
+      const merged = mergeStoreRequestGroups([
+        ...(approvedData.items ?? []),
+        ...(rejectedData.items ?? []),
+      ])
+      setGroups(merged)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to refresh data.'
@@ -275,19 +337,21 @@ const ChefStoreRequest = () => {
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Approval status</th>
+                <th className="px-5 py-4 font-semibold">Total menu</th>
+                <th className="px-5 py-4 font-semibold">Store request status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
-                    No production menus approved by the Unit Manager yet.
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                    No production menus approved or rejected by the Unit Manager yet.
                   </td>
                 </tr>
               ) : (
@@ -296,6 +360,21 @@ const ChefStoreRequest = () => {
                 const items = group.items
                 const summaryItems = group.summary ?? []
                 const isExpanded = expandedDates.includes(date)
+                const hasApproved = items.some(
+                  (item) => item.approvalStatus === 'approved',
+                )
+                const hasRejected = items.some(
+                  (item) => item.approvalStatus === 'rejected',
+                )
+                const hasRequested = items.some(
+                  (item) => item.storeRequestStatus === 'requested',
+                )
+                const hasDelivered = items.some(
+                  (item) => item.storeRequestStatus === 'fulfilled',
+                )
+                const hasPendingApproval = items.some(
+                  (item) => item.storeRequestStatus === 'not-requested',
+                )
 
                 return (
                   <Fragment key={date}>
@@ -308,12 +387,28 @@ const ChefStoreRequest = () => {
                       </td>
                       <td className="px-5 py-4">{date}</td>
                       <td className="px-5 py-4">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          {hasApproved ? (
+                            <span className="text-primary">Approved</span>
+                          ) : null}
+                          {hasRejected ? (
+                            <span className="text-danger">Rejected</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm font-medium">{items.length}</td>
+                      <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-sm">
-                            <span>Approved</span>
-                            <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                              {items.length} menus
-                            </span>
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            {hasRequested ? (
+                              <span className="text-primary">Requested</span>
+                            ) : null}
+                            {hasDelivered ? (
+                              <span className="text-success">Delivered</span>
+                            ) : null}
+                            {hasPendingApproval ? (
+                              <span className="text-muted">Pending approval</span>
+                            ) : null}
                           </div>
                           <button
                             type="button"
@@ -330,7 +425,7 @@ const ChefStoreRequest = () => {
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={3} className="px-5 py-5">
+                        <td colSpan={5} className="px-5 py-5">
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -358,9 +453,9 @@ const ChefStoreRequest = () => {
                               return (
                                 <div
                                   key={menu.id}
-                                  className="grid gap-3 lg:grid-cols-12"
+                                  className="grid gap-3 lg:grid-cols-[1.1fr_2.9fr]"
                                 >
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-3">
+                                  <div className="rounded-md border border-border bg-surface p-4">
                                     <div className="flex items-center justify-between gap-3">
                                       <div>
                                         <h3 className="font-semibold text-foreground">
@@ -381,27 +476,35 @@ const ChefStoreRequest = () => {
                                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="text-xs text-muted">
+                                          Approval
+                                        </p>
+                                        <p
+                                          className={`mt-1 text-sm font-medium ${
+                                            menu.approvalStatus === 'rejected'
+                                              ? 'text-danger'
+                                              : ''
+                                          }`}
+                                        >
+                                          {getApprovalStatusLabel(menu.approvalStatus)}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs text-muted">
                                           Store request
                                         </p>
                                         <p className="mt-1 text-sm font-medium">
-                                          {menu.storeRequestStatus === 'fulfilled'
-                                            ? 'Delivered to kitchen'
-                                            : menu.storeRequestStatus ===
-                                                'requested'
-                                              ? 'Auto-requested'
-                                              : 'Waiting for auto request'}
+                                          {getStoreRequestStatusLabel(
+                                            menu.storeRequestStatus,
+                                          )}
                                         </p>
                                       </div>
                                     </div>
                                   </div>
 
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-9">
+                                  <div className="rounded-md border border-border bg-surface p-4">
                                     <h3 className="font-semibold text-foreground">
                                       Ingredients
                                     </h3>
-                                    <p className="mt-1 text-xs text-muted">
-                                      Ingredient requirements
-                                    </p>
                                     <p className="mt-1 text-xs text-muted">
                                       Qty calculated from base pax (
                                       {menu.portionSize ?? 1}) for {menu.portion}{' '}

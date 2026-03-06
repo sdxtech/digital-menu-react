@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const RECIPE_ITEMS_PER_PAGE = 10
@@ -327,7 +328,7 @@ const UnitManagerPage = () => {
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-2 text-sm">
                             <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                              Pending
+                              {getApprovalStatusLabel('pending')}
                             </span>
                             <span className="text-muted">{group.items.length} menus</span>
                           </div>

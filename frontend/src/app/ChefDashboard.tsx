@@ -79,7 +79,7 @@ const ChefDashboard = () => {
               {summary?.approvedToday ?? 0}
             </p>
             <p className="mt-2 text-xs text-muted">
-              Pending {summary?.pendingToday ?? 0} menus
+              Submitted {summary?.pendingToday ?? 0} menus
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">

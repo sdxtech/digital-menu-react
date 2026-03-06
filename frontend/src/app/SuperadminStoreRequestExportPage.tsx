@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type StoreRequestIngredient = {
@@ -140,12 +141,6 @@ const SuperadminStoreRequestExportPage = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
-  const storeRequestStatusLabel = (status: StoreRequestMenu['storeRequestStatus']) => {
-    if (status === 'fulfilled') return 'Delivered to kitchen'
-    if (status === 'requested') return 'Auto-requested'
-    return 'Waiting for auto request'
-  }
-
   const fetchSites = useCallback(async () => {
     if (!accessToken) return
 
@@ -275,7 +270,7 @@ const SuperadminStoreRequestExportPage = () => {
               menu.category,
               menu.portion,
               menu.portionSize ?? 1,
-              storeRequestStatusLabel(menu.storeRequestStatus),
+              getStoreRequestStatusLabel(menu.storeRequestStatus),
               '',
               '',
               '',
@@ -294,7 +289,7 @@ const SuperadminStoreRequestExportPage = () => {
               menu.category,
               menu.portion,
               menu.portionSize ?? 1,
-              storeRequestStatusLabel(menu.storeRequestStatus),
+              getStoreRequestStatusLabel(menu.storeRequestStatus),
               ingredient.productCode,
               ingredient.name,
               formatQuantity(ingredient.qty),

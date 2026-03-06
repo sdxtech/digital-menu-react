@@ -804,9 +804,6 @@ const ChefMenuBank = () => {
             <h3 className="font-semibold text-foreground">
               Ingredients
             </h3>
-            <p className="mt-1 text-xs text-muted">
-              Ingredient requirements
-            </p>
 
             {selectedRecipeIngredients.length === 0 ? (
               <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">

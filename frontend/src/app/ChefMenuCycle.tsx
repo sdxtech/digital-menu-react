@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
+import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const TIMELINE_ITEMS_PER_PAGE = 10
@@ -39,12 +40,6 @@ const createMenuInputRow = (): MenuInputRow => ({
   recipeId: '',
   portion: '',
 })
-
-const approvalLabel = (approvalStatus: 'pending' | 'approved' | 'rejected') => {
-  if (approvalStatus === 'approved') return 'Approved'
-  if (approvalStatus === 'rejected') return 'Rejected'
-  return 'Pending Approval'
-}
 
 const ChefMenuCycle = () => {
   const { accessToken } = useAuth()
@@ -292,13 +287,13 @@ const ChefMenuCycle = () => {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <h3 className="uppercase tracking-[0.2em] text-muted">
-              Pending approval
+              Submitted
             </h3>
             <p className="mt-2 text-xl font-semibold">
               {timelineStats.pending}
             </p>
             <p className="mt-3 text-sm text-muted">
-              Menus not reviewed by the Unit Manager yet.
+              Menus awaiting Unit Manager approval.
             </p>
           </div>
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
@@ -657,7 +652,7 @@ const ChefMenuCycle = () => {
                                 {group.items.length} menus
                               </span>
                               <span className="text-muted">
-                                Approved: {approvedCount} | Pending: {pendingCount} |
+                                Approved: {approvedCount} | Submitted: {pendingCount} |
                                 Rejected: {rejectedCount}
                               </span>
                             </div>
@@ -716,7 +711,7 @@ const ChefMenuCycle = () => {
                                       </td>
                                       <td className="px-4 py-3">
                                         <span className="text-xs font-medium">
-                                          {approvalLabel(item.approvalStatus)}
+                                          {getApprovalStatusLabel(item.approvalStatus)}
                                         </span>
                                       </td>
                                     </tr>
