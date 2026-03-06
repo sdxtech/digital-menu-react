@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ITEMS_PER_PAGE = 10
-const RECIPE_INGREDIENTS_PER_PAGE = 8
 
 type RecipeIngredient = {
   productCode: string
@@ -129,7 +127,6 @@ const ChefMenuBank = () => {
   const [photoSaving, setPhotoSaving] = useState(false)
   const [photoDeleting, setPhotoDeleting] = useState(false)
   const [photoInputKey, setPhotoInputKey] = useState(0)
-  const [ingredientPage, setIngredientPage] = useState(1)
 
   const activeFilterCount = statusFilters.length + categoryFilters.length
 
@@ -197,10 +194,6 @@ const ChefMenuBank = () => {
     setPage(1)
   }, [searchTerm, statusFilters, categoryFilters])
 
-  useEffect(() => {
-    setIngredientPage(1)
-  }, [selectedRecipeId])
-
   const selectedRecipe =
     selectedRecipeId === null
       ? null
@@ -226,14 +219,6 @@ const ChefMenuBank = () => {
     : null
   const activePhotoUrl = photoModalRecipe?.imageUrl ?? null
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
-  const ingredientTotalPages = Math.max(
-    1,
-    Math.ceil(selectedRecipeIngredients.length / RECIPE_INGREDIENTS_PER_PAGE),
-  )
-  const paginatedSelectedRecipeIngredients = selectedRecipeIngredients.slice(
-    (ingredientPage - 1) * RECIPE_INGREDIENTS_PER_PAGE,
-    ingredientPage * RECIPE_INGREDIENTS_PER_PAGE,
-  )
   const previewPhotoUrl = photoDraftUrl ?? activePhotoUrl
 
   const handleCreateFromRecipe = (recipe: Recipe) => {
@@ -723,7 +708,7 @@ const ChefMenuBank = () => {
                                 prev === recipeKey ? null : recipeKey,
                               )
                             }
-                            className="rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary"
+                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                           >
                             {isSelected ? 'Hide details' : 'View details'}
                           </button>
@@ -840,15 +825,13 @@ const ChefMenuBank = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedSelectedRecipeIngredients.map((ingredient, idx) => (
+                    {selectedRecipeIngredients.map((ingredient, idx) => (
                       <tr
                         key={`${ingredient.productCode}-${idx}`}
                         className="border-t border-border"
                       >
                         <td className="px-4 py-3 text-sm text-muted">
-                          {(ingredientPage - 1) * RECIPE_INGREDIENTS_PER_PAGE +
-                            idx +
-                            1}
+                          {idx + 1}
                         </td>
                         <td className="px-4 py-3">{ingredient.productCode}</td>
                         <td className="px-4 py-3">{ingredient.name}</td>
@@ -860,13 +843,6 @@ const ChefMenuBank = () => {
                     ))}
                   </tbody>
                 </table>
-                <TablePagination
-                  page={ingredientPage}
-                  totalPages={ingredientTotalPages}
-                  onPageChange={setIngredientPage}
-                  summary={`Showing ${paginatedSelectedRecipeIngredients.length} of ${selectedRecipeIngredients.length} ingredients`}
-                  className="px-4 py-3"
-                />
               </div>
             )}
 

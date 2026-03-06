@@ -464,11 +464,11 @@ const SuperadminStoreRequestExportPage = () => {
             type="button"
             onClick={handleExport}
             disabled={exporting || loadingSites}
-            className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-success bg-white px-4 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="flex items-center gap-2">
               <i className="bi bi-download text-sm" aria-hidden="true" />
-              <span>{exporting ? 'Exporting...' : 'Export Store Request'}</span>
+              <span>Export</span>
             </span>
           </button>
           <span className="text-xs text-muted">
