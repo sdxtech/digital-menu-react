@@ -146,19 +146,21 @@ const StorekeeperHistoryPage = () => {
                 <th className="w-16 px-3 py-1.5 font-semibold">No</th>
                 <th className="px-3 py-1.5 font-semibold">Production date</th>
                 <th className="px-3 py-1.5 font-semibold">Production code</th>
+                <th className="px-3 py-1.5 font-semibold">Total menu</th>
                 <th className="px-3 py-1.5 font-semibold">Issuance status</th>
+                <th className="px-3 py-1.5 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
                     Loading issuance history...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
                     No ingredient issuance history yet.
                   </td>
                 </tr>
@@ -188,30 +190,30 @@ const StorekeeperHistoryPage = () => {
                         <td className="px-3 py-1.5 text-xs text-muted">
                           {group.productionCode ?? '-'}
                         </td>
+                        <td className="px-3 py-1.5 text-sm font-medium">
+                          {group.items.length}
+                        </td>
                         <td className="px-3 py-1.5">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 text-sm">
-                              <span>Completed</span>
-                              <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
-                                {group.items.length} menus
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleExpanded(groupKey)
-                              }}
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                            >
-                              {isExpanded ? 'Hide details' : 'View details'}
-                            </button>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span>Completed</span>
                           </div>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleExpanded(groupKey)
+                            }}
+                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                          >
+                            {isExpanded ? 'Hide details' : 'View details'}
+                          </button>
                         </td>
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                          <td colSpan={4} className="px-4 py-4">
+                          <td colSpan={6} className="px-4 py-4">
                             <div className="space-y-6">
                               <div>
                                 <p className="text-xs text-muted">
