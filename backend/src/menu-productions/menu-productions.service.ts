@@ -20,6 +20,7 @@ import {
   MenuProductionDocument,
   StoreRequestStatus,
 } from './schemas/menu-production.schema';
+import { UsersService } from '../users/users.service';
 
 type StoreRequestIngredient = {
   productCode: string;
@@ -32,6 +33,7 @@ type StoreRequestMenu = {
   id: string;
   site?: string;
   productionCode?: string;
+  submittedByName?: string;
   recipeId?: string;
   recipeCode?: string;
   menuName: string;
@@ -101,6 +103,7 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly menuProductionCodeCounterModel: Model<MenuProductionCodeCounterDocument>,
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
+    private readonly users: UsersService,
   ) {}
 
   async onModuleInit() {
@@ -488,6 +491,18 @@ export class MenuProductionsService implements OnModuleInit {
       return { items: [] as StoreRequestGroup[] };
     }
 
+    const creatorIds = Array.from(
+      new Set(
+        items
+          .map((item) => item.createdBy?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const creatorNameById =
+      creatorIds.length > 0
+        ? await this.users.findNamesByIds(creatorIds)
+        : new Map<string, string>();
+
     // Recipes are shared across sites, so use the full recipe list.
     const recipes = await this.recipeModel.find({}).lean();
     const recipeById = new Map<string, RecipeDocument>();
@@ -539,6 +554,10 @@ export class MenuProductionsService implements OnModuleInit {
       let ingredients: StoreRequestIngredient[] = [];
       let missingRecipe = false;
       let portionSize = 1;
+      const submittedById = menu.createdBy?.trim();
+      const submittedByName = submittedById
+        ? creatorNameById.get(submittedById)
+        : undefined;
       const resolvedRecipeId =
         menuRecipeId ??
         (recipe
@@ -593,6 +612,7 @@ export class MenuProductionsService implements OnModuleInit {
         id: String(menu._id ?? menu.id ?? ''),
         site: this.normalizeSite(menu.site) ?? group.site,
         productionCode: menu.productionCode,
+        submittedByName,
         recipeId: resolvedRecipeId,
         recipeCode: resolvedRecipeCode,
         menuName: menu.menuName,

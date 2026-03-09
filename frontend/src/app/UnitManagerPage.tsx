@@ -9,12 +9,25 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 const RECIPE_ITEMS_PER_PAGE = 10
 const MENU_GROUP_ITEMS_PER_PAGE = 10
 
+type RecipeIngredient = {
+  productCode?: string
+  name?: string
+  unitOfMeasures?: string
+  qty?: number
+}
+
 type Recipe = {
   id?: string
   _id?: string
   recipeCode?: string
   name: string
   category: string
+  description?: string
+  imageUrl?: string
+  ingredients?: RecipeIngredient[]
+  createdBy?: string
+  createdByName?: string
+  createdByEmail?: string
   status: 'draft' | 'active'
   approvalStatus: 'pending' | 'approved' | 'rejected'
 }
@@ -29,6 +42,7 @@ type StoreRequestIngredient = {
 type StoreRequestMenu = {
   id: string
   productionCode?: string
+  submittedByName?: string
   recipeId?: string
   recipeCode?: string
   menuName: string
@@ -64,6 +78,7 @@ const UnitManagerPage = () => {
   const [menuProductionGroups, setMenuProductionGroups] = useState<
     StoreRequestGroup[]
   >([])
+  const [expandedRecipeKeys, setExpandedRecipeKeys] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
   const [menuGroupPage, setMenuGroupPage] = useState(1)
@@ -120,6 +135,17 @@ const UnitManagerPage = () => {
 
   const getGroupKey = (group: StoreRequestGroup) =>
     `${group.date}__${group.productionCode ?? 'no-code'}`
+
+  const getRecipeKey = (recipe: Recipe) =>
+    recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
+
+  const toggleRecipeDetails = (recipeKey: string) => {
+    setExpandedRecipeKeys((prev) =>
+      prev.includes(recipeKey)
+        ? prev.filter((item) => item !== recipeKey)
+        : [...prev, recipeKey],
+    )
+  }
 
   const toggleExpandedDate = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -226,6 +252,7 @@ const UnitManagerPage = () => {
                   <th className="px-4 py-3 font-semibold">Recipe ID</th>
                   <th className="px-4 py-3 font-semibold">Name</th>
                   <th className="px-4 py-3 font-semibold">Category</th>
+                  <th className="px-4 py-3 font-semibold">Chef</th>
                   <th className="px-4 py-3 font-semibold">Recipe status</th>
                   <th className="px-4 py-3 font-semibold">Action</th>
                 </tr>
@@ -233,68 +260,188 @@ const UnitManagerPage = () => {
               <tbody>
                 {pendingRecipes.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-muted">
+                    <td colSpan={7} className="px-4 py-6 text-center text-muted">
                       No recipes pending approval.
                     </td>
                   </tr>
                 ) : (
-                  paginatedRecipes.map((item, index) => (
-                    <tr key={item.id ?? item._id} className="border-t border-border">
-                      <td className="px-4 py-3 text-sm text-muted">
-                        {(recipePage - 1) * RECIPE_ITEMS_PER_PAGE + index + 1}
-                      </td>
-                      <td className="px-4 py-3 font-medium">
-                        {item.recipeCode ?? '-'}
-                      </td>
-                      <td className="px-4 py-3">{item.name}</td>
-                      <td className="px-4 py-3">{item.category}</td>
-                      <td className="px-4 py-3">
-                        {item.status === 'active' ? 'Active' : 'Draft'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setActionError('')
-                              try {
-                                await approveRecipe(item.id ?? item._id ?? '')
-                                fetchPending().catch(() => null)
-                              } catch (error) {
-                                setActionError(
-                                  error instanceof Error
-                                    ? error.message
-                                    : 'Failed to approve recipe.',
-                                )
-                              }
-                            }}
-                            className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setActionError('')
-                              try {
-                                await rejectRecipe(item.id ?? item._id ?? '')
-                                fetchPending().catch(() => null)
-                              } catch (error) {
-                                setActionError(
-                                  error instanceof Error
-                                    ? error.message
-                                    : 'Failed to reject recipe.',
-                                )
-                              }
-                            }}
-                            className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  paginatedRecipes.map((item, index) => {
+                    const recipeKey = getRecipeKey(item)
+                    const isExpanded = expandedRecipeKeys.includes(recipeKey)
+                    const ingredients = item.ingredients ?? []
+                    const submittedBy =
+                      item.createdByName?.trim() ||
+                      item.createdByEmail?.trim() ||
+                      item.createdBy?.trim() ||
+                      '-'
+                    const description = item.description?.trim() || '-'
+
+                    return (
+                      <Fragment key={recipeKey}>
+                        <tr className="border-t border-border">
+                          <td className="px-4 py-3 text-sm text-muted">
+                            {(recipePage - 1) * RECIPE_ITEMS_PER_PAGE + index + 1}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {item.recipeCode ?? '-'}
+                          </td>
+                          <td className="px-4 py-3">{item.name}</td>
+                          <td className="px-4 py-3">{item.category}</td>
+                          <td className="px-4 py-3">{submittedBy}</td>
+                          <td className="px-4 py-3">
+                            {item.status === 'active' ? 'Active' : 'Draft'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleRecipeDetails(recipeKey)}
+                                className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                              >
+                                {isExpanded ? 'Hide details' : 'View details'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await approveRecipe(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Failed to approve recipe.',
+                                    )
+                                  }
+                                }}
+                                className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  setActionError('')
+                                  try {
+                                    await rejectRecipe(item.id ?? item._id ?? '')
+                                    fetchPending().catch(() => null)
+                                  } catch (error) {
+                                    setActionError(
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Failed to reject recipe.',
+                                    )
+                                  }
+                                }}
+                                className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded ? (
+                          <tr className="border-t border-border bg-background">
+                            <td colSpan={7} className="px-4 py-4">
+                              <div className="grid gap-4 lg:grid-cols-12">
+                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
+                                  <p className="text-xs text-muted">Recipe details</p>
+                                  <div className="mt-3 h-40 overflow-hidden rounded-md border border-border bg-background">
+                                    {item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={`${item.name} photo`}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center text-xs text-muted">
+                                        No photo
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="mt-3 text-xs text-muted">Submitted by</p>
+                                  <p className="mt-1 text-sm font-medium">{submittedBy}</p>
+                                  <p className="mt-3 text-xs text-muted">Description</p>
+                                  <p className="mt-1 text-sm text-foreground">
+                                    {description}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-8">
+                                  <p className="text-xs text-muted">Ingredients</p>
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                                    <table className="dm-table min-w-full text-sm">
+                                      <thead className="bg-background">
+                                        <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                          <th className="w-12 px-4 py-3 font-semibold">
+                                            No
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Product code
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Ingredient name
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Qty
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Unit
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {ingredients.length === 0 ? (
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={5}
+                                              className="px-4 py-6 text-center text-muted"
+                                            >
+                                              No ingredients available.
+                                            </td>
+                                          </tr>
+                                        ) : (
+                                          ingredients.map((ingredient, ingredientIndex) => (
+                                            <tr
+                                              key={`${ingredient.productCode ?? ingredient.name ?? ingredientIndex}-${ingredientIndex}`}
+                                              className="border-t border-border"
+                                            >
+                                              <td className="px-4 py-3 text-sm text-muted">
+                                                {ingredientIndex + 1}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.productCode || '-'}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.name || '-'}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {typeof ingredient.qty === 'number'
+                                                  ? formatQuantity(ingredient.qty)
+                                                  : '-'}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.unitOfMeasures
+                                                  ? formatUnitLabel(
+                                                      ingredient.unitOfMeasures,
+                                                    )
+                                                  : '-'}
+                                              </td>
+                                            </tr>
+                                          ))
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -318,6 +465,7 @@ const UnitManagerPage = () => {
                 <th className="w-16 px-4 py-3 font-semibold">No</th>
                 <th className="px-4 py-3 font-semibold">Production date</th>
                 <th className="px-4 py-3 font-semibold">Production code</th>
+                <th className="px-4 py-3 font-semibold">Chef</th>
                 <th className="px-4 py-3 font-semibold">Approval status</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
@@ -325,7 +473,7 @@ const UnitManagerPage = () => {
             <tbody>
               {menuProductionGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     No production menus pending approval.
                   </td>
                 </tr>
@@ -336,6 +484,16 @@ const UnitManagerPage = () => {
                   const batchLabel = group.productionCode
                     ? `${group.date} (${group.productionCode})`
                     : group.date
+                  const submittedByNames = Array.from(
+                    new Set(
+                      group.items
+                        .map((item) => item.submittedByName?.trim())
+                        .filter((value): value is string => Boolean(value)),
+                    ),
+                  )
+                  const submittedByLabel = submittedByNames.length
+                    ? submittedByNames.join(', ')
+                    : '-'
 
                   return (
                     <Fragment key={groupKey}>
@@ -347,6 +505,7 @@ const UnitManagerPage = () => {
                         <td className="px-4 py-3 text-xs text-muted">
                           {group.productionCode ?? '-'}
                         </td>
+                        <td className="px-4 py-3">{submittedByLabel}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-2 text-sm">
                             <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
@@ -387,7 +546,7 @@ const UnitManagerPage = () => {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={5} className="px-4 py-4">
+                          <td colSpan={6} className="px-4 py-4">
                             <div className="grid gap-4 lg:grid-cols-12">
                               <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                 <p className="text-xs text-muted">Menu list</p>

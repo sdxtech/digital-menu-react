@@ -1304,16 +1304,10 @@ export class RecipesService {
     items.forEach((item) => {
       const createdBy = item.createdBy;
       const updatedBy = item.updatedBy;
-      const createdByName = item.createdByName;
-      const updatedByName = item.updatedByName;
-      const hasCreatedName =
-        typeof createdByName === 'string' && createdByName.trim().length > 0;
-      const hasUpdatedName =
-        typeof updatedByName === 'string' && updatedByName.trim().length > 0;
-      if (!hasCreatedName && typeof createdBy === 'string' && createdBy) {
+      if (typeof createdBy === 'string' && createdBy) {
         ids.add(createdBy);
       }
-      if (!hasUpdatedName && typeof updatedBy === 'string' && updatedBy) {
+      if (typeof updatedBy === 'string' && updatedBy) {
         ids.add(updatedBy);
       }
     });
@@ -1324,18 +1318,11 @@ export class RecipesService {
     if (nameMap.size === 0) return;
 
     items.forEach((item) => {
-      const createdByName = item.createdByName;
-      const updatedByName = item.updatedByName;
-      const hasCreatedName =
-        typeof createdByName === 'string' && createdByName.trim().length > 0;
-      const hasUpdatedName =
-        typeof updatedByName === 'string' && updatedByName.trim().length > 0;
-
-      if (!hasCreatedName && typeof item.createdBy === 'string') {
+      if (typeof item.createdBy === 'string' && item.createdBy) {
         const name = nameMap.get(item.createdBy);
         if (name) item.createdByName = name;
       }
-      if (!hasUpdatedName && typeof item.updatedBy === 'string') {
+      if (typeof item.updatedBy === 'string' && item.updatedBy) {
         const name = nameMap.get(item.updatedBy);
         if (name) item.updatedByName = name;
       }
