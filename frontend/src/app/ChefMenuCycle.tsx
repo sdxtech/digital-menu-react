@@ -12,6 +12,7 @@ const INPUT_ROWS_PER_PAGE = 8
 type MenuInputRow = {
   id: string
   recipeId: string
+  recipeQuery: string
   portion: number | ''
 }
 
@@ -43,6 +44,7 @@ type TimelineStats = {
 const createMenuInputRow = (): MenuInputRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   recipeId: '',
+  recipeQuery: '',
   portion: '',
 })
 
@@ -69,12 +71,16 @@ const ChefMenuCycle = () => {
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
   const [inputPage, setInputPage] = useState(1)
 
+  const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''
+
   const availableRecipes = useMemo(
     () =>
       recipes.filter(
         (recipe) =>
           recipe.approvalStatus === 'approved' && recipe.status === 'active',
-      ),
+      )
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [recipes],
   )
 
@@ -161,9 +167,40 @@ const ChefMenuCycle = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
-  const updateRowRecipe = (id: string, recipeId: string) => {
+  const findRecipeByExactQuery = (query: string) => {
+    const normalized = normalizeText(query)
+    if (!normalized) return undefined
+    return availableRecipes.find((recipe) => {
+      const name = normalizeText(recipe.name)
+      const recipeCode = normalizeText(recipe.recipeCode)
+      return name === normalized || recipeCode === normalized
+    })
+  }
+
+  const getRecipeSuggestions = (query: string) => {
+    const normalized = normalizeText(query)
+    const filtered = !normalized
+      ? availableRecipes
+      : availableRecipes.filter((recipe) => {
+          const name = normalizeText(recipe.name)
+          const recipeCode = normalizeText(recipe.recipeCode)
+          return name.includes(normalized) || recipeCode.includes(normalized)
+        })
+    return filtered.slice(0, 5)
+  }
+
+  const updateRowMenuQuery = (id: string, value: string) => {
+    const matchedRecipe = findRecipeByExactQuery(value)
     setMenuRows((prev) =>
-      prev.map((row) => (row.id === id ? { ...row, recipeId } : row)),
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              recipeQuery: value,
+              recipeId: matchedRecipe ? matchedRecipe.id : '',
+            }
+          : row,
+      ),
     )
   }
 
@@ -372,6 +409,7 @@ const ChefMenuCycle = () => {
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-20 px-2 py-3 font-semibold" />
                 <th className="w-14 px-2 py-3 font-semibold text-center">No</th>
+                <th className="px-4 py-3 font-semibold">Recipe ID</th>
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Portion</th>
@@ -391,6 +429,7 @@ const ChefMenuCycle = () => {
                   typeof row.portion === 'number' && row.portion > 0
                     ? row.portion
                     : null
+                const recipeSuggestions = getRecipeSuggestions(row.recipeQuery)
                 return (
                   <Fragment key={row.id}>
                     <tr className="border-t border-border">
@@ -410,27 +449,33 @@ const ChefMenuCycle = () => {
                       <td className="px-2 py-3 text-center text-sm text-muted">
                         {(inputPage - 1) * INPUT_ROWS_PER_PAGE + index + 1}
                       </td>
+                      <td className="px-4 py-3 text-sm text-muted">
+                        {selectedRecipe?.recipeCode ?? '-'}
+                      </td>
                       <td className="px-4 py-3">
-                        <select
-                          value={row.recipeId}
+                        <input
+                          type="text"
+                          list={`menu-options-${row.id}`}
+                          value={row.recipeQuery}
                           onChange={(event) =>
-                            updateRowRecipe(row.id, event.target.value)
+                            updateRowMenuQuery(row.id, event.target.value)
+                          }
+                          placeholder={
+                            availableRecipes.length === 0
+                              ? 'No approved menu available'
+                              : 'Search menu'
                           }
                           className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                        >
-                          <option value="">
-                            {availableRecipes.length === 0
-                              ? 'No approved menu available'
-                              : 'Select menu'}
-                          </option>
-                          {availableRecipes.map((recipe) => (
-                            <option key={recipe.id} value={recipe.id}>
-                              {recipe.recipeCode
-                                ? `${recipe.recipeCode} ${recipe.name}`
-                                : recipe.name}
-                            </option>
+                        />
+                        <datalist id={`menu-options-${row.id}`}>
+                          {recipeSuggestions.map((recipe) => (
+                            <option
+                              key={recipe.id}
+                              value={recipe.name}
+                              label={recipe.category}
+                            />
                           ))}
-                        </select>
+                        </datalist>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
                         {selectedRecipe?.category ?? '-'}
@@ -465,7 +510,7 @@ const ChefMenuCycle = () => {
                     </tr>
                     {isDetailsOpen ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={6} className="px-4 py-4">
+                        <td colSpan={7} className="px-4 py-4">
                           {!selectedRecipe ? (
                             <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
                               Select a menu to view recipe details.
@@ -554,7 +599,7 @@ const ChefMenuCycle = () => {
                 )
               })}
               <tr className="border-t border-border">
-                <td colSpan={6} className="px-4 py-3">
+                <td colSpan={7} className="px-4 py-3">
                   <div className="flex justify-center">
                     <button
                       type="button"
