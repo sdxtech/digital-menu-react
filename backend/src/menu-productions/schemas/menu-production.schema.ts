@@ -11,11 +11,16 @@ export class MenuProduction {
   @Prop({
     type: String,
     trim: true,
-    unique: true,
-    sparse: true,
     index: true,
+    sparse: true,
   })
   productionCode?: string;
+
+  @Prop({ type: String, trim: true, index: true })
+  recipeId?: string;
+
+  @Prop({ type: String, trim: true, index: true })
+  recipeCode?: string;
 
   @Prop({ required: true, trim: true })
   menuName: string;

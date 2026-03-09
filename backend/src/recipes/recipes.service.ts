@@ -516,15 +516,6 @@ export class RecipesService {
           });
         }
 
-        const unitLeftRaw = header.unitLeftCol
-          ? this.cellToText(rowValues[header.unitLeftCol] ?? null)
-          : '';
-        const unitRightRaw = header.unitRightCol
-          ? this.cellToText(rowValues[header.unitRightCol] ?? null)
-          : '';
-        const unitLeft = this.normalizeImportedUnit(unitLeftRaw);
-        const unitRight = this.normalizeImportedUnit(unitRightRaw);
-
         const priceUom = header.priceUomCol
           ? this.cellToNumber(rowValues[header.priceUomCol] ?? null)
           : undefined;
@@ -536,8 +527,6 @@ export class RecipesService {
           qty !== undefined ||
           !!productCodeRaw ||
           !!name ||
-          !!unitLeftRaw ||
-          !!unitRightRaw ||
           priceUom !== undefined ||
           foodCost !== undefined;
         if (!hasAnyIngredientData) {
@@ -554,8 +543,8 @@ export class RecipesService {
           });
         }
 
-        let finalQty = qty;
-        let finalUnit = unitRight || unitLeft || '';
+        const finalQty = qty;
+        let finalUnit = '';
         let resolvedRawMaterial: RawMaterialLookup | null = null;
 
         if (productCodeRaw) {
@@ -566,29 +555,10 @@ export class RecipesService {
         }
 
         if (resolvedRawMaterial) {
-          const targetUnitRaw = resolvedRawMaterial.unitOfMeasures.trim();
-          const targetUnitNormalized =
-            this.normalizeImportedUnit(targetUnitRaw);
-          const canTryConversion =
-            qty !== undefined &&
-            !!unitLeft &&
-            !!targetUnitNormalized &&
-            Number.isFinite(qty);
-          const conversion = canTryConversion
-            ? this.convertQty(qty, unitLeft, targetUnitNormalized)
-            : undefined;
-          if (conversion !== undefined && canTryConversion) {
-            finalQty = conversion;
-            finalUnit = targetUnitRaw || targetUnitNormalized || finalUnit;
-          } else if (canTryConversion) {
-            fallbackRows.conversionNotPossible += 1;
-            warnings.push({
-              code: 'conversion_not_possible',
-              row: rowNumber,
-              recipeName: meta.recipeName,
-              message: `Could not convert ${qty} ${unitLeft || '(missing unit)'} to ${targetUnitRaw || '(missing target unit)'}.`,
-            });
-          }
+          // Import policy update:
+          // - qty is used as-is from file (no unit conversion)
+          // - unit follows raw material master data
+          finalUnit = resolvedRawMaterial.unitOfMeasures.trim();
         } else if (productCodeRaw) {
           fallbackRows.rawMaterialNotFound += 1;
           warnings.push({
@@ -596,16 +566,6 @@ export class RecipesService {
             row: rowNumber,
             recipeName: meta.recipeName,
             message: `Raw material not found for product code ${productCodeRaw}.`,
-          });
-        }
-
-        if (!unitRight && !unitLeft) {
-          fallbackRows.missingUom += 1;
-          warnings.push({
-            code: 'missing_uom',
-            row: rowNumber,
-            recipeName: meta.recipeName,
-            message: 'Unit kosong. Data tetap diimport dengan unit kosong.',
           });
         }
 

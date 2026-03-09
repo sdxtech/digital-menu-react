@@ -651,7 +651,7 @@ const ChefCreateMenu = () => {
             className="mt-3"
           />
 
-          <div className="mt-4 overflow-x-auto rounded-md border border-border">
+          <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <datalist id="raw-material-code-options">
               {rawMaterialOptions.map((item) => (
                 <option

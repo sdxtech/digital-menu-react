@@ -29,6 +29,8 @@ type StoreRequestIngredient = {
 type StoreRequestMenu = {
   id: string
   productionCode?: string
+  recipeId?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
@@ -42,6 +44,7 @@ type StoreRequestMenu = {
 
 type StoreRequestGroup = {
   date: string
+  productionCode?: string
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
@@ -61,7 +64,7 @@ const UnitManagerPage = () => {
   const [menuProductionGroups, setMenuProductionGroups] = useState<
     StoreRequestGroup[]
   >([])
-  const [expandedDates, setExpandedDates] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
   const [menuGroupPage, setMenuGroupPage] = useState(1)
 
@@ -115,14 +118,19 @@ const UnitManagerPage = () => {
     setMenuGroupPage((prev) => Math.min(prev, nextTotalPages))
   }, [menuProductionGroups.length])
 
-  const toggleExpandedDate = (date: string) => {
-    setExpandedDates((prev) =>
-      prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
+  const getGroupKey = (group: StoreRequestGroup) =>
+    `${group.date}__${group.productionCode ?? 'no-code'}`
+
+  const toggleExpandedDate = (groupKey: string) => {
+    setExpandedGroups((prev) =>
+      prev.includes(groupKey)
+        ? prev.filter((item) => item !== groupKey)
+        : [...prev, groupKey],
     )
   }
 
   const handleBulkApproval = async (
-    date: string,
+    batchLabel: string,
     items: StoreRequestMenu[],
     action: 'approve' | 'reject',
   ) => {
@@ -147,11 +155,11 @@ const UnitManagerPage = () => {
 
     if (successCount > 0) {
       setActionMessage(
-        `${successCount} menu ${action === 'approve' ? 'approved' : 'rejected'} for ${date}.`,
+        `${successCount} menu ${action === 'approve' ? 'approved' : 'rejected'} for ${batchLabel}.`,
       )
     }
     if (failedCount > 0) {
-      setActionError(`${failedCount} menu failed to ${action} for ${date}.`)
+      setActionError(`${failedCount} menu failed to ${action} for ${batchLabel}.`)
     }
 
     fetchPending().catch(() => null)
@@ -210,7 +218,7 @@ const UnitManagerPage = () => {
             summary={`Showing ${paginatedRecipes.length} of ${pendingRecipes.length} recipes`}
             className="mt-4"
           />
-          <div className="mt-4 overflow-x-auto rounded-md border border-border">
+          <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -300,15 +308,16 @@ const UnitManagerPage = () => {
           page={menuGroupPage}
           totalPages={menuGroupTotalPages}
           onPageChange={setMenuGroupPage}
-          summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionGroups.length} production dates`}
+          summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionGroups.length} production batches`}
           className="mt-4"
         />
-        <div className="mt-4 overflow-x-auto rounded-md border border-border">
+        <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
           <table className="dm-table min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-4 py-3 font-semibold">No</th>
                 <th className="px-4 py-3 font-semibold">Production date</th>
+                <th className="px-4 py-3 font-semibold">Production code</th>
                 <th className="px-4 py-3 font-semibold">Approval status</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
@@ -316,21 +325,28 @@ const UnitManagerPage = () => {
             <tbody>
               {menuProductionGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
                     No production menus pending approval.
                   </td>
                 </tr>
               ) : (
                 paginatedMenuGroups.map((group, index) => {
-                  const isExpanded = expandedDates.includes(group.date)
+                  const groupKey = getGroupKey(group)
+                  const isExpanded = expandedGroups.includes(groupKey)
+                  const batchLabel = group.productionCode
+                    ? `${group.date} (${group.productionCode})`
+                    : group.date
 
                   return (
-                    <Fragment key={group.date}>
+                    <Fragment key={groupKey}>
                       <tr className="border-t border-border">
                         <td className="px-4 py-3 text-sm text-muted">
                           {(menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE + index + 1}
                         </td>
                         <td className="px-4 py-3">{group.date}</td>
+                        <td className="px-4 py-3 text-xs text-muted">
+                          {group.productionCode ?? '-'}
+                        </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-2 text-sm">
                             <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
@@ -343,7 +359,7 @@ const UnitManagerPage = () => {
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => toggleExpandedDate(group.date)}
+                              onClick={() => toggleExpandedDate(groupKey)}
                               className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                             >
                               {isExpanded ? 'Hide details' : 'View details'}
@@ -351,7 +367,7 @@ const UnitManagerPage = () => {
                             <button
                               type="button"
                               onClick={() =>
-                                handleBulkApproval(group.date, group.items, 'approve')
+                                handleBulkApproval(batchLabel, group.items, 'approve')
                               }
                               className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                             >
@@ -360,7 +376,7 @@ const UnitManagerPage = () => {
                             <button
                               type="button"
                               onClick={() =>
-                                handleBulkApproval(group.date, group.items, 'reject')
+                                handleBulkApproval(batchLabel, group.items, 'reject')
                               }
                               className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
                             >
@@ -371,11 +387,11 @@ const UnitManagerPage = () => {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={4} className="px-4 py-4">
+                          <td colSpan={5} className="px-4 py-4">
                             <div className="grid gap-4 lg:grid-cols-12">
                               <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                 <p className="text-xs text-muted">Menu list</p>
-                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                   <table className="dm-table min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -403,7 +419,7 @@ const UnitManagerPage = () => {
                                               {itemIndex + 1}
                                             </td>
                                             <td className="px-4 py-3 font-medium">
-                                              {item.productionCode ?? '-'}
+                                              {item.recipeCode ?? '-'}
                                             </td>
                                             <td className="px-4 py-3">{item.menuName}</td>
                                             <td className="px-4 py-3">{item.category}</td>
@@ -423,7 +439,7 @@ const UnitManagerPage = () => {
 
                               <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
                                 <p className="text-xs text-muted">Ingredient summary</p>
-                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                   <table className="dm-table min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

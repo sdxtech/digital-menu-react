@@ -659,7 +659,7 @@ const ChefMenuBank = () => {
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-w-full overflow-x-auto">
             <table className="dm-table min-w-full text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -818,7 +818,7 @@ const ChefMenuBank = () => {
                 No ingredients for this recipe yet.
               </div>
             ) : (
-              <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+              <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                 <table className="dm-table min-w-full text-sm">
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

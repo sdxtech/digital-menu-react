@@ -45,6 +45,8 @@ export type Recipe = {
 export type MenuProduction = {
   id: string
   productionCode?: string
+  recipeId?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
@@ -93,6 +95,7 @@ type UpdateRecipeInput = {
 }
 
 type AddMenuProductionInput = {
+  recipeId: string
   menuName: string
   category: string
   portion: number
@@ -123,6 +126,7 @@ type ChefDataContextValue = ChefDataState & {
   approveRecipe: (id: string) => Promise<void>
   rejectRecipe: (id: string) => Promise<void>
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
+  addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
   rejectMenuProduction: (id: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
@@ -196,6 +200,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
 const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   id: pickId(item.id ?? item._id, 'menu-production'),
   productionCode: item.productionCode ?? undefined,
+  recipeId: item.recipeId ?? undefined,
+  recipeCode: item.recipeCode ?? undefined,
   menuName: item.menuName ?? '',
   category: item.category ?? '',
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
@@ -381,6 +387,37 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       menuProductions: upsertById(prev.menuProductions, mapped),
     }))
+  }
+
+  const addMenuProductionsBulk = async (inputs: AddMenuProductionInput[]) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+    if (!inputs.length) return
+
+    const created = await apiFetch<
+      MenuProductionApi[] | { items?: MenuProductionApi[] }
+    >(
+      '/menu-productions/bulk',
+      {
+        method: 'POST',
+        body: JSON.stringify({ items: inputs }),
+      },
+      accessToken,
+    )
+
+    const items = Array.isArray(created) ? created : created.items ?? []
+    const mappedItems = items.map(mapMenuProduction)
+    setState((prev) => {
+      let nextMenuProductions = prev.menuProductions
+      mappedItems.forEach((item) => {
+        nextMenuProductions = upsertById(nextMenuProductions, item)
+      })
+      return {
+        ...prev,
+        menuProductions: nextMenuProductions,
+      }
+    })
   }
 
   const approveMenuProduction = async (id: string) => {
@@ -607,6 +644,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     approveRecipe,
     rejectRecipe,
     addMenuProduction,
+    addMenuProductionsBulk,
     approveMenuProduction,
     rejectMenuProduction,
     importRawMaterialsFromExcel,

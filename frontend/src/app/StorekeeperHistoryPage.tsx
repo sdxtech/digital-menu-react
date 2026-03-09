@@ -20,6 +20,7 @@ type StoreRequestMenu = {
 
 type StoreRequestGroup = {
   date: string
+  productionCode?: string
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
@@ -27,11 +28,14 @@ type StoreRequestGroup = {
 
 const ITEMS_PER_PAGE = 10
 
+const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
+  `${group.date}__${group.productionCode ?? 'no-code'}`
+
 const StorekeeperHistoryPage = () => {
   const { accessToken } = useAuth()
   const [loadError, setLoadError] = useState('')
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
-  const [expandedDates, setExpandedDates] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
 
@@ -81,9 +85,11 @@ const StorekeeperHistoryPage = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
-  const toggleExpanded = (date: string) => {
-    setExpandedDates((prev) =>
-      prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
+  const toggleExpanded = (groupKey: string) => {
+    setExpandedGroups((prev) =>
+      prev.includes(groupKey)
+        ? prev.filter((item) => item !== groupKey)
+        : [...prev, groupKey],
     )
   }
 
@@ -108,7 +114,7 @@ const StorekeeperHistoryPage = () => {
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {groups.length} production dates
+            Showing {paginatedGroups.length} of {groups.length} production batches
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -133,31 +139,33 @@ const StorekeeperHistoryPage = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-3 py-1.5 font-semibold">No</th>
                 <th className="px-3 py-1.5 font-semibold">Production date</th>
+                <th className="px-3 py-1.5 font-semibold">Production code</th>
                 <th className="px-3 py-1.5 font-semibold">Issuance status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
                     Loading issuance history...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
                     No ingredient issuance history yet.
                   </td>
                 </tr>
               ) : (
                 paginatedGroups.map((group, index) => {
-                  const isExpanded = expandedDates.includes(group.date)
+                  const groupKey = getHistoryGroupKey(group)
+                  const isExpanded = expandedGroups.includes(groupKey)
                   const summaryItems = group.summary ?? []
                   const completedBy = Array.from(
                     new Set(
@@ -168,15 +176,18 @@ const StorekeeperHistoryPage = () => {
                   )
 
                   return (
-                    <Fragment key={group.date}>
+                    <Fragment key={groupKey}>
                       <tr
                         className="cursor-pointer border-t border-border"
-                        onClick={() => toggleExpanded(group.date)}
+                        onClick={() => toggleExpanded(groupKey)}
                       >
                         <td className="px-3 py-1.5 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
                         <td className="px-3 py-1.5">{group.date}</td>
+                        <td className="px-3 py-1.5 text-xs text-muted">
+                          {group.productionCode ?? '-'}
+                        </td>
                         <td className="px-3 py-1.5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2 text-sm">
@@ -189,7 +200,7 @@ const StorekeeperHistoryPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                toggleExpanded(group.date)
+                                toggleExpanded(groupKey)
                               }}
                               className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                             >
@@ -197,10 +208,10 @@ const StorekeeperHistoryPage = () => {
                             </button>
                           </div>
                         </td>
-                      </tr>
-                      {isExpanded ? (
-                        <tr className="border-t border-border bg-background">
-                          <td colSpan={3} className="px-4 py-4">
+                    </tr>
+                    {isExpanded ? (
+                      <tr className="border-t border-border bg-background">
+                          <td colSpan={4} className="px-4 py-4">
                             <div className="space-y-6">
                               <div>
                                 <p className="text-xs text-muted">
@@ -216,7 +227,7 @@ const StorekeeperHistoryPage = () => {
                                   <p className="text-xs text-muted">
                                     Menu list
                                   </p>
-                                  <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -269,7 +280,7 @@ const StorekeeperHistoryPage = () => {
                                   <p className="text-xs text-muted">
                                     Ingredient summary
                                   </p>
-                                  <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

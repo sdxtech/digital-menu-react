@@ -112,7 +112,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
             </nav>
           </aside>
 
-          <main className="flex-1 pr-4 pt-4">
+          <main className="min-w-0 flex-1 pr-4 pt-4">
             <Outlet />
           </main>
         </div>

@@ -14,6 +14,8 @@ type StoreRequestIngredient = {
 type StoreRequestMenu = {
   id: string
   productionCode?: string
+  recipeId?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
@@ -27,6 +29,7 @@ type StoreRequestMenu = {
 
 type StoreRequestGroup = {
   date: string
+  productionCode?: string
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
@@ -39,11 +42,17 @@ const ingredientSummaryKey = (ingredient: StoreRequestIngredient) =>
     .trim()
     .toLowerCase()}`
 
+const getStoreRequestGroupKey = (group: {
+  date: string
+  productionCode?: string
+}) => `${group.date}__${group.productionCode ?? 'no-code'}`
+
 const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
-  const groupedByDate = new Map<
+  const groupedByBatch = new Map<
     string,
     {
       date: string
+      productionCode?: string
       items: StoreRequestMenu[]
       summaryMap: Map<string, StoreRequestIngredient>
       missingRecipes: Set<string>
@@ -51,8 +60,10 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
   >()
 
   groups.forEach((group) => {
-    const bucket = groupedByDate.get(group.date) ?? {
+    const groupKey = getStoreRequestGroupKey(group)
+    const bucket = groupedByBatch.get(groupKey) ?? {
       date: group.date,
+      productionCode: group.productionCode,
       items: [],
       summaryMap: new Map<string, StoreRequestIngredient>(),
       missingRecipes: new Set<string>(),
@@ -75,17 +86,22 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       if (value) bucket.missingRecipes.add(value)
     })
 
-    groupedByDate.set(group.date, bucket)
+    groupedByBatch.set(groupKey, bucket)
   })
 
-  return Array.from(groupedByDate.values())
+  return Array.from(groupedByBatch.values())
     .map((group) => ({
       date: group.date,
+      productionCode: group.productionCode,
       items: group.items,
       summary: Array.from(group.summaryMap.values()),
       missingRecipes: Array.from(group.missingRecipes.values()),
     }))
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .sort((a, b) => {
+      const byDate = a.date.localeCompare(b.date)
+      if (byDate !== 0) return byDate
+      return (a.productionCode ?? '').localeCompare(b.productionCode ?? '')
+    })
 }
 
 const xmlEscape = (value: unknown) => {
@@ -165,7 +181,7 @@ const downloadExcel = (
 const ChefStoreRequest = () => {
   const { accessToken } = useAuth()
   const [errorMessage, setErrorMessage] = useState('')
-  const [expandedDates, setExpandedDates] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -228,8 +244,12 @@ const ChefStoreRequest = () => {
     })
 
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
     downloadExcel(
-      `store-request-menu-${safeDate}.xls`,
+      `store-request-menu-${safeDate}-${safeProductionCode}.xls`,
       `Menus ${group.date}`,
       [header, ...rows],
     )
@@ -272,9 +292,11 @@ const ChefStoreRequest = () => {
     }
   }, [accessToken])
 
-  const toggleExpanded = (date: string) => {
-    setExpandedDates((prev) =>
-      prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
+  const toggleExpanded = (groupKey: string) => {
+    setExpandedGroups((prev) =>
+      prev.includes(groupKey)
+        ? prev.filter((item) => item !== groupKey)
+        : [...prev, groupKey],
     )
   }
 
@@ -308,7 +330,7 @@ const ChefStoreRequest = () => {
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {groups.length} production dates
+            Showing {paginatedGroups.length} of {groups.length} production batches
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -332,37 +354,40 @@ const ChefStoreRequest = () => {
             </button>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
                 <th className="px-5 py-4 font-semibold">Production date</th>
+                <th className="px-5 py-4 font-semibold">Production code</th>
                 <th className="px-5 py-4 font-semibold">Approval status</th>
                 <th className="px-5 py-4 font-semibold">Total menu</th>
                 <th className="px-5 py-4 font-semibold">Storekeeper</th>
                 <th className="px-5 py-4 font-semibold">Store request status</th>
+                <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     No production menus approved or rejected by the Unit Manager yet.
                   </td>
                 </tr>
               ) : (
                 paginatedGroups.map((group, index) => {
                 const date = group.date
+                const groupKey = getStoreRequestGroupKey(group)
                 const items = group.items
                 const summaryItems = group.summary ?? []
-                const isExpanded = expandedDates.includes(date)
+                const isExpanded = expandedGroups.includes(groupKey)
                 const hasApproved = items.some(
                   (item) => item.approvalStatus === 'approved',
                 )
@@ -390,15 +415,18 @@ const ChefStoreRequest = () => {
                   : '-'
 
                 return (
-                  <Fragment key={date}>
+                  <Fragment key={groupKey}>
                     <tr
                       className="border-t border-border cursor-pointer"
-                      onClick={() => toggleExpanded(date)}
+                      onClick={() => toggleExpanded(groupKey)}
                     >
                       <td className="px-5 py-4 text-sm text-muted">
                         {(page - 1) * ITEMS_PER_PAGE + index + 1}
                       </td>
                       <td className="px-5 py-4">{date}</td>
+                      <td className="px-5 py-4 text-xs text-muted">
+                        {group.productionCode ?? '-'}
+                      </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
                           {hasApproved ? (
@@ -414,34 +442,34 @@ const ChefStoreRequest = () => {
                         {fulfilledByLabel}
                       </td>
                       <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex flex-wrap items-center gap-2 text-sm">
-                            {hasRequested ? (
-                              <span className="text-primary">Requested</span>
-                            ) : null}
-                            {hasDelivered ? (
-                              <span className="text-success">Delivered</span>
-                            ) : null}
-                            {hasPendingApproval ? (
-                              <span className="text-muted">Pending approval</span>
-                            ) : null}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleExpanded(date)
-                            }}
-                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                          >
-                            {isExpanded ? 'Hide details' : 'View details'}
-                          </button>
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          {hasRequested ? (
+                            <span className="text-primary">Requested</span>
+                          ) : null}
+                          {hasDelivered ? (
+                            <span className="text-success">Delivered</span>
+                          ) : null}
+                          {hasPendingApproval ? (
+                            <span className="text-muted">Pending approval</span>
+                          ) : null}
                         </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            toggleExpanded(groupKey)
+                          }}
+                          className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                        >
+                          {isExpanded ? 'Hide details' : 'View details'}
+                        </button>
                       </td>
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={6} className="px-5 py-5">
+                        <td colSpan={8} className="px-5 py-5">
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -478,7 +506,7 @@ const ChefStoreRequest = () => {
                                           Menu
                                         </h3>
                                         <p className="mt-1 text-xs text-muted">
-                                          ID: {menu.productionCode ?? '-'}
+                                          ID: {menu.recipeCode ?? '-'}
                                         </p>
                                         <p className="mt-1 text-xs text-muted">
                                           {menu.menuName}
@@ -541,7 +569,7 @@ const ChefStoreRequest = () => {
                                         No ingredients for this recipe yet.
                                       </div>
                                     ) : (
-                                      <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                      <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                         <table className="dm-table min-w-full text-sm">
                                           <thead className="bg-background">
                                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -612,7 +640,7 @@ const ChefStoreRequest = () => {
                                   No ingredient summary available yet.
                                 </div>
                               ) : (
-                                <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                   <table className="dm-table min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

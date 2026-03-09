@@ -1,14 +1,27 @@
-import { IsInt, IsNotEmpty, IsString, Matches, Min } from 'class-validator';
+import {
+  IsInt,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateMenuProductionDto {
   @IsString()
   @IsNotEmpty()
-  menuName: string;
+  @IsMongoId()
+  recipeId: string;
 
   @IsString()
-  @IsNotEmpty()
-  category: string;
+  @IsOptional()
+  menuName?: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
 
   @Type(() => Number)
   @IsInt()

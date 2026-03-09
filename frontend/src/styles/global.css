@@ -131,6 +131,7 @@ body {
   .dm-table thead th * {
     font-size: 12px;
     line-height: 1.2;
+    letter-spacing: normal !important;
   }
 
   .dm-table tbody td,

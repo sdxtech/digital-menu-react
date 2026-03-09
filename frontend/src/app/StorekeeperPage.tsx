@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
+import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
@@ -14,13 +15,22 @@ type StoreRequestIngredient = {
 type StoreRequestMenu = {
   id: string
   productionCode?: string
+  recipeId?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
+  productionDate?: string
+  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled'
+  portionSize?: number
+  ingredients?: StoreRequestIngredient[]
+  site?: string
 }
 
 type StoreRequestGroup = {
+  site?: string
   date: string
+  productionCode?: string
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
@@ -114,9 +124,11 @@ const StorekeeperPage = () => {
   const [loadError, setLoadError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
-  const [expandedDates, setExpandedDates] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [page, setPage] = useState(1)
-  const [processingDate, setProcessingDate] = useState<string | null>(null)
+  const [processingGroupKey, setProcessingGroupKey] = useState<string | null>(
+    null,
+  )
   const [loading, setLoading] = useState(false)
 
   // FRONTEND VIEW: backend returns grouped requests with ingredient summary.
@@ -162,18 +174,94 @@ const StorekeeperPage = () => {
     return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
+  const getGroupKey = (group: StoreRequestGroup) =>
+    `${group.date}__${group.productionCode ?? 'no-code'}`
+
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
-    const menuRows = [
-      ['No', 'Menu', 'Category', 'Portion'],
-      ...group.items.map((menu, index) => [
-        index + 1,
-        menu.menuName,
-        menu.category,
-        menu.portion,
-      ]),
+    const rows: Array<Array<unknown>> = [
+      [
+        'No',
+        'Production Date',
+        'Site',
+        'Menu Name',
+        'Category',
+        'Portions',
+        'Base Pax',
+        'Store Request Status',
+        'Product Code',
+        'Ingredient Name',
+        'Qty',
+        'Unit',
+      ],
     ]
-    const summaryRows = [
-      ['No', 'Product code', 'Ingredient name', 'Qty', 'Unit'],
+
+    const fallbackSite =
+      group.site?.trim() ??
+      group.items.find((item) => item.site?.trim())?.site?.trim() ??
+      '-'
+
+    const toBaseRecipeQty = (
+      scaledQty: number,
+      portion: number,
+      portionSize: number,
+    ) => {
+      const safePortion = Number(portion)
+      const safePortionSize =
+        Number.isFinite(portionSize) && portionSize > 0 ? portionSize : 1
+      const multiplier = safePortion / safePortionSize
+      if (!Number.isFinite(multiplier) || multiplier <= 0) return scaledQty
+      return scaledQty / multiplier
+    }
+
+    let rowNumber = 1
+    group.items.forEach((menu) => {
+      const ingredients = menu.ingredients ?? []
+      const basePax =
+        Number.isFinite(menu.portionSize ?? Number.NaN) &&
+        (menu.portionSize ?? 0) > 0
+          ? (menu.portionSize as number)
+          : 1
+      const siteLabel = menu.site?.trim() || fallbackSite
+      if (ingredients.length === 0) {
+        rows.push([
+          rowNumber,
+          menu.productionDate ?? group.date,
+          siteLabel,
+          menu.menuName,
+          menu.category,
+          menu.portion,
+          basePax,
+          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'requested'),
+          '',
+          '',
+          '',
+          '',
+        ])
+        rowNumber += 1
+        return
+      }
+
+      ingredients.forEach((ingredient) => {
+        rows.push([
+          rowNumber,
+          menu.productionDate ?? group.date,
+          siteLabel,
+          menu.menuName,
+          menu.category,
+          menu.portion,
+          basePax,
+          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'requested'),
+          ingredient.productCode,
+          ingredient.name,
+          formatQuantity(toBaseRecipeQty(ingredient.qty, menu.portion, basePax)),
+          formatUnitLabel(ingredient.unitOfMeasures),
+        ])
+        rowNumber += 1
+      })
+    })
+
+    const summaryRows: Array<Array<unknown>> = [
+      ['No', 'Product Code', 'Ingredient Name', 'Qty', 'Unit'],
       ...group.summary.map((item, index) => [
         index + 1,
         item.productCode,
@@ -182,28 +270,39 @@ const StorekeeperPage = () => {
         formatUnitLabel(item.unitOfMeasures),
       ]),
     ]
+
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
-    downloadExcel(`store-request-${safeDate}.xls`, [
-      { name: `Menus ${group.date}`, rows: menuRows },
-      { name: `Ingredients ${group.date}`, rows: summaryRows },
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
+    downloadExcel(`store-request-${safeDate}-${safeProductionCode}.xls`, [
+      { name: 'Store Requests', rows },
+      { name: 'Ingredient Summary', rows: summaryRows },
     ])
   }
 
-  const toggleExpanded = (date: string) => {
-    setExpandedDates((prev) =>
-      prev.includes(date) ? prev.filter((item) => item !== date) : [...prev, date],
+  const toggleExpanded = (groupKey: string) => {
+    setExpandedGroups((prev) =>
+      prev.includes(groupKey)
+        ? prev.filter((item) => item !== groupKey)
+        : [...prev, groupKey],
     )
   }
 
   const handleCompleteByDate = async (group: StoreRequestGroup) => {
+    const groupKey = getGroupKey(group)
     setActionMessage('')
     setLoadError('')
-    setProcessingDate(group.date)
+    setProcessingGroupKey(groupKey)
     try {
       await Promise.all(group.items.map((menu) => markStoreFulfilled(menu.id)))
-      setActionMessage(`Ingredient issuance for ${group.date} completed.`)
+      const label = group.productionCode
+        ? `${group.date} (${group.productionCode})`
+        : group.date
+      setActionMessage(`Ingredient issuance for ${label} completed.`)
       await fetchStoreRequests()
-      setExpandedDates((prev) => prev.filter((item) => item !== group.date))
+      setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
     } catch (error) {
       const message =
         error instanceof Error
@@ -211,7 +310,7 @@ const StorekeeperPage = () => {
           : 'Failed to complete ingredient issuance.'
       setLoadError(message)
     } finally {
-      setProcessingDate(null)
+      setProcessingGroupKey(null)
     }
   }
 
@@ -239,7 +338,7 @@ const StorekeeperPage = () => {
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {groups.length} production dates
+            Showing {paginatedGroups.length} of {groups.length} production batches
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -264,43 +363,48 @@ const StorekeeperPage = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-3 py-1.5 font-semibold">No</th>
                 <th className="px-3 py-1.5 font-semibold">Production date</th>
+                <th className="px-3 py-1.5 font-semibold">Production code</th>
                 <th className="px-3 py-1.5 font-semibold">Store request status</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted">
                     No production menus in store request yet.
                   </td>
                 </tr>
               ) : (
                 paginatedGroups.map((group, index) => {
-                  const isExpanded = expandedDates.includes(group.date)
+                  const groupKey = getGroupKey(group)
+                  const isExpanded = expandedGroups.includes(groupKey)
                   const summaryItems = group.summary ?? []
 
                   return (
-                    <Fragment key={group.date}>
+                    <Fragment key={groupKey}>
                       <tr
                         className="cursor-pointer border-t border-border"
-                        onClick={() => toggleExpanded(group.date)}
+                        onClick={() => toggleExpanded(groupKey)}
                       >
                         <td className="px-3 py-1.5 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
                         <td className="px-3 py-1.5">{group.date}</td>
+                        <td className="px-3 py-1.5 text-xs text-muted">
+                          {group.productionCode ?? '-'}
+                        </td>
                         <td className="px-3 py-1.5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2 text-sm">
@@ -313,7 +417,7 @@ const StorekeeperPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                toggleExpanded(group.date)
+                                toggleExpanded(groupKey)
                               }}
                               className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                             >
@@ -324,7 +428,7 @@ const StorekeeperPage = () => {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={3} className="px-4 py-4">
+                          <td colSpan={4} className="px-4 py-4">
                             <div className="space-y-6">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
@@ -350,12 +454,12 @@ const StorekeeperPage = () => {
                                     type="button"
                                     onClick={() => handleCompleteByDate(group)}
                                     disabled={
-                                      processingDate === group.date ||
+                                      processingGroupKey === groupKey ||
                                       group.items.length === 0
                                     }
                                     className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {processingDate === group.date
+                                    {processingGroupKey === groupKey
                                       ? 'Completing...'
                                       : 'Complete & send to kitchen'}
                                   </button>
@@ -367,7 +471,7 @@ const StorekeeperPage = () => {
                                   <p className="text-xs text-muted">
                                     Menu list
                                   </p>
-                                  <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -398,7 +502,7 @@ const StorekeeperPage = () => {
                                               {idx + 1}
                                             </td>
                                             <td className="px-3 py-1.5 font-medium">
-                                              {menu.productionCode ?? '-'}
+                                              {menu.recipeCode ?? '-'}
                                             </td>
                                             <td className="px-3 py-1.5">
                                               {menu.menuName}
@@ -426,7 +530,7 @@ const StorekeeperPage = () => {
                                   <p className="text-xs text-muted">
                                     Ingredient summary
                                   </p>
-                                  <div className="mt-3 overflow-x-auto rounded-md border border-border bg-white">
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
