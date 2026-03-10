@@ -7,13 +7,21 @@ import { UsersService } from '../users/users.service';
 import { resolveExpiresIn } from './jwt.utils';
 import { AppRole } from './roles.constants';
 
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+
 @Injectable()
 export class AuthService {
+  private readonly idleTimeoutMs: number;
+
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    this.idleTimeoutMs = this.resolveIdleTimeoutMs(
+      this.config.get<string>('AUTH_IDLE_TIMEOUT_MINUTES'),
+    );
+  }
 
   async register(name: string, email: string, password: string) {
     const passwordHash = await bcrypt.hash(password, 12);
@@ -69,6 +77,10 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       if (!user.refreshTokenHash)
         throw new UnauthorizedException('Invalid refresh token');
+      if (this.isSessionIdle(user.lastActivityAt)) {
+        await this.users.setRefreshToken(user.id, null);
+        throw new UnauthorizedException('SESSION_IDLE_TIMEOUT');
+      }
 
       const matches = await bcrypt.compare(refreshToken, user.refreshTokenHash);
       if (!matches) throw new UnauthorizedException('Invalid refresh token');
@@ -84,9 +96,25 @@ export class AuthService {
       );
       await this.users.setRefreshToken(user.id, tokens.refreshToken);
       return tokens;
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  private resolveIdleTimeoutMs(value?: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_IDLE_TIMEOUT_MINUTES * 60 * 1000;
+    }
+    return Math.floor(parsed) * 60 * 1000;
+  }
+
+  private isSessionIdle(lastActivityAt?: Date) {
+    if (!lastActivityAt) return false;
+    return Date.now() - lastActivityAt.getTime() > this.idleTimeoutMs;
   }
 
   // BACKEND LOGIC: derive appRole for UI routing from DB roles.

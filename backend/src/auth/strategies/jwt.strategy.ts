@@ -1,20 +1,61 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { JwtPayload } from '../types/jwt-payload.type';
+import { UsersService } from '../../users/users.service';
+
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+const ACTIVITY_UPDATE_MIN_INTERVAL_MS = 60_000;
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly config: ConfigService) {
+  private readonly idleTimeoutMs: number;
+
+  constructor(
+    private readonly config: ConfigService,
+    private readonly users: UsersService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
     });
+
+    this.idleTimeoutMs = this.resolveIdleTimeoutMs(
+      this.config.get<string>('AUTH_IDLE_TIMEOUT_MINUTES'),
+    );
   }
 
-  validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload) {
+    const user = await this.users.findByIdWithSessionState(payload.sub);
+    if (!user || !user.isActive || !user.refreshTokenHash) {
+      throw new UnauthorizedException('SESSION_REVOKED');
+    }
+
+    if (this.isSessionIdle(user.lastActivityAt)) {
+      await this.users.setRefreshToken(user.id, null);
+      throw new UnauthorizedException('SESSION_IDLE_TIMEOUT');
+    }
+
+    await this.users.touchLastActivity(
+      user.id,
+      ACTIVITY_UPDATE_MIN_INTERVAL_MS,
+    );
+
     return payload;
+  }
+
+  private resolveIdleTimeoutMs(value?: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_IDLE_TIMEOUT_MINUTES * 60 * 1000;
+    }
+    return Math.floor(parsed) * 60 * 1000;
+  }
+
+  private isSessionIdle(lastActivityAt?: Date) {
+    if (!lastActivityAt) return false;
+    return Date.now() - lastActivityAt.getTime() > this.idleTimeoutMs;
   }
 }

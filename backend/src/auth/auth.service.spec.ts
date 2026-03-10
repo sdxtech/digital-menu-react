@@ -9,6 +9,7 @@ describe('AuthService', () => {
     JWT_REFRESH_SECRET: 'refresh-secret',
     JWT_ACCESS_EXPIRES_IN: '15m',
     JWT_REFRESH_EXPIRES_IN: '7d',
+    AUTH_IDLE_TIMEOUT_MINUTES: '30',
   };
 
   const makeConfig = () => ({
@@ -51,6 +52,7 @@ describe('AuthService', () => {
       isActive: true,
       roles: [AppRole.Chef],
       sites: ['A1'],
+      lastActivityAt: new Date(),
       refreshTokenHash,
     });
     jwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
@@ -87,6 +89,7 @@ describe('AuthService', () => {
       isActive: true,
       roles: [AppRole.Chef],
       sites: ['A1'],
+      lastActivityAt: new Date(),
       refreshTokenHash: await bcrypt.hash('another-token', 10),
     });
     jwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
@@ -95,6 +98,35 @@ describe('AuthService', () => {
       UnauthorizedException,
     );
     expect(users.setRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('revokes session when refresh token is idle-timed out', async () => {
+    const users = makeUsers();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      jwt as never,
+      config as never,
+    );
+
+    const refreshToken = 'old-refresh-token';
+    users.findByIdWithRefreshToken.mockResolvedValue({
+      id: 'user-1',
+      name: 'Chef',
+      email: 'chef@corp.test',
+      isActive: true,
+      roles: [AppRole.Chef],
+      sites: ['A1'],
+      lastActivityAt: new Date(Date.now() - 31 * 60 * 1000),
+      refreshTokenHash: await bcrypt.hash(refreshToken, 10),
+    });
+    jwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+
+    await expect(service.refresh(refreshToken)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(users.setRefreshToken).toHaveBeenCalledWith('user-1', null);
   });
 
   it('stores refresh token hash on login', async () => {

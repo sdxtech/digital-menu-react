@@ -47,7 +47,13 @@ export class UsersService {
   }
 
   async findByIdWithRefreshToken(id: string) {
-    return this.userModel.findById(id).select('+refreshTokenHash');
+    return this.userModel.findById(id).select('+refreshTokenHash +lastActivityAt');
+  }
+
+  async findByIdWithSessionState(id: string) {
+    return this.userModel
+      .findById(id)
+      .select('+refreshTokenHash +lastActivityAt');
   }
 
   async findNamesByIds(ids: string[]) {
@@ -180,17 +186,37 @@ export class UsersService {
   }
 
   async setRefreshToken(id: string, refreshToken: string | null) {
-    const user = await this.userModel.findById(id).select('+refreshTokenHash');
+    const user = await this.userModel
+      .findById(id)
+      .select('+refreshTokenHash +lastActivityAt');
     if (!user) throw new NotFoundException('User not found');
 
     if (!refreshToken) {
       user.refreshTokenHash = undefined;
+      user.lastActivityAt = undefined;
       await user.save();
       return;
     }
 
     user.refreshTokenHash = await bcrypt.hash(refreshToken, 12);
+    user.lastActivityAt = new Date();
     await user.save();
+  }
+
+  async touchLastActivity(id: string, minIntervalMs = 60_000) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - minIntervalMs);
+
+    await this.userModel.updateOne(
+      {
+        _id: id,
+        $or: [
+          { lastActivityAt: { $exists: false } },
+          { lastActivityAt: { $lt: cutoff } },
+        ],
+      },
+      { $set: { lastActivityAt: now } },
+    );
   }
 
   async deleteById(id: string) {

@@ -36,6 +36,13 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 const readStoredUser = (): User | null => {
   try {
+    const token =
+      sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY)
+    if (!token) {
+      localStorage.removeItem(STORAGE_KEY)
+      return null
+    }
+
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return null
     const parsed = JSON.parse(stored) as User

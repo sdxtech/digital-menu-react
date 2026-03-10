@@ -24,6 +24,9 @@ export class User {
   @Prop({ select: false })
   refreshTokenHash?: string;
 
+  @Prop({ select: false })
+  lastActivityAt?: Date;
+
   @Prop({
     type: [String],
     enum: Object.values(AppRole),

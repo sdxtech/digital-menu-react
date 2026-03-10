@@ -15,32 +15,19 @@ import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthThrottleGuard } from './guards/auth-throttle.guard';
-import { resolveExpiresIn, expiresInToMs } from './jwt.utils';
 import type { AuthenticatedRequest } from './types/authenticated-request.type';
 import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
-const DEFAULT_REFRESH_COOKIE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Controller('auth')
 export class AuthController {
-  private readonly refreshCookieMaxAgeMs: number;
-
   constructor(
     private readonly auth: AuthService,
     private readonly users: UsersService,
     private readonly config: ConfigService,
-  ) {
-    const expiresIn = resolveExpiresIn(
-      this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
-      '7d',
-    );
-    this.refreshCookieMaxAgeMs = expiresInToMs(
-      expiresIn,
-      DEFAULT_REFRESH_COOKIE_AGE_MS,
-    );
-  }
+  ) {}
 
   @Post('register')
   @UseGuards(AuthThrottleGuard)
@@ -108,7 +95,6 @@ export class AuthController {
       secure,
       sameSite: 'lax',
       path: '/auth',
-      maxAge: this.refreshCookieMaxAgeMs,
     });
   }
 
