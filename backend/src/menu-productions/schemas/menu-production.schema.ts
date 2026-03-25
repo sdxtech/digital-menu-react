@@ -5,6 +5,15 @@ export type MenuProductionDocument = HydratedDocument<MenuProduction>;
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type StoreRequestStatus = 'not-requested' | 'requested' | 'fulfilled';
+export type StoreFulfillmentIngredient = {
+  productCode?: string;
+  name?: string;
+  unitOfMeasures?: string;
+  plannedQty?: number;
+  actualQty?: number;
+  varianceQty?: number;
+  reason?: string;
+};
 
 @Schema({ timestamps: true })
 export class MenuProduction {
@@ -56,6 +65,28 @@ export class MenuProduction {
 
   @Prop({ type: String, trim: true })
   fulfilledBy?: string;
+
+  @Prop({
+    type: [
+      {
+        productCode: { type: String, trim: true },
+        name: { type: String, trim: true },
+        unitOfMeasures: { type: String, trim: true },
+        plannedQty: { type: Number },
+        actualQty: { type: Number },
+        varianceQty: { type: Number },
+        reason: { type: String, trim: true },
+      },
+    ],
+    default: [],
+  })
+  storeFulfillmentItems?: StoreFulfillmentIngredient[];
+
+  @Prop({ type: Date })
+  storeFulfillmentCompletedAt?: Date;
+
+  @Prop({ type: String, trim: true })
+  storeFulfillmentNote?: string;
 
   @Prop({ type: String, index: true })
   createdBy?: string;

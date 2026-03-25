@@ -110,6 +110,18 @@ type AddRawMaterialInput = {
 
 type UpdateRawMaterialInput = AddRawMaterialInput
 
+type FulfillStoreRequestBatchInput = {
+  menuProductionIds: string[]
+  items: Array<{
+    productCode: string
+    name: string
+    unitOfMeasures: string
+    actualQty: number
+    reason?: string
+  }>
+  note?: string
+}
+
 type RawMaterialsMeta = {
   page: number
   limit: number
@@ -137,6 +149,7 @@ type ChefDataContextValue = ChefDataState & {
   importRawMaterialsFromExcel: (file: File) => Promise<string>
   markStoreRequested: (menuProductionId: string) => Promise<void>
   markStoreFulfilled: (menuProductionId: string) => Promise<void>
+  fulfillStoreRequestBatch: (input: FulfillStoreRequestBatchInput) => Promise<void>
   fetchRecipes: () => Promise<void>
   fetchMenuProductions: () => Promise<void>
 }
@@ -634,6 +647,23 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const fulfillStoreRequestBatch = async (input: FulfillStoreRequestBatchInput) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+
+    await apiFetch(
+      '/menu-productions/fulfill-batch',
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+
+    await fetchMenuProductions()
+  }
+
   const value = {
     ...state,
     addRawMaterial,
@@ -653,6 +683,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     rawMaterialsMeta,
     markStoreRequested,
     markStoreFulfilled,
+    fulfillStoreRequestBatch,
     fetchRecipes,
     fetchMenuProductions,
   }

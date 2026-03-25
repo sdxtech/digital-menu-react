@@ -16,6 +16,7 @@ import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
+import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { MenuProductionsService } from './menu-productions.service';
 
@@ -73,6 +74,19 @@ export class MenuProductionsController {
     @Query() query: ListMenuProductionsQueryDto,
   ) {
     return this.menuProductions.findAll(query, req.user.site);
+  }
+
+  @Patch('fulfill-batch')
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin)
+  fulfillBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: FulfillStoreRequestBatchDto,
+  ) {
+    return this.menuProductions.fulfillStoreRequestBatch(
+      dto,
+      req.user.site,
+      req.user.name || req.user.email,
+    );
   }
 
   @Patch(':id/approve')

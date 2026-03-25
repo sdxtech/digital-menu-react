@@ -57,6 +57,36 @@ const formatTimestamp = (value?: string) => {
   return parsed.toLocaleString('en-GB')
 }
 
+const hasTextValue = (value?: string | null) => Boolean(value?.trim())
+
+const hasQtyValue = (value?: number | null) =>
+  value !== null &&
+  value !== undefined &&
+  `${value}`.trim() !== '' &&
+  Number.isFinite(Number(value))
+
+const getMissingIngredientFields = (ingredient: RecipeIngredient) => {
+  const missingFields: string[] = []
+
+  if (!hasTextValue(ingredient.productCode)) {
+    missingFields.push('product code')
+  }
+
+  if (!hasTextValue(ingredient.name)) {
+    missingFields.push('ingredient name')
+  }
+
+  if (!hasQtyValue(ingredient.qty)) {
+    missingFields.push('qty')
+  }
+
+  if (!hasTextValue(ingredient.unitOfMeasures)) {
+    missingFields.push('unit')
+  }
+
+  return missingFields
+}
+
 const getRecipeId = (recipe: Recipe) => recipe.id ?? recipe._id ?? ''
 
 type MenuPhotoFrameProps = {
@@ -220,6 +250,10 @@ const ChefMenuBank = () => {
     : null
   const activePhotoUrl = photoModalRecipe?.imageUrl ?? null
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
+  const selectedRecipeIngredientRows = selectedRecipeIngredients.map((ingredient) => ({
+    ingredient,
+    missingFields: getMissingIngredientFields(ingredient),
+  }))
   const previewPhotoUrl = photoDraftUrl ?? activePhotoUrl
 
   const handleCreateFromRecipe = (recipe: Recipe) => {
@@ -830,22 +864,65 @@ const ChefMenuBank = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedRecipeIngredients.map((ingredient, idx) => (
-                      <tr
-                        key={`${ingredient.productCode}-${idx}`}
-                        className="border-t border-border"
-                      >
-                        <td className="px-4 py-3 text-sm text-muted">
-                          {idx + 1}
-                        </td>
-                        <td className="px-4 py-3">{ingredient.productCode}</td>
-                        <td className="px-4 py-3">{ingredient.name}</td>
-                        <td className="px-4 py-3">{ingredient.qty}</td>
-                        <td className="px-4 py-3">
-                          {formatUnitLabel(ingredient.unitOfMeasures)}
-                        </td>
-                      </tr>
-                    ))}
+                    {selectedRecipeIngredientRows.map(
+                      ({ ingredient, missingFields }, idx) => {
+                        const missingProductCode =
+                          missingFields.includes('product code')
+                        const missingIngredientName =
+                          missingFields.includes('ingredient name')
+                        const missingQty = missingFields.includes('qty')
+                        const missingUnit = missingFields.includes('unit')
+                        const rowHighlightClass =
+                          missingFields.length > 0 ? 'bg-danger/5' : ''
+
+                        return (
+                          <tr
+                            key={`${ingredient.productCode}-${idx}`}
+                            className="border-t border-border"
+                          >
+                            <td
+                              className={`px-4 py-3 text-sm ${rowHighlightClass} ${missingFields.length > 0 ? 'font-semibold text-danger' : 'text-muted'}`}
+                            >
+                              {idx + 1}
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              {missingProductCode ? (
+                                <span className="font-medium text-danger">
+                                  Missing product code
+                                </span>
+                              ) : (
+                                ingredient.productCode
+                              )}
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              <div
+                                className={
+                                  missingIngredientName
+                                    ? 'font-medium text-danger'
+                                    : undefined
+                                }
+                              >
+                                {missingIngredientName
+                                  ? 'Missing ingredient name'
+                                  : ingredient.name}
+                              </div>
+                            </td>
+                            <td
+                              className={`px-4 py-3 align-top ${rowHighlightClass} ${missingQty ? 'font-medium text-danger' : ''}`}
+                            >
+                              {missingQty ? 'Missing qty' : ingredient.qty}
+                            </td>
+                            <td
+                              className={`px-4 py-3 align-top ${rowHighlightClass} ${missingUnit ? 'font-medium text-danger' : ''}`}
+                            >
+                              {missingUnit
+                                ? 'Missing unit'
+                                : formatUnitLabel(ingredient.unitOfMeasures)}
+                            </td>
+                          </tr>
+                        )
+                      },
+                    )}
                   </tbody>
                 </table>
               </div>

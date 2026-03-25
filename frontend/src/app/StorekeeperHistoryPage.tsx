@@ -10,6 +10,23 @@ type StoreRequestIngredient = {
   qty: number
 }
 
+type StoreFulfillmentIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  plannedQty: number
+  actualQty: number
+  varianceQty: number
+  reason?: string
+}
+
+type StoreRequestFulfillment = {
+  completedBy?: string
+  completedAt?: string
+  note?: string
+  items: StoreFulfillmentIngredient[]
+}
+
 type StoreRequestMenu = {
   id: string
   menuName: string
@@ -24,12 +41,26 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
+  fulfillment?: StoreRequestFulfillment
 }
 
 const ITEMS_PER_PAGE = 10
 
 const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
+
+const formatQuantity = (value: number) => {
+  if (!Number.isFinite(value)) return '0'
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(3).replace(/\.?0+$/, '')
+}
+
+const formatSignedQuantity = (value: number) => {
+  const formatted = formatQuantity(Math.abs(value))
+  if (value > 0) return `+${formatted}`
+  if (value < 0) return `-${formatted}`
+  return '0'
+}
 
 const StorekeeperHistoryPage = () => {
   const { accessToken } = useAuth()
@@ -39,7 +70,6 @@ const StorekeeperHistoryPage = () => {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
 
-  // FRONTEND VIEW: backend returns fulfilled requests grouped by date.
   const fetchHistory = useCallback(async () => {
     if (!accessToken) {
       setLoadError('Please log in first to load history.')
@@ -78,12 +108,6 @@ const StorekeeperHistoryPage = () => {
     )
     setPage((prev) => Math.min(prev, nextTotalPages))
   }, [groups.length])
-
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
-  }
 
   const toggleExpanded = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -169,13 +193,16 @@ const StorekeeperHistoryPage = () => {
                   const groupKey = getHistoryGroupKey(group)
                   const isExpanded = expandedGroups.includes(groupKey)
                   const summaryItems = group.summary ?? []
-                  const completedBy = Array.from(
-                    new Set(
-                      group.items
-                        .map((item) => item.fulfilledBy?.trim())
-                        .filter((value): value is string => Boolean(value)),
-                    ),
-                  )
+                  const fulfillmentItems = group.fulfillment?.items ?? []
+                  const completedBy = group.fulfillment?.completedBy?.trim()
+                    ? [group.fulfillment.completedBy.trim()]
+                    : Array.from(
+                        new Set(
+                          group.items
+                            .map((item) => item.fulfilledBy?.trim())
+                            .filter((value): value is string => Boolean(value)),
+                        ),
+                      )
 
                   return (
                     <Fragment key={groupKey}>
@@ -210,9 +237,9 @@ const StorekeeperHistoryPage = () => {
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
                         </td>
-                    </tr>
-                    {isExpanded ? (
-                      <tr className="border-t border-border bg-background">
+                      </tr>
+                      {isExpanded ? (
+                        <tr className="border-t border-border bg-background">
                           <td colSpan={6} className="px-4 py-4">
                             <div className="space-y-6">
                               <div>
@@ -280,7 +307,9 @@ const StorekeeperHistoryPage = () => {
 
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">
-                                    Ingredient summary
+                                    {fulfillmentItems.length > 0
+                                      ? 'Planned vs actual issuance'
+                                      : 'Ingredient summary'}
                                   </p>
                                   <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
@@ -296,18 +325,74 @@ const StorekeeperHistoryPage = () => {
                                             Ingredient name
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Qty
+                                            Planned
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Actual
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Variance
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Reason
+                                          </th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {summaryItems.length === 0 ? (
+                                        {fulfillmentItems.length > 0 ? (
+                                          fulfillmentItems.map((item, idx) => {
+                                            const varianceClass =
+                                              Math.abs(item.varianceQty) <= 0.000001
+                                                ? 'text-muted'
+                                                : item.varianceQty > 0
+                                                  ? 'text-primary'
+                                                  : 'text-danger'
+
+                                            return (
+                                              <tr
+                                                key={`${item.productCode}-${item.unitOfMeasures}-${idx}`}
+                                                className="border-t border-border"
+                                              >
+                                                <td className="px-3 py-1.5 text-sm text-muted">
+                                                  {idx + 1}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {item.productCode}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {item.name}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {formatQuantity(item.plannedQty)}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {formatQuantity(item.actualQty)}
+                                                </td>
+                                                <td
+                                                  className={`px-3 py-1.5 font-medium ${varianceClass}`}
+                                                >
+                                                  {formatSignedQuantity(
+                                                    item.varianceQty,
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {formatUnitLabel(
+                                                    item.unitOfMeasures,
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  {item.reason ?? '-'}
+                                                </td>
+                                              </tr>
+                                            )
+                                          })
+                                        ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={5}
+                                              colSpan={8}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to
@@ -332,11 +417,14 @@ const StorekeeperHistoryPage = () => {
                                               <td className="px-3 py-1.5">
                                                 {formatQuantity(item.qty)}
                                               </td>
+                                              <td className="px-3 py-1.5">-</td>
+                                              <td className="px-3 py-1.5">-</td>
                                               <td className="px-3 py-1.5">
                                                 {formatUnitLabel(
                                                   item.unitOfMeasures,
                                                 )}
                                               </td>
+                                              <td className="px-3 py-1.5">-</td>
                                             </tr>
                                           ))
                                         )}
@@ -349,6 +437,19 @@ const StorekeeperHistoryPage = () => {
                                       ? completedBy.join(', ')
                                       : '-'}
                                   </p>
+                                  <p className="mt-2 text-xs text-muted">
+                                    Completed at:{' '}
+                                    {group.fulfillment?.completedAt
+                                      ? new Date(
+                                          group.fulfillment.completedAt,
+                                        ).toLocaleString()
+                                      : '-'}
+                                  </p>
+                                  {group.fulfillment?.note ? (
+                                    <p className="mt-2 text-xs text-muted">
+                                      Note: {group.fulfillment.note}
+                                    </p>
+                                  ) : null}
                                 </div>
                               </div>
                             </div>
@@ -368,4 +469,3 @@ const StorekeeperHistoryPage = () => {
 }
 
 export default StorekeeperHistoryPage
-

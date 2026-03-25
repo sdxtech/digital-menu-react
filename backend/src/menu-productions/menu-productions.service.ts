@@ -8,6 +8,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
+import {
+  FulfillStoreRequestBatchDto,
+  FulfillStoreRequestBatchItemDto,
+} from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 import {
@@ -29,6 +33,23 @@ type StoreRequestIngredient = {
   qty: number;
 };
 
+type StoreFulfillmentIngredient = {
+  productCode: string;
+  name: string;
+  unitOfMeasures: string;
+  plannedQty: number;
+  actualQty: number;
+  varianceQty: number;
+  reason?: string;
+};
+
+type StoreRequestFulfillment = {
+  completedBy?: string;
+  completedAt?: string;
+  note?: string;
+  items: StoreFulfillmentIngredient[];
+};
+
 type StoreRequestMenu = {
   id: string;
   site?: string;
@@ -46,6 +67,7 @@ type StoreRequestMenu = {
   ingredients: StoreRequestIngredient[];
   missingRecipe: boolean;
   fulfilledBy?: string;
+  fulfilledAt?: string;
 };
 
 type StoreRequestGroup = {
@@ -55,6 +77,7 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[];
   summary: StoreRequestIngredient[];
   missingRecipes: string[];
+  fulfillment?: StoreRequestFulfillment;
 };
 
 type TimelineGroup = {
@@ -284,7 +307,12 @@ export class MenuProductionsService implements OnModuleInit {
             storeRequestStatus: nextStoreStatus,
             ...(actor ? { reviewedBy: actor } : {}),
           },
-          $unset: { fulfilledBy: 1 },
+          $unset: {
+            fulfilledBy: 1,
+            storeFulfillmentItems: 1,
+            storeFulfillmentCompletedAt: 1,
+            storeFulfillmentNote: 1,
+          },
         },
         { new: true },
       )
@@ -321,10 +349,172 @@ export class MenuProductionsService implements OnModuleInit {
     if (status === 'fulfilled') {
       const actor = fulfilledBy?.trim();
       item.fulfilledBy = actor || 'Unknown user';
+      item.storeFulfillmentCompletedAt = new Date();
+      item.storeFulfillmentItems = [];
+      item.storeFulfillmentNote = undefined;
     } else {
       item.fulfilledBy = undefined;
+      item.storeFulfillmentCompletedAt = undefined;
+      item.storeFulfillmentItems = [];
+      item.storeFulfillmentNote = undefined;
     }
     return item.save();
+  }
+
+  async fulfillStoreRequestBatch(
+    input: FulfillStoreRequestBatchDto,
+    site?: string,
+    fulfilledBy?: string,
+  ) {
+    const normalizedIds = Array.from(
+      new Set(
+        (input.menuProductionIds ?? [])
+          .map((id) => id?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    if (normalizedIds.length === 0) {
+      throw new BadRequestException('Menu production ids are required.');
+    }
+
+    const menus = await this.menuProductionModel
+      .find(this.withSiteFilter({ _id: { $in: normalizedIds } }, site))
+      .sort({ productionDate: 1, createdAt: -1 })
+      .lean();
+
+    if (menus.length !== normalizedIds.length) {
+      throw new NotFoundException('One or more menu productions were not found.');
+    }
+
+    menus.forEach((menu) => {
+      if (menu.approvalStatus !== 'approved') {
+        throw new BadRequestException('Menu production is not approved yet.');
+      }
+      if (menu.storeRequestStatus !== 'requested') {
+        throw new BadRequestException(
+          'Store request has not been submitted yet or is already fulfilled.',
+        );
+      }
+    });
+
+    const batchKeys = Array.from(
+      new Set(
+        menus.map((menu) =>
+          this.buildProductionBatchKey({
+            productionDate: menu.productionDate,
+            productionCode: menu.productionCode,
+            id: String(menu._id ?? menu.id ?? ''),
+          }),
+        ),
+      ),
+    );
+    if (batchKeys.length !== 1) {
+      throw new BadRequestException(
+        'All menu productions in a fulfill request must belong to the same batch.',
+      );
+    }
+
+    const grouped = await this.buildGroupedStoreRequestsFromMenus(
+      menus,
+      this.normalizeSite(site),
+    );
+    const batch = grouped[0];
+    if (!batch || batch.summary.length === 0) {
+      throw new BadRequestException(
+        'Selected batch has no planned raw materials to fulfill.',
+      );
+    }
+
+    const actualItems = new Map<string, FulfillStoreRequestBatchItemDto>();
+    input.items.forEach((item) => {
+      const key = this.buildStoreIngredientKey(
+        item.productCode,
+        item.name,
+        item.unitOfMeasures,
+      );
+      if (!key) {
+        throw new BadRequestException('Each fulfillment item must be identifiable.');
+      }
+      if (actualItems.has(key)) {
+        throw new BadRequestException(
+          `Duplicate fulfillment item submitted for ${item.productCode}.`,
+        );
+      }
+      actualItems.set(key, item);
+    });
+
+    const fulfillmentItems: StoreFulfillmentIngredient[] = batch.summary.map(
+      (plannedItem) => {
+        const key = this.buildStoreIngredientKey(
+          plannedItem.productCode,
+          plannedItem.name,
+          plannedItem.unitOfMeasures,
+        );
+        const actualItem = key ? actualItems.get(key) : undefined;
+        if (!actualItem) {
+          throw new BadRequestException(
+            `Missing actual quantity for ${plannedItem.productCode || plannedItem.name}.`,
+          );
+        }
+
+        const plannedQty = Number(plannedItem.qty);
+        const actualQty = Number(actualItem.actualQty);
+        const varianceQty = actualQty - plannedQty;
+        const normalizedReason = actualItem.reason?.trim();
+        if (Math.abs(varianceQty) > 0.000001 && !normalizedReason) {
+          throw new BadRequestException(
+            `Variance reason is required for ${plannedItem.productCode || plannedItem.name}.`,
+          );
+        }
+
+        actualItems.delete(key);
+        return {
+          productCode: plannedItem.productCode,
+          name: plannedItem.name,
+          unitOfMeasures: plannedItem.unitOfMeasures,
+          plannedQty,
+          actualQty,
+          varianceQty,
+          reason: normalizedReason || undefined,
+        };
+      },
+    );
+
+    if (actualItems.size > 0) {
+      throw new BadRequestException(
+        'Actual issuance contains items that are not part of the planned batch.',
+      );
+    }
+
+    const actor = fulfilledBy?.trim() || 'Unknown user';
+    const completedAt = new Date();
+    const note = input.note?.trim();
+
+    await this.menuProductionModel.updateMany(
+      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
+      {
+        $set: {
+          storeRequestStatus: 'fulfilled',
+          fulfilledBy: actor,
+          storeFulfillmentItems: fulfillmentItems,
+          storeFulfillmentCompletedAt: completedAt,
+          ...(note ? { storeFulfillmentNote: note } : {}),
+        },
+        ...(note
+          ? {}
+          : {
+              $unset: { storeFulfillmentNote: 1 },
+            }),
+      },
+    );
+
+    return {
+      productionDate: batch.date,
+      productionCode: batch.productionCode,
+      fulfilledCount: normalizedIds.length,
+      fulfilledBy: actor,
+      completedAt: completedAt.toISOString(),
+    };
   }
 
   // BACKEND LOGIC: production timeline grouping + approval stats.
@@ -491,159 +681,10 @@ export class MenuProductionsService implements OnModuleInit {
       return { items: [] as StoreRequestGroup[] };
     }
 
-    const creatorIds = Array.from(
-      new Set(
-        items
-          .map((item) => item.createdBy?.trim())
-          .filter((value): value is string => Boolean(value)),
-      ),
+    const grouped = await this.buildGroupedStoreRequestsFromMenus(
+      items,
+      requestedSite,
     );
-    const creatorNameById =
-      creatorIds.length > 0
-        ? await this.users.findNamesByIds(creatorIds)
-        : new Map<string, string>();
-
-    // Recipes are shared across sites, so use the full recipe list.
-    const recipes = await this.recipeModel.find({}).lean();
-    const recipeById = new Map<string, RecipeDocument>();
-    const recipeByName = new Map<string, RecipeDocument>();
-    recipes.forEach((recipe) => {
-      const recipeId = this.normalizeOptionalRecipeId(String(recipe._id ?? ''));
-      if (recipeId) {
-        recipeById.set(recipeId, recipe);
-      }
-      const key = this.normalizeName(recipe.name ?? '');
-      if (!key || recipeByName.has(key)) return;
-      recipeByName.set(key, recipe);
-    });
-
-    const groups = new Map<
-      string,
-      {
-        site?: string;
-        date: string;
-        productionCode?: string;
-        items: StoreRequestMenu[];
-        summaryMap: Map<string, StoreRequestIngredient>;
-        missingRecipes: Set<string>;
-      }
-    >();
-
-    items.forEach((menu) => {
-      const date = menu.productionDate;
-      const groupKey = this.buildProductionBatchKey({
-        productionDate: date,
-        productionCode: menu.productionCode,
-        id: String(menu._id ?? menu.id ?? ''),
-      });
-      const group = groups.get(groupKey) ?? {
-        site: this.normalizeSite(menu.site) ?? requestedSite ?? DEFAULT_SITE,
-        date,
-        productionCode: this.normalizeOptionalProductionCode(
-          menu.productionCode,
-        ),
-        items: [],
-        summaryMap: new Map<string, StoreRequestIngredient>(),
-        missingRecipes: new Set<string>(),
-      };
-
-      const menuRecipeId = this.normalizeOptionalRecipeId(menu.recipeId);
-      const recipe =
-        (menuRecipeId ? recipeById.get(menuRecipeId) : undefined) ??
-        recipeByName.get(this.normalizeName(menu.menuName));
-      let ingredients: StoreRequestIngredient[] = [];
-      let missingRecipe = false;
-      let portionSize = 1;
-      const submittedById = menu.createdBy?.trim();
-      const submittedByName = submittedById
-        ? creatorNameById.get(submittedById)
-        : undefined;
-      const resolvedRecipeId =
-        menuRecipeId ??
-        (recipe
-          ? this.normalizeOptionalRecipeId(String(recipe._id ?? ''))
-          : undefined);
-      const resolvedRecipeCode =
-        this.normalizeOptionalRecipeCode(menu.recipeCode) ??
-        this.normalizeOptionalRecipeCode(recipe?.recipeCode);
-
-      if (!recipe) {
-        missingRecipe = true;
-        if (menu.menuName) {
-          group.missingRecipes.add(menu.menuName);
-        }
-      } else {
-        portionSize = Number(recipe.portionSize) || 1;
-        if (portionSize <= 0) portionSize = 1;
-        // BACKEND LOGIC: qty multiplier = requested portions / base portion size.
-        const multiplier = Number(menu.portion) / portionSize;
-
-        ingredients = (recipe.ingredients ?? []).map((ingredient) => {
-          const productCode = ingredient.productCode?.trim() ?? '';
-          const name = ingredient.name?.trim() ?? '';
-          const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
-          const baseQty = Number(ingredient.qty);
-          const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
-          const normalizedKey = `${this.normalizeName(
-            productCode || name,
-          )}__${this.normalizeName(unitOfMeasures)}`;
-          const existing = group.summaryMap.get(normalizedKey);
-          if (existing) {
-            existing.qty += qty;
-          } else {
-            group.summaryMap.set(normalizedKey, {
-              productCode,
-              name,
-              unitOfMeasures,
-              qty,
-            });
-          }
-
-          return {
-            productCode,
-            name,
-            unitOfMeasures,
-            qty,
-          };
-        });
-      }
-
-      group.items.push({
-        id: String(menu._id ?? menu.id ?? ''),
-        site: this.normalizeSite(menu.site) ?? group.site,
-        productionCode: menu.productionCode,
-        submittedByName,
-        recipeId: resolvedRecipeId,
-        recipeCode: resolvedRecipeCode,
-        menuName: menu.menuName,
-        category: menu.category,
-        portion: menu.portion,
-        productionDate: menu.productionDate,
-        approvalStatus: menu.approvalStatus,
-        storeRequestStatus: menu.storeRequestStatus,
-        portionSize,
-        ingredients,
-        missingRecipe,
-        fulfilledBy: menu.fulfilledBy,
-      });
-
-      groups.set(groupKey, group);
-    });
-
-    const grouped = Array.from(groups.values()).map((group) => ({
-      site: group.site,
-      date: group.date,
-      productionCode: group.productionCode,
-      items: group.items,
-      summary: Array.from(group.summaryMap.values()),
-      missingRecipes: Array.from(group.missingRecipes.values()),
-    }));
-
-    grouped.sort((a, b) => {
-      const byDate = a.date.localeCompare(b.date);
-      if (byDate !== 0) return byDate;
-      return (a.productionCode ?? '').localeCompare(b.productionCode ?? '');
-    });
 
     return { items: grouped };
   }
@@ -793,6 +834,252 @@ export class MenuProductionsService implements OnModuleInit {
 
   private normalizeName(value: string) {
     return value ? value.trim().toLowerCase() : '';
+  }
+
+  private buildStoreIngredientKey(
+    productCode?: string,
+    name?: string,
+    unitOfMeasures?: string,
+  ) {
+    const identity = this.normalizeName(productCode || name || '');
+    const unit = this.normalizeName(unitOfMeasures || '');
+    if (!identity || !unit) return '';
+    return `${identity}__${unit}`;
+  }
+
+  private mapStoreFulfillmentItems(
+    items: unknown,
+  ): StoreFulfillmentIngredient[] {
+    if (!Array.isArray(items)) return [];
+    return items.map((item) => {
+      const record =
+        item && typeof item === 'object'
+          ? (item as Record<string, unknown>)
+          : {};
+      return {
+        productCode: String(record.productCode ?? '').trim(),
+        name: String(record.name ?? '').trim(),
+        unitOfMeasures: String(record.unitOfMeasures ?? '').trim(),
+        plannedQty: Number(record.plannedQty ?? 0),
+        actualQty: Number(record.actualQty ?? 0),
+        varianceQty: Number(record.varianceQty ?? 0),
+        reason: String(record.reason ?? '').trim() || undefined,
+      };
+    });
+  }
+
+  private async buildGroupedStoreRequestsFromMenus(
+    items: Array<
+      Partial<MenuProduction> & {
+        _id?: unknown;
+        id?: unknown;
+        createdBy?: unknown;
+        storeFulfillmentItems?: unknown;
+        storeFulfillmentCompletedAt?: unknown;
+        storeFulfillmentNote?: unknown;
+      }
+    >,
+    requestedSite?: string,
+  ) {
+    if (items.length === 0) {
+      return [] as StoreRequestGroup[];
+    }
+
+    const creatorIds = Array.from(
+      new Set(
+        items
+          .map((item) => String(item.createdBy ?? '').trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const creatorNameById =
+      creatorIds.length > 0
+        ? await this.users.findNamesByIds(creatorIds)
+        : new Map<string, string>();
+
+    // Recipes are shared across sites, so use the full recipe list.
+    const recipes = await this.recipeModel.find({}).lean();
+    const recipeById = new Map<string, RecipeDocument>();
+    const recipeByName = new Map<string, RecipeDocument>();
+    recipes.forEach((recipe) => {
+      const recipeId = this.normalizeOptionalRecipeId(String(recipe._id ?? ''));
+      if (recipeId) {
+        recipeById.set(recipeId, recipe);
+      }
+      const key = this.normalizeName(recipe.name ?? '');
+      if (!key || recipeByName.has(key)) return;
+      recipeByName.set(key, recipe);
+    });
+
+    const groups = new Map<
+      string,
+      {
+        site?: string;
+        date: string;
+        productionCode?: string;
+        items: StoreRequestMenu[];
+        summaryMap: Map<string, StoreRequestIngredient>;
+        missingRecipes: Set<string>;
+        fulfillment?: StoreRequestFulfillment;
+      }
+    >();
+
+    items.forEach((menu) => {
+      const productionDate = String(menu.productionDate ?? '').trim();
+      const groupKey = this.buildProductionBatchKey({
+        productionDate,
+        productionCode: String(menu.productionCode ?? ''),
+        id: String(menu._id ?? menu.id ?? ''),
+      });
+      const group = groups.get(groupKey) ?? {
+        site:
+          this.normalizeSite(String(menu.site ?? '')) ??
+          requestedSite ??
+          DEFAULT_SITE,
+        date: productionDate,
+        productionCode: this.normalizeOptionalProductionCode(
+          String(menu.productionCode ?? ''),
+        ),
+        items: [],
+        summaryMap: new Map<string, StoreRequestIngredient>(),
+        missingRecipes: new Set<string>(),
+      };
+
+      const menuRecipeId = this.normalizeOptionalRecipeId(
+        String(menu.recipeId ?? ''),
+      );
+      const recipe =
+        (menuRecipeId ? recipeById.get(menuRecipeId) : undefined) ??
+        recipeByName.get(this.normalizeName(String(menu.menuName ?? '')));
+      let ingredients: StoreRequestIngredient[] = [];
+      let missingRecipe = false;
+      let portionSize = 1;
+      const submittedById = String(menu.createdBy ?? '').trim();
+      const submittedByName = submittedById
+        ? creatorNameById.get(submittedById)
+        : undefined;
+      const resolvedRecipeId =
+        menuRecipeId ??
+        (recipe
+          ? this.normalizeOptionalRecipeId(String(recipe._id ?? ''))
+          : undefined);
+      const resolvedRecipeCode =
+        this.normalizeOptionalRecipeCode(String(menu.recipeCode ?? '')) ??
+        this.normalizeOptionalRecipeCode(recipe?.recipeCode);
+
+      if (!recipe) {
+        missingRecipe = true;
+        if (menu.menuName) {
+          group.missingRecipes.add(String(menu.menuName));
+        }
+      } else {
+        portionSize = Number(recipe.portionSize) || 1;
+        if (portionSize <= 0) portionSize = 1;
+        const multiplier = Number(menu.portion) / portionSize;
+
+        ingredients = (recipe.ingredients ?? []).map((ingredient) => {
+          const productCode = ingredient.productCode?.trim() ?? '';
+          const name = ingredient.name?.trim() ?? '';
+          const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
+          const baseQty = Number(ingredient.qty);
+          const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+          const normalizedKey = this.buildStoreIngredientKey(
+            productCode,
+            name,
+            unitOfMeasures,
+          );
+          const existing = group.summaryMap.get(normalizedKey);
+          if (existing) {
+            existing.qty += qty;
+          } else {
+            group.summaryMap.set(normalizedKey, {
+              productCode,
+              name,
+              unitOfMeasures,
+              qty,
+            });
+          }
+
+          return {
+            productCode,
+            name,
+            unitOfMeasures,
+            qty,
+          };
+        });
+      }
+
+      const fulfilledAtValue = menu.storeFulfillmentCompletedAt;
+      const fulfilledAt =
+        fulfilledAtValue instanceof Date
+          ? fulfilledAtValue.toISOString()
+          : fulfilledAtValue
+            ? new Date(String(fulfilledAtValue)).toISOString()
+            : undefined;
+      const fulfillmentItems = this.mapStoreFulfillmentItems(
+        menu.storeFulfillmentItems,
+      );
+      const fulfillmentNote =
+        String(menu.storeFulfillmentNote ?? '').trim() || undefined;
+      const fulfilledBy =
+        String(menu.fulfilledBy ?? '').trim() || undefined;
+
+      if (
+        !group.fulfillment &&
+        (fulfillmentItems.length > 0 ||
+          fulfilledAt ||
+          fulfillmentNote ||
+          fulfilledBy)
+      ) {
+        group.fulfillment = {
+          completedBy: fulfilledBy,
+          completedAt: fulfilledAt,
+          note: fulfillmentNote,
+          items: fulfillmentItems,
+        };
+      }
+
+      group.items.push({
+        id: String(menu._id ?? menu.id ?? ''),
+        site: this.normalizeSite(String(menu.site ?? '')) ?? group.site,
+        productionCode: this.normalizeOptionalProductionCode(
+          String(menu.productionCode ?? ''),
+        ),
+        submittedByName,
+        recipeId: resolvedRecipeId,
+        recipeCode: resolvedRecipeCode,
+        menuName: String(menu.menuName ?? ''),
+        category: String(menu.category ?? ''),
+        portion: Number(menu.portion ?? 0),
+        productionDate,
+        approvalStatus: (menu.approvalStatus ?? 'pending') as ApprovalStatus,
+        storeRequestStatus:
+          (menu.storeRequestStatus ?? 'not-requested') as StoreRequestStatus,
+        portionSize,
+        ingredients,
+        missingRecipe,
+        fulfilledBy,
+        fulfilledAt,
+      });
+
+      groups.set(groupKey, group);
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        site: group.site,
+        date: group.date,
+        productionCode: group.productionCode,
+        items: group.items,
+        summary: Array.from(group.summaryMap.values()),
+        missingRecipes: Array.from(group.missingRecipes.values()),
+        fulfillment: group.fulfillment,
+      }))
+      .sort((a, b) => {
+        const byDate = a.date.localeCompare(b.date);
+        if (byDate !== 0) return byDate;
+        return (a.productionCode ?? '').localeCompare(b.productionCode ?? '');
+      });
   }
 
   private formatMenuProductionCode(sequence: number): string {

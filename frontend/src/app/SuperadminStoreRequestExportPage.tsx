@@ -11,6 +11,23 @@ type StoreRequestIngredient = {
   qty: number
 }
 
+type StoreFulfillmentIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  plannedQty: number
+  actualQty: number
+  varianceQty: number
+  reason?: string
+}
+
+type StoreRequestFulfillment = {
+  completedBy?: string
+  completedAt?: string
+  note?: string
+  items: StoreFulfillmentIngredient[]
+}
+
 type StoreRequestMenu = {
   id: string
   menuName: string
@@ -25,8 +42,10 @@ type StoreRequestMenu = {
 type StoreRequestGroup = {
   site: string
   date: string
+  productionCode?: string
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
+  fulfillment?: StoreRequestFulfillment
 }
 
 type ExportMode = 'all' | 'range'
@@ -117,6 +136,13 @@ const downloadExcel = (
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
+
+const buildIngredientKey = (
+  productCode: string,
+  name: string,
+  unitOfMeasures: string,
+) =>
+  `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
 
 const SuperadminStoreRequestExportPage = () => {
   const { accessToken } = useAuth()
@@ -244,6 +270,7 @@ const SuperadminStoreRequestExportPage = () => {
         [
           'No',
           'Production Date',
+          'Production Code',
           'Site',
           'Menu Name',
           'Category',
@@ -257,14 +284,57 @@ const SuperadminStoreRequestExportPage = () => {
         ],
       ]
 
+      const summaryRows: Array<Array<unknown>> = [
+        [
+          'No',
+          'Production Date',
+          'Production Code',
+          'Site',
+          'Store Request Status',
+          'Product Code',
+          'Ingredient Name',
+          'Planned Qty',
+          'Actual Qty',
+          'Variance',
+          'Unit',
+          'Reason',
+          'Completed By',
+          'Completed At',
+          'Batch Note',
+        ],
+      ]
+
       let rowNumber = 1
+      let summaryRowNumber = 1
       groups.forEach((group) => {
+        const fulfillmentByKey = new Map(
+          (group.fulfillment?.items ?? []).map((item) => [
+            buildIngredientKey(
+              item.productCode,
+              item.name,
+              item.unitOfMeasures,
+            ),
+            item,
+          ]),
+        )
+        const completedAt = group.fulfillment?.completedAt
+          ? new Date(group.fulfillment.completedAt).toLocaleString()
+          : ''
+        const groupStatus = group.items.some(
+          (item) => item.storeRequestStatus === 'fulfilled',
+        )
+          ? 'fulfilled'
+          : group.items.some((item) => item.storeRequestStatus === 'requested')
+            ? 'requested'
+            : 'not-requested'
+
         group.items.forEach((menu) => {
           const ingredients = menu.ingredients ?? []
           if (ingredients.length === 0) {
             rows.push([
               rowNumber,
               group.date,
+              group.productionCode ?? '',
               group.site,
               menu.menuName,
               menu.category,
@@ -284,6 +354,7 @@ const SuperadminStoreRequestExportPage = () => {
             rows.push([
               rowNumber,
               group.date,
+              group.productionCode ?? '',
               group.site,
               menu.menuName,
               menu.category,
@@ -298,6 +369,39 @@ const SuperadminStoreRequestExportPage = () => {
             rowNumber += 1
           })
         })
+
+        group.summary.forEach((ingredient) => {
+          const fulfillmentItem = fulfillmentByKey.get(
+            buildIngredientKey(
+              ingredient.productCode,
+              ingredient.name,
+              ingredient.unitOfMeasures,
+            ),
+          )
+
+          summaryRows.push([
+            summaryRowNumber,
+            group.date,
+            group.productionCode ?? '',
+            group.site,
+            getStoreRequestStatusLabel(groupStatus),
+            ingredient.productCode,
+            ingredient.name,
+            formatQuantity(ingredient.qty),
+            fulfillmentItem
+              ? formatQuantity(fulfillmentItem.actualQty)
+              : '',
+            fulfillmentItem
+              ? formatQuantity(fulfillmentItem.varianceQty)
+              : '',
+            formatUnitLabel(ingredient.unitOfMeasures),
+            fulfillmentItem?.reason ?? '',
+            group.fulfillment?.completedBy ?? '',
+            completedAt,
+            group.fulfillment?.note ?? '',
+          ])
+          summaryRowNumber += 1
+        })
       })
 
       const siteLabel =
@@ -309,7 +413,10 @@ const SuperadminStoreRequestExportPage = () => {
         exportMode === 'range'
           ? `store-request-${safeSite}-${startDate}_to_${endDate}.xls`
           : `store-request-${safeSite}-all-dates.xls`
-      downloadExcel(filename, [{ name: 'Store Requests', rows }])
+      downloadExcel(filename, [
+        { name: 'Store Requests', rows },
+        { name: 'Ingredient Summary', rows: summaryRows },
+      ])
 
       setInfoMessage(
         `Export complete for ${selectedSites.length} selected site(s). ${groups.length} grouped rows exported.`,

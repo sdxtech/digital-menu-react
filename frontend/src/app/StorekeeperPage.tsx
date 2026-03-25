@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
@@ -10,6 +11,23 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+}
+
+type StoreFulfillmentIngredient = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  plannedQty: number
+  actualQty: number
+  varianceQty: number
+  reason?: string
+}
+
+type StoreRequestFulfillment = {
+  completedBy?: string
+  completedAt?: string
+  note?: string
+  items: StoreFulfillmentIngredient[]
 }
 
 type StoreRequestMenu = {
@@ -34,6 +52,16 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
+  fulfillment?: StoreRequestFulfillment
+}
+
+type ReconciliationRow = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  plannedQty: number
+  actualQty: string
+  reason: string
 }
 
 const ITEMS_PER_PAGE = 10
@@ -118,9 +146,42 @@ const downloadExcel = (
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+const formatQuantity = (value: number) => {
+  if (!Number.isFinite(value)) return '0'
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(3).replace(/\.?0+$/, '')
+}
+
+const formatSignedQuantity = (value: number) => {
+  const formatted = formatQuantity(Math.abs(value))
+  if (value > 0) return `+${formatted}`
+  if (value < 0) return `-${formatted}`
+  return '0'
+}
+
+const parseDotDecimal = (value: string) => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return { valid: false as const, reason: 'empty' as const }
+  }
+  if (trimmed.includes(',')) {
+    return { valid: false as const, reason: 'comma' as const }
+  }
+  if (!/^(?:\d+|\d+\.\d+|\.\d+)$/.test(trimmed)) {
+    return { valid: false as const, reason: 'format' as const }
+  }
+
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { valid: false as const, reason: 'range' as const }
+  }
+
+  return { valid: true as const, value: parsed }
+}
+
 const StorekeeperPage = () => {
   const { accessToken } = useAuth()
-  const { markStoreFulfilled } = useChefData()
+  const { fulfillStoreRequestBatch } = useChefData()
   const [loadError, setLoadError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
@@ -130,6 +191,13 @@ const StorekeeperPage = () => {
     null,
   )
   const [loading, setLoading] = useState(false)
+  const [reconciliationGroup, setReconciliationGroup] =
+    useState<StoreRequestGroup | null>(null)
+  const [reconciliationRows, setReconciliationRows] = useState<
+    ReconciliationRow[]
+  >([])
+  const [reconciliationNote, setReconciliationNote] = useState('')
+  const [reconciliationError, setReconciliationError] = useState('')
 
   // FRONTEND VIEW: backend returns grouped requests with ingredient summary.
   const fetchStoreRequests = useCallback(async () => {
@@ -168,14 +236,18 @@ const StorekeeperPage = () => {
     setPage((prev) => Math.min(prev, nextTotalPages))
   }, [groups.length])
 
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
-  }
-
   const getGroupKey = (group: StoreRequestGroup) =>
     `${group.date}__${group.productionCode ?? 'no-code'}`
+
+  const toReconciliationRows = (group: StoreRequestGroup): ReconciliationRow[] =>
+    (group.summary ?? []).map((item) => ({
+      productCode: item.productCode,
+      name: item.name,
+      unitOfMeasures: item.unitOfMeasures,
+      plannedQty: item.qty,
+      actualQty: '',
+      reason: '',
+    }))
 
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
     const rows: Array<Array<unknown>> = [
@@ -290,25 +362,127 @@ const StorekeeperPage = () => {
     )
   }
 
-  const handleCompleteByDate = async (group: StoreRequestGroup) => {
-    const groupKey = getGroupKey(group)
+  const openReconciliationModal = (group: StoreRequestGroup) => {
     setActionMessage('')
+    setLoadError('')
+    setReconciliationGroup(group)
+    setReconciliationRows(toReconciliationRows(group))
+    setReconciliationNote('')
+    setReconciliationError('')
+  }
+
+  const closeReconciliationModal = () => {
+    if (processingGroupKey) return
+    setReconciliationGroup(null)
+    setReconciliationRows([])
+    setReconciliationNote('')
+    setReconciliationError('')
+  }
+
+  const updateReconciliationRow = <K extends keyof ReconciliationRow>(
+    index: number,
+    field: K,
+    value: ReconciliationRow[K],
+  ) => {
+    setReconciliationRows((prev) =>
+      prev.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, [field]: value } : row,
+      ),
+    )
+  }
+
+  const getVarianceQty = (plannedQty: number, actualQtyText: string) => {
+    const parsed = parseDotDecimal(actualQtyText)
+    if (!parsed.valid) return null
+    return parsed.value - plannedQty
+  }
+
+  const handleSubmitReconciliation = async () => {
+    if (!reconciliationGroup) return
+
+    const groupKey = getGroupKey(reconciliationGroup)
+    const menuProductionIds = reconciliationGroup.items
+      .map((item) => item.id)
+      .filter(Boolean)
+
+    if (menuProductionIds.length === 0) {
+      setReconciliationError('Menu production data is missing for this batch.')
+      return
+    }
+
+    if (reconciliationRows.length === 0) {
+      setReconciliationError('No planned raw materials available to reconcile.')
+      return
+    }
+
+    const payloadItems = []
+    for (const row of reconciliationRows) {
+      const actualQtyText = row.actualQty.trim()
+      if (!actualQtyText) {
+        setReconciliationError(
+          `Actual qty is required for ${row.productCode || row.name}.`,
+        )
+        return
+      }
+
+      const parsedActualQty = parseDotDecimal(actualQtyText)
+      if (!parsedActualQty.valid) {
+        const fieldLabel = row.productCode || row.name
+        if (parsedActualQty.reason === 'comma') {
+          setReconciliationError(
+            `Use dot decimal format for ${fieldLabel}, for example 0.5.`,
+          )
+          return
+        }
+        setReconciliationError(
+          `Actual qty for ${fieldLabel} must be a valid number using dot decimals, for example 0.5.`,
+        )
+        return
+      }
+
+      const actualQty = parsedActualQty.value
+      const varianceQty = actualQty - row.plannedQty
+      const reason = row.reason.trim()
+      if (Math.abs(varianceQty) > 0.000001 && !reason) {
+        setReconciliationError(
+          `Reason is required when actual qty differs for ${row.productCode || row.name}.`,
+        )
+        return
+      }
+
+      payloadItems.push({
+        productCode: row.productCode,
+        name: row.name,
+        unitOfMeasures: row.unitOfMeasures,
+        actualQty,
+        reason: reason || undefined,
+      })
+    }
+
+    setReconciliationError('')
     setLoadError('')
     setProcessingGroupKey(groupKey)
     try {
-      await Promise.all(group.items.map((menu) => markStoreFulfilled(menu.id)))
-      const label = group.productionCode
-        ? `${group.date} (${group.productionCode})`
-        : group.date
+      await fulfillStoreRequestBatch({
+        menuProductionIds,
+        items: payloadItems,
+        note: reconciliationNote.trim() || undefined,
+      })
+      const label = reconciliationGroup.productionCode
+        ? `${reconciliationGroup.date} (${reconciliationGroup.productionCode})`
+        : reconciliationGroup.date
       setActionMessage(`Ingredient issuance for ${label} completed.`)
       await fetchStoreRequests()
       setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      setReconciliationGroup(null)
+      setReconciliationRows([])
+      setReconciliationNote('')
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : 'Failed to complete ingredient issuance.'
-      setLoadError(message)
+      setReconciliationError(message)
     } finally {
       setProcessingGroupKey(null)
     }
@@ -452,16 +626,17 @@ const StorekeeperPage = () => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleCompleteByDate(group)}
+                                    onClick={() => openReconciliationModal(group)}
                                     disabled={
                                       processingGroupKey === groupKey ||
-                                      group.items.length === 0
+                                      group.items.length === 0 ||
+                                      summaryItems.length === 0
                                     }
                                     className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {processingGroupKey === groupKey
                                       ? 'Completing...'
-                                      : 'Complete & send to kitchen'}
+                                      : 'Complete with actual qty'}
                                   </button>
                                 </div>
                               </div>
@@ -605,6 +780,234 @@ const StorekeeperPage = () => {
           </table>
         </div>
       </div>
+
+      {reconciliationGroup && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+          <div
+            className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+              <div>
+                <p className="text-xs text-muted">Confirm Raw Material Delivery</p>
+                <h3 className="mt-1 text-lg font-semibold text-foreground">
+                  {reconciliationGroup.productionCode
+                    ? `${reconciliationGroup.date} (${reconciliationGroup.productionCode})`
+                    : reconciliationGroup.date}
+                </h3>
+                <p className="mt-2 text-sm text-muted">
+                  Compare planned quantities with actual raw materials delivered
+                  to kitchen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReconciliationModal}
+                disabled={Boolean(processingGroupKey)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-6 overflow-y-auto px-6 py-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-md border border-border bg-white p-4">
+                  <p className="text-xs text-muted">Production date</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {reconciliationGroup.date}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-white p-4">
+                  <p className="text-xs text-muted">Production code</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {reconciliationGroup.productionCode ?? '-'}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-white p-4">
+                  <p className="text-xs text-muted">Menus in batch</p>
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    {reconciliationGroup.items.length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border bg-surface p-4">
+                <p className="text-xs text-muted">Planned menu basis</p>
+                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                  <table className="dm-table min-w-full text-sm">
+                    <thead className="bg-background">
+                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                        <th className="w-12 px-3 py-1.5 font-semibold">No</th>
+                        <th className="px-3 py-1.5 font-semibold">Menu ID</th>
+                        <th className="px-3 py-1.5 font-semibold">Menu</th>
+                        <th className="px-3 py-1.5 font-semibold">Category</th>
+                        <th className="px-3 py-1.5 font-semibold">Portion</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconciliationGroup.items.map((menu, index) => (
+                        <tr key={menu.id} className="border-t border-border">
+                          <td className="px-3 py-1.5 text-sm text-muted">
+                            {index + 1}
+                          </td>
+                          <td className="px-3 py-1.5 font-medium">
+                            {menu.recipeCode ?? '-'}
+                          </td>
+                          <td className="px-3 py-1.5">{menu.menuName}</td>
+                          <td className="px-3 py-1.5">{menu.category}</td>
+                          <td className="px-3 py-1.5">{menu.portion}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border bg-surface p-4">
+                <div>
+                  <p className="text-xs text-muted">Actual issuance</p>
+                  <p className="mt-1 text-sm text-muted">
+                    Fill actual qty manually. Use dot decimal format like `0.5`.
+                  </p>
+                </div>
+
+                <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                  <table className="dm-table min-w-full text-sm">
+                    <thead className="bg-background">
+                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                        <th className="w-12 px-3 py-1.5 font-semibold">No</th>
+                        <th className="px-3 py-1.5 font-semibold">Product code</th>
+                        <th className="px-3 py-1.5 font-semibold">Ingredient</th>
+                        <th className="px-3 py-1.5 font-semibold">Planned qty</th>
+                        <th className="px-3 py-1.5 font-semibold">Actual qty</th>
+                        <th className="px-3 py-1.5 font-semibold">Variance</th>
+                        <th className="px-3 py-1.5 font-semibold">Unit</th>
+                        <th className="min-w-[220px] px-3 py-1.5 font-semibold">
+                          Reason
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconciliationRows.map((row, index) => {
+                        const varianceQty = getVarianceQty(
+                          row.plannedQty,
+                          row.actualQty,
+                        )
+                        const varianceClass =
+                          varianceQty === null
+                            ? 'text-muted'
+                            : Math.abs(varianceQty) <= 0.000001
+                              ? 'text-muted'
+                              : varianceQty > 0
+                                ? 'text-primary'
+                                : 'text-danger'
+
+                        return (
+                          <tr
+                            key={`${row.productCode}-${row.unitOfMeasures}-${index}`}
+                            className="border-t border-border"
+                          >
+                            <td className="px-3 py-1.5 text-sm text-muted">
+                              {index + 1}
+                            </td>
+                            <td className="px-3 py-1.5">{row.productCode}</td>
+                            <td className="px-3 py-1.5">{row.name}</td>
+                            <td className="px-3 py-1.5 font-medium">
+                              {formatQuantity(row.plannedQty)}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={row.actualQty}
+                                onChange={(event) =>
+                                  updateReconciliationRow(
+                                    index,
+                                    'actualQty',
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="0"
+                                className="w-28 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              />
+                            </td>
+                            <td className={`px-3 py-1.5 font-medium ${varianceClass}`}>
+                              {varianceQty === null
+                                ? '-'
+                                : formatSignedQuantity(varianceQty)}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {formatUnitLabel(row.unitOfMeasures)}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <input
+                                type="text"
+                                value={row.reason}
+                                onChange={(event) =>
+                                  updateReconciliationRow(
+                                    index,
+                                    'reason',
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="Required if variance exists"
+                                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4">
+                  <label className="text-sm font-medium text-foreground">
+                    Batch note
+                  </label>
+                  <textarea
+                    value={reconciliationNote}
+                    onChange={(event) => setReconciliationNote(event.target.value)}
+                    rows={3}
+                    placeholder="Optional note for this delivery batch"
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  />
+                </div>
+
+                {reconciliationError ? (
+                  <p className="mt-4 text-xs font-medium text-red-600">
+                    {reconciliationError}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+              <button
+                type="button"
+                onClick={closeReconciliationModal}
+                disabled={Boolean(processingGroupKey)}
+                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReconciliation}
+                disabled={Boolean(processingGroupKey)}
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {processingGroupKey ? 'Completing...' : 'Complete & send to kitchen'}
+              </button>
+            </div>
+          </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }
