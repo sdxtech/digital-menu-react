@@ -56,12 +56,14 @@ type StoreRequestGroup = {
 }
 
 type ReconciliationRow = {
+  id: string
   productCode: string
   name: string
   unitOfMeasures: string
   plannedQty: number
   actualQty: string
   reason: string
+  isAdditional: boolean
 }
 
 const ITEMS_PER_PAGE = 10
@@ -179,6 +181,37 @@ const parseDotDecimal = (value: string) => {
   return { valid: true as const, value: parsed }
 }
 
+const makeReconciliationRowId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `recon-${crypto.randomUUID()}`
+  }
+  return `recon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+const createAdditionalReconciliationRow = (): ReconciliationRow => ({
+  id: makeReconciliationRowId(),
+  productCode: '',
+  name: '',
+  unitOfMeasures: '',
+  plannedQty: 0,
+  actualQty: '',
+  reason: '',
+  isAdditional: true,
+})
+
+const normalizeReconciliationText = (value: string) => value.trim().toLowerCase()
+
+const buildReconciliationItemKey = (
+  productCode: string,
+  name: string,
+  unitOfMeasures: string,
+) => {
+  const identity = normalizeReconciliationText(productCode || name)
+  const unit = normalizeReconciliationText(unitOfMeasures)
+  if (!identity || !unit) return ''
+  return `${identity}__${unit}`
+}
+
 const StorekeeperPage = () => {
   const { accessToken } = useAuth()
   const { fulfillStoreRequestBatch } = useChefData()
@@ -241,12 +274,14 @@ const StorekeeperPage = () => {
 
   const toReconciliationRows = (group: StoreRequestGroup): ReconciliationRow[] =>
     (group.summary ?? []).map((item) => ({
+      id: makeReconciliationRowId(),
       productCode: item.productCode,
       name: item.name,
       unitOfMeasures: item.unitOfMeasures,
       plannedQty: item.qty,
       actualQty: '',
       reason: '',
+      isAdditional: false,
     }))
 
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
@@ -380,15 +415,25 @@ const StorekeeperPage = () => {
   }
 
   const updateReconciliationRow = <K extends keyof ReconciliationRow>(
-    index: number,
+    rowId: string,
     field: K,
     value: ReconciliationRow[K],
   ) => {
     setReconciliationRows((prev) =>
-      prev.map((row, rowIndex) =>
-        rowIndex === index ? { ...row, [field]: value } : row,
+      prev.map((row) =>
+        row.id === rowId ? { ...row, [field]: value } : row,
       ),
     )
+  }
+
+  const handleAddReconciliationRow = () => {
+    setReconciliationRows((prev) => [...prev, createAdditionalReconciliationRow()])
+    setReconciliationError('')
+  }
+
+  const handleRemoveReconciliationRow = (rowId: string) => {
+    setReconciliationRows((prev) => prev.filter((row) => row.id !== rowId))
+    setReconciliationError('')
   }
 
   const getVarianceQty = (plannedQty: number, actualQtyText: string) => {
@@ -416,18 +461,47 @@ const StorekeeperPage = () => {
     }
 
     const payloadItems = []
+    const seenKeys = new Set<string>()
     for (const row of reconciliationRows) {
+      const productCode = row.productCode.trim()
+      const name = row.name.trim()
+      const unitOfMeasures = row.unitOfMeasures.trim()
+      const fieldLabel = productCode || name
+
+      if (row.isAdditional) {
+        if (!productCode || !name || !unitOfMeasures) {
+          setReconciliationError(
+            'Additional ingredient rows must include product code, ingredient name, and unit.',
+          )
+          return
+        }
+      }
+
+      const itemKey = buildReconciliationItemKey(productCode, name, unitOfMeasures)
+      if (!itemKey) {
+        setReconciliationError(
+          `Ingredient identity is incomplete for ${fieldLabel || 'an issuance row'}.`,
+        )
+        return
+      }
+      if (seenKeys.has(itemKey)) {
+        setReconciliationError(
+          `Duplicate ingredient found in actual issuance for ${fieldLabel}.`,
+        )
+        return
+      }
+      seenKeys.add(itemKey)
+
       const actualQtyText = row.actualQty.trim()
       if (!actualQtyText) {
         setReconciliationError(
-          `Actual qty is required for ${row.productCode || row.name}.`,
+          `Actual qty is required for ${fieldLabel || 'an ingredient'}.`,
         )
         return
       }
 
       const parsedActualQty = parseDotDecimal(actualQtyText)
       if (!parsedActualQty.valid) {
-        const fieldLabel = row.productCode || row.name
         if (parsedActualQty.reason === 'comma') {
           setReconciliationError(
             `Use dot decimal format for ${fieldLabel}, for example 0.5.`,
@@ -441,19 +515,25 @@ const StorekeeperPage = () => {
       }
 
       const actualQty = parsedActualQty.value
+      if (row.isAdditional && actualQty <= 0) {
+        setReconciliationError(
+          `Actual qty for added ingredient ${fieldLabel} must be greater than 0.`,
+        )
+        return
+      }
       const varianceQty = actualQty - row.plannedQty
       const reason = row.reason.trim()
       if (Math.abs(varianceQty) > 0.000001 && !reason) {
         setReconciliationError(
-          `Reason is required when actual qty differs for ${row.productCode || row.name}.`,
+          `Reason is required when actual qty differs for ${fieldLabel}.`,
         )
         return
       }
 
       payloadItems.push({
-        productCode: row.productCode,
-        name: row.name,
-        unitOfMeasures: row.unitOfMeasures,
+        productCode,
+        name,
+        unitOfMeasures,
         actualQty,
         reason: reason || undefined,
       })
@@ -872,6 +952,10 @@ const StorekeeperPage = () => {
                   <p className="mt-1 text-sm text-muted">
                     Fill actual qty manually. Use dot decimal format like `0.5`.
                   </p>
+                  <p className="mt-1 text-sm text-muted">
+                    Add an ingredient row when the planned ingredient is unavailable
+                    and you need a substitute from the warehouse.
+                  </p>
                 </div>
 
                 <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border bg-white">
@@ -888,6 +972,7 @@ const StorekeeperPage = () => {
                         <th className="min-w-[220px] px-3 py-1.5 font-semibold">
                           Reason
                         </th>
+                        <th className="w-24 px-3 py-1.5 font-semibold">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -907,14 +992,50 @@ const StorekeeperPage = () => {
 
                         return (
                           <tr
-                            key={`${row.productCode}-${row.unitOfMeasures}-${index}`}
+                            key={row.id}
                             className="border-t border-border"
                           >
                             <td className="px-3 py-1.5 text-sm text-muted">
                               {index + 1}
                             </td>
-                            <td className="px-3 py-1.5">{row.productCode}</td>
-                            <td className="px-3 py-1.5">{row.name}</td>
+                            <td className="px-3 py-1.5">
+                              {row.isAdditional ? (
+                                <input
+                                  type="text"
+                                  value={row.productCode}
+                                  onChange={(event) =>
+                                    updateReconciliationRow(
+                                      row.id,
+                                      'productCode',
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="Product code"
+                                  className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                />
+                              ) : (
+                                row.productCode
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {row.isAdditional ? (
+                                <input
+                                  type="text"
+                                  value={row.name}
+                                  onChange={(event) =>
+                                    updateReconciliationRow(
+                                      row.id,
+                                      'name',
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="Ingredient name"
+                                  className="w-48 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                />
+                              ) : (
+                                row.name
+                              )}
+                            </td>
                             <td className="px-3 py-1.5 font-medium">
                               {formatQuantity(row.plannedQty)}
                             </td>
@@ -925,7 +1046,7 @@ const StorekeeperPage = () => {
                                 value={row.actualQty}
                                 onChange={(event) =>
                                   updateReconciliationRow(
-                                    index,
+                                    row.id,
                                     'actualQty',
                                     event.target.value,
                                   )
@@ -940,7 +1061,23 @@ const StorekeeperPage = () => {
                                 : formatSignedQuantity(varianceQty)}
                             </td>
                             <td className="px-3 py-1.5">
-                              {formatUnitLabel(row.unitOfMeasures)}
+                              {row.isAdditional ? (
+                                <input
+                                  type="text"
+                                  value={row.unitOfMeasures}
+                                  onChange={(event) =>
+                                    updateReconciliationRow(
+                                      row.id,
+                                      'unitOfMeasures',
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder="Unit"
+                                  className="w-28 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                />
+                              ) : (
+                                formatUnitLabel(row.unitOfMeasures)
+                              )}
                             </td>
                             <td className="px-3 py-1.5">
                               <input
@@ -948,18 +1085,50 @@ const StorekeeperPage = () => {
                                 value={row.reason}
                                 onChange={(event) =>
                                   updateReconciliationRow(
-                                    index,
+                                    row.id,
                                     'reason',
                                     event.target.value,
                                   )
                                 }
-                                placeholder="Required if variance exists"
+                                placeholder={
+                                  row.isAdditional
+                                    ? 'Required for added ingredient'
+                                    : 'Required if variance exists'
+                                }
                                 className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                               />
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {row.isAdditional ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveReconciliationRow(row.id)}
+                                  disabled={Boolean(processingGroupKey)}
+                                  className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Remove
+                                </button>
+                              ) : (
+                                <span className="text-xs text-muted">Planned</span>
+                              )}
                             </td>
                           </tr>
                         )
                       })}
+                      <tr className="border-t border-border">
+                        <td colSpan={9} className="px-3 py-3">
+                          <div className="flex justify-center">
+                            <button
+                              type="button"
+                              onClick={handleAddReconciliationRow}
+                              disabled={Boolean(processingGroupKey)}
+                              className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              + Add ingredient
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>

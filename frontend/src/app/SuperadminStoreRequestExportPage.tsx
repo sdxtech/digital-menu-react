@@ -33,6 +33,7 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  cost?: number
   portionSize: number
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
   missingRecipe: boolean
@@ -275,6 +276,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Menu Name',
           'Category',
           'Portions',
+          'Cost',
           'Base Pax',
           'Store Request Status',
           'Product Code',
@@ -291,6 +293,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Production Code',
           'Site',
           'Store Request Status',
+          'Batch Menu Cost',
           'Product Code',
           'Ingredient Name',
           'Planned Qty',
@@ -327,6 +330,19 @@ const SuperadminStoreRequestExportPage = () => {
           : group.items.some((item) => item.storeRequestStatus === 'requested')
             ? 'requested'
             : 'not-requested'
+        const groupTotalCost = group.items.reduce((sum, item) => {
+          const amount = Number(item.cost)
+          return Number.isFinite(amount) ? sum + amount : sum
+        }, 0)
+        const summaryByKey = new Map<
+          string,
+          {
+            productCode: string
+            name: string
+            unitOfMeasures: string
+            plannedQty: number
+          }
+        >()
 
         group.items.forEach((menu) => {
           const ingredients = menu.ingredients ?? []
@@ -339,6 +355,7 @@ const SuperadminStoreRequestExportPage = () => {
               menu.menuName,
               menu.category,
               menu.portion,
+              Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : '',
               menu.portionSize ?? 1,
               getStoreRequestStatusLabel(menu.storeRequestStatus),
               '',
@@ -359,6 +376,7 @@ const SuperadminStoreRequestExportPage = () => {
               menu.menuName,
               menu.category,
               menu.portion,
+              Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : '',
               menu.portionSize ?? 1,
               getStoreRequestStatusLabel(menu.storeRequestStatus),
               ingredient.productCode,
@@ -371,13 +389,36 @@ const SuperadminStoreRequestExportPage = () => {
         })
 
         group.summary.forEach((ingredient) => {
-          const fulfillmentItem = fulfillmentByKey.get(
-            buildIngredientKey(
-              ingredient.productCode,
-              ingredient.name,
-              ingredient.unitOfMeasures,
-            ),
+          const key = buildIngredientKey(
+            ingredient.productCode,
+            ingredient.name,
+            ingredient.unitOfMeasures,
           )
+          summaryByKey.set(key, {
+            productCode: ingredient.productCode,
+            name: ingredient.name,
+            unitOfMeasures: ingredient.unitOfMeasures,
+            plannedQty: ingredient.qty,
+          })
+        })
+
+        ;(group.fulfillment?.items ?? []).forEach((item) => {
+          const key = buildIngredientKey(
+            item.productCode,
+            item.name,
+            item.unitOfMeasures,
+          )
+          if (summaryByKey.has(key)) return
+          summaryByKey.set(key, {
+            productCode: item.productCode,
+            name: item.name,
+            unitOfMeasures: item.unitOfMeasures,
+            plannedQty: Number.isFinite(item.plannedQty) ? item.plannedQty : 0,
+          })
+        })
+
+        summaryByKey.forEach((ingredient, key) => {
+          const fulfillmentItem = fulfillmentByKey.get(key)
 
           summaryRows.push([
             summaryRowNumber,
@@ -385,9 +426,10 @@ const SuperadminStoreRequestExportPage = () => {
             group.productionCode ?? '',
             group.site,
             getStoreRequestStatusLabel(groupStatus),
+            groupTotalCost,
             ingredient.productCode,
             ingredient.name,
-            formatQuantity(ingredient.qty),
+            formatQuantity(ingredient.plannedQty),
             fulfillmentItem
               ? formatQuantity(fulfillmentItem.actualQty)
               : '',

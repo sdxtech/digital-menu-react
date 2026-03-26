@@ -14,6 +14,7 @@ type MenuInputRow = {
   recipeId: string
   recipeQuery: string
   portion: number | ''
+  cost: string
 }
 
 type TimelineItem = {
@@ -24,6 +25,7 @@ type TimelineItem = {
   menuName: string
   category: string
   portion: number
+  cost?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   reviewedBy?: string
 }
@@ -46,6 +48,7 @@ const createMenuInputRow = (): MenuInputRow => ({
   recipeId: '',
   recipeQuery: '',
   portion: '',
+  cost: '',
 })
 
 const ChefMenuCycle = () => {
@@ -218,6 +221,20 @@ const ChefMenuCycle = () => {
     )
   }
 
+  const updateRowCost = (id: string, value: string) => {
+    const digitsOnly = value.replace(/\D/g, '')
+    setMenuRows((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              cost: digitsOnly,
+            }
+          : row,
+      ),
+    )
+  }
+
   const handleAddMenuRow = () => {
     if (!productionDate) {
       setInputError('Select a production date first.')
@@ -252,7 +269,7 @@ const ChefMenuCycle = () => {
     }
 
     const usedRows = menuRows.filter(
-      (row) => row.recipeId !== '' || row.portion !== '',
+      (row) => row.recipeId !== '' || row.portion !== '' || row.cost.trim() !== '',
     )
 
     if (usedRows.length === 0) {
@@ -266,12 +283,13 @@ const ChefMenuCycle = () => {
       menuName: string
       category: string
       portion: number
+      cost: number
       productionDate: string
     }> = []
 
     for (const row of usedRows) {
-      if (!row.recipeId || row.portion === '') {
-        setInputError('Make sure each row has a menu and portion.')
+      if (!row.recipeId || row.portion === '' || row.cost.trim() === '') {
+        setInputError('Make sure each row has a menu, portion, and cost.')
         setInputMessage('')
         return
       }
@@ -279,6 +297,13 @@ const ChefMenuCycle = () => {
       const portionValue = Number(row.portion)
       if (!Number.isInteger(portionValue) || portionValue <= 0) {
         setInputError('Portion must be a whole number greater than 0.')
+        setInputMessage('')
+        return
+      }
+
+      const costValue = Number(row.cost)
+      if (!Number.isFinite(costValue) || costValue < 0) {
+        setInputError('Cost must be a number greater than or equal to 0.')
         setInputMessage('')
         return
       }
@@ -297,6 +322,7 @@ const ChefMenuCycle = () => {
         menuName: recipe.name,
         category: recipe.category,
         portion: portionValue,
+        cost: costValue,
         productionDate,
       })
     }
@@ -413,6 +439,7 @@ const ChefMenuCycle = () => {
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Portion</th>
+                <th className="px-4 py-3 font-semibold">Cost</th>
                 <th className="px-4 py-3 font-semibold">Recipe details</th>
               </tr>
             </thead>
@@ -494,6 +521,19 @@ const ChefMenuCycle = () => {
                         />
                       </td>
                       <td className="px-4 py-3">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={row.cost}
+                          onChange={(event) =>
+                            updateRowCost(row.id, event.target.value)
+                          }
+                          placeholder="Example: 50000"
+                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
                         <button
                           type="button"
                           disabled={!selectedRecipe}
@@ -510,7 +550,7 @@ const ChefMenuCycle = () => {
                     </tr>
                     {isDetailsOpen ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={7} className="px-4 py-4">
+                        <td colSpan={8} className="px-4 py-4">
                           {!selectedRecipe ? (
                             <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
                               Select a menu to view recipe details.
@@ -599,7 +639,7 @@ const ChefMenuCycle = () => {
                 )
               })}
               <tr className="border-t border-border">
-                <td colSpan={7} className="px-4 py-3">
+                <td colSpan={8} className="px-4 py-3">
                   <div className="flex justify-center">
                     <button
                       type="button"

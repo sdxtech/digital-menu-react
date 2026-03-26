@@ -2,6 +2,7 @@ import {
   IsInt,
   IsMongoId,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
@@ -27,6 +28,11 @@ export class CreateMenuProductionDto {
   @IsInt()
   @Min(1)
   portion: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  cost: number;
 
   @IsString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

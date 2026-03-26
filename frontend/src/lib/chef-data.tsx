@@ -50,6 +50,7 @@ export type MenuProduction = {
   menuName: string
   category: string
   portion: number
+  cost?: number
   productionDate: string
   approvalStatus: ApprovalStatus
   storeRequestStatus: StoreRequestStatus
@@ -99,6 +100,7 @@ type AddMenuProductionInput = {
   menuName: string
   category: string
   portion: number
+  cost: number
   productionDate: string
 }
 
@@ -218,6 +220,7 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   menuName: item.menuName ?? '',
   category: item.category ?? '',
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
+  cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined,
   productionDate: item.productionDate ?? '',
   approvalStatus: item.approvalStatus ?? 'pending',
   storeRequestStatus: item.storeRequestStatus ?? 'not-requested',

@@ -60,6 +60,7 @@ type StoreRequestMenu = {
   menuName: string;
   category: string;
   portion: number;
+  cost?: number;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   storeRequestStatus: StoreRequestStatus;
@@ -91,6 +92,7 @@ type TimelineGroup = {
     menuName: string;
     category: string;
     portion: number;
+    cost?: number;
     approvalStatus: ApprovalStatus;
     reviewedBy?: string;
   }>;
@@ -156,6 +158,7 @@ export class MenuProductionsService implements OnModuleInit {
       menuName: recipe.name,
       category: recipe.category,
       portion: input.portion,
+      cost: input.cost,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
@@ -204,6 +207,7 @@ export class MenuProductionsService implements OnModuleInit {
         menuName: recipe.name,
         category: recipe.category,
         portion: input.portion,
+        cost: input.cost,
         productionDate: input.productionDate,
         approvalStatus: 'pending',
         storeRequestStatus: 'not-requested',
@@ -480,11 +484,30 @@ export class MenuProductionsService implements OnModuleInit {
       },
     );
 
-    if (actualItems.size > 0) {
-      throw new BadRequestException(
-        'Actual issuance contains items that are not part of the planned batch.',
-      );
-    }
+    actualItems.forEach((actualItem) => {
+      const actualQty = Number(actualItem.actualQty);
+      const normalizedReason = actualItem.reason?.trim();
+      if (!Number.isFinite(actualQty) || actualQty <= 0) {
+        throw new BadRequestException(
+          `Actual qty for added ingredient ${actualItem.productCode || actualItem.name} must be greater than 0.`,
+        );
+      }
+      if (!normalizedReason) {
+        throw new BadRequestException(
+          `Reason is required for added ingredient ${actualItem.productCode || actualItem.name}.`,
+        );
+      }
+
+      fulfillmentItems.push({
+        productCode: actualItem.productCode,
+        name: actualItem.name,
+        unitOfMeasures: actualItem.unitOfMeasures,
+        plannedQty: 0,
+        actualQty,
+        varianceQty: actualQty,
+        reason: normalizedReason,
+      });
+    });
 
     const actor = fulfilledBy?.trim() || 'Unknown user';
     const completedAt = new Date();
@@ -599,6 +622,9 @@ export class MenuProductionsService implements OnModuleInit {
         menuName: item.menuName,
         category: item.category,
         portion: item.portion,
+        cost: Number.isFinite(Number(item.cost))
+          ? Number(item.cost)
+          : undefined,
         approvalStatus: item.approvalStatus,
         reviewedBy: item.reviewedBy,
       });
@@ -1051,6 +1077,9 @@ export class MenuProductionsService implements OnModuleInit {
         menuName: String(menu.menuName ?? ''),
         category: String(menu.category ?? ''),
         portion: Number(menu.portion ?? 0),
+        cost: Number.isFinite(Number(menu.cost))
+          ? Number(menu.cost)
+          : undefined,
         productionDate,
         approvalStatus: (menu.approvalStatus ?? 'pending') as ApprovalStatus,
         storeRequestStatus:

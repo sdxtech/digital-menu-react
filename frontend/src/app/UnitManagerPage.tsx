@@ -48,6 +48,7 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  cost?: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
@@ -195,6 +196,12 @@ const UnitManagerPage = () => {
     if (!Number.isFinite(value)) return '0'
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
+  }
+
+  const formatCurrency = (value?: number) => {
+    const amount = Number(value)
+    if (!Number.isFinite(amount)) return '-'
+    return `Rp ${new Intl.NumberFormat('id-ID').format(amount)}`
   }
 
   const recipeTotalPages = Math.max(
@@ -467,13 +474,14 @@ const UnitManagerPage = () => {
                 <th className="px-4 py-3 font-semibold">Production code</th>
                 <th className="px-4 py-3 font-semibold">Chef</th>
                 <th className="px-4 py-3 font-semibold">Approval status</th>
+                <th className="px-4 py-3 font-semibold">Total cost</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
               {menuProductionGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
                     No production menus pending approval.
                   </td>
                 </tr>
@@ -494,6 +502,10 @@ const UnitManagerPage = () => {
                   const submittedByLabel = submittedByNames.length
                     ? submittedByNames.join(', ')
                     : '-'
+                  const totalCost = group.items.reduce((sum, item) => {
+                    const amount = Number(item.cost)
+                    return Number.isFinite(amount) ? sum + amount : sum
+                  }, 0)
 
                   return (
                     <Fragment key={groupKey}>
@@ -513,6 +525,9 @@ const UnitManagerPage = () => {
                             </span>
                             <span className="text-muted">{group.items.length} menus</span>
                           </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium">
+                          {formatCurrency(totalCost)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
@@ -546,7 +561,7 @@ const UnitManagerPage = () => {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={6} className="px-4 py-4">
+                          <td colSpan={7} className="px-4 py-4">
                             <div className="grid gap-4 lg:grid-cols-12">
                               <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                 <p className="text-xs text-muted">Menu list</p>
@@ -559,13 +574,14 @@ const UnitManagerPage = () => {
                                         <th className="px-4 py-3 font-semibold">Menu</th>
                                         <th className="px-4 py-3 font-semibold">Category</th>
                                         <th className="px-4 py-3 font-semibold">Portion</th>
+                                        <th className="px-4 py-3 font-semibold">Cost</th>
                                       </tr>
                                     </thead>
                                     <tbody>
                                       {group.items.length === 0 ? (
                                         <tr className="border-t border-border">
                                           <td
-                                            colSpan={5}
+                                            colSpan={6}
                                             className="px-4 py-6 text-center text-muted"
                                           >
                                             No menus pending in this group.
@@ -583,6 +599,9 @@ const UnitManagerPage = () => {
                                             <td className="px-4 py-3">{item.menuName}</td>
                                             <td className="px-4 py-3">{item.category}</td>
                                             <td className="px-4 py-3">{item.portion}</td>
+                                            <td className="px-4 py-3">
+                                              {formatCurrency(item.cost)}
+                                            </td>
                                           </tr>
                                         ))
                                       )}

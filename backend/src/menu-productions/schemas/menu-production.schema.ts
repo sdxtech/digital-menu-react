@@ -43,6 +43,9 @@ export class MenuProduction {
   @Prop({ type: Number, required: true })
   portion: number;
 
+  @Prop({ type: Number, required: true, min: 0 })
+  cost: number;
+
   @Prop({ required: true, trim: true, index: true })
   productionDate: string;
 
