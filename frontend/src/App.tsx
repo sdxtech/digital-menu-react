@@ -17,6 +17,7 @@ import UnitManagerPage from './app/UnitManagerPage'
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
+import { useRouteDocumentTitle } from './lib/document-title'
 
 const RequireAuth = () => {
   const { user } = useAuth()
@@ -52,6 +53,8 @@ const NotFound = () => (
 )
 
 function App() {
+  useRouteDocumentTitle()
+
   return (
     <Routes>
       <Route path="/" element={<RoleLanding />} />
