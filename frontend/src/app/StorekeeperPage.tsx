@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
-import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
@@ -289,56 +288,30 @@ const StorekeeperPage = () => {
       [
         'No',
         'Production Date',
-        'Site',
+        'Production Code',
         'Menu Name',
+        'Recipe Code',
         'Category',
-        'Portions',
-        'Base Pax',
-        'Store Request Status',
-        'Product Code',
+        'Portion',
+        'IT Code',
         'Ingredient Name',
-        'Qty',
+        'QTY',
         'Unit',
       ],
     ]
 
-    const fallbackSite =
-      group.site?.trim() ??
-      group.items.find((item) => item.site?.trim())?.site?.trim() ??
-      '-'
-
-    const toBaseRecipeQty = (
-      scaledQty: number,
-      portion: number,
-      portionSize: number,
-    ) => {
-      const safePortion = Number(portion)
-      const safePortionSize =
-        Number.isFinite(portionSize) && portionSize > 0 ? portionSize : 1
-      const multiplier = safePortion / safePortionSize
-      if (!Number.isFinite(multiplier) || multiplier <= 0) return scaledQty
-      return scaledQty / multiplier
-    }
-
     let rowNumber = 1
     group.items.forEach((menu) => {
       const ingredients = menu.ingredients ?? []
-      const basePax =
-        Number.isFinite(menu.portionSize ?? Number.NaN) &&
-        (menu.portionSize ?? 0) > 0
-          ? (menu.portionSize as number)
-          : 1
-      const siteLabel = menu.site?.trim() || fallbackSite
       if (ingredients.length === 0) {
         rows.push([
           rowNumber,
           menu.productionDate ?? group.date,
-          siteLabel,
+          menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
-          basePax,
-          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'requested'),
           '',
           '',
           '',
@@ -352,25 +325,51 @@ const StorekeeperPage = () => {
         rows.push([
           rowNumber,
           menu.productionDate ?? group.date,
-          siteLabel,
+          menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
-          basePax,
-          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'requested'),
           ingredient.productCode,
           ingredient.name,
-          formatQuantity(toBaseRecipeQty(ingredient.qty, menu.portion, basePax)),
+          formatQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
         rowNumber += 1
       })
     })
 
+    const summaryMap = new Map<string, StoreRequestIngredient>()
+    ;(group.summary ?? []).forEach((item) => {
+      const productCode = item.productCode.trim()
+      const name = item.name.trim()
+      const unitOfMeasures = item.unitOfMeasures.trim()
+      const key = productCode || `${name}__${unitOfMeasures}`
+      if (!key) return
+
+      const qty = Number.isFinite(item.qty) ? item.qty : 0
+      const existing = summaryMap.get(key)
+      if (existing) {
+        existing.qty += qty
+        if (!existing.productCode && productCode) existing.productCode = productCode
+        if (!existing.name && name) existing.name = name
+        if (!existing.unitOfMeasures && unitOfMeasures) {
+          existing.unitOfMeasures = unitOfMeasures
+        }
+        return
+      }
+
+      summaryMap.set(key, {
+        productCode,
+        name,
+        unitOfMeasures,
+        qty,
+      })
+    })
+
     const summaryRows: Array<Array<unknown>> = [
-      ['No', 'Product Code', 'Ingredient Name', 'Qty', 'Unit'],
-      ...group.summary.map((item, index) => [
-        index + 1,
+      ['IT Code', 'Ingredient Name', 'QTY', 'Unit'],
+      ...Array.from(summaryMap.values()).map((item) => [
         item.productCode,
         item.name,
         formatQuantity(item.qty),
@@ -384,7 +383,7 @@ const StorekeeperPage = () => {
       '-',
     )
     downloadExcel(`store-request-${safeDate}-${safeProductionCode}.xls`, [
-      { name: 'Store Requests', rows },
+      { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
     ])
   }

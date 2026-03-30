@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
@@ -29,9 +30,15 @@ type StoreRequestFulfillment = {
 
 type StoreRequestMenu = {
   id: string
+  productionCode?: string
+  recipeId?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
+  productionDate?: string
+  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled'
+  ingredients?: StoreRequestIngredient[]
   fulfilledBy?: string
 }
 
@@ -49,6 +56,83 @@ const ITEMS_PER_PAGE = 10
 const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
 
+const xmlEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value)
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+const sanitizeWorksheetName = (value: string) => {
+  const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
+  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
+  const safeName = sanitizeWorksheetName(sheetName)
+  const rowXml = rows
+    .map((row, index) => {
+      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
+      const cells = row
+        .map((cell) => {
+          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
+          const type = isNumber ? 'Number' : 'String'
+          const value = isNumber ? String(cell) : xmlEscape(cell)
+          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
+        })
+        .join('')
+      return `<Row${rowStyle}>${cells}</Row>`
+    })
+    .join('')
+
+  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>`
+}
+
+const buildWorkbookXml = (sheetName: string, rows: Array<Array<unknown>>) => {
+  const worksheetXml = buildWorksheetXml(sheetName, rows)
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1"/>
+   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+ </Styles>
+ ${worksheetXml}
+</Workbook>`
+}
+
+const downloadExcel = (
+  filename: string,
+  sheetName: string,
+  rows: Array<Array<unknown>>,
+) => {
+  const xml = buildWorkbookXml(sheetName, rows)
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 const formatQuantity = (value: number) => {
   if (!Number.isFinite(value)) return '0'
   if (Number.isInteger(value)) return String(value)
@@ -60,6 +144,20 @@ const formatSignedQuantity = (value: number) => {
   if (value > 0) return `+${formatted}`
   if (value < 0) return `-${formatted}`
   return '0'
+}
+
+const buildHistoryIngredientKey = (
+  productCode: string,
+  name: string,
+  unitOfMeasures: string,
+) => {
+  const normalizedCode = productCode.trim().toLowerCase()
+  if (normalizedCode) return normalizedCode
+
+  const normalizedName = name.trim().toLowerCase()
+  const normalizedUnit = unitOfMeasures.trim().toLowerCase()
+  if (!normalizedName) return ''
+  return `${normalizedName}__${normalizedUnit}`
 }
 
 const StorekeeperHistoryPage = () => {
@@ -114,6 +212,214 @@ const StorekeeperHistoryPage = () => {
       prev.includes(groupKey)
         ? prev.filter((item) => item !== groupKey)
         : [...prev, groupKey],
+    )
+  }
+
+  const getCompletedByNames = (group: StoreRequestGroup) =>
+    group.fulfillment?.completedBy?.trim()
+      ? [group.fulfillment.completedBy.trim()]
+      : Array.from(
+          new Set(
+            group.items
+              .map((item) => item.fulfilledBy?.trim())
+              .filter((value): value is string => Boolean(value)),
+          ),
+        )
+
+  const handleExportHistoryGroup = (group: StoreRequestGroup) => {
+    const completedByLabel = getCompletedByNames(group).join(', ')
+    const completedAtLabel = group.fulfillment?.completedAt
+      ? new Date(group.fulfillment.completedAt).toLocaleString()
+      : ''
+    const groupStatus = getStoreRequestStatusLabel('fulfilled')
+
+    const fulfillmentMap = new Map<string, StoreFulfillmentIngredient>()
+    ;(group.fulfillment?.items ?? []).forEach((item) => {
+      const key = buildHistoryIngredientKey(
+        item.productCode,
+        item.name,
+        item.unitOfMeasures,
+      )
+      if (!key) return
+
+      const plannedQty = Number.isFinite(item.plannedQty) ? item.plannedQty : 0
+      const actualQty = Number.isFinite(item.actualQty) ? item.actualQty : 0
+      const varianceQty = Number.isFinite(item.varianceQty) ? item.varianceQty : 0
+      const existing = fulfillmentMap.get(key)
+
+      if (existing) {
+        existing.plannedQty += plannedQty
+        existing.actualQty += actualQty
+        existing.varianceQty += varianceQty
+        if (!existing.reason && item.reason?.trim()) existing.reason = item.reason
+        if (!existing.productCode && item.productCode) {
+          existing.productCode = item.productCode
+        }
+        if (!existing.name && item.name) existing.name = item.name
+        if (!existing.unitOfMeasures && item.unitOfMeasures) {
+          existing.unitOfMeasures = item.unitOfMeasures
+        }
+        return
+      }
+
+      fulfillmentMap.set(key, {
+        productCode: item.productCode,
+        name: item.name,
+        unitOfMeasures: item.unitOfMeasures,
+        plannedQty,
+        actualQty,
+        varianceQty,
+        reason: item.reason,
+      })
+    })
+
+    const rows: Array<Array<unknown>> = [
+      [
+        'No',
+        'Production Date',
+        'Production Code',
+        'Menu Name',
+        'Recipe Code',
+        'Category',
+        'Store Request Status',
+        'Portions',
+        'Product Code',
+        'Ingredient Name',
+        'Planned Qty',
+        'Actual Qty',
+        'Variance',
+        'Unit',
+        'Reason',
+        'Completed By',
+        'Completed At',
+        'Batch Note',
+      ],
+    ]
+
+    const consumedKeys = new Set<string>()
+    let rowNumber = 1
+    ;(group.items ?? []).forEach((menu) => {
+      const ingredients = menu.ingredients ?? []
+      if (ingredients.length === 0) {
+        rows.push([
+          rowNumber,
+          menu.productionDate ?? group.date,
+          menu.productionCode ?? group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'fulfilled'),
+          menu.portion,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          completedByLabel,
+          completedAtLabel,
+          group.fulfillment?.note ?? '',
+        ])
+        rowNumber += 1
+        return
+      }
+
+      ingredients.forEach((ingredient) => {
+        const key = buildHistoryIngredientKey(
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.unitOfMeasures,
+        )
+        if (key) consumedKeys.add(key)
+        const fulfillment = key ? fulfillmentMap.get(key) : undefined
+
+        rows.push([
+          rowNumber,
+          menu.productionDate ?? group.date,
+          menu.productionCode ?? group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'fulfilled'),
+          menu.portion,
+          ingredient.productCode,
+          ingredient.name,
+          fulfillment
+            ? formatQuantity(fulfillment.plannedQty)
+            : formatQuantity(ingredient.qty),
+          fulfillment ? formatQuantity(fulfillment.actualQty) : '',
+          fulfillment ? formatQuantity(fulfillment.varianceQty) : '',
+          formatUnitLabel(
+            fulfillment?.unitOfMeasures ?? ingredient.unitOfMeasures,
+          ),
+          fulfillment?.reason ?? '',
+          completedByLabel,
+          completedAtLabel,
+          group.fulfillment?.note ?? '',
+        ])
+        rowNumber += 1
+      })
+    })
+
+    Array.from(fulfillmentMap.entries()).forEach(([key, item]) => {
+      if (consumedKeys.has(key)) return
+
+      rows.push([
+        rowNumber,
+        group.date,
+        group.productionCode ?? '',
+        '',
+        '',
+        '',
+        groupStatus,
+        '',
+        item.productCode,
+        item.name,
+        formatQuantity(item.plannedQty),
+        formatQuantity(item.actualQty),
+        formatQuantity(item.varianceQty),
+        formatUnitLabel(item.unitOfMeasures),
+        item.reason ?? '',
+        completedByLabel,
+        completedAtLabel,
+        group.fulfillment?.note ?? '',
+      ])
+      rowNumber += 1
+    })
+
+    if (rows.length === 1) {
+      rows.push([
+        1,
+        group.date,
+        group.productionCode ?? '',
+        '',
+        '',
+        '',
+        groupStatus,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        completedByLabel,
+        completedAtLabel,
+        group.fulfillment?.note ?? '',
+      ])
+    }
+
+    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
+    downloadExcel(
+      `issuance-history-${safeDate}-${safeProductionCode}.xls`,
+      'Issuance History',
+      rows,
     )
   }
 
@@ -194,15 +500,7 @@ const StorekeeperHistoryPage = () => {
                   const isExpanded = expandedGroups.includes(groupKey)
                   const summaryItems = group.summary ?? []
                   const fulfillmentItems = group.fulfillment?.items ?? []
-                  const completedBy = group.fulfillment?.completedBy?.trim()
-                    ? [group.fulfillment.completedBy.trim()]
-                    : Array.from(
-                        new Set(
-                          group.items
-                            .map((item) => item.fulfilledBy?.trim())
-                            .filter((value): value is string => Boolean(value)),
-                        ),
-                      )
+                  const completedBy = getCompletedByNames(group)
 
                   return (
                     <Fragment key={groupKey}>
@@ -226,16 +524,28 @@ const StorekeeperHistoryPage = () => {
                           </div>
                         </td>
                         <td className="px-3 py-1.5">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleExpanded(groupKey)
-                            }}
-                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                          >
-                            {isExpanded ? 'Hide details' : 'View details'}
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleExportHistoryGroup(group)
+                              }}
+                              className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success hover:bg-success/10"
+                            >
+                              Export
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleExpanded(groupKey)
+                              }}
+                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {isExpanded ? (
