@@ -14,6 +14,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
+import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
+import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
@@ -86,6 +88,31 @@ export class MenuProductionsController {
       dto,
       req.user.site,
       req.user.name || req.user.email,
+    );
+  }
+
+  @Patch('cancel-batch')
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin)
+  cancelBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CancelStoreRequestBatchDto,
+  ) {
+    return this.menuProductions.cancelStoreRequestBatch(
+      dto,
+      req.user.site,
+      req.user.name || req.user.email,
+    );
+  }
+
+  @Patch('cancel-pending-batch')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  cancelPendingBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CancelPendingMenuProductionBatchDto,
+  ) {
+    return this.menuProductions.cancelPendingMenuProductionBatch(
+      dto,
+      req.user.site,
     );
   }
 

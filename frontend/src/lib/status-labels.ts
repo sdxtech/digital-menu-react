@@ -4,6 +4,7 @@ export type StoreRequestStatusLabelValue =
   | 'not-requested'
   | 'requested'
   | 'fulfilled'
+  | 'cancelled'
 
 export const getApprovalStatusLabel = (status: ApprovalStatusLabelValue) => {
   if (status === 'approved') return 'Approved'
@@ -15,6 +16,7 @@ export const getStoreRequestStatusLabel = (
   status: StoreRequestStatusLabelValue,
 ) => {
   if (status === 'fulfilled') return 'Delivered'
+  if (status === 'cancelled') return 'Cancelled'
   if (status === 'requested') return 'Requested'
   return 'Pending approval'
 }

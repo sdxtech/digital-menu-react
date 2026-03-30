@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
+import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import {
   FulfillStoreRequestBatchDto,
@@ -44,6 +46,7 @@ type StoreFulfillmentIngredient = {
 };
 
 type StoreRequestFulfillment = {
+  status: 'fulfilled' | 'cancelled';
   completedBy?: string;
   completedAt?: string;
   note?: string;
@@ -69,6 +72,9 @@ type StoreRequestMenu = {
   missingRecipe: boolean;
   fulfilledBy?: string;
   fulfilledAt?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
+  cancellationReason?: string;
 };
 
 type StoreRequestGroup = {
@@ -316,6 +322,9 @@ export class MenuProductionsService implements OnModuleInit {
             storeFulfillmentItems: 1,
             storeFulfillmentCompletedAt: 1,
             storeFulfillmentNote: 1,
+            storeCancelledBy: 1,
+            storeCancelledAt: 1,
+            storeCancellationReason: 1,
           },
         },
         { new: true },
@@ -349,6 +358,11 @@ export class MenuProductionsService implements OnModuleInit {
         );
       }
     }
+    if (status === 'cancelled') {
+      throw new BadRequestException(
+        'Cancel store requests through the batch cancellation flow.',
+      );
+    }
     item.storeRequestStatus = status;
     if (status === 'fulfilled') {
       const actor = fulfilledBy?.trim();
@@ -356,11 +370,17 @@ export class MenuProductionsService implements OnModuleInit {
       item.storeFulfillmentCompletedAt = new Date();
       item.storeFulfillmentItems = [];
       item.storeFulfillmentNote = undefined;
+      item.storeCancelledBy = undefined;
+      item.storeCancelledAt = undefined;
+      item.storeCancellationReason = undefined;
     } else {
       item.fulfilledBy = undefined;
       item.storeFulfillmentCompletedAt = undefined;
       item.storeFulfillmentItems = [];
       item.storeFulfillmentNote = undefined;
+      item.storeCancelledBy = undefined;
+      item.storeCancelledAt = undefined;
+      item.storeCancellationReason = undefined;
     }
     return item.save();
   }
@@ -396,7 +416,7 @@ export class MenuProductionsService implements OnModuleInit {
       }
       if (menu.storeRequestStatus !== 'requested') {
         throw new BadRequestException(
-          'Store request has not been submitted yet or is already fulfilled.',
+          'Store request has not been submitted yet or is already processed.',
         );
       }
     });
@@ -523,11 +543,12 @@ export class MenuProductionsService implements OnModuleInit {
           storeFulfillmentCompletedAt: completedAt,
           ...(note ? { storeFulfillmentNote: note } : {}),
         },
-        ...(note
-          ? {}
-          : {
-              $unset: { storeFulfillmentNote: 1 },
-            }),
+        $unset: {
+          ...(note ? {} : { storeFulfillmentNote: 1 }),
+          storeCancelledBy: 1,
+          storeCancelledAt: 1,
+          storeCancellationReason: 1,
+        },
       },
     );
 
@@ -537,6 +558,161 @@ export class MenuProductionsService implements OnModuleInit {
       fulfilledCount: normalizedIds.length,
       fulfilledBy: actor,
       completedAt: completedAt.toISOString(),
+    };
+  }
+
+  async cancelStoreRequestBatch(
+    input: CancelStoreRequestBatchDto,
+    site?: string,
+    cancelledBy?: string,
+  ) {
+    const normalizedIds = Array.from(
+      new Set(
+        (input.menuProductionIds ?? [])
+          .map((id) => id?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    if (normalizedIds.length === 0) {
+      throw new BadRequestException('Menu production ids are required.');
+    }
+
+    const reason = input.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException('Cancellation reason is required.');
+    }
+
+    const menus = await this.menuProductionModel
+      .find(this.withSiteFilter({ _id: { $in: normalizedIds } }, site))
+      .sort({ productionDate: 1, createdAt: -1 })
+      .lean();
+
+    if (menus.length !== normalizedIds.length) {
+      throw new NotFoundException('One or more menu productions were not found.');
+    }
+
+    menus.forEach((menu) => {
+      if (menu.approvalStatus !== 'approved') {
+        throw new BadRequestException('Menu production is not approved yet.');
+      }
+      if (menu.storeRequestStatus !== 'requested') {
+        throw new BadRequestException(
+          'Store request has not been submitted yet or is already processed.',
+        );
+      }
+    });
+
+    const batchKeys = Array.from(
+      new Set(
+        menus.map((menu) =>
+          this.buildProductionBatchKey({
+            productionDate: menu.productionDate,
+            productionCode: menu.productionCode,
+            id: String(menu._id ?? menu.id ?? ''),
+          }),
+        ),
+      ),
+    );
+    if (batchKeys.length !== 1) {
+      throw new BadRequestException(
+        'All menu productions in a cancellation request must belong to the same batch.',
+      );
+    }
+
+    const actor = cancelledBy?.trim() || 'Unknown user';
+    const cancelledAt = new Date();
+
+    await this.menuProductionModel.updateMany(
+      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
+      {
+        $set: {
+          storeRequestStatus: 'cancelled',
+          storeCancelledBy: actor,
+          storeCancelledAt: cancelledAt,
+          storeCancellationReason: reason,
+        },
+        $unset: {
+          fulfilledBy: 1,
+          storeFulfillmentItems: 1,
+          storeFulfillmentCompletedAt: 1,
+          storeFulfillmentNote: 1,
+        },
+      },
+    );
+
+    const firstMenu = menus[0];
+    return {
+      productionDate: firstMenu?.productionDate,
+      productionCode: this.normalizeOptionalProductionCode(
+        firstMenu?.productionCode,
+      ),
+      cancelledCount: normalizedIds.length,
+      cancelledBy: actor,
+      cancelledAt: cancelledAt.toISOString(),
+      reason,
+    };
+  }
+
+  async cancelPendingMenuProductionBatch(
+    input: CancelPendingMenuProductionBatchDto,
+    site?: string,
+  ) {
+    const normalizedIds = Array.from(
+      new Set(
+        (input.menuProductionIds ?? [])
+          .map((id) => id?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    if (normalizedIds.length === 0) {
+      throw new BadRequestException('Menu production ids are required.');
+    }
+
+    const menus = await this.menuProductionModel
+      .find(this.withSiteFilter({ _id: { $in: normalizedIds } }, site))
+      .sort({ productionDate: -1, createdAt: -1 })
+      .lean();
+
+    if (menus.length !== normalizedIds.length) {
+      throw new NotFoundException('One or more menu productions were not found.');
+    }
+
+    menus.forEach((menu) => {
+      if (menu.approvalStatus !== 'pending') {
+        throw new BadRequestException(
+          'Only pending menu productions can be cancelled by Chef.',
+        );
+      }
+    });
+
+    const batchKeys = Array.from(
+      new Set(
+        menus.map((menu) =>
+          this.buildProductionBatchKey({
+            productionDate: menu.productionDate,
+            productionCode: menu.productionCode,
+            id: String(menu._id ?? menu.id ?? ''),
+          }),
+        ),
+      ),
+    );
+    if (batchKeys.length !== 1) {
+      throw new BadRequestException(
+        'All cancelled menu productions must belong to the same batch.',
+      );
+    }
+
+    await this.menuProductionModel.deleteMany(
+      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
+    );
+
+    const firstMenu = menus[0];
+    return {
+      productionDate: firstMenu?.productionDate,
+      productionCode: this.normalizeOptionalProductionCode(
+        firstMenu?.productionCode,
+      ),
+      cancelledCount: normalizedIds.length,
     };
   }
 
@@ -570,7 +746,7 @@ export class MenuProductionsService implements OnModuleInit {
 
     const items = await this.menuProductionModel
       .find(filter)
-      .sort({ productionDate: 1, createdAt: -1 })
+      .sort({ productionDate: -1, createdAt: -1 })
       .lean();
 
     const recipeIds = Array.from(
@@ -632,9 +808,9 @@ export class MenuProductionsService implements OnModuleInit {
     });
 
     const groups = Array.from(grouped.values()).sort((a, b) => {
-      const byDate = a.date.localeCompare(b.date);
+      const byDate = b.date.localeCompare(a.date);
       if (byDate !== 0) return byDate;
-      return (a.productionCode ?? '').localeCompare(b.productionCode ?? '');
+      return (b.productionCode ?? '').localeCompare(a.productionCode ?? '');
     });
 
     const page = query.page ?? 1;
@@ -903,6 +1079,9 @@ export class MenuProductionsService implements OnModuleInit {
         storeFulfillmentItems?: unknown;
         storeFulfillmentCompletedAt?: unknown;
         storeFulfillmentNote?: unknown;
+        storeCancelledAt?: unknown;
+        storeCancelledBy?: unknown;
+        storeCancellationReason?: unknown;
       }
     >,
     requestedSite?: string,
@@ -1049,19 +1228,39 @@ export class MenuProductionsService implements OnModuleInit {
         String(menu.storeFulfillmentNote ?? '').trim() || undefined;
       const fulfilledBy =
         String(menu.fulfilledBy ?? '').trim() || undefined;
+      const cancelledAtValue = menu.storeCancelledAt;
+      const cancelledAt =
+        cancelledAtValue instanceof Date
+          ? cancelledAtValue.toISOString()
+          : cancelledAtValue
+            ? new Date(String(cancelledAtValue)).toISOString()
+            : undefined;
+      const cancelledBy =
+        String(menu.storeCancelledBy ?? '').trim() || undefined;
+      const cancellationReason =
+        String(menu.storeCancellationReason ?? '').trim() || undefined;
 
       if (
         !group.fulfillment &&
-        (fulfillmentItems.length > 0 ||
-          fulfilledAt ||
-          fulfillmentNote ||
-          fulfilledBy)
+        (menu.storeRequestStatus === 'cancelled'
+          ? cancelledAt || cancellationReason || cancelledBy
+          : fulfillmentItems.length > 0 ||
+            fulfilledAt ||
+            fulfillmentNote ||
+            fulfilledBy)
       ) {
         group.fulfillment = {
-          completedBy: fulfilledBy,
-          completedAt: fulfilledAt,
-          note: fulfillmentNote,
-          items: fulfillmentItems,
+          status:
+            menu.storeRequestStatus === 'cancelled' ? 'cancelled' : 'fulfilled',
+          completedBy:
+            menu.storeRequestStatus === 'cancelled' ? cancelledBy : fulfilledBy,
+          completedAt:
+            menu.storeRequestStatus === 'cancelled' ? cancelledAt : fulfilledAt,
+          note:
+            menu.storeRequestStatus === 'cancelled'
+              ? cancellationReason
+              : fulfillmentNote,
+          items: menu.storeRequestStatus === 'cancelled' ? [] : fulfillmentItems,
         };
       }
 
@@ -1089,6 +1288,9 @@ export class MenuProductionsService implements OnModuleInit {
         missingRecipe,
         fulfilledBy,
         fulfilledAt,
+        cancelledBy,
+        cancelledAt,
+        cancellationReason,
       });
 
       groups.set(groupKey, group);

@@ -13,7 +13,9 @@ import StorekeeperLayout from './app/StorekeeperLayout'
 import StorekeeperPage from './app/StorekeeperPage'
 import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
+import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductionRecordsPage'
 import UnitManagerPage from './app/UnitManagerPage'
+import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
@@ -79,6 +81,11 @@ function App() {
         <Route element={<RequireRole role="unit-manager" />}>
           <Route path="/unit-manager" element={<UnitManagerLayout />}>
             <Route index element={<UnitManagerPage />} />
+            <Route
+              path="menu-production-records"
+              element={<UnitManagerMenuProductionRecordsPage />}
+            />
+            <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
           </Route>
         </Route>
         <Route element={<RequireRole role="storekeeper" />}>

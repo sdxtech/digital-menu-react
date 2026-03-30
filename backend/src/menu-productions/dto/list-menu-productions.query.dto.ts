@@ -11,8 +11,12 @@ export class ListMenuProductionsQueryDto {
   approvalStatus?: 'pending' | 'approved' | 'rejected';
 
   @IsOptional()
-  @IsIn(['not-requested', 'requested', 'fulfilled'])
-  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled';
+  @IsIn(['not-requested', 'requested', 'fulfilled', 'cancelled'])
+  storeRequestStatus?:
+    | 'not-requested'
+    | 'requested'
+    | 'fulfilled'
+    | 'cancelled';
 
   @IsOptional()
   @IsString()

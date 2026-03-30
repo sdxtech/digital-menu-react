@@ -70,6 +70,14 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Approval Center',
   },
   {
+    path: '/unit-manager/menu-production-records',
+    getPageTitle: () => 'Menu Production Records',
+  },
+  {
+    path: '/unit-manager/recipe-data',
+    getPageTitle: () => 'Recipe Data',
+  },
+  {
     path: '/storekeeper',
     getPageTitle: () => 'Storekeeper Dashboard',
   },
@@ -113,4 +121,3 @@ export const useRouteDocumentTitle = () => {
     document.title = resolveDocumentTitle(location.pathname, location.state)
   }, [location.pathname, location.state])
 }
-

@@ -51,12 +51,14 @@ const createMenuInputRow = (): MenuInputRow => ({
 
 const ChefMenuCycle = () => {
   const { accessToken } = useAuth()
-  const { recipes, addMenuProductionsBulk } = useChefData()
+  const { recipes, addMenuProductionsBulk, cancelPendingMenuProductionBatch } =
+    useChefData()
   const [productionDate, setProductionDate] = useState('')
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])
   const [inputError, setInputError] = useState('')
   const [inputMessage, setInputMessage] = useState('')
   const [timelineMessage, setTimelineMessage] = useState('')
+  const [timelineError, setTimelineError] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [timelinePage, setTimelinePage] = useState(1)
   const [timelineGroups, setTimelineGroups] = useState<TimelineGroup[]>([])
@@ -69,6 +71,9 @@ const ChefMenuCycle = () => {
   })
   const [timelineTotalPages, setTimelineTotalPages] = useState(1)
   const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineCancellingGroupKey, setTimelineCancellingGroupKey] = useState<
+    string | null
+  >(null)
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
   const [inputPage, setInputPage] = useState(1)
 
@@ -318,6 +323,42 @@ const ChefMenuCycle = () => {
           : 'Failed to save menu production.'
       setInputError(message)
       setInputMessage('')
+    }
+  }
+
+  const handleCancelPendingGroup = async (group: TimelineGroup) => {
+    const pendingItems = group.items.filter(
+      (item) => item.approvalStatus === 'pending',
+    )
+    if (pendingItems.length === 0) return
+
+    const productionCodeLabel = group.productionCode ?? 'this batch'
+    const confirmed = window.confirm(
+      `Cancel ${pendingItems.length} pending menu(s) from ${productionCodeLabel} for ${group.date}?`,
+    )
+    if (!confirmed) return
+
+    const groupKey = getTimelineGroupKey(group)
+    setTimelineCancellingGroupKey(groupKey)
+    setTimelineError('')
+    setTimelineMessage('')
+
+    try {
+      await cancelPendingMenuProductionBatch({
+        menuProductionIds: pendingItems.map((item) => item.id),
+      })
+      setTimelineMessage(
+        `${pendingItems.length} pending menu${pendingItems.length > 1 ? 's were' : ' was'} cancelled from ${productionCodeLabel} for ${group.date}.`,
+      )
+      fetchTimeline().catch(() => null)
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to cancel pending menu production.'
+      setTimelineError(message)
+    } finally {
+      setTimelineCancellingGroupKey(null)
     }
   }
 
@@ -650,6 +691,9 @@ const ChefMenuCycle = () => {
         {timelineMessage ? (
           <p className="mt-4 text-xs font-medium text-primary">{timelineMessage}</p>
         ) : null}
+        {timelineError ? (
+          <p className="mt-2 text-xs font-medium text-red-600">{timelineError}</p>
+        ) : null}
 
         <div className="mt-4 rounded-md border border-border bg-white">
           <TablePagination
@@ -690,6 +734,9 @@ const ChefMenuCycle = () => {
                 timelineGroups.map((group, index) => {
                   const groupKey = getTimelineGroupKey(group)
                   const isExpanded = expandedGroups.includes(groupKey)
+                  const pendingItems = group.items.filter(
+                    (item) => item.approvalStatus === 'pending',
+                  )
                   const hasApproved = group.items.some(
                     (item) => item.approvalStatus === 'approved',
                   )
@@ -750,16 +797,33 @@ const ChefMenuCycle = () => {
                           {group.items.length}
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleExpanded(groupKey)
-                            }}
-                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                          >
-                            {isExpanded ? 'Hide details' : 'View details'}
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {pendingItems.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleCancelPendingGroup(group).catch(() => null)
+                                }}
+                                disabled={timelineCancellingGroupKey === groupKey}
+                                className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {timelineCancellingGroupKey === groupKey
+                                  ? 'Cancelling...'
+                                  : 'Cancel'}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleExpanded(groupKey)
+                              }}
+                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                            >
+                              {isExpanded ? 'Hide details' : 'View details'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {isExpanded ? (

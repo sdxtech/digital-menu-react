@@ -22,6 +22,7 @@ type StoreFulfillmentIngredient = {
 }
 
 type StoreRequestFulfillment = {
+  status?: 'fulfilled' | 'cancelled'
   completedBy?: string
   completedAt?: string
   note?: string
@@ -37,9 +38,13 @@ type StoreRequestMenu = {
   category: string
   portion: number
   productionDate?: string
-  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled'
+  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   ingredients?: StoreRequestIngredient[]
   fulfilledBy?: string
+  fulfilledAt?: string
+  cancelledBy?: string
+  cancelledAt?: string
+  cancellationReason?: string
 }
 
 type StoreRequestGroup = {
@@ -177,12 +182,22 @@ const StorekeeperHistoryPage = () => {
     setLoading(true)
     setLoadError('')
     try {
-      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        '/menu-productions/store-requests?storeRequestStatus=fulfilled&approvalStatus=approved',
-        undefined,
-        accessToken,
-      )
-      const sorted = [...(data.items ?? [])].sort((a, b) =>
+      const [fulfilledData, cancelledData] = await Promise.all([
+        apiFetch<{ items: StoreRequestGroup[] }>(
+          '/menu-productions/store-requests?storeRequestStatus=fulfilled&approvalStatus=approved',
+          undefined,
+          accessToken,
+        ),
+        apiFetch<{ items: StoreRequestGroup[] }>(
+          '/menu-productions/store-requests?storeRequestStatus=cancelled&approvalStatus=approved',
+          undefined,
+          accessToken,
+        ),
+      ])
+      const sorted = [
+        ...(fulfilledData.items ?? []),
+        ...(cancelledData.items ?? []),
+      ].sort((a, b) =>
         b.date.localeCompare(a.date),
       )
       setGroups(sorted)
@@ -221,7 +236,9 @@ const StorekeeperHistoryPage = () => {
       : Array.from(
           new Set(
             group.items
-              .map((item) => item.fulfilledBy?.trim())
+              .map((item) =>
+                item.fulfilledBy?.trim() || item.cancelledBy?.trim(),
+              )
               .filter((value): value is string => Boolean(value)),
           ),
         )
@@ -231,7 +248,12 @@ const StorekeeperHistoryPage = () => {
     const completedAtLabel = group.fulfillment?.completedAt
       ? new Date(group.fulfillment.completedAt).toLocaleString()
       : ''
-    const groupStatus = getStoreRequestStatusLabel('fulfilled')
+    const resolutionStatus =
+      group.fulfillment?.status ??
+      (group.items.some((item) => item.storeRequestStatus === 'cancelled')
+        ? 'cancelled'
+        : 'fulfilled')
+    const groupStatus = getStoreRequestStatusLabel(resolutionStatus)
 
     const fulfillmentMap = new Map<string, StoreFulfillmentIngredient>()
     ;(group.fulfillment?.items ?? []).forEach((item) => {
@@ -434,7 +456,8 @@ const StorekeeperHistoryPage = () => {
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Issuance History</h1>
         <p className="text-sm text-muted">
-          This data contains completed ingredient issuances.
+          This data contains completed ingredient issuances and cancelled store
+          requests.
         </p>
         {loadError ? (
           <p className="text-xs font-medium text-red-600">{loadError}</p>
@@ -491,7 +514,7 @@ const StorekeeperHistoryPage = () => {
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={6} className="px-5 py-10 text-center text-muted">
-                    No ingredient issuance history yet.
+                    No completed or cancelled store request history yet.
                   </td>
                 </tr>
               ) : (
@@ -501,6 +524,15 @@ const StorekeeperHistoryPage = () => {
                   const summaryItems = group.summary ?? []
                   const fulfillmentItems = group.fulfillment?.items ?? []
                   const completedBy = getCompletedByNames(group)
+                  const resolutionStatus =
+                    group.fulfillment?.status ??
+                    (group.items.some(
+                      (item) => item.storeRequestStatus === 'cancelled',
+                    )
+                      ? 'cancelled'
+                      : 'fulfilled')
+                  const resolutionLabel =
+                    getStoreRequestStatusLabel(resolutionStatus)
 
                   return (
                     <Fragment key={groupKey}>
@@ -520,7 +552,7 @@ const StorekeeperHistoryPage = () => {
                         </td>
                         <td className="px-3 py-1.5">
                           <div className="flex items-center gap-2 text-sm">
-                            <span>Completed</span>
+                            <span>{resolutionLabel}</span>
                           </div>
                         </td>
                         <td className="px-3 py-1.5">
@@ -617,9 +649,11 @@ const StorekeeperHistoryPage = () => {
 
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">
-                                    {fulfillmentItems.length > 0
-                                      ? 'Planned vs actual issuance'
-                                      : 'Ingredient summary'}
+                                    {resolutionStatus === 'cancelled'
+                                      ? 'Cancelled ingredient summary'
+                                      : fulfillmentItems.length > 0
+                                        ? 'Planned vs actual issuance'
+                                        : 'Ingredient summary'}
                                   </p>
                                   <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
@@ -742,13 +776,13 @@ const StorekeeperHistoryPage = () => {
                                     </table>
                                   </div>
                                   <p className="mt-3 text-xs text-muted">
-                                    Completed by:{' '}
+                                    Handled by:{' '}
                                     {completedBy.length > 0
                                       ? completedBy.join(', ')
                                       : '-'}
                                   </p>
                                   <p className="mt-2 text-xs text-muted">
-                                    Completed at:{' '}
+                                    Handled at:{' '}
                                     {group.fulfillment?.completedAt
                                       ? new Date(
                                           group.fulfillment.completedAt,
@@ -757,7 +791,10 @@ const StorekeeperHistoryPage = () => {
                                   </p>
                                   {group.fulfillment?.note ? (
                                     <p className="mt-2 text-xs text-muted">
-                                      Note: {group.fulfillment.note}
+                                      {resolutionStatus === 'cancelled'
+                                        ? 'Cancellation reason: '
+                                        : 'Note: '}
+                                      {group.fulfillment.note}
                                     </p>
                                   ) : null}
                                 </div>

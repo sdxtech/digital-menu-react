@@ -22,6 +22,7 @@ type StoreFulfillmentIngredient = {
 }
 
 type StoreRequestFulfillment = {
+  status?: 'fulfilled' | 'cancelled'
   completedBy?: string
   completedAt?: string
   note?: string
@@ -35,7 +36,7 @@ type StoreRequestMenu = {
   portion: number
   cost?: number
   portionSize: number
-  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   missingRecipe: boolean
   ingredients: StoreRequestIngredient[]
 }
@@ -327,6 +328,8 @@ const SuperadminStoreRequestExportPage = () => {
           (item) => item.storeRequestStatus === 'fulfilled',
         )
           ? 'fulfilled'
+          : group.items.some((item) => item.storeRequestStatus === 'cancelled')
+            ? 'cancelled'
           : group.items.some((item) => item.storeRequestStatus === 'requested')
             ? 'requested'
             : 'not-requested'

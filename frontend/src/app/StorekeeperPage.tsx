@@ -23,6 +23,7 @@ type StoreFulfillmentIngredient = {
 }
 
 type StoreRequestFulfillment = {
+  status?: 'fulfilled' | 'cancelled'
   completedBy?: string
   completedAt?: string
   note?: string
@@ -38,10 +39,15 @@ type StoreRequestMenu = {
   category: string
   portion: number
   productionDate?: string
-  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled'
+  storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   portionSize?: number
   ingredients?: StoreRequestIngredient[]
   site?: string
+  fulfilledBy?: string
+  fulfilledAt?: string
+  cancelledBy?: string
+  cancelledAt?: string
+  cancellationReason?: string
 }
 
 type StoreRequestGroup = {
@@ -213,7 +219,7 @@ const buildReconciliationItemKey = (
 
 const StorekeeperPage = () => {
   const { accessToken } = useAuth()
-  const { fulfillStoreRequestBatch } = useChefData()
+  const { fulfillStoreRequestBatch, cancelStoreRequestBatch } = useChefData()
   const [loadError, setLoadError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
@@ -230,6 +236,10 @@ const StorekeeperPage = () => {
   >([])
   const [reconciliationNote, setReconciliationNote] = useState('')
   const [reconciliationError, setReconciliationError] = useState('')
+  const [cancellationGroup, setCancellationGroup] =
+    useState<StoreRequestGroup | null>(null)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancellationError, setCancellationError] = useState('')
 
   // FRONTEND VIEW: backend returns grouped requests with ingredient summary.
   const fetchStoreRequests = useCallback(async () => {
@@ -405,12 +415,27 @@ const StorekeeperPage = () => {
     setReconciliationError('')
   }
 
+  const openCancellationModal = (group: StoreRequestGroup) => {
+    setActionMessage('')
+    setLoadError('')
+    setCancellationGroup(group)
+    setCancellationReason('')
+    setCancellationError('')
+  }
+
   const closeReconciliationModal = () => {
     if (processingGroupKey) return
     setReconciliationGroup(null)
     setReconciliationRows([])
     setReconciliationNote('')
     setReconciliationError('')
+  }
+
+  const closeCancellationModal = () => {
+    if (processingGroupKey) return
+    setCancellationGroup(null)
+    setCancellationReason('')
+    setCancellationError('')
   }
 
   const updateReconciliationRow = <K extends keyof ReconciliationRow>(
@@ -567,6 +592,52 @@ const StorekeeperPage = () => {
     }
   }
 
+  const handleSubmitCancellation = async () => {
+    if (!cancellationGroup) return
+
+    const reason = cancellationReason.trim()
+    if (!reason) {
+      setCancellationError('Cancellation reason is required.')
+      return
+    }
+
+    const groupKey = getGroupKey(cancellationGroup)
+    const menuProductionIds = cancellationGroup.items
+      .map((item) => item.id)
+      .filter(Boolean)
+
+    if (menuProductionIds.length === 0) {
+      setCancellationError('Menu production data is missing for this batch.')
+      return
+    }
+
+    setCancellationError('')
+    setLoadError('')
+    setProcessingGroupKey(groupKey)
+    try {
+      await cancelStoreRequestBatch({
+        menuProductionIds,
+        reason,
+      })
+      const label = cancellationGroup.productionCode
+        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
+        : cancellationGroup.date
+      setActionMessage(`Store request for ${label} cancelled.`)
+      await fetchStoreRequests()
+      setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      setCancellationGroup(null)
+      setCancellationReason('')
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to cancel store request.'
+      setCancellationError(message)
+    } finally {
+      setProcessingGroupKey(null)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(groups.length / ITEMS_PER_PAGE))
   const paginatedGroups = groups.slice(
     (page - 1) * ITEMS_PER_PAGE,
@@ -702,6 +773,19 @@ const StorekeeperPage = () => {
                                       <i className="bi bi-download text-sm" aria-hidden="true" />
                                       <span>Export</span>
                                     </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openCancellationModal(group)}
+                                    disabled={
+                                      processingGroupKey === groupKey ||
+                                      group.items.length === 0
+                                    }
+                                    className="rounded-md border border-danger bg-white px-4 py-2 text-xs font-semibold text-danger shadow-sm hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {processingGroupKey === groupKey
+                                      ? 'Cancelling...'
+                                      : 'Cancel request'}
                                   </button>
                                   <button
                                     type="button"
@@ -859,6 +943,107 @@ const StorekeeperPage = () => {
           </table>
         </div>
       </div>
+
+      {cancellationGroup && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+              <div
+                className="flex w-full max-w-2xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+                  <div>
+                    <p className="text-xs text-muted">Cancel Store Request</p>
+                    <h3 className="mt-1 text-lg font-semibold text-foreground">
+                      {cancellationGroup.productionCode
+                        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
+                        : cancellationGroup.date}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      Use this when the warehouse cannot fulfill the request.
+                      A reason is required before the batch can be cancelled.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCancellationModal}
+                    disabled={Boolean(processingGroupKey)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-5 px-6 py-5">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production date</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.date}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production code</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.productionCode ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menus in batch</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.items.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Cancellation reason
+                    </label>
+                    <textarea
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      rows={4}
+                      placeholder="Explain why the store request must be cancelled, for example stock is unavailable in warehouse."
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                    />
+                    <p className="mt-2 text-xs text-muted">
+                      This reason will be recorded in Storekeeper, Unit Manager,
+                      and Chef pages.
+                    </p>
+                  </div>
+
+                  {cancellationError ? (
+                    <p className="text-xs font-medium text-red-600">
+                      {cancellationError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={closeCancellationModal}
+                    disabled={Boolean(processingGroupKey)}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitCancellation}
+                    disabled={Boolean(processingGroupKey)}
+                    className="rounded-md bg-danger px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {processingGroupKey ? 'Cancelling...' : 'Confirm cancel'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {reconciliationGroup && typeof document !== 'undefined'
         ? createPortal(

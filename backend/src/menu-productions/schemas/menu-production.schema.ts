@@ -4,7 +4,11 @@ import { HydratedDocument } from 'mongoose';
 export type MenuProductionDocument = HydratedDocument<MenuProduction>;
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-export type StoreRequestStatus = 'not-requested' | 'requested' | 'fulfilled';
+export type StoreRequestStatus =
+  | 'not-requested'
+  | 'requested'
+  | 'fulfilled'
+  | 'cancelled';
 export type StoreFulfillmentIngredient = {
   productCode?: string;
   name?: string;
@@ -60,7 +64,7 @@ export class MenuProduction {
   reviewedBy?: string;
 
   @Prop({
-    enum: ['not-requested', 'requested', 'fulfilled'],
+    enum: ['not-requested', 'requested', 'fulfilled', 'cancelled'],
     default: 'not-requested',
     index: true,
   })
@@ -68,6 +72,9 @@ export class MenuProduction {
 
   @Prop({ type: String, trim: true })
   fulfilledBy?: string;
+
+  @Prop({ type: String, trim: true })
+  storeCancelledBy?: string;
 
   @Prop({
     type: [
@@ -90,6 +97,12 @@ export class MenuProduction {
 
   @Prop({ type: String, trim: true })
   storeFulfillmentNote?: string;
+
+  @Prop({ type: Date })
+  storeCancelledAt?: Date;
+
+  @Prop({ type: String, trim: true })
+  storeCancellationReason?: string;
 
   @Prop({ type: String, index: true })
   createdBy?: string;

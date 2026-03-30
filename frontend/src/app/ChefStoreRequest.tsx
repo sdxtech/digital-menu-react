@@ -11,6 +11,22 @@ type StoreRequestIngredient = {
   qty: number
 }
 
+type StoreRequestFulfillment = {
+  status?: 'fulfilled' | 'cancelled'
+  completedBy?: string
+  completedAt?: string
+  note?: string
+  items: Array<{
+    productCode: string
+    name: string
+    unitOfMeasures: string
+    plannedQty: number
+    actualQty: number
+    varianceQty: number
+    reason?: string
+  }>
+}
+
 type StoreRequestMenu = {
   id: string
   productionCode?: string
@@ -20,8 +36,12 @@ type StoreRequestMenu = {
   category: string
   portion: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
-  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
+  fulfilledAt?: string
+  cancelledBy?: string
+  cancelledAt?: string
+  cancellationReason?: string
   portionSize: number
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
@@ -33,6 +53,7 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
+  fulfillment?: StoreRequestFulfillment
 }
 
 const ITEMS_PER_PAGE = 10
@@ -56,6 +77,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       items: StoreRequestMenu[]
       summaryMap: Map<string, StoreRequestIngredient>
       missingRecipes: Set<string>
+      fulfillment?: StoreRequestFulfillment
     }
   >()
 
@@ -86,6 +108,10 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       if (value) bucket.missingRecipes.add(value)
     })
 
+    if (!bucket.fulfillment && group.fulfillment) {
+      bucket.fulfillment = group.fulfillment
+    }
+
     groupedByBatch.set(groupKey, bucket)
   })
 
@@ -96,6 +122,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       items: group.items,
       summary: Array.from(group.summaryMap.values()),
       missingRecipes: Array.from(group.missingRecipes.values()),
+      fulfillment: group.fulfillment,
     }))
     .sort((a, b) => {
       const byDate = a.date.localeCompare(b.date)
@@ -400,18 +427,25 @@ const ChefStoreRequest = () => {
                 const hasDelivered = items.some(
                   (item) => item.storeRequestStatus === 'fulfilled',
                 )
+                const hasCancelled = items.some(
+                  (item) => item.storeRequestStatus === 'cancelled',
+                )
                 const hasPendingApproval = items.some(
                   (item) => item.storeRequestStatus === 'not-requested',
                 )
-                const fulfilledByNames = Array.from(
+                const handledByNames = group.fulfillment?.completedBy?.trim()
+                  ? [group.fulfillment.completedBy.trim()]
+                  : Array.from(
                   new Set(
                     items
-                      .map((item) => item.fulfilledBy?.trim())
+                      .map((item) =>
+                        item.fulfilledBy?.trim() || item.cancelledBy?.trim(),
+                      )
                       .filter((name): name is string => Boolean(name)),
                   ),
                 )
-                const fulfilledByLabel = fulfilledByNames.length
-                  ? fulfilledByNames.join(', ')
+                const handledByLabel = handledByNames.length
+                  ? handledByNames.join(', ')
                   : '-'
 
                 return (
@@ -439,7 +473,7 @@ const ChefStoreRequest = () => {
                       </td>
                       <td className="px-5 py-4 text-sm font-medium">{items.length}</td>
                       <td className="px-5 py-4 text-sm text-muted">
-                        {fulfilledByLabel}
+                        {handledByLabel}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -448,6 +482,9 @@ const ChefStoreRequest = () => {
                           ) : null}
                           {hasDelivered ? (
                             <span className="text-success">Delivered</span>
+                          ) : null}
+                          {hasCancelled ? (
+                            <span className="text-danger">Cancelled</span>
                           ) : null}
                           {hasPendingApproval ? (
                             <span className="text-muted">Pending approval</span>
@@ -546,6 +583,13 @@ const ChefStoreRequest = () => {
                                         </p>
                                       </div>
                                     </div>
+
+                                    {menu.storeRequestStatus === 'cancelled' ? (
+                                      <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+                                        Cancel reason:{' '}
+                                        {menu.cancellationReason?.trim() || '-'}
+                                      </div>
+                                    ) : null}
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4">
@@ -634,6 +678,27 @@ const ChefStoreRequest = () => {
                               <p className="mt-1 text-xs text-muted">
                                 Combined ingredients for all menus on {date}.
                               </p>
+                              {group.fulfillment?.completedBy ? (
+                                <p className="mt-1 text-xs text-muted">
+                                  Storekeeper: {group.fulfillment.completedBy}
+                                </p>
+                              ) : null}
+                              {group.fulfillment?.completedAt ? (
+                                <p className="mt-1 text-xs text-muted">
+                                  Updated at:{' '}
+                                  {new Date(
+                                    group.fulfillment.completedAt,
+                                  ).toLocaleString()}
+                                </p>
+                              ) : null}
+                              {group.fulfillment?.note ? (
+                                <p className="mt-1 text-xs text-muted">
+                                  {group.fulfillment.status === 'cancelled'
+                                    ? 'Cancellation reason: '
+                                    : 'Storekeeper note: '}
+                                  {group.fulfillment.note}
+                                </p>
+                              ) : null}
 
                               {summaryItems.length === 0 ? (
                                 <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">

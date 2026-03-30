@@ -11,7 +11,11 @@ import { readStoredToken, useAuth } from './auth'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type RecipeStatus = 'draft' | 'active'
-export type StoreRequestStatus = 'not-requested' | 'requested' | 'fulfilled'
+export type StoreRequestStatus =
+  | 'not-requested'
+  | 'requested'
+  | 'fulfilled'
+  | 'cancelled'
 
 export type RecipeIngredient = {
   productCode: string
@@ -124,6 +128,15 @@ type FulfillStoreRequestBatchInput = {
   note?: string
 }
 
+type CancelStoreRequestBatchInput = {
+  menuProductionIds: string[]
+  reason: string
+}
+
+type CancelPendingMenuProductionBatchInput = {
+  menuProductionIds: string[]
+}
+
 type RawMaterialsMeta = {
   page: number
   limit: number
@@ -152,6 +165,10 @@ type ChefDataContextValue = ChefDataState & {
   markStoreRequested: (menuProductionId: string) => Promise<void>
   markStoreFulfilled: (menuProductionId: string) => Promise<void>
   fulfillStoreRequestBatch: (input: FulfillStoreRequestBatchInput) => Promise<void>
+  cancelStoreRequestBatch: (input: CancelStoreRequestBatchInput) => Promise<void>
+  cancelPendingMenuProductionBatch: (
+    input: CancelPendingMenuProductionBatchInput,
+  ) => Promise<void>
   fetchRecipes: () => Promise<void>
   fetchMenuProductions: () => Promise<void>
 }
@@ -667,6 +684,42 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     await fetchMenuProductions()
   }
 
+  const cancelStoreRequestBatch = async (input: CancelStoreRequestBatchInput) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+
+    await apiFetch(
+      '/menu-productions/cancel-batch',
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+
+    await fetchMenuProductions()
+  }
+
+  const cancelPendingMenuProductionBatch = async (
+    input: CancelPendingMenuProductionBatchInput,
+  ) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+
+    await apiFetch(
+      '/menu-productions/cancel-pending-batch',
+      {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      },
+      accessToken,
+    )
+
+    await fetchMenuProductions()
+  }
+
   const value = {
     ...state,
     addRawMaterial,
@@ -687,6 +740,8 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     markStoreRequested,
     markStoreFulfilled,
     fulfillStoreRequestBatch,
+    cancelStoreRequestBatch,
+    cancelPendingMenuProductionBatch,
     fetchRecipes,
     fetchMenuProductions,
   }

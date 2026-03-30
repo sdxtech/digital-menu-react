@@ -51,7 +51,7 @@ type StoreRequestMenu = {
   cost?: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
-  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled'
+  storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   portionSize: number
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
@@ -155,7 +155,6 @@ const UnitManagerPage = () => {
         : [...prev, groupKey],
     )
   }
-
   const handleBulkApproval = async (
     batchLabel: string,
     items: StoreRequestMenu[],
@@ -660,6 +659,7 @@ const UnitManagerPage = () => {
           </table>
         </div>
       </div>
+
     </div>
   )
 }
