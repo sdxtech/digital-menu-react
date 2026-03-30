@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
+import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
@@ -282,7 +283,7 @@ const StorekeeperPage = () => {
     `${group.date}__${group.productionCode ?? 'no-code'}`
 
   const toReconciliationRows = (group: StoreRequestGroup): ReconciliationRow[] =>
-    (group.summary ?? []).map((item) => ({
+    aggregateStoreRequestSummary(group.summary ?? []).map((item) => ({
       id: makeReconciliationRowId(),
       productCode: item.productCode,
       name: item.name,
@@ -349,37 +350,9 @@ const StorekeeperPage = () => {
       })
     })
 
-    const summaryMap = new Map<string, StoreRequestIngredient>()
-    ;(group.summary ?? []).forEach((item) => {
-      const productCode = item.productCode.trim()
-      const name = item.name.trim()
-      const unitOfMeasures = item.unitOfMeasures.trim()
-      const key = productCode || `${name}__${unitOfMeasures}`
-      if (!key) return
-
-      const qty = Number.isFinite(item.qty) ? item.qty : 0
-      const existing = summaryMap.get(key)
-      if (existing) {
-        existing.qty += qty
-        if (!existing.productCode && productCode) existing.productCode = productCode
-        if (!existing.name && name) existing.name = name
-        if (!existing.unitOfMeasures && unitOfMeasures) {
-          existing.unitOfMeasures = unitOfMeasures
-        }
-        return
-      }
-
-      summaryMap.set(key, {
-        productCode,
-        name,
-        unitOfMeasures,
-        qty,
-      })
-    })
-
     const summaryRows: Array<Array<unknown>> = [
       ['IT Code', 'Ingredient Name', 'QTY', 'Unit'],
-      ...Array.from(summaryMap.values()).map((item) => [
+      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
         item.productCode,
         item.name,
         formatQuantity(item.qty),
@@ -714,7 +687,9 @@ const StorekeeperPage = () => {
                 paginatedGroups.map((group, index) => {
                   const groupKey = getGroupKey(group)
                   const isExpanded = expandedGroups.includes(groupKey)
-                  const summaryItems = group.summary ?? []
+                  const summaryItems = aggregateStoreRequestSummary(
+                    group.summary ?? [],
+                  )
 
                   return (
                     <Fragment key={groupKey}>

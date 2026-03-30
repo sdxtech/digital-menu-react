@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -481,6 +482,7 @@ const UnitManagerPage = () => {
                 paginatedMenuGroups.map((group, index) => {
                   const groupKey = getGroupKey(group)
                   const isExpanded = expandedGroups.includes(groupKey)
+                  const summaryItems = aggregateStoreRequestSummary(group.summary)
                   const batchLabel = group.productionCode
                     ? `${group.date} (${group.productionCode})`
                     : group.date
@@ -614,7 +616,7 @@ const UnitManagerPage = () => {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {group.summary.length === 0 ? (
+                                      {summaryItems.length === 0 ? (
                                         <tr className="border-t border-border">
                                           <td
                                             colSpan={5}
@@ -624,7 +626,7 @@ const UnitManagerPage = () => {
                                           </td>
                                         </tr>
                                       ) : (
-                                        group.summary.map((item, itemIndex) => (
+                                        summaryItems.map((item, itemIndex) => (
                                           <tr
                                             key={`${item.productCode}-${item.unitOfMeasures}-${itemIndex}`}
                                             className="border-t border-border"

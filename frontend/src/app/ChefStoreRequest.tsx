@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -58,11 +59,6 @@ type StoreRequestGroup = {
 
 const ITEMS_PER_PAGE = 10
 
-const ingredientSummaryKey = (ingredient: StoreRequestIngredient) =>
-  `${(ingredient.productCode || ingredient.name).trim().toLowerCase()}__${ingredient.unitOfMeasures
-    .trim()
-    .toLowerCase()}`
-
 const getStoreRequestGroupKey = (group: {
   date: string
   productionCode?: string
@@ -75,7 +71,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       date: string
       productionCode?: string
       items: StoreRequestMenu[]
-      summaryMap: Map<string, StoreRequestIngredient>
+      summary: StoreRequestIngredient[]
       missingRecipes: Set<string>
       fulfillment?: StoreRequestFulfillment
     }
@@ -87,21 +83,15 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       date: group.date,
       productionCode: group.productionCode,
       items: [],
-      summaryMap: new Map<string, StoreRequestIngredient>(),
+      summary: [],
       missingRecipes: new Set<string>(),
     }
 
     bucket.items.push(...group.items)
-
-    group.summary.forEach((ingredient) => {
-      const key = ingredientSummaryKey(ingredient)
-      const existing = bucket.summaryMap.get(key)
-      if (existing) {
-        existing.qty += ingredient.qty
-      } else {
-        bucket.summaryMap.set(key, { ...ingredient })
-      }
-    })
+    bucket.summary = aggregateStoreRequestSummary([
+      ...bucket.summary,
+      ...(group.summary ?? []),
+    ])
 
     group.missingRecipes.forEach((item) => {
       const value = item.trim()
@@ -120,7 +110,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       date: group.date,
       productionCode: group.productionCode,
       items: group.items,
-      summary: Array.from(group.summaryMap.values()),
+      summary: group.summary,
       missingRecipes: Array.from(group.missingRecipes.values()),
       fulfillment: group.fulfillment,
     }))
@@ -413,7 +403,7 @@ const ChefStoreRequest = () => {
                 const date = group.date
                 const groupKey = getStoreRequestGroupKey(group)
                 const items = group.items
-                const summaryItems = group.summary ?? []
+                const summaryItems = aggregateStoreRequestSummary(group.summary ?? [])
                 const isExpanded = expandedGroups.includes(groupKey)
                 const hasApproved = items.some(
                   (item) => item.approvalStatus === 'approved',

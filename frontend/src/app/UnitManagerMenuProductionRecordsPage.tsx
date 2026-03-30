@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -206,11 +207,12 @@ const UnitManagerMenuProductionRecordsPage = () => {
                     const submittedByLabel = submittedByNames.length
                       ? submittedByNames.join(', ')
                       : '-'
-                    const handledBy = getHandledByNames(group)
-                    const handledByLabel = handledBy.length ? handledBy.join(', ') : '-'
-                    const resolutionStatus =
-                      group.fulfillment?.status ??
-                      (group.items.some(
+                  const handledBy = getHandledByNames(group)
+                  const handledByLabel = handledBy.length ? handledBy.join(', ') : '-'
+                  const summaryItems = aggregateStoreRequestSummary(group.summary)
+                  const resolutionStatus =
+                    group.fulfillment?.status ??
+                    (group.items.some(
                         (item) => item.storeRequestStatus === 'cancelled',
                       )
                         ? 'cancelled'
@@ -334,7 +336,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               <td className="px-4 py-3">{item.reason ?? '-'}</td>
                                             </tr>
                                           ))
-                                        ) : group.summary.length === 0 ? (
+                                        ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
                                               colSpan={8}
@@ -344,7 +346,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                             </td>
                                           </tr>
                                         ) : (
-                                          group.summary.map((item, itemIndex) => (
+                                          summaryItems.map((item, itemIndex) => (
                                             <tr
                                               key={`${item.productCode}-${item.unitOfMeasures}-${itemIndex}`}
                                               className="border-t border-border"
