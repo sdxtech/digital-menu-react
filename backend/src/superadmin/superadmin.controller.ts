@@ -59,11 +59,6 @@ export class SuperadminController {
           .filter(Boolean),
       ),
     );
-    if (!selectedSites.length) {
-      throw new BadRequestException(
-        'At least one site must be selected for export.',
-      );
-    }
 
     const startDate = query.startDate?.trim();
     const endDate = query.endDate?.trim();
@@ -80,34 +75,34 @@ export class SuperadminController {
     }
 
     const requestQuery: {
-      approvalStatus: 'approved';
       startDate?: string;
       endDate?: string;
-    } = {
-      approvalStatus: 'approved',
-    };
+    } = {};
     if (startDate && endDate) {
       requestQuery.startDate = startDate;
       requestQuery.endDate = endDate;
     }
 
-    const groupedBySite = await Promise.all(
-      selectedSites.map(async (site) => {
-        const result = await this.menuProductions.buildStoreRequestGroups(
-          requestQuery,
-          site,
-        );
-        return (result.items ?? []).map((group) => ({ ...group, site }));
-      }),
-    );
-
-    const items = groupedBySite
-      .flat()
-      .sort((a, b) =>
-        a.date === b.date
-          ? a.site.localeCompare(b.site)
-          : a.date.localeCompare(b.date),
-      );
+    const items = selectedSites.length
+      ? (
+          await Promise.all(
+            selectedSites.map(async (site) => {
+              const result = await this.menuProductions.buildStoreRequestGroups(
+                requestQuery,
+                site,
+              );
+              return (result.items ?? []).map((group) => ({ ...group, site }));
+            }),
+          )
+        )
+          .flat()
+          .sort((a, b) =>
+            a.date === b.date
+              ? a.site.localeCompare(b.site)
+              : a.date.localeCompare(b.date),
+          )
+      : (await this.menuProductions.buildStoreRequestGroups(requestQuery)).items ??
+        [];
 
     return { items };
   }

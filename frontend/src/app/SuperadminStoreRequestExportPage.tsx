@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { getStoreRequestStatusLabel } from '../lib/status-labels'
+import {
+  getApprovalStatusLabel,
+  getStoreRequestStatusLabel,
+} from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type StoreRequestIngredient = {
@@ -31,11 +34,13 @@ type StoreRequestFulfillment = {
 
 type StoreRequestMenu = {
   id: string
+  submittedByName?: string
+  reviewedBy?: string
+  recipeCode?: string
   menuName: string
   category: string
   portion: number
-  cost?: number
-  portionSize: number
+  approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   missingRecipe: boolean
   ingredients: StoreRequestIngredient[]
@@ -146,14 +151,15 @@ const buildIngredientKey = (
 ) =>
   `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
 
+const formatQuantity = (value: number) => {
+  if (!Number.isFinite(value)) return ''
+  if (Number.isInteger(value)) return String(value)
+  return value.toFixed(3).replace(/\.?0+$/, '')
+}
+
 const SuperadminStoreRequestExportPage = () => {
   const { accessToken } = useAuth()
-  const [siteOptions, setSiteOptions] = useState<string[]>([])
-  const [selectedSites, setSelectedSites] = useState<string[]>([])
-  const [sitePickerOpen, setSitePickerOpen] = useState(false)
-  const sitePickerRef = useRef<HTMLDivElement | null>(null)
   const [exportMode, setExportMode] = useState<ExportMode>('all')
-  const [loadingSites, setLoadingSites] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [infoMessage, setInfoMessage] = useState('')
@@ -163,75 +169,9 @@ const SuperadminStoreRequestExportPage = () => {
   })
   const [endDate, setEndDate] = useState(() => toInputDate(new Date()))
 
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
-  }
-
-  const fetchSites = useCallback(async () => {
-    if (!accessToken) return
-
-    setLoadingSites(true)
-    setErrorMessage('')
-    try {
-      const data = await apiFetch<{ items?: string[] }>(
-        '/superadmin/store-requests/sites',
-        undefined,
-        accessToken,
-      )
-      const options = Array.from(
-        new Set((data.items ?? []).map((site) => site.trim()).filter(Boolean)),
-      )
-      setSiteOptions(options)
-      setSelectedSites((prev) => prev.filter((site) => options.includes(site)))
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to load site options.'
-      setErrorMessage(message)
-      setSiteOptions([])
-      setSelectedSites([])
-    } finally {
-      setLoadingSites(false)
-    }
-  }, [accessToken])
-
-  useEffect(() => {
-    fetchSites().catch(() => null)
-  }, [fetchSites])
-
-  useEffect(() => {
-    if (!sitePickerOpen) return
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null
-      if (!target) return
-      if (sitePickerRef.current && !sitePickerRef.current.contains(target)) {
-        setSitePickerOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [sitePickerOpen])
-
-  const toggleSiteSelection = (site: string) => {
-    setSelectedSites((prev) =>
-      prev.includes(site)
-        ? prev.filter((item) => item !== site)
-        : [...prev, site],
-    )
-  }
-
   const handleExport = async () => {
     if (!accessToken) {
       setErrorMessage('Please log in first to export data.')
-      return
-    }
-    if (selectedSites.length === 0) {
-      setErrorMessage('Please select at least one site first.')
       return
     }
     if (exportMode === 'range') {
@@ -250,14 +190,15 @@ const SuperadminStoreRequestExportPage = () => {
     setInfoMessage('')
     try {
       const params = new URLSearchParams()
-      params.set('sites', selectedSites.join(','))
       if (exportMode === 'range') {
         params.set('startDate', startDate)
         params.set('endDate', endDate)
       }
 
       const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        `/superadmin/store-requests/export?${params.toString()}`,
+        `/superadmin/store-requests/export${
+          params.toString() ? `?${params.toString()}` : ''
+        }`,
         undefined,
         accessToken,
       )
@@ -273,43 +214,24 @@ const SuperadminStoreRequestExportPage = () => {
           'No',
           'Production Date',
           'Production Code',
-          'Site',
           'Menu Name',
           'Category',
-          'Portions',
-          'Cost',
-          'Base Pax',
-          'Store Request Status',
-          'Product Code',
+          'Recipe Code',
+          'Portion',
+          'IT Code',
           'Ingredient Name',
-          'Qty',
-          'Unit',
-        ],
-      ]
-
-      const summaryRows: Array<Array<unknown>> = [
-        [
-          'No',
-          'Production Date',
-          'Production Code',
-          'Site',
-          'Store Request Status',
-          'Batch Menu Cost',
-          'Product Code',
-          'Ingredient Name',
-          'Planned Qty',
-          'Actual Qty',
-          'Variance',
-          'Unit',
-          'Reason',
+          'QTY Planned',
+          'QTY Actual',
+          'Unit Of Measures',
+          'Approved By',
+          'Approval Status',
           'Completed By',
+          'Store Request Status',
           'Completed At',
-          'Batch Note',
         ],
       ]
 
       let rowNumber = 1
-      let summaryRowNumber = 1
       groups.forEach((group) => {
         const fulfillmentByKey = new Map(
           (group.fulfillment?.items ?? []).map((item) => [
@@ -321,150 +243,86 @@ const SuperadminStoreRequestExportPage = () => {
             item,
           ]),
         )
+
         const completedAt = group.fulfillment?.completedAt
           ? new Date(group.fulfillment.completedAt).toLocaleString()
           : ''
-        const groupStatus = group.items.some(
-          (item) => item.storeRequestStatus === 'fulfilled',
-        )
-          ? 'fulfilled'
-          : group.items.some((item) => item.storeRequestStatus === 'cancelled')
-            ? 'cancelled'
-          : group.items.some((item) => item.storeRequestStatus === 'requested')
-            ? 'requested'
-            : 'not-requested'
-        const groupTotalCost = group.items.reduce((sum, item) => {
-          const amount = Number(item.cost)
-          return Number.isFinite(amount) ? sum + amount : sum
-        }, 0)
-        const summaryByKey = new Map<
-          string,
-          {
-            productCode: string
-            name: string
-            unitOfMeasures: string
-            plannedQty: number
-          }
-        >()
+        const completedBy = group.fulfillment?.completedBy ?? ''
 
         group.items.forEach((menu) => {
           const ingredients = menu.ingredients ?? []
+          const approvedBy = menu.reviewedBy ?? ''
+          const approvalStatus = getApprovalStatusLabel(menu.approvalStatus)
+          const storeRequestStatus = getStoreRequestStatusLabel(
+            menu.storeRequestStatus,
+          )
+
           if (ingredients.length === 0) {
             rows.push([
               rowNumber,
               group.date,
               group.productionCode ?? '',
-              group.site,
               menu.menuName,
               menu.category,
+              menu.recipeCode ?? '',
               menu.portion,
-              Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : '',
-              menu.portionSize ?? 1,
-              getStoreRequestStatusLabel(menu.storeRequestStatus),
               '',
               '',
               '',
               '',
+              '',
+              approvedBy,
+              approvalStatus,
+              completedBy,
+              storeRequestStatus,
+              completedAt,
             ])
             rowNumber += 1
             return
           }
 
           ingredients.forEach((ingredient) => {
+            const fulfillmentItem = fulfillmentByKey.get(
+              buildIngredientKey(
+                ingredient.productCode,
+                ingredient.name,
+                ingredient.unitOfMeasures,
+              ),
+            )
+
             rows.push([
               rowNumber,
               group.date,
               group.productionCode ?? '',
-              group.site,
               menu.menuName,
               menu.category,
+              menu.recipeCode ?? '',
               menu.portion,
-              Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : '',
-              menu.portionSize ?? 1,
-              getStoreRequestStatusLabel(menu.storeRequestStatus),
               ingredient.productCode,
               ingredient.name,
               formatQuantity(ingredient.qty),
+              fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
               formatUnitLabel(ingredient.unitOfMeasures),
+              approvedBy,
+              approvalStatus,
+              completedBy,
+              storeRequestStatus,
+              completedAt,
             ])
             rowNumber += 1
           })
         })
-
-        group.summary.forEach((ingredient) => {
-          const key = buildIngredientKey(
-            ingredient.productCode,
-            ingredient.name,
-            ingredient.unitOfMeasures,
-          )
-          summaryByKey.set(key, {
-            productCode: ingredient.productCode,
-            name: ingredient.name,
-            unitOfMeasures: ingredient.unitOfMeasures,
-            plannedQty: ingredient.qty,
-          })
-        })
-
-        ;(group.fulfillment?.items ?? []).forEach((item) => {
-          const key = buildIngredientKey(
-            item.productCode,
-            item.name,
-            item.unitOfMeasures,
-          )
-          if (summaryByKey.has(key)) return
-          summaryByKey.set(key, {
-            productCode: item.productCode,
-            name: item.name,
-            unitOfMeasures: item.unitOfMeasures,
-            plannedQty: Number.isFinite(item.plannedQty) ? item.plannedQty : 0,
-          })
-        })
-
-        summaryByKey.forEach((ingredient, key) => {
-          const fulfillmentItem = fulfillmentByKey.get(key)
-
-          summaryRows.push([
-            summaryRowNumber,
-            group.date,
-            group.productionCode ?? '',
-            group.site,
-            getStoreRequestStatusLabel(groupStatus),
-            groupTotalCost,
-            ingredient.productCode,
-            ingredient.name,
-            formatQuantity(ingredient.plannedQty),
-            fulfillmentItem
-              ? formatQuantity(fulfillmentItem.actualQty)
-              : '',
-            fulfillmentItem
-              ? formatQuantity(fulfillmentItem.varianceQty)
-              : '',
-            formatUnitLabel(ingredient.unitOfMeasures),
-            fulfillmentItem?.reason ?? '',
-            group.fulfillment?.completedBy ?? '',
-            completedAt,
-            group.fulfillment?.note ?? '',
-          ])
-          summaryRowNumber += 1
-        })
       })
 
-      const siteLabel =
-        selectedSites.length === 1
-          ? selectedSites[0]
-          : `${selectedSites.length}-sites`
-      const safeSite = siteLabel.replace(/[\\/:*?"<>|]/g, '-')
       const filename =
         exportMode === 'range'
-          ? `store-request-${safeSite}-${startDate}_to_${endDate}.xls`
-          : `store-request-${safeSite}-all-dates.xls`
-      downloadExcel(filename, [
-        { name: 'Store Requests', rows },
-        { name: 'Ingredient Summary', rows: summaryRows },
-      ])
+          ? `store-request-all-sites-${startDate}_to_${endDate}.xls`
+          : 'store-request-all-sites-all-dates.xls'
+
+      downloadExcel(filename, [{ name: 'Store Requests', rows }])
 
       setInfoMessage(
-        `Export complete for ${selectedSites.length} selected site(s). ${groups.length} grouped rows exported.`,
+        `Export complete for all sites. ${groups.length} production batches exported.`,
       )
     } catch (error) {
       const message =
@@ -487,89 +345,41 @@ const SuperadminStoreRequestExportPage = () => {
               Store Request Export
             </p>
             <p className="mt-2 text-sm text-muted">
-              Export store request data by site for all dates or by date range.
+              Export store request data for all sites for all dates or by date
+              range.
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              Site selection is hidden for now. Export will include all sites
+              automatically.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => fetchSites().catch(() => null)}
-            disabled={loadingSites}
-            className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span className="flex items-center gap-2">
-              <i className="bi bi-arrow-clockwise text-sm" aria-hidden="true" />
-              <span>{loadingSites ? 'Loading sites...' : 'Refresh sites'}</span>
-            </span>
-          </button>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <div className="relative" ref={sitePickerRef}>
-            <p className="text-sm font-medium text-foreground">Sites</p>
-            <button
-              type="button"
-              onClick={() => setSitePickerOpen((prev) => !prev)}
-              disabled={loadingSites || siteOptions.length === 0}
-              className="mt-2 flex w-full items-center justify-between rounded-2xl border border-border bg-white px-4 py-2 text-sm text-left outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="truncate text-foreground">
-                {selectedSites.length === 0
-                  ? 'Select site'
-                  : selectedSites.length === 1
-                    ? '1 site selected'
-                    : `${selectedSites.length} sites selected`}
-              </span>
-              <i
-                className={`bi bi-chevron-down text-xs text-muted transition-transform ${sitePickerOpen ? 'rotate-180' : ''}`}
-                aria-hidden="true"
+        <div className="mt-5">
+          <p className="text-sm font-medium text-foreground">Export mode</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white p-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="export-mode"
+                value="all"
+                checked={exportMode === 'all'}
+                onChange={() => setExportMode('all')}
+                className="h-4 w-4 border-border text-primary focus:ring-accent-blue"
               />
-            </button>
-
-            {sitePickerOpen ? (
-              <div className="absolute left-0 top-full z-20 mt-2 max-h-60 w-full overflow-y-auto rounded-md border border-border bg-white p-2 shadow-lg">
-                {siteOptions.map((site) => (
-                  <label
-                    key={site}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-background"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedSites.includes(site)}
-                      onChange={() => toggleSiteSelection(site)}
-                      className="h-4 w-4 rounded border-border text-primary focus:ring-accent-blue"
-                    />
-                    <span>{site}</span>
-                  </label>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">Export mode</p>
-            <div className="mt-2 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white p-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <input
-                  type="radio"
-                  name="export-mode"
-                  value="all"
-                  checked={exportMode === 'all'}
-                  onChange={() => setExportMode('all')}
-                  className="h-4 w-4 border-border text-primary focus:ring-accent-blue"
-                />
-                <span>All dates</span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <input
-                  type="radio"
-                  name="export-mode"
-                  value="range"
-                  checked={exportMode === 'range'}
-                  onChange={() => setExportMode('range')}
-                  className="h-4 w-4 border-border text-primary focus:ring-accent-blue"
-                />
-                <span>Date range</span>
-              </label>
-            </div>
+              <span>All dates</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="export-mode"
+                value="range"
+                checked={exportMode === 'range'}
+                onChange={() => setExportMode('range')}
+                className="h-4 w-4 border-border text-primary focus:ring-accent-blue"
+              />
+              <span>Date range</span>
+            </label>
           </div>
         </div>
 
@@ -610,16 +420,17 @@ const SuperadminStoreRequestExportPage = () => {
           <button
             type="button"
             onClick={handleExport}
-            disabled={exporting || loadingSites}
+            disabled={exporting}
             className="rounded-md border border-success bg-white px-4 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="flex items-center gap-2">
               <i className="bi bi-download text-sm" aria-hidden="true" />
-              <span>Export</span>
+              <span>{exporting ? 'Exporting...' : 'Export'}</span>
             </span>
           </button>
           <span className="text-xs text-muted">
-            Output format: `.xls` with request and ingredient summary sheets.
+            Output format: `.xls` with a single sheet matching the requested
+            export layout.
           </span>
         </div>
 
