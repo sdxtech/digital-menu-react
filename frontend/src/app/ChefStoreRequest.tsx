@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useChefData } from '../lib/chef-data'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -37,6 +38,7 @@ type StoreRequestMenu = {
   category: string
   portion: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
   fulfilledAt?: string
@@ -197,11 +199,14 @@ const downloadExcel = (
 
 const ChefStoreRequest = () => {
   const { accessToken } = useAuth()
+  const { cancelPendingMenuProductionBatch } = useChefData()
   const [errorMessage, setErrorMessage] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [cancellingGroupKey, setCancellingGroupKey] = useState<string | null>(null)
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -282,23 +287,13 @@ const ChefStoreRequest = () => {
     setLoading(true)
     setErrorMessage('')
     try {
-      const [approvedData, rejectedData] = await Promise.all([
-        apiFetch<{ items: StoreRequestGroup[] }>(
-          '/menu-productions/store-requests?approvalStatus=approved',
-          undefined,
-          accessToken,
-        ),
-        apiFetch<{ items: StoreRequestGroup[] }>(
-          '/menu-productions/store-requests?approvalStatus=rejected',
-          undefined,
-          accessToken,
-        ),
-      ])
+      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+        '/menu-productions/store-requests',
+        undefined,
+        accessToken,
+      )
 
-      const merged = mergeStoreRequestGroups([
-        ...(approvedData.items ?? []),
-        ...(rejectedData.items ?? []),
-      ])
+      const merged = mergeStoreRequestGroups(data.items ?? [])
       setGroups(merged)
     } catch (error) {
       const message =
@@ -308,6 +303,40 @@ const ChefStoreRequest = () => {
       setLoading(false)
     }
   }, [accessToken])
+
+  const handleCancelPendingGroup = async (group: StoreRequestGroup) => {
+    const pendingItems = group.items.filter((item) => item.approvalStatus === 'pending')
+    if (pendingItems.length === 0) return
+
+    const productionCodeLabel = group.productionCode ?? 'this batch'
+    const confirmed = window.confirm(
+      `Cancel ${pendingItems.length} pending menu(s) from ${productionCodeLabel} for ${group.date}?`,
+    )
+    if (!confirmed) return
+
+    const groupKey = getStoreRequestGroupKey(group)
+    setCancellingGroupKey(groupKey)
+    setErrorMessage('')
+    setActionMessage('')
+
+    try {
+      await cancelPendingMenuProductionBatch({
+        menuProductionIds: pendingItems.map((item) => item.id),
+      })
+      setActionMessage(
+        `${pendingItems.length} pending menu${pendingItems.length > 1 ? 's were' : ' was'} cancelled from ${productionCodeLabel} for ${group.date}.`,
+      )
+      await fetchStoreRequests()
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to cancel pending menu production.'
+      setErrorMessage(message)
+    } finally {
+      setCancellingGroupKey(null)
+    }
+  }
 
   const toggleExpanded = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -341,6 +370,9 @@ const ChefStoreRequest = () => {
         <h1 className="text-2xl font-semibold">Store Request</h1>
         {errorMessage ? (
           <p className="text-xs font-medium text-red-600">{errorMessage}</p>
+        ) : null}
+        {actionMessage ? (
+          <p className="text-xs font-medium text-primary">{actionMessage}</p>
         ) : null}
       </div>
 
@@ -379,6 +411,7 @@ const ChefStoreRequest = () => {
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Production code</th>
                 <th className="px-5 py-4 font-semibold">Approval status</th>
+                <th className="px-5 py-4 font-semibold">Reviewed by</th>
                 <th className="px-5 py-4 font-semibold">Total menu</th>
                 <th className="px-5 py-4 font-semibold">Storekeeper</th>
                 <th className="px-5 py-4 font-semibold">Store request status</th>
@@ -388,14 +421,14 @@ const ChefStoreRequest = () => {
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
-                    No production menus approved or rejected by the Unit Manager yet.
+                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    No production batches submitted yet.
                   </td>
                 </tr>
               ) : (
@@ -403,6 +436,9 @@ const ChefStoreRequest = () => {
                 const date = group.date
                 const groupKey = getStoreRequestGroupKey(group)
                 const items = group.items
+                const pendingItems = items.filter(
+                  (item) => item.approvalStatus === 'pending',
+                )
                 const summaryItems = aggregateStoreRequestSummary(group.summary ?? [])
                 const isExpanded = expandedGroups.includes(groupKey)
                 const hasApproved = items.some(
@@ -411,6 +447,7 @@ const ChefStoreRequest = () => {
                 const hasRejected = items.some(
                   (item) => item.approvalStatus === 'rejected',
                 )
+                const hasPendingReview = pendingItems.length > 0
                 const hasRequested = items.some(
                   (item) => item.storeRequestStatus === 'requested',
                 )
@@ -423,6 +460,16 @@ const ChefStoreRequest = () => {
                 const hasPendingApproval = items.some(
                   (item) => item.storeRequestStatus === 'not-requested',
                 )
+                const reviewedByNames = Array.from(
+                  new Set(
+                    items
+                      .map((item) => item.reviewedBy?.trim())
+                      .filter((name): name is string => Boolean(name)),
+                  ),
+                )
+                const reviewedByLabel = reviewedByNames.length
+                  ? reviewedByNames.join(', ')
+                  : '-'
                 const handledByNames = group.fulfillment?.completedBy?.trim()
                   ? [group.fulfillment.completedBy.trim()]
                   : Array.from(
@@ -453,6 +500,9 @@ const ChefStoreRequest = () => {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2 text-sm">
+                          {hasPendingReview ? (
+                            <span className="text-muted">Submitted</span>
+                          ) : null}
                           {hasApproved ? (
                             <span className="text-primary">Approved</span>
                           ) : null}
@@ -460,6 +510,9 @@ const ChefStoreRequest = () => {
                             <span className="text-danger">Rejected</span>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {reviewedByLabel}
                       </td>
                       <td className="px-5 py-4 text-sm font-medium">{items.length}</td>
                       <td className="px-5 py-4 text-sm text-muted">
@@ -482,21 +535,36 @@ const ChefStoreRequest = () => {
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            toggleExpanded(groupKey)
-                          }}
-                          className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                        >
-                          {isExpanded ? 'Hide details' : 'View details'}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {pendingItems.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleCancelPendingGroup(group).catch(() => null)
+                              }}
+                              disabled={cancellingGroupKey === groupKey}
+                              className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {cancellingGroupKey === groupKey ? 'Cancelling...' : 'Cancel'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleExpanded(groupKey)
+                            }}
+                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                          >
+                            {isExpanded ? 'Hide details' : 'View details'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={8} className="px-5 py-5">
+                        <td colSpan={9} className="px-5 py-5">
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>

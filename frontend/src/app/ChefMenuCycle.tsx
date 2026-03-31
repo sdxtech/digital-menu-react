@@ -1,12 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
-import { apiFetch } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
-import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
-const TIMELINE_ITEMS_PER_PAGE = 10
 const INPUT_ROWS_PER_PAGE = 8
 
 type MenuInputRow = {
@@ -14,32 +10,6 @@ type MenuInputRow = {
   recipeId: string
   recipeQuery: string
   portion: number | ''
-}
-
-type TimelineItem = {
-  id: string
-  productionCode?: string
-  recipeId?: string
-  recipeCode?: string
-  menuName: string
-  category: string
-  portion: number
-  cost?: number
-  approvalStatus: 'pending' | 'approved' | 'rejected'
-  reviewedBy?: string
-}
-
-type TimelineGroup = {
-  date: string
-  productionCode?: string
-  items: TimelineItem[]
-}
-
-type TimelineStats = {
-  approved: number
-  pending: number
-  rejected: number
-  total: number
 }
 
 const createMenuInputRow = (): MenuInputRow => ({
@@ -50,30 +20,11 @@ const createMenuInputRow = (): MenuInputRow => ({
 })
 
 const ChefMenuCycle = () => {
-  const { accessToken } = useAuth()
-  const { recipes, addMenuProductionsBulk, cancelPendingMenuProductionBatch } =
-    useChefData()
+  const { recipes, menuProductions, addMenuProductionsBulk } = useChefData()
   const [productionDate, setProductionDate] = useState('')
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])
   const [inputError, setInputError] = useState('')
   const [inputMessage, setInputMessage] = useState('')
-  const [timelineMessage, setTimelineMessage] = useState('')
-  const [timelineError, setTimelineError] = useState('')
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
-  const [timelinePage, setTimelinePage] = useState(1)
-  const [timelineGroups, setTimelineGroups] = useState<TimelineGroup[]>([])
-  const [timelineTotalGroups, setTimelineTotalGroups] = useState(0)
-  const [timelineStats, setTimelineStats] = useState<TimelineStats>({
-    approved: 0,
-    pending: 0,
-    rejected: 0,
-    total: 0,
-  })
-  const [timelineTotalPages, setTimelineTotalPages] = useState(1)
-  const [timelineLoading, setTimelineLoading] = useState(false)
-  const [timelineCancellingGroupKey, setTimelineCancellingGroupKey] = useState<
-    string | null
-  >(null)
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
   const [inputPage, setInputPage] = useState(1)
 
@@ -100,72 +51,31 @@ const ChefMenuCycle = () => {
     )
   }, [availableRecipes])
 
-  // FRONTEND VIEW: timeline groups + stats come from backend.
-  const fetchTimeline = useCallback(async () => {
-    if (!accessToken) return
-    setTimelineLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.set('page', String(timelinePage))
-      params.set('limit', String(TIMELINE_ITEMS_PER_PAGE))
-
-      const data = await apiFetch<{
-        stats: TimelineStats
-        items: TimelineGroup[]
-        page: number
-        limit: number
-        totalGroups: number
-        totalPages: number
-      }>(`/menu-productions/timeline?${params.toString()}`, undefined, accessToken)
-
-      setTimelineGroups(data.items ?? [])
-      setTimelineStats(data.stats ?? {
-        approved: 0,
-        pending: 0,
-        rejected: 0,
-        total: 0,
-      })
-      setTimelineTotalPages(data.totalPages ?? 1)
-      setTimelineTotalGroups(data.totalGroups ?? data.items?.length ?? 0)
-    } catch {
-      setTimelineGroups([])
-      setTimelineStats({ approved: 0, pending: 0, rejected: 0, total: 0 })
-      setTimelineTotalPages(1)
-      setTimelineTotalGroups(0)
-    } finally {
-      setTimelineLoading(false)
-    }
-  }, [accessToken, timelinePage])
-
-  useEffect(() => {
-    fetchTimeline().catch(() => null)
-  }, [fetchTimeline])
-
-  useEffect(() => {
-    setTimelinePage((prev) => Math.min(prev, timelineTotalPages))
-  }, [timelineTotalPages])
-
   useEffect(() => {
     const nextTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
     setInputPage((prev) => Math.min(prev, nextTotalPages))
   }, [menuRows.length])
-
-  const getTimelineGroupKey = (group: TimelineGroup) =>
-    `${group.date}__${group.productionCode ?? 'no-code'}`
-
-  const toggleExpanded = (groupKey: string) => {
-    setExpandedGroups((prev) =>
-      prev.includes(groupKey)
-        ? prev.filter((item) => item !== groupKey)
-        : [...prev, groupKey],
-    )
-  }
 
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     )
   }
+
+  const productionStats = useMemo(
+    () => ({
+      approved: menuProductions.filter(
+        (item) => item.approvalStatus === 'approved',
+      ).length,
+      pending: menuProductions.filter((item) => item.approvalStatus === 'pending')
+        .length,
+      rejected: menuProductions.filter(
+        (item) => item.approvalStatus === 'rejected',
+      ).length,
+      total: menuProductions.length,
+    }),
+    [menuProductions],
+  )
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
@@ -311,11 +221,9 @@ const ChefMenuCycle = () => {
       await addMenuProductionsBulk(payload)
       setMenuRows([createMenuInputRow()])
       setInputError('')
-      setInputMessage('')
-      setTimelineMessage(
-        `${payload.length} menus added to the production timeline for ${productionDate} and submitted to the Unit Manager (pending approval).`,
+      setInputMessage(
+        `${payload.length} menus submitted for ${productionDate}. The record is now available in Store Request.`,
       )
-      fetchTimeline().catch(() => null)
     } catch (error) {
       const message =
         error instanceof Error
@@ -323,42 +231,6 @@ const ChefMenuCycle = () => {
           : 'Failed to save menu production.'
       setInputError(message)
       setInputMessage('')
-    }
-  }
-
-  const handleCancelPendingGroup = async (group: TimelineGroup) => {
-    const pendingItems = group.items.filter(
-      (item) => item.approvalStatus === 'pending',
-    )
-    if (pendingItems.length === 0) return
-
-    const productionCodeLabel = group.productionCode ?? 'this batch'
-    const confirmed = window.confirm(
-      `Cancel ${pendingItems.length} pending menu(s) from ${productionCodeLabel} for ${group.date}?`,
-    )
-    if (!confirmed) return
-
-    const groupKey = getTimelineGroupKey(group)
-    setTimelineCancellingGroupKey(groupKey)
-    setTimelineError('')
-    setTimelineMessage('')
-
-    try {
-      await cancelPendingMenuProductionBatch({
-        menuProductionIds: pendingItems.map((item) => item.id),
-      })
-      setTimelineMessage(
-        `${pendingItems.length} pending menu${pendingItems.length > 1 ? 's were' : ' was'} cancelled from ${productionCodeLabel} for ${group.date}.`,
-      )
-      fetchTimeline().catch(() => null)
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to cancel pending menu production.'
-      setTimelineError(message)
-    } finally {
-      setTimelineCancellingGroupKey(null)
     }
   }
 
@@ -381,7 +253,7 @@ const ChefMenuCycle = () => {
               Pending
             </h3>
             <p className="mt-2 text-xl font-semibold">
-              {timelineStats.pending}
+              {productionStats.pending}
             </p>
             <p className="mt-3 text-sm text-foreground">
               Menus awaiting Unit Manager approval.
@@ -392,7 +264,7 @@ const ChefMenuCycle = () => {
               Approved
             </h3>
             <p className="mt-2 text-xl font-semibold">
-              {timelineStats.approved}
+              {productionStats.approved}
             </p>
             <p className="mt-3 text-sm text-foreground">
               Menus ready for Store Request.
@@ -403,10 +275,10 @@ const ChefMenuCycle = () => {
               Total menus
             </h3>
             <p className="mt-2 text-xl font-semibold text-foreground">
-              {timelineStats.total}
+              {productionStats.total}
             </p>
             <p className="mt-3 text-sm text-foreground">
-              {timelineStats.rejected} menus are rejected.
+              {productionStats.rejected} menus are rejected.
             </p>
           </div>
         </div>
@@ -675,196 +547,6 @@ const ChefMenuCycle = () => {
             Submit to Unit Manager
           </button>
         </div>
-      </div>
-
-      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="font-semibold text-foreground">
-              Timeline
-            </h3>
-            <p className="mt-1 text-xs text-muted">
-              Scheduled production menus
-            </p>
-          </div>
-        </div>
-        {timelineMessage ? (
-          <p className="mt-4 text-xs font-medium text-primary">{timelineMessage}</p>
-        ) : null}
-        {timelineError ? (
-          <p className="mt-2 text-xs font-medium text-red-600">{timelineError}</p>
-        ) : null}
-
-        <div className="mt-4 rounded-md border border-border bg-white">
-          <TablePagination
-            page={timelinePage}
-            totalPages={timelineTotalPages}
-            onPageChange={setTimelinePage}
-            loading={timelineLoading}
-            summary={`Showing ${timelineGroups.length} of ${timelineTotalGroups} production batches`}
-            className="rounded-t-md border-b border-border px-5 py-4"
-          />
-          <div className="max-w-full overflow-x-auto">
-            <table className="dm-table min-w-full bg-white text-sm">
-              <thead className="bg-background">
-              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-16 px-4 py-3 font-semibold">No</th>
-                <th className="px-4 py-3 font-semibold">Production date</th>
-                <th className="px-4 py-3 font-semibold">Production code</th>
-                <th className="px-4 py-3 font-semibold">Reviewed by</th>
-                <th className="px-4 py-3 font-semibold">Total menu</th>
-                <th className="px-4 py-3 font-semibold">Action</th>
-              </tr>
-              </thead>
-              <tbody>
-              {timelineLoading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
-                    Loading production timeline...
-                  </td>
-                </tr>
-              ) : timelineGroups.length === 0 ? (
-                <tr className="border-t border-border">
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
-                    No menus in the production timeline yet.
-                  </td>
-                </tr>
-              ) : (
-                timelineGroups.map((group, index) => {
-                  const groupKey = getTimelineGroupKey(group)
-                  const isExpanded = expandedGroups.includes(groupKey)
-                  const pendingItems = group.items.filter(
-                    (item) => item.approvalStatus === 'pending',
-                  )
-                  const reviewedByNames = Array.from(
-                    new Set(
-                      group.items
-                        .map((item) => item.reviewedBy?.trim())
-                        .filter((name): name is string => Boolean(name)),
-                    ),
-                  )
-                  const reviewedByLabel = reviewedByNames.length
-                    ? reviewedByNames.join(', ')
-                    : '-'
-                  const productionCodeLabel = group.productionCode ?? '-'
-
-                  return (
-                    <Fragment key={groupKey}>
-                      <tr
-                        className="cursor-pointer border-t border-border"
-                        onClick={() => toggleExpanded(groupKey)}
-                      >
-                        <td className="px-4 py-3 text-sm text-muted">
-                          {(timelinePage - 1) * TIMELINE_ITEMS_PER_PAGE + index + 1}
-                        </td>
-                        <td className="px-4 py-3">{group.date}</td>
-                        <td className="px-4 py-3 text-xs text-muted">
-                          {productionCodeLabel}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted">
-                          {reviewedByLabel}
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium">
-                          {group.items.length}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {pendingItems.length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleCancelPendingGroup(group).catch(() => null)
-                                }}
-                                disabled={timelineCancellingGroupKey === groupKey}
-                                className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {timelineCancellingGroupKey === groupKey
-                                  ? 'Cancelling...'
-                                  : 'Cancel'}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleExpanded(groupKey)
-                              }}
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                            >
-                              {isExpanded ? 'Hide details' : 'View details'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded ? (
-                        <tr className="border-t border-border bg-background">
-                          <td colSpan={7} className="px-4 py-4">
-                            <div className="max-w-full overflow-x-auto rounded-md border border-border">
-                              <table className="dm-table min-w-full bg-white text-sm">
-                                <thead className="bg-background">
-                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                    <th className="w-12 px-4 py-3 font-semibold">
-                                      No
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Recipe ID
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">Menu</th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Category
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Portion
-                                    </th>
-                                    <th className="px-4 py-3 font-semibold">
-                                      Approval
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.items.map((item, itemIndex) => (
-                                    <tr
-                                      key={item.id}
-                                      className="border-t border-border"
-                                    >
-                                      <td className="px-4 py-3 text-sm text-muted">
-                                        {itemIndex + 1}
-                                      </td>
-                                      <td className="px-4 py-3 font-medium">
-                                        {item.recipeCode ?? '-'}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        {item.menuName}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        {item.category}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        {item.portion}
-                                      </td>
-                                      <td className="px-4 py-3">
-                                        <span className="text-xs font-medium">
-                                          {getApprovalStatusLabel(item.approvalStatus)}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  )
-                })
-              )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
       </div>
     </div>
   )
