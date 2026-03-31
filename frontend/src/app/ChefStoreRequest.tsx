@@ -117,9 +117,9 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
       fulfillment: group.fulfillment,
     }))
     .sort((a, b) => {
-      const byDate = a.date.localeCompare(b.date)
+      const byDate = b.date.localeCompare(a.date)
       if (byDate !== 0) return byDate
-      return (a.productionCode ?? '').localeCompare(b.productionCode ?? '')
+      return (b.productionCode ?? '').localeCompare(a.productionCode ?? '')
     })
 }
 
