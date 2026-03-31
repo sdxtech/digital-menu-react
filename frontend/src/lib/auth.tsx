@@ -22,8 +22,9 @@ type AuthContextValue = {
   logout: () => void
 }
 
-const STORAGE_KEY = 'dm-auth-user'
-const TOKEN_KEY = 'dm-auth-token'
+const USER_KEY = 'dm-auth-user'
+const ACCESS_TOKEN_KEY = 'dm-auth-token'
+const REFRESH_TOKEN_KEY = 'dm-auth-refresh-token'
 
 const rolePaths: Record<Role, string> = {
   chef: '/chef',
@@ -34,28 +35,72 @@ const rolePaths: Record<Role, string> = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-const readStoredUser = (): User | null => {
+const readSessionStorage = (key: string) => {
   try {
-    const token =
-      sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY)
-    if (!token) {
-      localStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return null
-    const parsed = JSON.parse(stored) as User
-    if (!parsed?.role || !(parsed.role in rolePaths)) return null
-    return parsed
+    return sessionStorage.getItem(key)
   } catch {
     return null
   }
 }
 
-export const readStoredToken = (): string | null => {
+const readLocalStorage = (key: string) => {
   try {
-    return sessionStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY)
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+const removeStoredItem = (key: string) => {
+  try {
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  } catch {
+    // ignore storage cleanup errors
+  }
+}
+
+const writeSessionStorage = (key: string, value: string) => {
+  try {
+    sessionStorage.setItem(key, value)
+    localStorage.removeItem(key)
+  } catch {
+    // ignore storage write errors
+  }
+}
+
+export const readStoredToken = (): string | null => {
+  return readSessionStorage(ACCESS_TOKEN_KEY) ?? readLocalStorage(ACCESS_TOKEN_KEY)
+}
+
+export const readStoredRefreshToken = (): string | null => {
+  return readSessionStorage(REFRESH_TOKEN_KEY)
+}
+
+const migrateLegacyUserToSession = () => {
+  const legacyUser = readLocalStorage(USER_KEY)
+  if (!legacyUser) return null
+  if (!readStoredToken()) {
+    removeStoredItem(USER_KEY)
+    return null
+  }
+
+  writeSessionStorage(USER_KEY, legacyUser)
+  return legacyUser
+}
+
+const readStoredUser = (): User | null => {
+  try {
+    if (!readStoredToken()) {
+      removeStoredItem(USER_KEY)
+      return null
+    }
+
+    const stored = readSessionStorage(USER_KEY) ?? migrateLegacyUserToSession()
+    if (!stored) return null
+    const parsed = JSON.parse(stored) as User
+    if (!parsed?.role || !(parsed.role in rolePaths)) return null
+    return parsed
   } catch {
     return null
   }
@@ -68,8 +113,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   )
 
   const login = async (email: string, password: string) => {
-    const { accessToken: nextAccessToken } = await apiFetch<{
+    const {
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+    } = await apiFetch<{
       accessToken: string
+      refreshToken?: string
     }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
@@ -94,10 +143,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       role: nextRole,
     }
     setUser(nextUser)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
+    writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
     setAccessToken(nextAccessToken)
-    sessionStorage.setItem(TOKEN_KEY, nextAccessToken)
-    localStorage.removeItem(TOKEN_KEY)
+    writeSessionStorage(ACCESS_TOKEN_KEY, nextAccessToken)
+    if (nextRefreshToken) {
+      writeSessionStorage(REFRESH_TOKEN_KEY, nextRefreshToken)
+    } else {
+      removeStoredItem(REFRESH_TOKEN_KEY)
+    }
     return nextUser
   }
 
@@ -107,10 +160,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       apiFetch('/auth/logout', { method: 'POST' }, token).catch(() => null)
     }
     setUser(null)
-    localStorage.removeItem(STORAGE_KEY)
+    removeStoredItem(USER_KEY)
     setAccessToken(null)
-    localStorage.removeItem(TOKEN_KEY)
-    sessionStorage.removeItem(TOKEN_KEY)
+    removeStoredItem(ACCESS_TOKEN_KEY)
+    removeStoredItem(REFRESH_TOKEN_KEY)
   }, [accessToken])
 
   const value = useMemo(

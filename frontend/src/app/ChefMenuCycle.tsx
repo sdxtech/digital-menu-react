@@ -711,7 +711,6 @@ const ChefMenuCycle = () => {
                 <th className="w-16 px-4 py-3 font-semibold">No</th>
                 <th className="px-4 py-3 font-semibold">Production date</th>
                 <th className="px-4 py-3 font-semibold">Production code</th>
-                <th className="px-4 py-3 font-semibold">Approval status</th>
                 <th className="px-4 py-3 font-semibold">Reviewed by</th>
                 <th className="px-4 py-3 font-semibold">Total menu</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
@@ -720,13 +719,13 @@ const ChefMenuCycle = () => {
               <tbody>
               {timelineLoading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     Loading production timeline...
                   </td>
                 </tr>
               ) : timelineGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     No menus in the production timeline yet.
                   </td>
                 </tr>
@@ -737,29 +736,6 @@ const ChefMenuCycle = () => {
                   const pendingItems = group.items.filter(
                     (item) => item.approvalStatus === 'pending',
                   )
-                  const hasApproved = group.items.some(
-                    (item) => item.approvalStatus === 'approved',
-                  )
-                  const hasPending = group.items.some(
-                    (item) => item.approvalStatus === 'pending',
-                  )
-                  const hasRejected = group.items.some(
-                    (item) => item.approvalStatus === 'rejected',
-                  )
-                  const approvalStatusLabel = hasPending
-                    ? 'Pending'
-                    : hasRejected
-                      ? 'Rejected'
-                      : hasApproved
-                        ? 'Approved'
-                        : 'Pending'
-                  const approvalStatusClassName = hasPending
-                    ? 'text-muted'
-                    : hasRejected
-                      ? 'text-danger'
-                      : hasApproved
-                        ? 'text-primary'
-                        : 'text-muted'
                   const reviewedByNames = Array.from(
                     new Set(
                       group.items
@@ -784,11 +760,6 @@ const ChefMenuCycle = () => {
                         <td className="px-4 py-3">{group.date}</td>
                         <td className="px-4 py-3 text-xs text-muted">
                           {productionCodeLabel}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`text-sm font-medium ${approvalStatusClassName}`}>
-                            {approvalStatusLabel}
-                          </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted">
                           {reviewedByLabel}

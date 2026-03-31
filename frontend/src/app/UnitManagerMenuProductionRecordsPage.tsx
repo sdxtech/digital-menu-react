@@ -3,7 +3,10 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
-import { getStoreRequestStatusLabel } from '../lib/status-labels'
+import {
+  getApprovalStatusLabel,
+  getStoreRequestStatusLabel,
+} from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const RECORD_ITEMS_PER_PAGE = 10
@@ -37,10 +40,12 @@ type StoreRequestMenu = {
   id: string
   productionCode?: string
   submittedByName?: string
+  reviewedBy?: string
   recipeCode?: string
   menuName: string
   category: string
   portion: number
+  approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
   cancelledBy?: string
@@ -63,6 +68,30 @@ const formatQuantity = (value: number) => {
   return value.toFixed(3).replace(/\.?0+$/, '')
 }
 
+type RecordStatus = 'fulfilled' | 'cancelled' | 'rejected'
+
+const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => {
+  const hasFulfilled = group.items.some(
+    (item) => item.storeRequestStatus === 'fulfilled',
+  )
+  const hasCancelled = group.items.some(
+    (item) => item.storeRequestStatus === 'cancelled',
+  )
+  const hasRejected = group.items.some((item) => item.approvalStatus === 'rejected')
+
+  if (!hasFulfilled && !hasCancelled && hasRejected) {
+    return 'rejected'
+  }
+  if (group.fulfillment?.status === 'cancelled' || hasCancelled) {
+    return 'cancelled'
+  }
+  if (group.fulfillment?.status === 'fulfilled' || hasFulfilled) {
+    return 'fulfilled'
+  }
+
+  return null
+}
+
 const UnitManagerMenuProductionRecordsPage = () => {
   const { accessToken } = useAuth()
   const [records, setRecords] = useState<StoreRequestGroup[]>([])
@@ -79,19 +108,13 @@ const UnitManagerMenuProductionRecordsPage = () => {
 
     try {
       const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        '/menu-productions/store-requests?approvalStatus=approved',
+        '/menu-productions/store-requests',
         undefined,
         accessToken,
       )
 
       const handledGroups = [...(data.items ?? [])]
-        .filter((group) =>
-          group.items.some(
-            (item) =>
-              item.storeRequestStatus === 'fulfilled' ||
-              item.storeRequestStatus === 'cancelled',
-          ),
-        )
+        .filter((group) => getGroupRecordStatus(group) !== null)
         .sort((a, b) => b.date.localeCompare(a.date))
 
       setRecords(handledGroups)
@@ -134,8 +157,21 @@ const UnitManagerMenuProductionRecordsPage = () => {
     )
   }
 
-  const getHandledByNames = (group: StoreRequestGroup) =>
-    group.fulfillment?.completedBy?.trim()
+  const getHandledByNames = (
+    group: StoreRequestGroup,
+    recordStatus: RecordStatus,
+  ) => {
+    if (recordStatus === 'rejected') {
+      return Array.from(
+        new Set(
+          group.items
+            .map((item) => item.reviewedBy?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ),
+      )
+    }
+
+    return group.fulfillment?.completedBy?.trim()
       ? [group.fulfillment.completedBy.trim()]
       : Array.from(
           new Set(
@@ -144,6 +180,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
               .filter((value): value is string => Boolean(value)),
           ),
         )
+  }
 
   return (
     <div className="space-y-6">
@@ -151,8 +188,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
         <div>
           <h1 className="text-2xl font-semibold">Menu Production Records</h1>
           <p className="mt-2 text-sm text-muted">
-            Review completed and cancelled store requests handled by the
-            Storekeeper.
+            Review rejected production batches and store requests completed or
+            cancelled by the Storekeeper.
           </p>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
@@ -165,7 +202,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
-            summary={`Showing ${paginatedRecords.length} of ${records.length} handled production batches`}
+            summary={`Showing ${paginatedRecords.length} of ${records.length} recorded production batches`}
           />
           <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">
@@ -175,8 +212,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
                   <th className="px-4 py-3 font-semibold">Production date</th>
                   <th className="px-4 py-3 font-semibold">Production code</th>
                   <th className="px-4 py-3 font-semibold">Chef</th>
-                  <th className="px-4 py-3 font-semibold">Store request status</th>
-                  <th className="px-4 py-3 font-semibold">Storekeeper</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Handled by</th>
                   <th className="px-4 py-3 font-semibold">Action</th>
                 </tr>
               </thead>
@@ -190,7 +227,9 @@ const UnitManagerMenuProductionRecordsPage = () => {
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                      {error ? error : 'No completed or cancelled store requests yet.'}
+                      {error
+                        ? error
+                        : 'No rejected, completed, or cancelled production batches yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -207,17 +246,16 @@ const UnitManagerMenuProductionRecordsPage = () => {
                     const submittedByLabel = submittedByNames.length
                       ? submittedByNames.join(', ')
                       : '-'
-                  const handledBy = getHandledByNames(group)
-                  const handledByLabel = handledBy.length ? handledBy.join(', ') : '-'
-                  const summaryItems = aggregateStoreRequestSummary(group.summary)
-                  const resolutionStatus =
-                    group.fulfillment?.status ??
-                    (group.items.some(
-                        (item) => item.storeRequestStatus === 'cancelled',
-                      )
-                        ? 'cancelled'
-                        : 'fulfilled')
+                    const recordStatus = getGroupRecordStatus(group)
+                    if (!recordStatus) return null
+                    const handledBy = getHandledByNames(group, recordStatus)
+                    const handledByLabel = handledBy.length ? handledBy.join(', ') : '-'
+                    const summaryItems = aggregateStoreRequestSummary(group.summary)
                     const fulfillmentItems = group.fulfillment?.items ?? []
+                    const statusLabel =
+                      recordStatus === 'rejected'
+                        ? getApprovalStatusLabel('rejected')
+                        : getStoreRequestStatusLabel(recordStatus)
 
                     return (
                       <Fragment key={`record-${groupKey}`}>
@@ -233,12 +271,12 @@ const UnitManagerMenuProductionRecordsPage = () => {
                           <td className="px-4 py-3">
                             <span
                               className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                                resolutionStatus === 'cancelled'
-                                  ? 'bg-danger/10 text-danger'
-                                  : 'bg-success/10 text-success'
+                                recordStatus === 'fulfilled'
+                                  ? 'bg-success/10 text-success'
+                                  : 'bg-danger/10 text-danger'
                               }`}
                             >
-                              {getStoreRequestStatusLabel(resolutionStatus)}
+                              {statusLabel}
                             </span>
                           </td>
                           <td className="px-4 py-3">{handledByLabel}</td>
@@ -267,6 +305,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="px-4 py-3 font-semibold">Menu</th>
                                           <th className="px-4 py-3 font-semibold">Category</th>
                                           <th className="px-4 py-3 font-semibold">Portion</th>
+                                          <th className="px-4 py-3 font-semibold">Approval status</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -281,6 +320,9 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                             <td className="px-4 py-3">{item.menuName}</td>
                                             <td className="px-4 py-3">{item.category}</td>
                                             <td className="px-4 py-3">{item.portion}</td>
+                                            <td className="px-4 py-3">
+                                              {getApprovalStatusLabel(item.approvalStatus)}
+                                            </td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -290,7 +332,9 @@ const UnitManagerMenuProductionRecordsPage = () => {
 
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
                                   <p className="text-xs text-muted">
-                                    {resolutionStatus === 'cancelled'
+                                    {recordStatus === 'rejected'
+                                      ? 'Rejected production summary'
+                                      : recordStatus === 'cancelled'
                                       ? 'Cancelled ingredient summary'
                                       : 'Planned vs actual issuance'}
                                   </p>
@@ -309,7 +353,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {resolutionStatus === 'fulfilled' &&
+                                        {recordStatus === 'fulfilled' &&
                                         fulfillmentItems.length > 0 ? (
                                           fulfillmentItems.map((item, itemIndex) => (
                                             <tr
@@ -372,11 +416,12 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                     </table>
                                   </div>
                                   <p className="mt-3 text-xs text-muted">
-                                    Handled by: {handledByLabel}
+                                    {recordStatus === 'rejected' ? 'Reviewed by' : 'Handled by'}:{' '}
+                                    {handledByLabel}
                                   </p>
                                   <p className="mt-2 text-xs text-muted">
-                                    Handled at:{' '}
-                                    {group.fulfillment?.completedAt
+                                    {recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}:{' '}
+                                    {recordStatus !== 'rejected' && group.fulfillment?.completedAt
                                       ? new Date(
                                           group.fulfillment.completedAt,
                                         ).toLocaleString()
@@ -384,7 +429,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                   </p>
                                   {group.fulfillment?.note ? (
                                     <p className="mt-2 text-xs text-muted">
-                                      {resolutionStatus === 'cancelled'
+                                      {recordStatus === 'cancelled'
                                         ? 'Cancellation reason: '
                                         : 'Storekeeper note: '}
                                       {group.fulfillment.note}

@@ -58,6 +58,7 @@ type StoreRequestMenu = {
   site?: string;
   productionCode?: string;
   submittedByName?: string;
+  reviewedBy?: string;
   recipeId?: string;
   recipeCode?: string;
   menuName: string;
@@ -1239,6 +1240,7 @@ export class MenuProductionsService implements OnModuleInit {
         String(menu.storeCancelledBy ?? '').trim() || undefined;
       const cancellationReason =
         String(menu.storeCancellationReason ?? '').trim() || undefined;
+      const reviewedBy = String(menu.reviewedBy ?? '').trim() || undefined;
 
       if (
         !group.fulfillment &&
@@ -1271,6 +1273,7 @@ export class MenuProductionsService implements OnModuleInit {
           String(menu.productionCode ?? ''),
         ),
         submittedByName,
+        reviewedBy,
         recipeId: resolvedRecipeId,
         recipeCode: resolvedRecipeCode,
         menuName: String(menu.menuName ?? ''),

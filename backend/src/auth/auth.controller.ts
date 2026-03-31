@@ -37,7 +37,10 @@ export class AuthController {
   ) {
     const tokens = await this.auth.register(dto.name, dto.email, dto.password);
     this.setRefreshCookie(res, tokens.refreshToken);
-    return { accessToken: tokens.accessToken };
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 
   @Post('login')
@@ -48,7 +51,10 @@ export class AuthController {
   ) {
     const tokens = await this.auth.login(dto.email, dto.password);
     this.setRefreshCookie(res, tokens.refreshToken);
-    return { accessToken: tokens.accessToken };
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 
   @Post('refresh')
@@ -59,14 +65,17 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const cookieToken = this.readCookie(req, REFRESH_COOKIE_NAME);
-    const refreshToken = cookieToken ?? dto.refreshToken;
+    const refreshToken = dto.refreshToken ?? cookieToken;
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
     }
 
     const tokens = await this.auth.refresh(refreshToken);
     this.setRefreshCookie(res, tokens.refreshToken);
-    return { accessToken: tokens.accessToken };
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 
   @Post('logout')

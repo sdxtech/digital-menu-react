@@ -289,7 +289,7 @@ const StorekeeperPage = () => {
       name: item.name,
       unitOfMeasures: item.unitOfMeasures,
       plannedQty: item.qty,
-      actualQty: '',
+      actualQty: formatQuantity(item.qty),
       reason: '',
       isAdditional: false,
     }))
@@ -1109,7 +1109,8 @@ const StorekeeperPage = () => {
                 <div>
                   <p className="text-xs text-muted">Actual issuance</p>
                   <p className="mt-1 text-sm text-muted">
-                    Fill actual qty manually. Use dot decimal format like `0.5`.
+                    Actual qty is prefilled from planned qty and can still be
+                    edited manually. Use dot decimal format like `0.5`.
                   </p>
                   <p className="mt-1 text-sm text-muted">
                     Add an ingredient row when the planned ingredient is unavailable

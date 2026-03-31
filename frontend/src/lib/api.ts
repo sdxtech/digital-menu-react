@@ -17,8 +17,13 @@ export class ApiError extends Error {
   }
 }
 
-const AUTH_STORAGE_KEYS = ['dm-auth-user', 'dm-auth-token']
+const AUTH_STORAGE_KEYS = [
+  'dm-auth-user',
+  'dm-auth-token',
+  'dm-auth-refresh-token',
+]
 const TOKEN_KEY = 'dm-auth-token'
+const REFRESH_TOKEN_KEY = 'dm-auth-refresh-token'
 let hasRedirected = false
 let refreshPromise: Promise<string | null> | null = null
 
@@ -41,27 +46,43 @@ const handleUnauthorized = () => {
   }
 }
 
+const readRefreshToken = () => {
+  try {
+    return sessionStorage.getItem(REFRESH_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
 const tryRefreshAccessToken = async () => {
   if (refreshPromise) return refreshPromise
 
   refreshPromise = (async () => {
     try {
+      const refreshToken = readRefreshToken()
       const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
       })
       if (!response.ok) return null
 
-      const data = (await response.json()) as { accessToken?: string }
+      const data = (await response.json()) as {
+        accessToken?: string
+        refreshToken?: string
+      }
       const nextAccessToken = data?.accessToken
       if (!nextAccessToken) return null
 
       sessionStorage.setItem(TOKEN_KEY, nextAccessToken)
       localStorage.removeItem(TOKEN_KEY)
+      if (data?.refreshToken) {
+        sessionStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken)
+        localStorage.removeItem(REFRESH_TOKEN_KEY)
+      }
       return nextAccessToken
     } catch {
       return null
