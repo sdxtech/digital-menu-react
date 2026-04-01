@@ -1,53 +1,76 @@
 # digital-menu-react
 
-## Project Structure
+Project ini isinya aplikasi Digital Menu Engineering.
 
-- `frontend`: React + Vite app
-- `backend`: NestJS API
-- `infra`: local dependencies (MongoDB, Redis, MinIO) for development
+Stack-nya dibagi jadi tiga bagian:
 
-## Environment Setup
+- `frontend` buat React + Vite
+- `backend` buat API NestJS
+- `infra` buat service lokal yang dibutuhin waktu development, terutama MongoDB, Redis, dan MinIO
 
-### Frontend
+## Menjalankan project secara lokal
 
-1. Copy `frontend/.env.example` to `frontend/.env`.
-2. Set `VITE_API_URL` to your backend URL.
+Kalau di Windows, cara paling praktis biasanya pakai script yang sudah ada di root.
 
-Notes:
-- Production build now requires `VITE_API_URL`.
+Sebelum itu:
 
-### Backend
+1. copy `frontend/.env.example` jadi `frontend/.env`
+2. copy `backend/.env.example` jadi `backend/.env`
+3. install dependency di `frontend` dan `backend`
+4. pastikan Docker Desktop sudah nyala
 
-1. Copy `backend/.env.example` to `backend/.env`.
-2. Fill all required variables for database, Redis, S3, JWT, and SMTP.
+Setelah itu tinggal jalankan:
 
-## Local Validation Before Deploy
-
-Run these checks:
-
-```bash
-cd frontend
-npm run lint
-npm run build
-
-cd ../backend
-npx eslint "{src,apps,libs,test}/**/*.ts"
-npm run build
-npm test -- --runInBand
-npm run test:e2e -- --runInBand
+```powershell
+.\start-digital-menu.bat
 ```
 
-## Production Compose Template
+Script ini akan:
 
-Use `docker-compose.prod.example.yml` as a template and provide environment values from your deploy system or `.env` file.
+- menyalakan service di folder `infra`
+- menjalankan backend dengan `npm run start:dev`
+- menjalankan frontend dengan `npm run dev`
 
-Health endpoints:
-- `GET /health/live`
-- `GET /health/ready`
+Default URL waktu local:
 
-Minimum required values:
+- frontend: `http://localhost:5173`
+- backend: `http://localhost:3000`
+
+Kalau mau stop semuanya:
+
+```powershell
+.\stop-digital-menu.bat
+```
+
+## Kalau mau jalanin manual
+
+Kalau lagi butuh troubleshoot atau memang pengen start satu-satu, biasanya saya jalanin begini:
+
+```powershell
+cd infra
+docker compose up -d
+
+cd ..\backend
+npm install
+npm run start:dev
+
+cd ..\frontend
+npm install
+npm run dev
+```
+
+## Environment yang penting
+
+Frontend simpel, yang paling penting cuma:
+
+- `VITE_API_URL`
+
+Backend lebih banyak karena nyambung ke database, redis, storage, dan email. Minimal jangan lupa isi:
+
+- `PORT`
 - `CORS_ORIGIN`
 - `MONGO_URI`
+- `REDIS_URL`
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
 - `S3_ENDPOINT`
@@ -60,3 +83,38 @@ Minimum required values:
 - `SMTP_PORT`
 - `SMTP_USER`
 - `SMTP_PASS`
+
+Contoh value awal sudah ada di `frontend/.env.example` dan `backend/.env.example`, jadi tinggal sesuaikan saja.
+
+## Cek sebelum build atau deploy
+
+Biasanya yang saya cek dulu minimal ini:
+
+```powershell
+cd frontend
+npm run lint
+npm run build
+
+cd ..\backend
+npm run build
+npm test -- --runInBand
+npm run test:e2e -- --runInBand
+```
+
+Kalau mau lint backend juga, sudah ada script:
+
+```powershell
+cd backend
+npm run lint
+```
+
+## Catatan deploy
+
+Di root ada `docker-compose.prod.example.yml` yang bisa dipakai sebagai starting point untuk compose production.
+
+Backend juga sudah punya health check:
+
+- `GET /health/live`
+- `GET /health/ready`
+
+Sisanya tinggal sesuaikan environment production, terutama untuk koneksi database, redis, object storage, JWT secret, dan SMTP.
