@@ -27,7 +27,10 @@ Thumbs.db
 
 # Docker
 **/data/
+<<<<<<< HEAD
 
 # Uploads
 uploads/
 backend/uploads/
+=======
+>>>>>>> origin/dev
