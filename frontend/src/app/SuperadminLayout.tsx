@@ -16,16 +16,17 @@ const navItems = [
       <i className={`bi bi-box-arrow-down ${className}`} aria-hidden="true" />
     ),
   },
+  {
+    label: 'Site Management',
+    to: '/superadmin/sites',
+    icon: (className: string) => (
+      <i className={`bi bi-buildings ${className}`} aria-hidden="true" />
+    ),
+  },
 ]
 
 const SuperadminLayout = () => {
-  return (
-    <RoleLayout
-      workspaceLabel="Superadmin Workspace"
-      defaultEmail="superadmin@example.com"
-      navItems={navItems}
-    />
-  )
+  return <RoleLayout navItems={navItems} />
 }
 
 export default SuperadminLayout
