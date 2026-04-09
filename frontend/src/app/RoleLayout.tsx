@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import { useAuth } from '../lib/auth'
+import { roleLabelFor, useAuth } from '../lib/auth'
 
 type NavItem = {
   label: string
@@ -11,17 +11,18 @@ type NavItem = {
 }
 
 type RoleLayoutProps = {
-  workspaceLabel: string
-  defaultEmail: string
   navItems: NavItem[]
 }
 
-const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps) => {
+const RoleLayout = ({ navItems }: RoleLayoutProps) => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
   )
+  const userName = user?.name?.trim() || user?.email || 'Unknown User'
+  const userRole = user ? roleLabelFor(user.role) : 'Workspace'
+  const userSite = user?.siteName?.trim() || 'No site assigned'
 
   const handleLogout = () => {
     logout()
@@ -38,14 +39,17 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
                 DM
               </div>
               <div>
+                <p className="text-sm font-semibold text-white">
+                  {userName} - {userRole}
+                </p>
                 <p className="text-xs text-white/70">
-                  {workspaceLabel}
+                  {userSite}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
-                {user?.email ?? defaultEmail}
+                {user?.email ?? 'No email'}
               </div>
               <button
                 type="button"

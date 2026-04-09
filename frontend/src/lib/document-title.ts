@@ -93,6 +93,10 @@ const titleMatchers: TitleMatcher[] = [
     path: '/superadmin/store-request-export',
     getPageTitle: () => 'Store Request Export',
   },
+  {
+    path: '/superadmin/sites',
+    getPageTitle: () => 'Site Management',
+  },
 ]
 
 const formatDocumentTitle = (pageTitle?: string) =>

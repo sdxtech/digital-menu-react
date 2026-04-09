@@ -21,6 +21,7 @@ import { RecipesModule } from './recipes/recipes.module';
 import { MenuProductionsModule } from './menu-productions/menu-productions.module';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { SitesModule } from './sites/sites.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { HealthModule } from './health/health.module';
     CategoriesModule,
     RecipesModule,
     MenuProductionsModule,
+    SitesModule,
     NotificationsModule,
     FilesModule,
     ImportsModule,
