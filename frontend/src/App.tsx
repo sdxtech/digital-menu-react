@@ -17,6 +17,7 @@ import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductio
 import UnitManagerPage from './app/UnitManagerPage'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import SuperadminLayout from './app/SuperadminLayout'
+import SuperadminSitesPage from './app/SuperadminSitesPage'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 import { useRouteDocumentTitle } from './lib/document-title'
@@ -97,6 +98,7 @@ function App() {
         <Route element={<RequireRole role="superadmin" />}>
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route index element={<SuperadminUsersPage />} />
+            <Route path="sites" element={<SuperadminSitesPage />} />
             <Route
               path="store-request-export"
               element={<SuperadminStoreRequestExportPage />}

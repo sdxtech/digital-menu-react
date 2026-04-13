@@ -90,6 +90,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'User Management',
   },
   {
+    path: '/superadmin/sites',
+    getPageTitle: () => 'Site Management',
+  },
+  {
     path: '/superadmin/store-request-export',
     getPageTitle: () => 'Store Request Export',
   },

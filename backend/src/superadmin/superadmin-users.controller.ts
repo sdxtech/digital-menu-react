@@ -76,6 +76,7 @@ export class SuperadminUsersController {
       name: dto.name,
       email: dto.email,
       sites: dto.sites,
+      siteId: dto.siteId,
     });
   }
 
@@ -151,6 +152,7 @@ export class SuperadminUsersController {
       passwordHash,
       roles: roles.length ? roles : undefined,
       sites: dto.sites,
+      siteId: dto.siteId,
     });
 
     return {
@@ -159,6 +161,7 @@ export class SuperadminUsersController {
       email: created.email,
       roles: created.roles,
       sites: created.sites ?? [],
+      siteId: created.siteId ? String(created.siteId) : undefined,
       isActive: created.isActive,
     };
   }

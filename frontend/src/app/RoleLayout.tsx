@@ -14,9 +14,15 @@ type RoleLayoutProps = {
   workspaceLabel: string
   defaultEmail: string
   navItems: NavItem[]
+  showSite?: boolean
 }
 
-const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps) => {
+const RoleLayout = ({
+  workspaceLabel,
+  defaultEmail,
+  navItems,
+  showSite = true,
+}: RoleLayoutProps) => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -27,6 +33,7 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
     logout()
     navigate('/login', { replace: true })
   }
+  const siteLabel = user?.siteName ?? user?.site ?? 'No site assigned'
 
   return (
     <AppShell>
@@ -44,6 +51,11 @@ const RoleLayout = ({ workspaceLabel, defaultEmail, navItems }: RoleLayoutProps)
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {showSite ? (
+                <div className="max-w-44 truncate rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
+                  Site: {siteLabel}
+                </div>
+              ) : null}
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
                 {user?.email ?? defaultEmail}
               </div>

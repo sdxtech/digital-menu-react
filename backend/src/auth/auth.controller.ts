@@ -92,9 +92,10 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@Req() req: AuthenticatedRequest) {
-    const { sub, name, email, roles, appRole, site } = req.user;
+    const { sub, name, email, roles, appRole, site, siteId, siteName } =
+      req.user;
     // BACKEND LOGIC: appRole is derived in auth service and returned here.
-    return { id: sub, name, email, roles, appRole, site };
+    return { id: sub, name, email, roles, appRole, site, siteId, siteName };
   }
 
   private setRefreshCookie(res: Response, refreshToken: string) {

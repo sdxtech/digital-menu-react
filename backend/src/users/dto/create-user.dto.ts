@@ -26,4 +26,8 @@ export class CreateUserDto {
   @IsArray()
   @IsString({ each: true })
   sites?: string[];
+
+  @IsOptional()
+  @IsString()
+  siteId?: string;
 }

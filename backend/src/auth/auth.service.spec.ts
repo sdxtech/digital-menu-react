@@ -28,6 +28,11 @@ describe('AuthService', () => {
     setRefreshToken: jest.fn(),
   });
 
+  const makeSites = () => ({
+    findSummaryById: jest.fn(),
+    findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
+  });
+
   const makeJwt = () => ({
     signAsync: jest.fn(),
     verifyAsync: jest.fn(),
@@ -35,10 +40,12 @@ describe('AuthService', () => {
 
   it('rotates refresh token on refresh', async () => {
     const users = makeUsers();
+    const sites = makeSites();
     const jwt = makeJwt();
     const config = makeConfig();
     const service = new AuthService(
       users as never,
+      sites as never,
       jwt as never,
       config as never,
     );
@@ -74,10 +81,12 @@ describe('AuthService', () => {
 
   it('rejects refresh token when hash does not match', async () => {
     const users = makeUsers();
+    const sites = makeSites();
     const jwt = makeJwt();
     const config = makeConfig();
     const service = new AuthService(
       users as never,
+      sites as never,
       jwt as never,
       config as never,
     );
@@ -102,10 +111,12 @@ describe('AuthService', () => {
 
   it('revokes session when refresh token is idle-timed out', async () => {
     const users = makeUsers();
+    const sites = makeSites();
     const jwt = makeJwt();
     const config = makeConfig();
     const service = new AuthService(
       users as never,
+      sites as never,
       jwt as never,
       config as never,
     );
@@ -131,10 +142,12 @@ describe('AuthService', () => {
 
   it('stores refresh token hash on login', async () => {
     const users = makeUsers();
+    const sites = makeSites();
     const jwt = makeJwt();
     const config = makeConfig();
     const service = new AuthService(
       users as never,
+      sites as never,
       jwt as never,
       config as never,
     );
