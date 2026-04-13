@@ -11,8 +11,14 @@ import { apiFetch } from './api'
 export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'
 
 export type User = {
+  id?: string
+  name?: string
   email: string
   role: Role
+  roles?: string[]
+  site?: string
+  siteId?: string
+  siteName?: string
 }
 
 type AuthContextValue = {
@@ -125,9 +131,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     })
 
     let nextRole: Role = 'chef'
+    let me: {
+      id?: string
+      name?: string
+      email?: string
+      roles?: string[]
+      appRole?: Role
+      site?: string
+      siteId?: string
+      siteName?: string
+    } | null = null
     try {
       // FRONTEND AUTH: role is provided by backend (/auth/me).
-      const me = await apiFetch<{ roles?: string[]; appRole?: Role }>(
+      me = await apiFetch<{
+        id?: string
+        name?: string
+        email?: string
+        roles?: string[]
+        appRole?: Role
+        site?: string
+        siteId?: string
+        siteName?: string
+      }>(
         '/auth/me',
         undefined,
         nextAccessToken,
@@ -139,8 +164,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const nextUser: User = {
-      email,
+      id: me?.id,
+      name: me?.name,
+      email: me?.email ?? email,
       role: nextRole,
+      roles: me?.roles,
+      site: me?.site,
+      siteId: me?.siteId,
+      siteName: me?.siteName,
     }
     setUser(nextUser)
     writeSessionStorage(USER_KEY, JSON.stringify(nextUser))

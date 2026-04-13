@@ -66,6 +66,7 @@ const ChefLayout = () => {
     logout()
     navigate('/login', { replace: true })
   }
+  const siteLabel = user?.siteName ?? user?.site ?? 'No site assigned'
 
   return (
     <AppShell>
@@ -83,6 +84,9 @@ const ChefLayout = () => {
             </div>
             </div>
             <div className="flex items-center gap-2">
+              <div className="max-w-44 truncate rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
+                Site: {siteLabel}
+              </div>
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
                 {user?.email ?? 'chef@brand.com'}
               </div>

@@ -10,6 +10,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Site Management',
+    to: '/superadmin/sites',
+    icon: (className: string) => (
+      <i className={`bi bi-building ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Store Export',
     to: '/superadmin/store-request-export',
     icon: (className: string) => (
@@ -24,6 +31,7 @@ const SuperadminLayout = () => {
       workspaceLabel="Superadmin Workspace"
       defaultEmail="superadmin@example.com"
       navItems={navItems}
+      showSite={false}
     />
   )
 }
