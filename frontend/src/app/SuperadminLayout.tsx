@@ -31,7 +31,6 @@ const SuperadminLayout = () => {
       workspaceLabel="Superadmin Workspace"
       defaultEmail="superadmin@example.com"
       navItems={navItems}
-      showSite={false}
     />
   )
 }

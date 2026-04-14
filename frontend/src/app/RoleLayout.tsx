@@ -17,6 +17,21 @@ type RoleLayoutProps = {
   showSite?: boolean
 }
 
+const roleLabels: Record<string, string> = {
+  chef: 'Chef',
+  'unit-manager': 'Unit Manager',
+  storekeeper: 'Storekeeper',
+  superadmin: 'Superadmin',
+}
+
+const formatRoles = (roles?: string[]) => {
+  const labels = (roles ?? [])
+    .map((role) => roleLabels[role] ?? role)
+    .filter(Boolean)
+
+  return labels.length ? labels.join(', ') : undefined
+}
+
 const RoleLayout = ({
   workspaceLabel,
   defaultEmail,
@@ -33,7 +48,12 @@ const RoleLayout = ({
     logout()
     navigate('/login', { replace: true })
   }
-  const siteLabel = user?.siteName ?? user?.site ?? 'No site assigned'
+  const displayName = user?.name?.trim() || user?.email || defaultEmail
+  const roleLabel = formatRoles(user?.roles) ?? (user ? roleLabels[user.role] : undefined)
+  const identityLabel = roleLabel ? `${displayName} - ${roleLabel}` : workspaceLabel
+  const siteLabel = showSite
+    ? user?.siteName ?? user?.site ?? 'No site assigned'
+    : user?.siteName ?? user?.site ?? workspaceLabel
 
   return (
     <AppShell>
@@ -45,17 +65,15 @@ const RoleLayout = ({
                 DM
               </div>
               <div>
-                <p className="text-xs text-white/70">
-                  {workspaceLabel}
+                <p className="text-sm font-semibold leading-tight text-white">
+                  {identityLabel}
+                </p>
+                <p className="mt-0.5 text-xs text-white/70">
+                  {siteLabel}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {showSite ? (
-                <div className="max-w-44 truncate rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
-                  Site: {siteLabel}
-                </div>
-              ) : null}
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
                 {user?.email ?? defaultEmail}
               </div>

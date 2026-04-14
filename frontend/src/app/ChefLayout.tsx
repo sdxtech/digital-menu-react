@@ -55,6 +55,21 @@ const navItems = [
   },
 ]
 
+const roleLabels: Record<string, string> = {
+  chef: 'Chef',
+  'unit-manager': 'Unit Manager',
+  storekeeper: 'Storekeeper',
+  superadmin: 'Superadmin',
+}
+
+const formatRoles = (roles?: string[]) => {
+  const labels = (roles ?? [])
+    .map((role) => roleLabels[role] ?? role)
+    .filter(Boolean)
+
+  return labels.length ? labels.join(', ') : undefined
+}
+
 const ChefLayout = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -66,6 +81,9 @@ const ChefLayout = () => {
     logout()
     navigate('/login', { replace: true })
   }
+  const displayName = user?.name?.trim() || user?.email || 'chef@brand.com'
+  const roleLabel = formatRoles(user?.roles) ?? (user ? roleLabels[user.role] : undefined)
+  const identityLabel = roleLabel ? `${displayName} - ${roleLabel}` : 'Chef Workspace'
   const siteLabel = user?.siteName ?? user?.site ?? 'No site assigned'
 
   return (
@@ -77,16 +95,16 @@ const ChefLayout = () => {
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
                 DM
               </div>
-            <div>
-              <p className="text-xs text-white/70">
-                Chef Workspace
-              </p>
-            </div>
+              <div>
+                <p className="text-sm font-semibold leading-tight text-white">
+                  {identityLabel}
+                </p>
+                <p className="mt-0.5 text-xs text-white/70">
+                  {siteLabel}
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="max-w-44 truncate rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
-                Site: {siteLabel}
-              </div>
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
                 {user?.email ?? 'chef@brand.com'}
               </div>

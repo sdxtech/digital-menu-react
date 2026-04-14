@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { ImportDto } from './dto/import.dto';
 import { ImportsService } from './imports.service';
@@ -46,7 +47,7 @@ export class ImportsController {
       dto.fileKey,
       dto.fileName,
       dto.contentType,
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 

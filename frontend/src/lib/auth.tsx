@@ -106,6 +106,7 @@ const readStoredUser = (): User | null => {
     if (!stored) return null
     const parsed = JSON.parse(stored) as User
     if (!parsed?.role || !(parsed.role in rolePaths)) return null
+    if (parsed.role !== 'superadmin' && !parsed.site?.trim()) return null
     return parsed
   } catch {
     return null
@@ -141,26 +142,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       siteId?: string
       siteName?: string
     } | null = null
-    try {
-      // FRONTEND AUTH: role is provided by backend (/auth/me).
-      me = await apiFetch<{
-        id?: string
-        name?: string
-        email?: string
-        roles?: string[]
-        appRole?: Role
-        site?: string
-        siteId?: string
-        siteName?: string
-      }>(
-        '/auth/me',
-        undefined,
-        nextAccessToken,
-      )
-      if (me?.appRole) nextRole = me.appRole as Role
-      else if (me?.roles?.includes('superadmin')) nextRole = 'superadmin'
-    } catch {
-      // ignore auth/me failures and use default role
+    // FRONTEND AUTH: role and site scope are verified by backend (/auth/me).
+    me = await apiFetch<{
+      id?: string
+      name?: string
+      email?: string
+      roles?: string[]
+      appRole?: Role
+      site?: string
+      siteId?: string
+      siteName?: string
+    }>('/auth/me', undefined, nextAccessToken)
+    if (me?.appRole) nextRole = me.appRole as Role
+    else if (me?.roles?.includes('superadmin')) nextRole = 'superadmin'
+
+    if (nextRole !== 'superadmin' && !me?.site?.trim()) {
+      throw new Error('Your account does not have an assigned site.')
     }
 
     const nextUser: User = {

@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { JwtPayload } from '../types/jwt-payload.type';
 import { UsersService } from '../../users/users.service';
+import { AppRole } from '../roles.constants';
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
 const ACTIVITY_UPDATE_MIN_INTERVAL_MS = 60_000;
@@ -31,6 +32,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.users.findByIdWithSessionState(payload.sub);
     if (!user || !user.isActive || !user.refreshTokenHash) {
       throw new UnauthorizedException('SESSION_REVOKED');
+    }
+
+    if (!payload.roles?.includes(AppRole.Superadmin) && !payload.site?.trim()) {
+      throw new UnauthorizedException('SITE_REQUIRED');
     }
 
     if (this.isSessionIdle(user.lastActivityAt)) {

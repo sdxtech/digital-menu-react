@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { DashboardService } from './dashboard.service';
 
@@ -15,6 +16,6 @@ export class DashboardController {
   @Get('chef')
   @Roles(AppRole.Chef, AppRole.Superadmin)
   chefSummary(@Req() req: AuthenticatedRequest) {
-    return this.dashboard.getChefSummary(req.user.site);
+    return this.dashboard.getChefSummary(getUserSiteScope(req.user));
   }
 }

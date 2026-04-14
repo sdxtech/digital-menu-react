@@ -1,4 +1,10 @@
-import { ArrayMinSize, IsArray, IsMongoId, IsNotEmpty, IsString } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsMongoId,
+  IsNotEmpty,
+  IsString,
+} from 'class-validator';
 
 export class CancelStoreRequestBatchDto {
   @IsArray()

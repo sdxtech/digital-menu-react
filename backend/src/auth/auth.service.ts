@@ -10,7 +10,6 @@ import { resolveExpiresIn } from './jwt.utils';
 import { AppRole } from './roles.constants';
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
-const DEFAULT_SITE = 'A1';
 
 type UserSiteInput = {
   roles?: AppRole[];
@@ -176,25 +175,11 @@ export class AuthService {
       };
     }
 
-    if (!user.roles?.includes(AppRole.Superadmin)) {
-      const site = Array.from(
-        (await this.sites.findSummariesByCodes([DEFAULT_SITE])).values(),
-      )[0];
-      if (site) {
-        return {
-          site: site.code,
-          siteId: site.id,
-          siteName: site.name,
-        };
-      }
-
-      return {
-        site: DEFAULT_SITE,
-        siteName: DEFAULT_SITE,
-      };
+    if (user.roles?.includes(AppRole.Superadmin)) {
+      return {};
     }
 
-    return {};
+    throw new UnauthorizedException('User site is required');
   }
 
   private async issueTokens(

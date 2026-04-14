@@ -176,4 +176,122 @@ describe('AuthService', () => {
       'refresh-token',
     );
   });
+
+  it('rejects non-superadmin login when no site is assigned', async () => {
+    const users = makeUsers();
+    const sites = makeSites();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      sites as never,
+      jwt as never,
+      config as never,
+    );
+
+    users.findByEmail.mockResolvedValue({
+      id: 'user-1',
+      name: 'Chef',
+      email: 'chef@corp.test',
+      passwordHash: await bcrypt.hash('secret-pass', 10),
+      isActive: true,
+      roles: [AppRole.Chef],
+      sites: [],
+    });
+
+    await expect(
+      service.login('chef@corp.test', 'secret-pass'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(users.setRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('allows superadmin login without a site assignment', async () => {
+    const users = makeUsers();
+    const sites = makeSites();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      sites as never,
+      jwt as never,
+      config as never,
+    );
+
+    users.findByEmail.mockResolvedValue({
+      id: 'admin-1',
+      name: 'Admin',
+      email: 'admin@corp.test',
+      passwordHash: await bcrypt.hash('secret-pass', 10),
+      isActive: true,
+      roles: [AppRole.Superadmin],
+      sites: [],
+    });
+    jwt.signAsync
+      .mockResolvedValueOnce('access-token')
+      .mockResolvedValueOnce('refresh-token');
+
+    const result = await service.login('admin@corp.test', 'secret-pass');
+
+    expect(result).toEqual({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+    });
+    expect(jwt.signAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sub: 'admin-1',
+        roles: [AppRole.Superadmin],
+        appRole: 'superadmin',
+        site: undefined,
+        siteId: undefined,
+        siteName: undefined,
+      }),
+      { expiresIn: '15m' },
+    );
+    expect(users.setRefreshToken).toHaveBeenCalledWith(
+      'admin-1',
+      'refresh-token',
+    );
+  });
+
+  it('includes assigned superadmin site in the issued access token', async () => {
+    const users = makeUsers();
+    const sites = makeSites();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      sites as never,
+      jwt as never,
+      config as never,
+    );
+
+    users.findByEmail.mockResolvedValue({
+      id: 'admin-1',
+      name: 'Admin',
+      email: 'admin@corp.test',
+      passwordHash: await bcrypt.hash('secret-pass', 10),
+      isActive: true,
+      roles: [AppRole.Superadmin],
+      sites: ['HQ'],
+    });
+    jwt.signAsync
+      .mockResolvedValueOnce('access-token')
+      .mockResolvedValueOnce('refresh-token');
+
+    await service.login('admin@corp.test', 'secret-pass');
+
+    expect(jwt.signAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sub: 'admin-1',
+        roles: [AppRole.Superadmin],
+        appRole: 'superadmin',
+        site: 'HQ',
+        siteName: 'HQ',
+      }),
+      { expiresIn: '15m' },
+    );
+  });
 });

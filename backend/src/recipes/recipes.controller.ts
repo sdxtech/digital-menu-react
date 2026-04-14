@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
@@ -51,14 +52,14 @@ export class RecipesController {
   // BACKEND LOGIC: provide category options for recipe filters.
   @Get('categories')
   @Roles(...ALL_APP_ROLES)
-  listCategories(@Req() req: AuthenticatedRequest) {
-    return this.recipes.listCategories(req.user.site);
+  listCategories() {
+    return this.recipes.listCategories();
   }
 
   @Get()
   @Roles(...ALL_APP_ROLES)
-  list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query, req.user.site);
+  list(@Query() query: ListRecipesQueryDto) {
+    return this.recipes.findAll(query);
   }
 
   @Patch(':id')
@@ -148,7 +149,7 @@ export class RecipesController {
       id: req.user.sub,
       name: req.user.name,
       email: req.user.email,
-      site: req.user.site,
+      site: getUserSiteScope(req.user),
     };
   }
 }
