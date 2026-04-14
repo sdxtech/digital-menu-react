@@ -1,0 +1,49 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: digital-menu-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7
+    container_name: digital-menu-redis
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:latest
+    container_name: digital-menu-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: digital-menu-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+        sleep 1;
+      done;
+      mc mb --ignore-existing local/digital-menu;
+      mc anonymous set download local/digital-menu;
+      mc cors set local/digital-menu /config/cors.json;
+      exit 0;
+      "
+    volumes:
+      - ./minio-cors.json:/config/cors.json:ro
+
+volumes:
+  mongo_data:
+  minio_data:

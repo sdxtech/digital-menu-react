@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --dm-background: #f7f9fc;
+  --dm-surface: #ffffff;
+  --dm-border: #e5eaf2;
+  --dm-foreground: #000000;
+  --dm-muted: #475569;
+
+  --dm-primary: #0b2957;
+  --dm-primary-hover: #0a234b;
+  --dm-primary-soft: #d9e2f7;
+
+  --dm-accent-blue: #3b82f6;
+  --dm-accent-cyan: #06b6d4;
+  --dm-accent-indigo: #6366f1;
+
+  --dm-success: #16a34a;
+  --dm-warning: #f59e0b;
+  --dm-danger: #ef4444;
+}
+
+body {
+  margin: 0;
+  background: var(--dm-background);
+  color: var(--dm-foreground);
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up {
+    animation: none;
+  }
+}
+
+@layer base {
+  h1 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    font-size: 18px;
+    line-height: 28px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  h3 {
+    font-size: 14px !important;
+    line-height: 20px !important;
+    font-weight: 600;
+    letter-spacing: normal;
+  }
+
+  p {
+    font-size: 13px !important;
+    line-height: 20px !important;
+    letter-spacing: normal !important;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+  select {
+    height: 2.5rem !important;
+    min-height: 2.5rem;
+  }
+
+  select {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    line-height: 1.25rem;
+  }
+}
+
+@layer components {
+  .dm-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+
+  .dm-x-button {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-primary transition;
+  }
+
+  .dm-x-button:hover {
+    background-color: var(--dm-primary-soft);
+  }
+
+  .dm-table :is(th, td) {
+    @apply px-3 py-1.5;
+    white-space: nowrap;
+  }
+
+  .dm-table thead th:first-child,
+  .dm-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+  }
+
+  .dm-table thead th:first-child {
+    z-index: 3;
+    background-color: var(--dm-primary);
+  }
+
+  .dm-table tbody td:first-child {
+    z-index: 2;
+    background-color: var(--dm-surface);
+  }
+
+  .dm-table thead th,
+  .dm-table thead th * {
+    font-size: 12px;
+    line-height: 1.2;
+    letter-spacing: normal !important;
+  }
+
+  .dm-table tbody td,
+  .dm-table tbody td * {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .dm-table thead,
+  .dm-table thead.bg-background {
+    background-color: var(--dm-primary);
+  }
+
+  .dm-table thead tr.text-muted,
+  .dm-table thead th {
+    color: var(--dm-surface);
+  }
+
+  .rounded-md.border.border-border.bg-surface > p.text-xs:first-of-type {
+    @apply font-semibold;
+  }
+
+  @supports selector(:has(> table.dm-table)) {
+    :where(div, section, article):has(> table.dm-table) {
+      overflow-x: auto;
+    }
+  }
+}
+
