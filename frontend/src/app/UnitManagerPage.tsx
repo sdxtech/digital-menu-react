@@ -80,6 +80,12 @@ const UnitManagerPage = () => {
   const [menuProductionGroups, setMenuProductionGroups] = useState<
     StoreRequestGroup[]
   >([])
+  const [recipeRejectTarget, setRecipeRejectTarget] = useState<Recipe | null>(
+    null,
+  )
+  const [recipeRejectReason, setRecipeRejectReason] = useState('')
+  const [recipeRejectError, setRecipeRejectError] = useState('')
+  const [recipeRejectSubmitting, setRecipeRejectSubmitting] = useState(false)
   const [expandedRecipeKeys, setExpandedRecipeKeys] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
@@ -156,6 +162,54 @@ const UnitManagerPage = () => {
         : [...prev, groupKey],
     )
   }
+
+  const openRecipeRejectModal = (recipe: Recipe) => {
+    setActionError('')
+    setActionMessage('')
+    setRecipeRejectTarget(recipe)
+    setRecipeRejectReason('')
+    setRecipeRejectError('')
+  }
+
+  const closeRecipeRejectModal = () => {
+    if (recipeRejectSubmitting) return
+    setRecipeRejectTarget(null)
+    setRecipeRejectReason('')
+    setRecipeRejectError('')
+  }
+
+  const handleRejectRecipe = async () => {
+    if (!recipeRejectTarget) return
+    const id = recipeRejectTarget.id ?? recipeRejectTarget._id ?? ''
+    const reason = recipeRejectReason.trim()
+    if (!id) {
+      setRecipeRejectError('Recipe id is missing.')
+      return
+    }
+    if (!reason) {
+      setRecipeRejectError('Rejection reason is required.')
+      return
+    }
+
+    setRecipeRejectSubmitting(true)
+    setActionError('')
+    setActionMessage('')
+    setRecipeRejectError('')
+    try {
+      await rejectRecipe(id, reason)
+      setActionMessage(`${recipeRejectTarget.name} rejected.`)
+      setRecipeRejectTarget(null)
+      setRecipeRejectReason('')
+      fetchPending().catch(() => null)
+    } catch (error) {
+      setRecipeRejectError(
+        error instanceof Error ? error.message : 'Failed to reject recipe.',
+      )
+    } finally {
+      setRecipeRejectSubmitting(false)
+    }
+  }
+
   const handleBulkApproval = async (
     batchLabel: string,
     items: StoreRequestMenu[],
@@ -235,6 +289,78 @@ const UnitManagerPage = () => {
             </p>
           ) : null}
         </div>
+
+        {recipeRejectTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    Reject Recipe
+                  </h2>
+                  <p className="mt-1 text-sm text-muted">
+                    {recipeRejectTarget.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRecipeRejectModal}
+                  className="dm-x-button"
+                  aria-label="Close rejection form"
+                  title="Close"
+                >
+                  <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
+                </button>
+              </div>
+
+              <label className="mt-5 block text-sm font-medium text-foreground">
+                Rejection reason
+              </label>
+              <textarea
+                value={recipeRejectReason}
+                onChange={(event) => {
+                  setRecipeRejectReason(event.target.value)
+                  if (recipeRejectError) setRecipeRejectError('')
+                }}
+                maxLength={500}
+                rows={5}
+                className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                placeholder="Tell the Chef what needs to be corrected."
+              />
+              <p className="mt-2 text-xs text-muted">
+                {recipeRejectReason.trim().length}/500 characters
+              </p>
+              {recipeRejectError ? (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {recipeRejectError}
+                </p>
+              ) : null}
+
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeRecipeRejectModal}
+                  disabled={recipeRejectSubmitting}
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectRecipe}
+                  disabled={recipeRejectSubmitting}
+                  className="rounded-md border border-danger bg-white px-4 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {recipeRejectSubmitting ? 'Rejecting...' : 'Reject recipe'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Approval Recipe</h2>
@@ -322,19 +448,7 @@ const UnitManagerPage = () => {
                               </button>
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  setActionError('')
-                                  try {
-                                    await rejectRecipe(item.id ?? item._id ?? '')
-                                    fetchPending().catch(() => null)
-                                  } catch (error) {
-                                    setActionError(
-                                      error instanceof Error
-                                        ? error.message
-                                        : 'Failed to reject recipe.',
-                                    )
-                                  }
-                                }}
+                                onClick={() => openRecipeRejectModal(item)}
                                 className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
                               >
                                 Reject

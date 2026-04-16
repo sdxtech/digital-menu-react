@@ -35,8 +35,10 @@ type RecipeActor = {
 type RecipeAuditFields = {
   createdBy?: string;
   updatedBy?: string;
+  reviewedBy?: string;
   createdByName?: string;
   updatedByName?: string;
+  reviewedByName?: string;
 };
 
 type ImportWarningCode =
@@ -274,18 +276,67 @@ export class RecipesService {
     id: string,
     status: ApprovalStatus,
     actor?: RecipeActor,
+    rejectionReason?: string,
   ) {
     // BACKEND LOGIC: approval updates also update recipe status.
     const nextStatus = status === 'approved' ? 'active' : 'draft';
+    const reason = rejectionReason?.trim();
+    if (status === 'rejected' && !reason) {
+      throw new BadRequestException('Rejection reason is required.');
+    }
+
     const filter = { _id: id };
     const updatedFields = this.buildActorFields(actor, 'updated');
-    const updatePayload = {
-      approvalStatus: status,
-      status: nextStatus,
-      ...updatedFields,
+    const reviewedFields = this.buildActorFields(actor, 'reviewed');
+    const updatePayload: Record<string, unknown> = {
+      $set: {
+        approvalStatus: status,
+        status: nextStatus,
+        reviewedAt: new Date(),
+        ...updatedFields,
+        ...reviewedFields,
+        ...(status === 'rejected' ? { rejectionReason: reason } : {}),
+      },
     };
+    if (status === 'approved') {
+      updatePayload.$unset = { rejectionReason: '' };
+    }
     const updated = await this.recipeModel
       .findOneAndUpdate(filter, updatePayload, { new: true })
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe not found');
+    return updated;
+  }
+
+  async resubmitRejectedRecipe(id: string, actor?: RecipeActor) {
+    const existing = await this.recipeModel.findById(id).lean();
+    if (!existing) throw new NotFoundException('Recipe not found');
+    if (existing.approvalStatus !== 'rejected') {
+      throw new BadRequestException(
+        'Only rejected recipes can be resubmitted.',
+      );
+    }
+
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        { _id: id },
+        {
+          $set: {
+            approvalStatus: 'pending',
+            status: 'draft',
+            ...updatedFields,
+          },
+          $unset: {
+            rejectionReason: '',
+            reviewedBy: '',
+            reviewedByName: '',
+            reviewedByEmail: '',
+            reviewedAt: '',
+          },
+        },
+        { new: true },
+      )
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
     return updated;
@@ -1288,7 +1339,7 @@ export class RecipesService {
 
   private buildActorFields(
     actor: RecipeActor | undefined,
-    prefix: 'created' | 'updated',
+    prefix: 'created' | 'updated' | 'reviewed',
   ): Record<string, string> {
     if (!actor) return {};
     const fields: Record<string, string> = {};
@@ -1310,6 +1361,9 @@ export class RecipesService {
       if (typeof updatedBy === 'string' && updatedBy) {
         ids.add(updatedBy);
       }
+      if (typeof item.reviewedBy === 'string' && item.reviewedBy) {
+        ids.add(item.reviewedBy);
+      }
     });
 
     if (ids.size === 0) return;
@@ -1325,6 +1379,10 @@ export class RecipesService {
       if (typeof item.updatedBy === 'string' && item.updatedBy) {
         const name = nameMap.get(item.updatedBy);
         if (name) item.updatedByName = name;
+      }
+      if (typeof item.reviewedBy === 'string' && item.reviewedBy) {
+        const name = nameMap.get(item.reviewedBy);
+        if (name) item.reviewedByName = name;
       }
     });
   }
