@@ -31,6 +31,11 @@ type BaseRecipe = {
   category: string
   description?: string
   portionSize?: number
+  approvalStatus?: 'pending' | 'approved' | 'rejected'
+  rejectionReason?: string
+  reviewedBy?: string
+  reviewedByName?: string
+  reviewedByEmail?: string
   ingredients?: RecipeIngredient[]
 }
 
@@ -56,6 +61,7 @@ const ChefCreateMenu = () => {
   const {
     createRecipe,
     updateRecipe,
+    resubmitRecipe,
     importRecipesFromExcel,
     searchRawMaterials,
   } = useChefData()
@@ -64,6 +70,9 @@ const ChefCreateMenu = () => {
     ?.baseRecipe
   const editingRecipeId = baseRecipe?.id ?? ''
   const isEditMode = Boolean(editingRecipeId)
+  const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
+    baseRecipe?.approvalStatus,
+  )
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -96,6 +105,7 @@ const ChefCreateMenu = () => {
   useEffect(() => {
     if (!baseRecipe || baseRecipeRef.current === baseRecipe) return
     baseRecipeRef.current = baseRecipe
+    setCurrentApprovalStatus(baseRecipe.approvalStatus)
 
     const portionSize =
       Number.isFinite(baseRecipe.portionSize) && (baseRecipe.portionSize ?? 0) > 0
@@ -383,7 +393,7 @@ const ChefCreateMenu = () => {
     }
   }
 
-  const handleSaveRecipe = async () => {
+  const handleSaveRecipe = async (options: { resubmit?: boolean } = {}) => {
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
@@ -457,6 +467,10 @@ const ChefCreateMenu = () => {
 
       if (isEditMode && editingRecipeId) {
         await updateRecipe(editingRecipeId, basePayload)
+        if (options.resubmit) {
+          await resubmitRecipe(editingRecipeId)
+          setCurrentApprovalStatus('pending')
+        }
       } else {
         await createRecipe({
           ...basePayload,
@@ -468,9 +482,13 @@ const ChefCreateMenu = () => {
 
       setSubmitError('')
       setSubmitMessage(
-        isEditMode
-          ? 'Recipe updated successfully.'
-          : 'Recipe saved and submitted to the Unit Manager.',
+        options.resubmit
+          ? 'Recipe updated and resubmitted to the Unit Manager.'
+          : isRejectedRecipe
+            ? 'Recipe draft saved. Resubmit when ready.'
+          : isEditMode
+            ? 'Recipe updated successfully.'
+            : 'Recipe saved and submitted to the Unit Manager.',
       )
     } catch (error) {
       const message =
@@ -490,6 +508,13 @@ const ChefCreateMenu = () => {
     (ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE,
     ingredientPage * INGREDIENT_ROWS_PER_PAGE,
   )
+  const isRejectedRecipe =
+    isEditMode && currentApprovalStatus === 'rejected'
+  const rejectionReviewer =
+    baseRecipe?.reviewedByName?.trim() ||
+    baseRecipe?.reviewedByEmail?.trim() ||
+    baseRecipe?.reviewedBy?.trim() ||
+    'Unit Manager'
 
   return (
     <div className="space-y-6">
@@ -509,6 +534,18 @@ const ChefCreateMenu = () => {
             <span>Import recipes</span>
           </button>
         </div>
+
+        {isRejectedRecipe ? (
+          <div className="rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
+            <p className="font-semibold text-danger">
+              Rejected by {rejectionReviewer}
+            </p>
+            <p className="mt-2 text-foreground">
+              {baseRecipe?.rejectionReason?.trim() ||
+                'No rejection reason was provided.'}
+            </p>
+          </div>
+        ) : null}
 
         {importOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -809,13 +846,28 @@ const ChefCreateMenu = () => {
               <p className="text-xs font-medium text-primary">{submitMessage}</p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={handleSaveRecipe}
-            className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
-          >
-            {isEditMode ? 'Update recipe' : 'Save & submit to Unit Manager'}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {isRejectedRecipe ? (
+              <button
+                type="button"
+                onClick={() => handleSaveRecipe()}
+                className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+              >
+                Save draft
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
+              className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
+            >
+              {isRejectedRecipe
+                ? 'Resubmit to Unit Manager'
+                : isEditMode
+                  ? 'Update recipe'
+                  : 'Save & submit to Unit Manager'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

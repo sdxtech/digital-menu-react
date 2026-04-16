@@ -25,6 +25,7 @@ import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
+import { RejectRecipeDto } from './dto/reject-recipe.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import { RecipesService } from './recipes.service';
@@ -80,8 +81,23 @@ export class RecipesController {
 
   @Patch(':id/reject')
   @Roles(AppRole.UnitManager, AppRole.Superadmin)
-  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'rejected', this.buildActor(req));
+  reject(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RejectRecipeDto,
+  ) {
+    return this.recipes.setApprovalStatus(
+      id,
+      'rejected',
+      this.buildActor(req),
+      dto.reason,
+    );
+  }
+
+  @Patch(':id/resubmit')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  resubmit(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.resubmitRejectedRecipe(id, this.buildActor(req));
   }
 
   @Patch(':id/photo')

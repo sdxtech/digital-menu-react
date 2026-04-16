@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ITEMS_PER_PAGE = 10
@@ -33,6 +34,11 @@ type Recipe = {
   portionSize: number
   status: 'draft' | 'active'
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
+  reviewedByName?: string
+  reviewedByEmail?: string
+  reviewedAt?: string
+  rejectionReason?: string
   ingredients: RecipeIngredient[]
 }
 
@@ -44,6 +50,14 @@ type PresignResponse = {
 
 const statusLabel = (status: 'draft' | 'active') =>
   status === 'active' ? 'Active' : 'Draft'
+
+const approvalStatusClass = (
+  status: 'pending' | 'approved' | 'rejected',
+) => {
+  if (status === 'approved') return 'text-primary'
+  if (status === 'rejected') return 'text-danger'
+  return 'text-muted'
+}
 
 const formatActorLabel = (name?: string) => {
   if (name) return name
@@ -142,6 +156,9 @@ const ChefMenuBank = () => {
   const [statusFilters, setStatusFilters] = useState<Array<'draft' | 'active'>>(
     [],
   )
+  const [approvalFilter, setApprovalFilter] = useState<
+    '' | 'pending' | 'approved' | 'rejected'
+  >('')
   const [categoryFilters, setCategoryFilters] = useState<string[]>([])
   const [filterOpen, setFilterOpen] = useState(false)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
@@ -159,7 +176,8 @@ const ChefMenuBank = () => {
   const [photoDeleting, setPhotoDeleting] = useState(false)
   const [photoInputKey, setPhotoInputKey] = useState(0)
 
-  const activeFilterCount = statusFilters.length + categoryFilters.length
+  const activeFilterCount =
+    statusFilters.length + categoryFilters.length + (approvalFilter ? 1 : 0)
 
   // FRONTEND VIEW: fetch filter categories from backend.
   const fetchCategories = useCallback(async () => {
@@ -192,6 +210,9 @@ const ChefMenuBank = () => {
       if (categoryFilters.length) {
         params.set('categories', categoryFilters.join(','))
       }
+      if (approvalFilter) {
+        params.set('approvalStatus', approvalFilter)
+      }
 
       const data = await apiFetch<{
         items: Recipe[]
@@ -211,7 +232,7 @@ const ChefMenuBank = () => {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, page, searchTerm, statusFilters, categoryFilters])
+  }, [accessToken, page, searchTerm, statusFilters, categoryFilters, approvalFilter])
 
   useEffect(() => {
     fetchCategories().catch(() => null)
@@ -223,7 +244,7 @@ const ChefMenuBank = () => {
 
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, statusFilters, categoryFilters])
+  }, [searchTerm, statusFilters, categoryFilters, approvalFilter])
 
   const selectedRecipe =
     selectedRecipeId === null
@@ -245,6 +266,16 @@ const ChefMenuBank = () => {
   const updatedAtLabel = selectedRecipe
     ? formatTimestamp(selectedRecipe.updatedAt ?? selectedRecipe.createdAt)
     : 'Unknown'
+  const reviewedByLabel = selectedRecipe
+    ? formatActorLabel(
+        selectedRecipe.reviewedByName ||
+          selectedRecipe.reviewedByEmail ||
+          selectedRecipe.reviewedBy,
+      )
+    : 'Unknown'
+  const reviewedAtLabel = selectedRecipe
+    ? formatTimestamp(selectedRecipe.reviewedAt)
+    : 'Unknown'
   const photoModalRecipe = photoModalRecipeId
     ? recipes.find((item) => getRecipeId(item) === photoModalRecipeId) ?? null
     : null
@@ -255,8 +286,14 @@ const ChefMenuBank = () => {
     missingFields: getMissingIngredientFields(ingredient),
   }))
   const previewPhotoUrl = photoDraftUrl ?? activePhotoUrl
+  const canEditSelectedRecipe =
+    selectedRecipe?.approvalStatus === 'rejected'
+  const canCreateFromSelectedRecipe =
+    selectedRecipe?.approvalStatus === 'approved'
 
   const handleCreateFromRecipe = (recipe: Recipe) => {
+    if (recipe.approvalStatus !== 'approved') return
+
     navigate('/chef/menu-create', {
       state: {
         baseRecipe: {
@@ -271,6 +308,8 @@ const ChefMenuBank = () => {
   }
 
   const handleEditRecipe = (recipe: Recipe) => {
+    if (recipe.approvalStatus !== 'rejected') return
+
     const recipeId = getRecipeId(recipe)
     if (!recipeId) return
 
@@ -282,6 +321,11 @@ const ChefMenuBank = () => {
           category: recipe.category,
           description: recipe.description ?? '',
           portionSize: recipe.portionSize,
+          approvalStatus: recipe.approvalStatus,
+          rejectionReason: recipe.rejectionReason ?? '',
+          reviewedByName: recipe.reviewedByName ?? '',
+          reviewedByEmail: recipe.reviewedByEmail ?? '',
+          reviewedBy: recipe.reviewedBy ?? '',
           ingredients: recipe.ingredients ?? [],
         },
       },
@@ -622,6 +666,38 @@ const ChefMenuBank = () => {
 
                   <div className="mt-4 flex items-center justify-between">
                     <p className="text-xs text-muted">
+                      Approval
+                    </p>
+                    {approvalFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => setApprovalFilter('')}
+                        className="text-xs font-semibold text-primary"
+                      >
+                        Reset
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {(['pending', 'approved', 'rejected'] as const).map((status) => (
+                      <label
+                        key={status}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="radio"
+                          name="chef-recipe-approval-status"
+                          checked={approvalFilter === status}
+                          onChange={() => setApprovalFilter(status)}
+                          className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-primary/30"
+                        />
+                        <span>{getApprovalStatusLabel(status)}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <p className="text-xs text-muted">
                       Category
                     </p>
                     {categoryFilters.length ? (
@@ -702,19 +778,20 @@ const ChefMenuBank = () => {
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
+                  <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes yet.'}
                     </td>
                   </tr>
@@ -738,6 +815,15 @@ const ChefMenuBank = () => {
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">
                           <span>{statusLabel(recipe.status)}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`font-medium ${approvalStatusClass(
+                              recipe.approvalStatus,
+                            )}`}
+                          >
+                            {getApprovalStatusLabel(recipe.approvalStatus)}
+                          </span>
                         </td>
                         <td className="px-5 py-4">
                           <button
@@ -780,20 +866,24 @@ const ChefMenuBank = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleCreateFromRecipe(selectedRecipe)}
-                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-              >
-                Create menu from this recipe
-              </button>
-              <button
-                type="button"
-                onClick={() => handleEditRecipe(selectedRecipe)}
-                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
-              >
-                Edit recipe
-              </button>
+              {canCreateFromSelectedRecipe ? (
+                <button
+                  type="button"
+                  onClick={() => handleCreateFromRecipe(selectedRecipe)}
+                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                >
+                  Create menu from this recipe
+                </button>
+              ) : null}
+              {canEditSelectedRecipe ? (
+                <button
+                  type="button"
+                  onClick={() => handleEditRecipe(selectedRecipe)}
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                >
+                  Edit recipe
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setSelectedRecipeId(null)}
@@ -805,12 +895,12 @@ const ChefMenuBank = () => {
               </button>
             </div>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MenuPhotoFrame
               size="lg"
               photoUrl={selectedRecipePhoto}
               onClick={
-                selectedRecipeKey
+                canEditSelectedRecipe && selectedRecipeKey
                   ? () => openPhotoModal(selectedRecipeKey)
                   : undefined
               }
@@ -840,7 +930,34 @@ const ChefMenuBank = () => {
                 {selectedRecipe.portionSize}
               </p>
             </div>
+            <div className="rounded-md border border-border bg-background p-4">
+              <p className="text-xs text-muted">
+                Approval
+              </p>
+              <p
+                className={`mt-2 text-sm font-medium ${approvalStatusClass(
+                  selectedRecipe.approvalStatus,
+                )}`}
+              >
+                {getApprovalStatusLabel(selectedRecipe.approvalStatus)}
+              </p>
+            </div>
           </div>
+
+          {selectedRecipe.approvalStatus === 'rejected' ? (
+            <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
+              <p className="font-semibold text-danger">
+                Rejected by Unit Manager
+              </p>
+              <p className="mt-2 text-foreground">
+                {selectedRecipe.rejectionReason?.trim() ||
+                  'No rejection reason was provided.'}
+              </p>
+              <p className="mt-2 text-xs text-muted">
+                Reviewed by {reviewedByLabel} | {reviewedAtLabel}
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-6">
             <h3 className="font-semibold text-foreground">

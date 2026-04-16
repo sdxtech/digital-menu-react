@@ -44,6 +44,11 @@ export type Recipe = {
   updatedBy?: string
   updatedByName?: string
   updatedByEmail?: string
+  reviewedBy?: string
+  reviewedByName?: string
+  reviewedByEmail?: string
+  reviewedAt?: string
+  rejectionReason?: string
 }
 
 export type MenuProduction = {
@@ -151,7 +156,8 @@ type ChefDataContextValue = ChefDataState & {
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
   importRecipesFromExcel: (file: File) => Promise<number>
   approveRecipe: (id: string) => Promise<void>
-  rejectRecipe: (id: string) => Promise<void>
+  rejectRecipe: (id: string, reason: string) => Promise<void>
+  resubmitRecipe: (id: string) => Promise<void>
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
   addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
@@ -226,6 +232,11 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     updatedBy: item.updatedBy ?? '',
     updatedByName: item.updatedByName ?? '',
     updatedByEmail: item.updatedByEmail ?? '',
+    reviewedBy: item.reviewedBy ?? '',
+    reviewedByName: item.reviewedByName ?? '',
+    reviewedByEmail: item.reviewedByEmail ?? '',
+    reviewedAt: item.reviewedAt ?? '',
+    rejectionReason: item.rejectionReason ?? '',
   }
 }
 
@@ -387,12 +398,31 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
-  const rejectRecipe = async (id: string) => {
+  const rejectRecipe = async (id: string, reason: string) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<RecipeApi>(
       `/recipes/${id}/reject`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      },
+      accessToken,
+    )
+    const mapped = mapRecipe(updated)
+    setState((prev) => ({
+      ...prev,
+      recipes: upsertById(prev.recipes, mapped),
+    }))
+  }
+
+  const resubmitRecipe = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+    const updated = await apiFetch<RecipeApi>(
+      `/recipes/${id}/resubmit`,
       { method: 'PATCH' },
       accessToken,
     )
@@ -729,6 +759,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     importRecipesFromExcel,
     approveRecipe,
     rejectRecipe,
+    resubmitRecipe,
     addMenuProduction,
     addMenuProductionsBulk,
     approveMenuProduction,
