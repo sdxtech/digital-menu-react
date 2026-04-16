@@ -60,6 +60,21 @@ export class Recipe {
   })
   approvalStatus: ApprovalStatus;
 
+  @Prop({ type: String, index: true })
+  reviewedBy?: string;
+
+  @Prop({ type: String, trim: true })
+  reviewedByName?: string;
+
+  @Prop({ type: String, trim: true, lowercase: true })
+  reviewedByEmail?: string;
+
+  @Prop({ type: Date })
+  reviewedAt?: Date;
+
+  @Prop({ type: String, trim: true })
+  rejectionReason?: string;
+
   @Prop({
     type: [
       {
