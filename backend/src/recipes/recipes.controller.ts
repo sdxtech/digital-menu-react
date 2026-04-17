@@ -53,14 +53,14 @@ export class RecipesController {
   // BACKEND LOGIC: provide category options for recipe filters.
   @Get('categories')
   @Roles(...ALL_APP_ROLES)
-  listCategories() {
-    return this.recipes.listCategories();
+  listCategories(@Req() req: AuthenticatedRequest) {
+    return this.recipes.listCategories(getUserSiteScope(req.user));
   }
 
   @Get()
   @Roles(...ALL_APP_ROLES)
-  list(@Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query);
+  list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
+    return this.recipes.findAll(query, getUserSiteScope(req.user));
   }
 
   @Patch(':id')
