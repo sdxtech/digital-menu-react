@@ -153,6 +153,7 @@ const UOM_ALIASES: Record<string, string> = {
 const RECIPE_CODE_PREFIX = 'RCP';
 const RECIPE_CODE_MIN_DIGITS = 4;
 const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
+const DEFAULT_SITE = 'A1';
 
 @Injectable()
 export class RecipesService {
@@ -192,10 +193,16 @@ export class RecipesService {
     });
   }
 
-  async findAll(query: ListRecipesQueryDto, _site?: string) {
+  async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {};
     const andFilters: Record<string, unknown>[] = [];
-    // Recipes are shared across sites, so we don't apply site scoping.
+    const visibilityFilter = this.buildVisibilityFilter(
+      site,
+      query.approvalStatus,
+    );
+    if (Object.keys(visibilityFilter).length) {
+      andFilters.push(visibilityFilter);
+    }
 
     await this.backfillMissingRecipeCodes();
 
@@ -285,7 +292,10 @@ export class RecipesService {
       throw new BadRequestException('Rejection reason is required.');
     }
 
-    const filter = { _id: id };
+    const filter = this.withSiteFilter(
+      { _id: id, approvalStatus: 'pending' },
+      actor?.site,
+    );
     const updatedFields = this.buildActorFields(actor, 'updated');
     const reviewedFields = this.buildActorFields(actor, 'reviewed');
     const updatePayload: Record<string, unknown> = {
@@ -309,7 +319,9 @@ export class RecipesService {
   }
 
   async resubmitRejectedRecipe(id: string, actor?: RecipeActor) {
-    const existing = await this.recipeModel.findById(id).lean();
+    const existing = await this.recipeModel
+      .findOne(this.withSiteFilter({ _id: id }, actor?.site))
+      .lean();
     if (!existing) throw new NotFoundException('Recipe not found');
     if (existing.approvalStatus !== 'rejected') {
       throw new BadRequestException(
@@ -320,7 +332,10 @@ export class RecipesService {
     const updatedFields = this.buildActorFields(actor, 'updated');
     const updated = await this.recipeModel
       .findOneAndUpdate(
-        { _id: id },
+        this.withSiteFilter(
+          { _id: id, approvalStatus: 'rejected' },
+          actor?.site,
+        ),
         {
           $set: {
             approvalStatus: 'pending',
@@ -409,7 +424,13 @@ export class RecipesService {
     }
 
     const updated = await this.recipeModel
-      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
+      .findOneAndUpdate(
+        this.withSiteFilter({ _id: id }, actor?.site),
+        updatePayload,
+        {
+          new: true,
+        },
+      )
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
 
@@ -1328,8 +1349,11 @@ export class RecipesService {
   }
 
   // BACKEND LOGIC: category list for frontend filters.
-  async listCategories(_site?: string): Promise<string[]> {
-    const filter = { category: { $ne: '' } };
+  async listCategories(site?: string): Promise<string[]> {
+    const visibilityFilter = this.buildVisibilityFilter(site);
+    const filter = Object.keys(visibilityFilter).length
+      ? { $and: [{ category: { $ne: '' } }, visibilityFilter] }
+      : { category: { $ne: '' } };
     const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
       .map((item) => String(item).trim())
@@ -1392,6 +1416,45 @@ export class RecipesService {
     return trimmed ? trimmed : undefined;
   }
 
+  private buildSiteFilter(site?: string) {
+    const normalizedSite = this.normalizeSite(site);
+    if (!normalizedSite) return {};
+    if (normalizedSite === DEFAULT_SITE) {
+      return {
+        $or: [
+          { site: DEFAULT_SITE },
+          { site: { $exists: false } },
+          { site: '' },
+        ],
+      };
+    }
+    return { site: normalizedSite };
+  }
+
+  private buildVisibilityFilter(
+    site?: string,
+    approvalStatus?: ApprovalStatus,
+  ) {
+    const siteFilter = this.buildSiteFilter(site);
+    if (!Object.keys(siteFilter).length) return {};
+    if (approvalStatus === 'approved') return {};
+    if (approvalStatus === 'pending' || approvalStatus === 'rejected') {
+      return siteFilter;
+    }
+    return {
+      $or: [{ approvalStatus: 'approved' }, siteFilter],
+    };
+  }
+
+  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+    const siteFilter = this.buildSiteFilter(site);
+    if (!Object.keys(siteFilter).length) return filter;
+    if ('$or' in siteFilter) {
+      return { $and: [filter, siteFilter] };
+    }
+    return { ...filter, ...siteFilter };
+  }
+
   async setImageUrl(id: string, imageUrl: string, actor?: RecipeActor) {
     const updatedFields = this.buildActorFields(actor, 'updated');
     const updatePayload = {
@@ -1399,7 +1462,13 @@ export class RecipesService {
       ...updatedFields,
     };
     const updated = await this.recipeModel
-      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
+      .findOneAndUpdate(
+        this.withSiteFilter({ _id: id }, actor?.site),
+        updatePayload,
+        {
+          new: true,
+        },
+      )
       .lean();
 
     if (!updated) throw new NotFoundException('Recipe not found');
@@ -1413,7 +1482,13 @@ export class RecipesService {
       updatePayload.$set = updatedFields;
     }
     const updated = await this.recipeModel
-      .findOneAndUpdate({ _id: id }, updatePayload, { new: true })
+      .findOneAndUpdate(
+        this.withSiteFilter({ _id: id }, actor?.site),
+        updatePayload,
+        {
+          new: true,
+        },
+      )
       .lean();
 
     if (!updated) throw new NotFoundException('Recipe not found');
