@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -77,6 +77,28 @@ const xmlEscape = (value: unknown) => {
 const sanitizeWorksheetName = (value: string) => {
   const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
   return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const sanitizeFilenameSegment = (value: string) =>
+  value
+    .trim()
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+
+const formatSelectedSitesLabel = (sites: string[]) => {
+  if (sites.length === 0) return 'all sites'
+  if (sites.length === 1) return sites[0]
+  if (sites.length <= 3) return sites.join(', ')
+  return `${sites.length} selected sites`
+}
+
+const buildSiteFilenameSegment = (sites: string[]) => {
+  if (sites.length === 0) return 'all-sites'
+  if (sites.length === 1) {
+    return sanitizeFilenameSegment(sites[0]) || 'selected-site'
+  }
+  return `${sites.length}-sites`
 }
 
 const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
@@ -168,6 +190,94 @@ const SuperadminStoreRequestExportPage = () => {
     return toInputDate(new Date(today.getFullYear(), today.getMonth(), 1))
   })
   const [endDate, setEndDate] = useState(() => toInputDate(new Date()))
+  const [siteOptions, setSiteOptions] = useState<string[]>([])
+  const [selectedSites, setSelectedSites] = useState<string[]>([])
+  const [siteError, setSiteError] = useState('')
+  const [sitesLoading, setSitesLoading] = useState(false)
+  const [siteFilterOpen, setSiteFilterOpen] = useState(false)
+  const siteFilterRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadSiteOptions = async () => {
+      if (!accessToken) {
+        setSiteOptions([])
+        setSelectedSites([])
+        setSiteError('')
+        setSitesLoading(false)
+        return
+      }
+
+      setSitesLoading(true)
+      setSiteError('')
+      try {
+        const data = await apiFetch<{ items?: string[] }>(
+          '/superadmin/store-requests/sites',
+          undefined,
+          accessToken,
+        )
+        if (cancelled) return
+
+        const normalized = (data.items ?? [])
+          .map((site) => site.trim())
+          .filter(Boolean)
+
+        setSiteOptions(normalized)
+        setSelectedSites((current) =>
+          current.filter((site) => normalized.includes(site)),
+        )
+      } catch (error) {
+        if (cancelled) return
+        setSiteOptions([])
+        setSelectedSites([])
+        setSiteError(
+          error instanceof Error ? error.message : 'Failed to load sites.',
+        )
+      } finally {
+        if (!cancelled) {
+          setSitesLoading(false)
+        }
+      }
+    }
+
+    loadSiteOptions().catch(() => null)
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken])
+
+  useEffect(() => {
+    if (!siteFilterOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (siteFilterRef.current && !siteFilterRef.current.contains(target)) {
+        setSiteFilterOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [siteFilterOpen])
+
+  const toggleSiteSelection = (site: string) => {
+    setSelectedSites((current) =>
+      current.includes(site)
+        ? current.filter((item) => item !== site)
+        : [...current, site],
+    )
+  }
+
+  const clearSiteSelection = () => {
+    setSelectedSites([])
+  }
+
+  const allSitesSelected = selectedSites.length === 0
 
   const handleExport = async () => {
     if (!accessToken) {
@@ -190,6 +300,9 @@ const SuperadminStoreRequestExportPage = () => {
     setInfoMessage('')
     try {
       const params = new URLSearchParams()
+      if (selectedSites.length) {
+        params.set('sites', selectedSites.join(','))
+      }
       if (exportMode === 'range') {
         params.set('startDate', startDate)
         params.set('endDate', endDate)
@@ -213,6 +326,7 @@ const SuperadminStoreRequestExportPage = () => {
         [
           'No',
           'Production Date',
+          'Site',
           'Production Code',
           'Menu Name',
           'Category',
@@ -261,6 +375,7 @@ const SuperadminStoreRequestExportPage = () => {
             rows.push([
               rowNumber,
               group.date,
+              group.site,
               group.productionCode ?? '',
               menu.menuName,
               menu.category,
@@ -293,6 +408,7 @@ const SuperadminStoreRequestExportPage = () => {
             rows.push([
               rowNumber,
               group.date,
+              group.site,
               group.productionCode ?? '',
               menu.menuName,
               menu.category,
@@ -314,15 +430,17 @@ const SuperadminStoreRequestExportPage = () => {
         })
       })
 
+      const selectedSitesLabel = formatSelectedSitesLabel(selectedSites)
+      const siteFilenameSegment = buildSiteFilenameSegment(selectedSites)
       const filename =
         exportMode === 'range'
-          ? `store-request-all-sites-${startDate}_to_${endDate}.xls`
-          : 'store-request-all-sites-all-dates.xls'
+          ? `store-request-${siteFilenameSegment}-${startDate}_to_${endDate}.xls`
+          : `store-request-${siteFilenameSegment}-all-dates.xls`
 
       downloadExcel(filename, [{ name: 'Store Requests', rows }])
 
       setInfoMessage(
-        `Export complete for all sites. ${groups.length} production batches exported.`,
+        `Export complete for ${selectedSitesLabel}. ${groups.length} production batches exported.`,
       )
     } catch (error) {
       const message =
@@ -334,26 +452,94 @@ const SuperadminStoreRequestExportPage = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="w-full py-2">
+      <div className="space-y-6">
+        <div className="space-y-2">
           <div>
-            <h3 className="text-muted">
-              Superadmin export
-            </h3>
-            <p className="mt-2 text-2xl font-semibold">
-              Store Request Export
-            </p>
-            <p className="mt-2 text-sm text-muted">
-              Export store request data for all sites for all dates or by date
-              range.
-            </p>
-            <p className="mt-2 text-xs text-muted">
-              Site selection is hidden for now. Export will include all sites
-              automatically.
-            </p>
+            <h1 className="text-2xl font-semibold">Store Request Export</h1>
           </div>
         </div>
+
+        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+          <div className="mt-5">
+            <p className="text-sm font-medium text-foreground">Sites</p>
+            <div className="mt-2 relative" ref={siteFilterRef}>
+            <button
+              type="button"
+              onClick={() => setSiteFilterOpen((current) => !current)}
+              disabled={sitesLoading}
+              className="flex w-full items-center justify-between rounded-md border border-border bg-white px-4 py-2 text-sm text-foreground shadow-sm outline-none transition hover:border-accent-blue disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span>
+                {selectedSites.length
+                  ? `Sites (${selectedSites.length})`
+                  : 'Select sites'}
+              </span>
+              <i
+                className={`bi bi-chevron-down text-[10px] transition-transform ${siteFilterOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
+            </button>
+              {siteFilterOpen ? (
+                <div className="absolute left-0 top-full z-20 mt-2 w-full rounded-md border border-border bg-white p-3 shadow-lg">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-muted">Sites</p>
+                    <button
+                      type="button"
+                      onClick={clearSiteSelection}
+                      disabled={selectedSites.length === 0}
+                      className="text-[11px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {sitesLoading ? (
+                    <p className="mt-2 text-xs text-muted">Loading site options...</p>
+                  ) : (
+                    <div className="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
+                      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-background">
+                        <input
+                          type="checkbox"
+                          checked={allSitesSelected}
+                          onChange={clearSiteSelection}
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-accent-blue"
+                        />
+                        <span>All sites</span>
+                      </label>
+                      {siteOptions.length === 0 ? (
+                        <p className="px-2 py-1 text-xs text-muted">No site data yet.</p>
+                      ) : (
+                        siteOptions.map((site) => (
+                          <label
+                            key={site}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-background"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedSites.includes(site)}
+                              onChange={() => toggleSiteSelection(site)}
+                              className="h-4 w-4 rounded border-border text-primary focus:ring-accent-blue"
+                            />
+                            <span>{site}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              {sitesLoading
+                ? 'Loading site options...'
+                : selectedSites.length
+                  ? `Export will include ${formatSelectedSitesLabel(selectedSites)}.`
+                  : 'All sites will be included in the export.'}
+            </p>
+            {siteError ? (
+              <p className="mt-2 text-xs font-medium text-red-600">{siteError}</p>
+            ) : null}
+          </div>
 
         <div className="mt-5">
           <p className="text-sm font-medium text-foreground">Export mode</p>
@@ -378,7 +564,7 @@ const SuperadminStoreRequestExportPage = () => {
                 onChange={() => setExportMode('range')}
                 className="h-4 w-4 border-border text-primary focus:ring-accent-blue"
               />
-              <span>Date range</span>
+              <span>Custom date</span>
             </label>
           </div>
         </div>
@@ -412,7 +598,7 @@ const SuperadminStoreRequestExportPage = () => {
           </div>
         ) : (
           <p className="mt-4 text-xs text-muted">
-            Date range is ignored in all-dates mode.
+            Custom date is ignored in all-dates mode.
           </p>
         )}
 
@@ -440,6 +626,7 @@ const SuperadminStoreRequestExportPage = () => {
         {infoMessage ? (
           <p className="mt-3 text-xs font-medium text-primary">{infoMessage}</p>
         ) : null}
+        </div>
       </div>
     </div>
   )
