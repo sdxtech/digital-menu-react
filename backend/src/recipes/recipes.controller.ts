@@ -26,6 +26,7 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request.t
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
+import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import { RecipesService } from './recipes.service';
@@ -71,6 +72,22 @@ export class RecipesController {
     @Body() dto: UpdateRecipeDto,
   ) {
     return this.recipes.updateById(id, dto, this.buildActor(req));
+  }
+
+  @Patch(':id/active')
+  @Roles(AppRole.Superadmin)
+  setActive(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: SetRecipeActiveDto,
+  ) {
+    return this.recipes.setActive(id, dto.isActive, this.buildActor(req));
+  }
+
+  @Delete(':id')
+  @Roles(AppRole.Superadmin)
+  remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.softDeleteById(id, this.buildActor(req));
   }
 
   @Patch(':id/approve')
@@ -165,6 +182,7 @@ export class RecipesController {
       id: req.user.sub,
       name: req.user.name,
       email: req.user.email,
+      roles: req.user.roles,
       site: getUserSiteScope(req.user),
     };
   }

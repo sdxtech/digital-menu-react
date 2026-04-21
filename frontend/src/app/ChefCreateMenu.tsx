@@ -25,7 +25,7 @@ type IngredientRow = {
   qty: string
 }
 
-type BaseRecipe = {
+export type BaseRecipe = {
   id?: string
   name: string
   category: string
@@ -56,7 +56,19 @@ const initialRecipeForm: RecipeForm = {
   portionSize: '1',
 }
 
-const ChefCreateMenu = () => {
+type ChefCreateMenuProps = {
+  embedded?: boolean
+  baseRecipe?: BaseRecipe
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+const ChefCreateMenu = ({
+  embedded = false,
+  baseRecipe: baseRecipeProp,
+  onClose,
+  onSaved,
+}: ChefCreateMenuProps) => {
   const location = useLocation()
   const {
     createRecipe,
@@ -66,8 +78,9 @@ const ChefCreateMenu = () => {
     searchRawMaterials,
   } = useChefData()
 
-  const baseRecipe = (location.state as { baseRecipe?: BaseRecipe } | null)
-    ?.baseRecipe
+  const baseRecipe =
+    baseRecipeProp ??
+    (location.state as { baseRecipe?: BaseRecipe } | null)?.baseRecipe
   const editingRecipeId = baseRecipe?.id ?? ''
   const isEditMode = Boolean(editingRecipeId)
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
@@ -471,6 +484,7 @@ const ChefCreateMenu = () => {
           await resubmitRecipe(editingRecipeId)
           setCurrentApprovalStatus('pending')
         }
+        onSaved?.()
       } else {
         await createRecipe({
           ...basePayload,
@@ -478,6 +492,7 @@ const ChefCreateMenu = () => {
         })
         setRecipeForm(initialRecipeForm)
         setIngredientRows([createIngredientRow()])
+        onSaved?.()
       }
 
       setSubmitError('')
@@ -525,14 +540,27 @@ const ChefCreateMenu = () => {
               {isEditMode ? 'Edit Recipe' : 'Create New Recipe'}
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={openImportModal}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-          >
-            <i className="bi bi-upload text-base" aria-hidden="true" />
-            <span>Import recipes</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={openImportModal}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+            >
+              <i className="bi bi-upload text-base" aria-hidden="true" />
+              <span>Import recipes</span>
+            </button>
+            {embedded && onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close create recipe"
+                title="Close"
+                className="dm-x-button"
+              >
+                <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {isRejectedRecipe ? (

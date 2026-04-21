@@ -2,9 +2,16 @@ import RoleLayout from './RoleLayout'
 
 const navItems = [
   {
-    label: 'User Management',
+    label: 'Dashboard',
     to: '/superadmin',
     end: true,
+    icon: (className: string) => (
+      <i className={`bi bi-grid ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
+    label: 'User Management',
+    to: '/superadmin/users',
     icon: (className: string) => (
       <i className={`bi bi-people ${className}`} aria-hidden="true" />
     ),
@@ -14,6 +21,13 @@ const navItems = [
     to: '/superadmin/sites',
     icon: (className: string) => (
       <i className={`bi bi-building ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
+    label: 'Menu Management',
+    to: '/superadmin/menu-management',
+    icon: (className: string) => (
+      <i className={`bi bi-journal-text ${className}`} aria-hidden="true" />
     ),
   },
   {
@@ -31,6 +45,7 @@ const SuperadminLayout = () => {
       workspaceLabel="Superadmin Workspace"
       defaultEmail="superadmin@example.com"
       navItems={navItems}
+      showSite={false}
     />
   )
 }
