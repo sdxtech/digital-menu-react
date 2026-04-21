@@ -24,12 +24,14 @@ import {
   type RawMaterialLookup,
 } from '../raw-materials/raw-materials.service';
 import { UsersService } from '../users/users.service';
+import { AppRole } from '../auth/roles.constants';
 
 type RecipeActor = {
   id?: string;
   name?: string;
   email?: string;
   site?: string;
+  roles?: AppRole[];
 };
 
 type RecipeAuditFields = {
@@ -174,6 +176,10 @@ export class RecipesService {
     const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
     const updatedFields = this.buildActorFields(actor, 'updated');
+    const isSuperadminActor = this.isSuperadminActor(actor);
+    const reviewedFields = isSuperadminActor
+      ? this.buildActorFields(actor, 'reviewed')
+      : {};
 
     return this.recipeModel.create({
       recipeCode,
@@ -184,17 +190,21 @@ export class RecipesService {
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
       foodCostRecipe: this.normalizeOptionalNumber(input.foodCostRecipe),
-      status: input.status ?? 'draft',
-      approvalStatus: 'pending',
+      status: isSuperadminActor ? 'active' : (input.status ?? 'draft'),
+      approvalStatus: isSuperadminActor ? 'approved' : 'pending',
+      ...(isSuperadminActor ? { reviewedAt: new Date() } : {}),
       ingredients,
       ...createdFields,
       ...updatedFields,
+      ...reviewedFields,
       ...(normalizedSite ? { site: normalizedSite } : {}),
     });
   }
 
   async findAll(query: ListRecipesQueryDto, site?: string) {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = {
+      deletedAt: { $exists: false },
+    };
     const andFilters: Record<string, unknown>[] = [];
     const visibilityFilter = this.buildVisibilityFilter(
       site,
@@ -255,6 +265,7 @@ export class RecipesService {
     );
     if (needsSync) {
       const syncFilter = {
+        deletedAt: { $exists: false },
         approvalStatus: 'approved',
         status: { $ne: 'active' },
       };
@@ -277,6 +288,49 @@ export class RecipesService {
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  async setActive(id: string, isActive: boolean, actor?: RecipeActor) {
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        this.withSiteFilter(
+          { _id: id, deletedAt: { $exists: false } },
+          actor?.site,
+        ),
+        {
+          $set: {
+            isActive,
+            ...updatedFields,
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe not found');
+    return updated;
+  }
+
+  async softDeleteById(id: string, actor?: RecipeActor) {
+    const updatedFields = this.buildActorFields(actor, 'updated');
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        this.withSiteFilter(
+          { _id: id, deletedAt: { $exists: false } },
+          actor?.site,
+        ),
+        {
+          $set: {
+            isActive: false,
+            deletedAt: new Date(),
+            ...updatedFields,
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe not found');
+    return { id: String(updated._id), recipeCode: updated.recipeCode };
   }
 
   async setApprovalStatus(
@@ -1311,6 +1365,7 @@ export class RecipesService {
   private async backfillMissingRecipeCodes(): Promise<void> {
     const missingRecipes = await this.recipeModel
       .find({
+        deletedAt: { $exists: false },
         $or: [
           { recipeCode: { $exists: false } },
           { recipeCode: '' },
@@ -1352,8 +1407,14 @@ export class RecipesService {
   async listCategories(site?: string): Promise<string[]> {
     const visibilityFilter = this.buildVisibilityFilter(site);
     const filter = Object.keys(visibilityFilter).length
-      ? { $and: [{ category: { $ne: '' } }, visibilityFilter] }
-      : { category: { $ne: '' } };
+      ? {
+          $and: [
+            { category: { $ne: '' } },
+            { deletedAt: { $exists: false } },
+            visibilityFilter,
+          ],
+        }
+      : { category: { $ne: '' }, deletedAt: { $exists: false } };
     const categories = await this.recipeModel.distinct('category', filter);
     return (categories ?? [])
       .map((item) => String(item).trim())
@@ -1372,6 +1433,10 @@ export class RecipesService {
     if (actor.email)
       fields[`${prefix}ByEmail`] = actor.email.trim().toLowerCase();
     return fields;
+  }
+
+  private isSuperadminActor(actor?: RecipeActor) {
+    return actor?.roles?.includes(AppRole.Superadmin) ?? false;
   }
 
   private async attachActorNames(items: RecipeAuditFields[]): Promise<void> {

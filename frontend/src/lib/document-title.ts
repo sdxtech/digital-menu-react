@@ -87,11 +87,19 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/superadmin',
+    getPageTitle: () => 'Dashboard',
+  },
+  {
+    path: '/superadmin/users',
     getPageTitle: () => 'User Management',
   },
   {
     path: '/superadmin/sites',
     getPageTitle: () => 'Site Management',
+  },
+  {
+    path: '/superadmin/menu-management',
+    getPageTitle: () => 'Menu Management',
   },
   {
     path: '/superadmin/store-request-export',
