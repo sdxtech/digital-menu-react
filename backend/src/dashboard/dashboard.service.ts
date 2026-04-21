@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { AppRole } from '../auth/roles.constants';
 import {
   MenuProduction,
   MenuProductionDocument,
 } from '../menu-productions/schemas/menu-production.schema';
+import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
+import { Site, SiteDocument } from '../sites/schemas/site.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 
 const DEFAULT_SITE = 'A1';
 
@@ -13,7 +17,71 @@ export class DashboardService {
   constructor(
     @InjectModel(MenuProduction.name)
     private readonly menuProductionModel: Model<MenuProductionDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
+    @InjectModel(Site.name)
+    private readonly siteModel: Model<SiteDocument>,
+    @InjectModel(Recipe.name)
+    private readonly recipeModel: Model<RecipeDocument>,
   ) {}
+
+  async getSuperadminSummary() {
+    const today = this.formatDateKey(new Date());
+
+    const [
+      activeSites,
+      inactiveSites,
+      activeUsers,
+      unassignedUsers,
+      menusToday,
+      pendingApprovals,
+      requestedStoreRequests,
+      fulfilledStoreRequests,
+      pendingRecipes,
+    ] = await Promise.all([
+      this.siteModel.countDocuments({ isActive: true }),
+      this.siteModel.countDocuments({ isActive: false }),
+      this.userModel.countDocuments({ isActive: true }),
+      this.userModel.countDocuments({
+        isActive: true,
+        roles: { $nin: [AppRole.Superadmin] },
+        $and: [
+          { $or: [{ siteId: { $exists: false } }, { siteId: null }] },
+          { $or: [{ sites: { $exists: false } }, { sites: { $size: 0 } }] },
+        ],
+      }),
+      this.menuProductionModel.countDocuments({ productionDate: today }),
+      this.menuProductionModel.countDocuments({
+        productionDate: today,
+        approvalStatus: 'pending',
+      }),
+      this.menuProductionModel.countDocuments({
+        productionDate: today,
+        approvalStatus: 'approved',
+        storeRequestStatus: 'requested',
+      }),
+      this.menuProductionModel.countDocuments({
+        productionDate: today,
+        approvalStatus: 'approved',
+        storeRequestStatus: 'fulfilled',
+      }),
+      this.recipeModel.countDocuments({ approvalStatus: 'pending' }),
+    ]);
+
+    return {
+      summary: {
+        activeSites,
+        inactiveSites,
+        activeUsers,
+        unassignedUsers,
+        menusToday,
+        pendingApprovals,
+        requestedStoreRequests,
+        fulfilledStoreRequests,
+        pendingRecipes,
+      },
+    };
+  }
 
   // BACKEND LOGIC: chef dashboard summary values from menu productions.
   async getChefSummary(site?: string) {

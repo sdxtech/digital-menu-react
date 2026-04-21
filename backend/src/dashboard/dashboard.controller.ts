@@ -12,6 +12,12 @@ import { DashboardService } from './dashboard.service';
 export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
+  @Get('superadmin')
+  @Roles(AppRole.Superadmin)
+  superadminSummary() {
+    return this.dashboard.getSuperadminSummary();
+  }
+
   // BACKEND LOGIC: chef dashboard data comes from backend.
   @Get('chef')
   @Roles(AppRole.Chef, AppRole.Superadmin)
