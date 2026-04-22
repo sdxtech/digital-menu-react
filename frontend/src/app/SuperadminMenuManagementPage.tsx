@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import TablePagination from '../components/TablePagination'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { getApprovalStatusLabel } from '../lib/status-labels'
-import { formatUnitLabel } from '../lib/unit-of-measures'
+import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type CategoryStatusFilter = 'active' | 'disabled'
+type MenuManagementTab = 'recipes' | 'raw-materials' | 'categories'
 
 type RecipeIngredient = {
   productCode?: string
@@ -55,6 +62,23 @@ type Category = {
   createdAt: string
 }
 
+type RawMaterialApi = {
+  id?: string
+  _id?: string
+  productCode?: string
+  name?: string
+  unitOfMeasures?: string
+  createdAt?: string
+}
+
+type RawMaterial = {
+  id: string
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  createdAt: string
+}
+
 type SiteApi = {
   id?: string
   _id?: string
@@ -82,7 +106,38 @@ type CategoryForm = {
   isActive: boolean
 }
 
+type RawMaterialForm = {
+  productCode: string
+  name: string
+  unitOfMeasures: string
+}
+
+type NotificationItem = {
+  id?: string
+  _id?: string
+  title?: string
+  message?: string
+  meta?: Record<string, unknown>
+  createdAt?: string
+}
+
+type ImportResult = {
+  status: 'success' | 'error'
+  title: string
+  message: string
+}
+
 const DEFAULT_LIMIT = 10
+
+const menuManagementTabs: Array<{
+  id: MenuManagementTab
+  label: string
+  icon: string
+}> = [
+  { id: 'recipes', label: 'Recipe Data', icon: 'bi-journal-text' },
+  { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
+  { id: 'categories', label: 'Categories', icon: 'bi-tags' },
+]
 
 const emptyMeta: TableMeta = {
   page: 1,
@@ -96,6 +151,12 @@ const emptyMeta: TableMeta = {
 const emptyCategoryForm: CategoryForm = {
   name: '',
   isActive: true,
+}
+
+const emptyRawMaterialForm: RawMaterialForm = {
+  productCode: '',
+  name: '',
+  unitOfMeasures: '',
 }
 
 const recipeStatusLabel = (status: RecipeStatus) =>
@@ -127,6 +188,14 @@ const mapCategory = (item: CategoryApi): Category => ({
   createdAt: item.createdAt ?? '',
 })
 
+const mapRawMaterial = (item: RawMaterialApi): RawMaterial => ({
+  id: item.id ?? item._id ?? '',
+  productCode: item.productCode ?? '',
+  name: item.name ?? '',
+  unitOfMeasures: item.unitOfMeasures ?? '',
+  createdAt: item.createdAt ?? '',
+})
+
 const mapSite = (item: SiteApi): SiteOption => ({
   id: item.id ?? item._id ?? '',
   name: item.name ?? '',
@@ -135,6 +204,7 @@ const mapSite = (item: SiteApi): SiteOption => ({
 
 const SuperadminMenuManagementPage = () => {
   const { accessToken } = useAuth()
+  const [activeTab, setActiveTab] = useState<MenuManagementTab>('recipes')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [recipeCategories, setRecipeCategories] = useState<string[]>([])
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
@@ -148,6 +218,11 @@ const SuperadminMenuManagementPage = () => {
   const [recipeMessage, setRecipeMessage] = useState('')
   const [createRecipeOpen, setCreateRecipeOpen] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState<BaseRecipe | null>(null)
+  const [recipeImportOpen, setRecipeImportOpen] = useState(false)
+  const [recipeImportFile, setRecipeImportFile] = useState<File | null>(null)
+  const [recipeImportError, setRecipeImportError] = useState('')
+  const [recipeImportMessage, setRecipeImportMessage] = useState('')
+  const [recipeImporting, setRecipeImporting] = useState(false)
 
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryMeta, setCategoryMeta] = useState<TableMeta>(emptyMeta)
@@ -163,6 +238,29 @@ const SuperadminMenuManagementPage = () => {
     useState<CategoryForm>(emptyCategoryForm)
   const [categoryFormError, setCategoryFormError] = useState('')
   const [categoryMessage, setCategoryMessage] = useState('')
+
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
+  const [rawMaterialMeta, setRawMaterialMeta] = useState<TableMeta>(emptyMeta)
+  const [rawMaterialSearchInput, setRawMaterialSearchInput] = useState('')
+  const [rawMaterialSearch, setRawMaterialSearch] = useState('')
+  const [rawMaterialModalOpen, setRawMaterialModalOpen] = useState(false)
+  const [editingRawMaterialId, setEditingRawMaterialId] = useState<
+    string | null
+  >(null)
+  const [rawMaterialForm, setRawMaterialForm] =
+    useState<RawMaterialForm>(emptyRawMaterialForm)
+  const [rawMaterialFormError, setRawMaterialFormError] = useState('')
+  const [rawMaterialMessage, setRawMaterialMessage] = useState('')
+  const [rawMaterialImportOpen, setRawMaterialImportOpen] = useState(false)
+  const [rawMaterialImportFile, setRawMaterialImportFile] =
+    useState<File | null>(null)
+  const [rawMaterialImportError, setRawMaterialImportError] = useState('')
+  const [rawMaterialImportMessage, setRawMaterialImportMessage] = useState('')
+  const [rawMaterialImporting, setRawMaterialImporting] = useState(false)
+  const [rawMaterialImportStartedAt, setRawMaterialImportStartedAt] =
+    useState<number | null>(null)
+  const [rawMaterialImportResult, setRawMaterialImportResult] =
+    useState<ImportResult | null>(null)
 
   const selectedRecipe = useMemo(
     () =>
@@ -350,6 +448,68 @@ const SuperadminMenuManagementPage = () => {
     [accessToken, categorySearch, categoryStatus],
   )
 
+  const fetchRawMaterials = useCallback(
+    async (
+      page = 1,
+      limit = DEFAULT_LIMIT,
+      searchValue = rawMaterialSearch,
+    ) => {
+      if (!accessToken) {
+        setRawMaterialMeta((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Please log in first to load raw material data.',
+        }))
+        return
+      }
+
+      setRawMaterialMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      try {
+        const params = new URLSearchParams()
+        params.set('page', String(page))
+        params.set('limit', String(limit))
+        if (searchValue.trim()) params.set('search', searchValue.trim())
+
+        const data = await apiFetch<{
+          items?: RawMaterialApi[]
+          total?: number
+          page?: number
+          limit?: number
+          totalPages?: number
+        }>(`/raw-materials?${params.toString()}`, undefined, accessToken)
+
+        const total = data.total ?? 0
+        const nextLimit = data.limit ?? limit
+        setRawMaterials(
+          (data.items ?? [])
+            .map(mapRawMaterial)
+            .filter((rawMaterial) => rawMaterial.id),
+        )
+        setRawMaterialMeta({
+          page: data.page ?? page,
+          limit: nextLimit,
+          total,
+          totalPages:
+            data.totalPages ?? Math.max(1, Math.ceil(total / nextLimit)),
+          loading: false,
+          error: '',
+        })
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load raw material data.'
+        setRawMaterials([])
+        setRawMaterialMeta((prev) => ({
+          ...prev,
+          loading: false,
+          error: message,
+        }))
+      }
+    },
+    [accessToken, rawMaterialSearch],
+  )
+
   useEffect(() => {
     fetchSiteOptions().catch(() => null)
   }, [fetchSiteOptions])
@@ -366,6 +526,10 @@ const SuperadminMenuManagementPage = () => {
     fetchCategories(1, DEFAULT_LIMIT, categorySearch).catch(() => null)
   }, [fetchCategories, categorySearch])
 
+  useEffect(() => {
+    fetchRawMaterials(1, DEFAULT_LIMIT, rawMaterialSearch).catch(() => null)
+  }, [fetchRawMaterials, rawMaterialSearch])
+
   const applyRecipeSearch = () => {
     setRecipeSearch(recipeSearchInput.trim())
     setRecipeMeta((prev) => ({ ...prev, page: 1 }))
@@ -374,6 +538,11 @@ const SuperadminMenuManagementPage = () => {
   const applyCategorySearch = () => {
     setCategorySearch(categorySearchInput.trim())
     setCategoryMeta((prev) => ({ ...prev, page: 1 }))
+  }
+
+  const applyRawMaterialSearch = () => {
+    setRawMaterialSearch(rawMaterialSearchInput.trim())
+    setRawMaterialMeta((prev) => ({ ...prev, page: 1 }))
   }
 
   const toggleRecipeActive = async (recipe: Recipe) => {
@@ -392,9 +561,14 @@ const SuperadminMenuManagementPage = () => {
         accessToken,
       )
       setRecipeMessage(nextActive ? 'Recipe enabled.' : 'Recipe disabled.')
-      fetchRecipes(recipeMeta.page, recipeMeta.limit, recipeSearch).catch(
-        () => null,
+      setRecipes((prev) =>
+        prev.map((item) =>
+          (item.id ?? item._id) === recipeId
+            ? { ...item, isActive: nextActive }
+            : item,
+        ),
       )
+      setRecipeMeta((prev) => ({ ...prev, error: '' }))
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to update recipe.'
@@ -459,6 +633,80 @@ const SuperadminMenuManagementPage = () => {
       () => null,
     )
     fetchRecipeCategories().catch(() => null)
+  }
+
+  const openRecipeImportModal = () => {
+    setRecipeImportError('')
+    setRecipeImportMessage('')
+    setRecipeImportOpen(true)
+  }
+
+  const closeRecipeImportModal = () => {
+    if (recipeImporting) return
+    setRecipeImportOpen(false)
+  }
+
+  const handleRecipeImportFileChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const nextFile = event.target.files?.[0] ?? null
+    setRecipeImportMessage('')
+
+    if (!nextFile) {
+      setRecipeImportFile(null)
+      setRecipeImportError('')
+      return
+    }
+
+    const isExcelFile = /\.(xlsx|xls)$/i.test(nextFile.name)
+    if (!isExcelFile) {
+      setRecipeImportFile(null)
+      setRecipeImportError('File must be .xlsx or .xls')
+      return
+    }
+
+    setRecipeImportFile(nextFile)
+    setRecipeImportError('')
+  }
+
+  const handleImportRecipes = async () => {
+    if (!accessToken) return
+    if (!recipeImportFile) {
+      setRecipeImportError('Select an Excel file first.')
+      setRecipeImportMessage('')
+      return
+    }
+
+    setRecipeImporting(true)
+    setRecipeImportError('')
+    setRecipeImportMessage('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', recipeImportFile)
+      const result = await apiFetch<{ insertedCount?: number }>(
+        '/recipes/import',
+        {
+          method: 'POST',
+          body: formData,
+        },
+        accessToken,
+      )
+      const insertedCount = result.insertedCount ?? 0
+      setRecipeImportMessage(
+        `${insertedCount} recipes imported from ${recipeImportFile.name}`,
+      )
+      setRecipeImportFile(null)
+      fetchRecipes(1, recipeMeta.limit, recipeSearch).catch(() => null)
+      fetchRecipeCategories().catch(() => null)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to import recipes.'
+      setRecipeImportError(message)
+      setRecipeImportMessage('')
+    } finally {
+      setRecipeImporting(false)
+    }
   }
 
   const approveRecipe = async (recipe: Recipe) => {
@@ -583,21 +831,33 @@ const SuperadminMenuManagementPage = () => {
 
   const toggleCategoryStatus = async (category: Category) => {
     if (!accessToken) return
+    const nextActive = !category.isActive
     try {
       await apiFetch(
         `/categories/${category.id}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({ isActive: !category.isActive }),
+          body: JSON.stringify({ isActive: nextActive }),
         },
         accessToken,
       )
       setCategoryMessage(
         category.isActive ? 'Category disabled.' : 'Category activated.',
       )
-      fetchCategories(categoryMeta.page, categoryMeta.limit, categorySearch).catch(
-        () => null,
+      setCategories((prev) =>
+        prev
+          .map((item) =>
+            item.id === category.id ? { ...item, isActive: nextActive } : item,
+          )
+          .filter((item) =>
+            categoryStatus === 'active' ? item.isActive : !item.isActive,
+          ),
       )
+      setCategoryMeta((prev) => ({
+        ...prev,
+        total: Math.max(0, prev.total - 1),
+        error: '',
+      }))
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to update category.'
@@ -605,14 +865,323 @@ const SuperadminMenuManagementPage = () => {
     }
   }
 
+  const openCreateRawMaterial = () => {
+    setEditingRawMaterialId(null)
+    setRawMaterialForm(emptyRawMaterialForm)
+    setRawMaterialFormError('')
+    setRawMaterialMessage('')
+    setRawMaterialModalOpen(true)
+  }
+
+  const startEditRawMaterial = (rawMaterial: RawMaterial) => {
+    setEditingRawMaterialId(rawMaterial.id)
+    setRawMaterialForm({
+      productCode: rawMaterial.productCode,
+      name: rawMaterial.name,
+      unitOfMeasures: rawMaterial.unitOfMeasures,
+    })
+    setRawMaterialFormError('')
+    setRawMaterialMessage('')
+    setRawMaterialModalOpen(true)
+  }
+
+  const closeRawMaterialModal = () => {
+    setRawMaterialModalOpen(false)
+    setEditingRawMaterialId(null)
+    setRawMaterialFormError('')
+  }
+
+  const updateRawMaterialForm = (
+    field: keyof RawMaterialForm,
+    value: string,
+  ) => {
+    setRawMaterialForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const saveRawMaterial = async () => {
+    if (!accessToken) return
+    const payload = {
+      productCode: rawMaterialForm.productCode.trim(),
+      name: rawMaterialForm.name.trim(),
+      unitOfMeasures: rawMaterialForm.unitOfMeasures.trim(),
+    }
+
+    if (!payload.productCode || !payload.name || !payload.unitOfMeasures) {
+      setRawMaterialFormError('Please complete all raw material fields first.')
+      return
+    }
+
+    try {
+      if (editingRawMaterialId) {
+        await apiFetch(
+          `/raw-materials/${editingRawMaterialId}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+          },
+          accessToken,
+        )
+        setRawMaterialMessage('Raw material updated.')
+      } else {
+        await apiFetch(
+          '/raw-materials',
+          {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          },
+          accessToken,
+        )
+        setRawMaterialMessage('Raw material created.')
+      }
+
+      closeRawMaterialModal()
+      fetchRawMaterials(
+        rawMaterialMeta.page,
+        rawMaterialMeta.limit,
+        rawMaterialSearch,
+      ).catch(() => null)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to save raw material.'
+      setRawMaterialFormError(message)
+    }
+  }
+
+  const deleteRawMaterial = async (rawMaterial: RawMaterial) => {
+    if (!accessToken) return
+    const ok = window.confirm(
+      `Delete ${rawMaterial.name}? This is only allowed when the material is not used by any recipe.`,
+    )
+    if (!ok) return
+
+    try {
+      await apiFetch(
+        `/raw-materials/${rawMaterial.id}`,
+        { method: 'DELETE' },
+        accessToken,
+      )
+      setRawMaterialMessage('Raw material deleted.')
+      fetchRawMaterials(
+        rawMaterialMeta.page,
+        rawMaterialMeta.limit,
+        rawMaterialSearch,
+      ).catch(() => null)
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete raw material.'
+      setRawMaterialMeta((prev) => ({ ...prev, error: message }))
+    }
+  }
+
+  const openRawMaterialImportModal = () => {
+    setRawMaterialImportError('')
+    setRawMaterialImportMessage('')
+    setRawMaterialImportResult(null)
+    setRawMaterialImportOpen(true)
+  }
+
+  const closeRawMaterialImportModal = () => {
+    if (rawMaterialImporting) return
+    setRawMaterialImportOpen(false)
+  }
+
+  const closeRawMaterialImportResult = () => {
+    setRawMaterialImportResult(null)
+  }
+
+  const handleRawMaterialImportFileChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const nextFile = event.target.files?.[0] ?? null
+    setRawMaterialImportMessage('')
+
+    if (!nextFile) {
+      setRawMaterialImportFile(null)
+      setRawMaterialImportError('')
+      return
+    }
+
+    const isValidFile = /\.(xlsx|xls|csv)$/i.test(nextFile.name)
+    if (!isValidFile) {
+      setRawMaterialImportFile(null)
+      setRawMaterialImportError('File must be .xlsx, .xls, or .csv')
+      return
+    }
+
+    setRawMaterialImportFile(nextFile)
+    setRawMaterialImportError('')
+  }
+
+  const handleImportRawMaterials = async () => {
+    if (!accessToken) return
+    if (!rawMaterialImportFile) {
+      setRawMaterialImportError('Select an Excel or CSV file first.')
+      setRawMaterialImportMessage('')
+      return
+    }
+
+    if (rawMaterialImporting) return
+
+    setRawMaterialImporting(true)
+    setRawMaterialImportError('')
+    setRawMaterialImportMessage('Starting import...')
+    setRawMaterialImportResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', rawMaterialImportFile)
+      await apiFetch<{ jobId: string }>(
+        '/imports/raw-materials/upload',
+        {
+          method: 'POST',
+          body: formData,
+        },
+        accessToken,
+      )
+      setRawMaterialImportStartedAt(Date.now())
+      setRawMaterialImportMessage('Import started. Waiting for completion...')
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to start raw material import.'
+      setRawMaterialImportError(message)
+      setRawMaterialImportMessage('')
+      setRawMaterialImporting(false)
+      setRawMaterialImportStartedAt(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!rawMaterialImporting || !rawMaterialImportStartedAt || !accessToken) {
+      return
+    }
+
+    let cancelled = false
+    let timeoutId: number | undefined
+
+    const pollStatus = async () => {
+      try {
+        const notifications = await apiFetch<NotificationItem[]>(
+          '/notifications?page=1&limit=25',
+          undefined,
+          accessToken,
+        )
+        if (cancelled) return
+
+        const match = notifications.find((item) => {
+          if (!item?.title || !item.createdAt) return false
+          if (
+            item.title !== 'Raw material import completed' &&
+            item.title !== 'Raw material import failed'
+          ) {
+            return false
+          }
+          const createdAt = new Date(item.createdAt).getTime()
+          return (
+            Number.isFinite(createdAt) &&
+            createdAt >= rawMaterialImportStartedAt
+          )
+        })
+
+        if (match) {
+          const isSuccess = match.title === 'Raw material import completed'
+          let message = match.message ?? ''
+          if (!isSuccess) {
+            const reason =
+              match.meta && typeof match.meta.reason === 'string'
+                ? match.meta.reason
+                : ''
+            if (reason) message = `${message} (${reason})`
+          }
+
+          setRawMaterialImportResult({
+            status: isSuccess ? 'success' : 'error',
+            title: match.title ?? 'Import finished',
+            message: message || 'Import finished.',
+          })
+          setRawMaterialImporting(false)
+          setRawMaterialImportOpen(false)
+          setRawMaterialImportError('')
+          setRawMaterialImportMessage('')
+          setRawMaterialImportFile(null)
+          setRawMaterialImportStartedAt(null)
+          if (isSuccess) {
+            fetchRawMaterials(1, rawMaterialMeta.limit, rawMaterialSearch).catch(
+              () => null,
+            )
+          }
+          return
+        }
+      } catch (error) {
+        if (cancelled) return
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to check import status.'
+        setRawMaterialImportResult({
+          status: 'error',
+          title: 'Import failed',
+          message,
+        })
+        setRawMaterialImporting(false)
+        setRawMaterialImportOpen(false)
+        setRawMaterialImportMessage('')
+        setRawMaterialImportStartedAt(null)
+        return
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollStatus, 2000)
+      }
+    }
+
+    timeoutId = window.setTimeout(pollStatus, 2000)
+
+    return () => {
+      cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [
+    accessToken,
+    fetchRawMaterials,
+    rawMaterialImporting,
+    rawMaterialImportStartedAt,
+    rawMaterialMeta.limit,
+    rawMaterialSearch,
+  ])
+
   return (
     <div className="w-full py-2">
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Menu Management</h1>
           <p className="mt-1 text-sm text-muted">
-            View recipe data and manage menu categories from one workspace.
+            Manage recipe, raw material, and category data from one workspace.
           </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-b border-border">
+          {menuManagementTabs.map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${
+                  active
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-primary'
+                }`}
+              >
+                <i className={`bi ${tab.icon} text-base`} aria-hidden="true" />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
         </div>
 
         {categoryModalOpen ? (
@@ -689,6 +1258,307 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        {recipeImportOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Import Recipe
+                  </h3>
+                  <p className="mt-1 text-xs text-muted">
+                    Import recipes from Excel
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    Use .xlsx or .xls to import multiple recipes at once.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRecipeImportModal}
+                  disabled={recipeImporting}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    File Excel
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleRecipeImportFileChange}
+                    disabled={recipeImporting}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                  />
+                  {recipeImportFile ? (
+                    <p className="mt-2 text-xs text-muted">
+                      Selected file: {recipeImportFile.name}
+                    </p>
+                  ) : null}
+                  {recipeImportError ? (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      {recipeImportError}
+                    </p>
+                  ) : null}
+                  {recipeImportMessage ? (
+                    <p className="mt-2 text-xs font-medium text-primary">
+                      {recipeImportMessage}
+                    </p>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleImportRecipes}
+                  disabled={recipeImporting}
+                  className="h-fit self-end rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {recipeImporting ? 'Importing...' : 'Import recipes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rawMaterialModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-2xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    {editingRawMaterialId
+                      ? 'Edit raw material'
+                      : 'Create raw material'}
+                  </h3>
+                  <p className="mt-1 text-xs text-muted">
+                    Raw material data
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRawMaterialModal}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Product name
+                  </label>
+                  <input
+                    type="text"
+                    value={rawMaterialForm.name}
+                    onChange={(event) =>
+                      updateRawMaterialForm('name', event.target.value)
+                    }
+                    placeholder="Example: Oat Milk"
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Product code
+                  </label>
+                  <input
+                    type="text"
+                    value={rawMaterialForm.productCode}
+                    onChange={(event) =>
+                      updateRawMaterialForm('productCode', event.target.value)
+                    }
+                    placeholder="Example: RM-001"
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Unit of Measures
+                  </label>
+                  <select
+                    value={rawMaterialForm.unitOfMeasures}
+                    onChange={(event) =>
+                      updateRawMaterialForm(
+                        'unitOfMeasures',
+                        event.target.value,
+                      )
+                    }
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  >
+                    <option value="">Select a unit</option>
+                    {unitOfMeasuresOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {rawMaterialFormError ? (
+                <p className="mt-4 text-xs font-medium text-red-600">
+                  {rawMaterialFormError}
+                </p>
+              ) : null}
+
+              <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-5">
+                <button
+                  type="button"
+                  onClick={saveRawMaterial}
+                  className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
+                >
+                  {editingRawMaterialId
+                    ? 'Save raw material'
+                    : 'Create raw material'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeRawMaterialModal}
+                  className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rawMaterialImportOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Import Raw Material
+                  </h3>
+                  <p className="mt-1 text-xs text-muted">
+                    Upload Excel or CSV file
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    Upload a file to add or update multiple raw materials.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRawMaterialImportModal}
+                  disabled={rawMaterialImporting}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    File
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleRawMaterialImportFileChange}
+                    disabled={rawMaterialImporting}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                  />
+                  {rawMaterialImportFile ? (
+                    <p className="mt-2 text-xs text-muted">
+                      Selected file: {rawMaterialImportFile.name}
+                    </p>
+                  ) : null}
+                  {rawMaterialImportError ? (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      {rawMaterialImportError}
+                    </p>
+                  ) : null}
+                  {rawMaterialImporting ? (
+                    <div className="mt-3" aria-label="Import in progress">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-primary-soft">
+                        <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+                      </div>
+                      <span className="sr-only">Import in progress</span>
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleImportRawMaterials}
+                  disabled={rawMaterialImporting}
+                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Import raw materials
+                </button>
+                {rawMaterialImportMessage ? (
+                  <p className="text-xs font-medium text-primary">
+                    {rawMaterialImportMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {rawMaterialImportResult ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-md rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs text-muted">Import Raw Material</p>
+                  <h3
+                    className={`mt-2 text-lg font-semibold ${
+                      rawMaterialImportResult.status === 'success'
+                        ? 'text-primary'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {rawMaterialImportResult.title}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted">
+                    {rawMaterialImportResult.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRawMaterialImportResult}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  type="button"
+                  onClick={closeRawMaterialImportResult}
+                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+                >
+                  Ok
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {createRecipeOpen ? (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
             <div
@@ -726,6 +1596,8 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        {activeTab === 'recipes' ? (
+          <>
         <section className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
@@ -737,12 +1609,20 @@ const SuperadminMenuManagementPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={openRecipeImportModal}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
+              >
+                <i className="bi bi-upload text-base" aria-hidden="true" />
+                <span>Import recipes</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setCreateRecipeOpen(true)}
-                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
               >
                 <span className="flex items-center gap-2">
                   <i className="bi bi-plus-circle text-base" aria-hidden="true" />
-                  <span>Create recipe</span>
+                  <span>Input</span>
                 </span>
               </button>
               <button
@@ -752,7 +1632,7 @@ const SuperadminMenuManagementPage = () => {
                 }
                 aria-label="Refresh recipe data"
                 title="Refresh recipe data"
-                className="rounded-md border border-border bg-background p-2 text-primary"
+                className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
               >
                 <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
               </button>
@@ -894,25 +1774,23 @@ const SuperadminMenuManagementPage = () => {
                                   prev === recipeKey ? null : recipeKey,
                                 )
                               }
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                              className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary transition hover:bg-primary-soft/80"
+                              aria-label={isSelected ? 'Hide recipe details' : 'Show recipe details'}
+                              title={isSelected ? 'Hide details' : 'Details'}
                             >
-                              <span className="flex items-center gap-1.5">
-                                <i
-                                  className={`bi ${isSelected ? 'bi-eye-slash' : 'bi-eye'} text-sm`}
-                                  aria-hidden="true"
-                                />
-                                <span>{isSelected ? 'Hide' : 'Details'}</span>
-                              </span>
+                              <i
+                                className={`bi ${isSelected ? 'bi-info-circle-fill' : 'bi-info-circle'} text-base`}
+                                aria-hidden="true"
+                              />
                             </button>
                             <button
                               type="button"
                               onClick={() => openEditRecipe(recipe)}
-                              className="rounded-md border border-border bg-background px-3 py-1 text-xs font-semibold text-primary"
+                              className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                              aria-label="Edit recipe"
+                              title="Edit recipe"
                             >
-                              <span className="flex items-center gap-1.5">
-                                <i className="bi bi-pencil-square text-sm" aria-hidden="true" />
-                                <span>Edit</span>
-                              </span>
+                              <i className="bi bi-pencil-square text-base" aria-hidden="true" />
                             </button>
                             {recipe.approvalStatus === 'pending' ? (
                               <>
@@ -941,19 +1819,25 @@ const SuperadminMenuManagementPage = () => {
                             <button
                               type="button"
                               onClick={() => toggleRecipeActive(recipe)}
-                              className="rounded-md border border-primary/60 bg-background px-3 py-1 text-xs font-semibold text-primary"
+                              className="rounded-md border border-primary/40 bg-background p-2 text-primary transition hover:bg-primary-soft"
+                              aria-label={
+                                isRecipeEnabled ? 'Disable recipe' : 'Enable recipe'
+                              }
+                              title={isRecipeEnabled ? 'Disable' : 'Enable'}
                             >
-                              {isRecipeEnabled ? 'Disable' : 'Enable'}
+                              <i
+                                className={`bi ${isRecipeEnabled ? 'bi-toggle-on' : 'bi-toggle-off'} text-base`}
+                                aria-hidden="true"
+                              />
                             </button>
                             <button
                               type="button"
                               onClick={() => deleteRecipe(recipe)}
-                              className="rounded-md border border-danger bg-background px-3 py-1 text-xs font-semibold text-danger"
+                              className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
+                              aria-label="Delete recipe"
+                              title="Delete recipe"
                             >
-                              <span className="flex items-center gap-1.5">
-                                <i className="bi bi-trash text-sm" aria-hidden="true" />
-                                <span>Delete</span>
-                              </span>
+                              <i className="bi bi-trash text-base" aria-hidden="true" />
                             </button>
                           </div>
                         </td>
@@ -1093,7 +1977,165 @@ const SuperadminMenuManagementPage = () => {
             </div>
           </section>
         ) : null}
+          </>
+        ) : null}
 
+        {activeTab === 'raw-materials' ? (
+        <section className="rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div>
+              <h2 className="text-lg font-semibold">Raw Material Data</h2>
+              <p className="mt-1 text-xs text-muted">
+                Master data used by recipe ingredients.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={openRawMaterialImportModal}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
+              >
+                <i className="bi bi-upload text-base" aria-hidden="true" />
+                <span>Import materials</span>
+              </button>
+              <button
+                type="button"
+                onClick={openCreateRawMaterial}
+                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <i className="bi bi-plus-circle text-base" aria-hidden="true" />
+                  <span>Input</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  fetchRawMaterials(
+                    rawMaterialMeta.page,
+                    rawMaterialMeta.limit,
+                    rawMaterialSearch,
+                  )
+                }
+                aria-label="Refresh raw material data"
+                title="Refresh raw material data"
+                className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
+              >
+                <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
+            <input
+              type="search"
+              value={rawMaterialSearchInput}
+              onChange={(event) => setRawMaterialSearchInput(event.target.value)}
+              placeholder="Search raw material"
+              className="w-56 rounded-2xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+            />
+            <button
+              type="button"
+              onClick={applyRawMaterialSearch}
+              className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+            >
+              Search
+            </button>
+          </div>
+
+          <TablePagination
+            page={rawMaterialMeta.page}
+            totalPages={rawMaterialMeta.totalPages}
+            loading={rawMaterialMeta.loading}
+            summary={`Showing ${rawMaterials.length} of ${rawMaterialMeta.total} items`}
+            onPageChange={(page) =>
+              fetchRawMaterials(page, rawMaterialMeta.limit, rawMaterialSearch)
+            }
+            className="border-b border-border bg-white px-5 py-4"
+          />
+
+          <div className="max-w-full overflow-x-auto">
+            <table className="dm-table min-w-full text-sm">
+              <thead className="bg-background">
+                <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-16 px-5 py-4 font-semibold">No</th>
+                  <th className="px-5 py-4 font-semibold">Product Code</th>
+                  <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Unit of Measures</th>
+                  <th className="px-5 py-4 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rawMaterialMeta.loading ? (
+                  <tr className="border-t border-border">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                      Loading raw materials...
+                    </td>
+                  </tr>
+                ) : rawMaterials.length === 0 ? (
+                  <tr className="border-t border-border">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                      {rawMaterialMeta.error
+                        ? rawMaterialMeta.error
+                        : 'No raw materials yet.'}
+                    </td>
+                  </tr>
+                ) : (
+                  rawMaterials.map((rawMaterial, index) => (
+                    <tr key={rawMaterial.id} className="border-t border-border">
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {(rawMaterialMeta.page - 1) * rawMaterialMeta.limit +
+                          index +
+                          1}
+                      </td>
+                      <td className="px-5 py-4">{rawMaterial.productCode}</td>
+                      <td className="px-5 py-4">{rawMaterial.name}</td>
+                      <td className="px-5 py-4">
+                        {formatUnitLabel(rawMaterial.unitOfMeasures)}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditRawMaterial(rawMaterial)}
+                            className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                            aria-label="Edit raw material"
+                            title="Edit raw material"
+                          >
+                            <i className="bi bi-pencil-square text-base" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteRawMaterial(rawMaterial)}
+                            className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
+                            aria-label="Delete raw material"
+                            title="Delete raw material"
+                          >
+                            <i className="bi bi-trash text-base" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {rawMaterialMessage ? (
+            <p className="px-5 pb-2 text-xs font-medium text-primary">
+              {rawMaterialMessage}
+            </p>
+          ) : null}
+          {rawMaterialMeta.error && rawMaterials.length > 0 ? (
+            <p className="px-5 pb-2 text-xs font-medium text-red-600">
+              {rawMaterialMeta.error}
+            </p>
+          ) : null}
+        </section>
+        ) : null}
+
+        {activeTab === 'categories' ? (
         <section className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
@@ -1105,11 +2147,11 @@ const SuperadminMenuManagementPage = () => {
             <button
               type="button"
               onClick={openCreateCategory}
-              className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+              className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
             >
               <span className="flex items-center gap-2">
                 <i className="bi bi-tags text-base" aria-hidden="true" />
-                <span>Create category</span>
+                <span>Input</span>
               </span>
             </button>
           </div>
@@ -1149,7 +2191,7 @@ const SuperadminMenuManagementPage = () => {
               }
               aria-label="Refresh categories"
               title="Refresh categories"
-              className="rounded-md border border-border bg-background p-2 text-primary"
+              className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
             >
               <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
             </button>
@@ -1215,9 +2257,18 @@ const SuperadminMenuManagementPage = () => {
                           <button
                             type="button"
                             onClick={() => toggleCategoryStatus(category)}
-                            className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                            className="rounded-md border border-primary/40 bg-background p-2 text-primary transition hover:bg-primary-soft"
+                            aria-label={
+                              category.isActive
+                                ? 'Disable category'
+                                : 'Activate category'
+                            }
+                            title={category.isActive ? 'Disable' : 'Activate'}
                           >
-                            {category.isActive ? 'Disable' : 'Activate'}
+                            <i
+                              className={`bi ${category.isActive ? 'bi-toggle-on' : 'bi-toggle-off'} text-base`}
+                              aria-hidden="true"
+                            />
                           </button>
                         </div>
                       </td>
@@ -1239,6 +2290,7 @@ const SuperadminMenuManagementPage = () => {
             </p>
           ) : null}
         </section>
+        ) : null}
       </div>
     </div>
   )

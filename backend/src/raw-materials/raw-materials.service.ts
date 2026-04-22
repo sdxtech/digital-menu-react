@@ -9,6 +9,7 @@ import {
   RawMaterial,
   RawMaterialDocument,
 } from './schemas/raw-material.schema';
+import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 
 export type RawMaterialUpsertInput = {
   productCode: string;
@@ -39,6 +40,8 @@ export class RawMaterialsService {
   constructor(
     @InjectModel(RawMaterial.name)
     private readonly rawMaterialModel: Model<RawMaterialDocument>,
+    @InjectModel(Recipe.name)
+    private readonly recipeModel: Model<RecipeDocument>,
   ) {}
 
   async create(input: RawMaterialUpsertInput) {
@@ -141,6 +144,35 @@ export class RawMaterialsService {
     await item.save();
 
     return item.toObject();
+  }
+
+  async deleteById(id: string) {
+    const existing = await this.rawMaterialModel.findById(id).lean();
+    if (!existing) throw new NotFoundException('Raw material not found');
+
+    const productCode = existing.productCode.trim();
+    const recipeUsingMaterial = await this.recipeModel
+      .findOne({
+        deletedAt: { $exists: false },
+        'ingredients.productCode': new RegExp(
+          `^${this.escapeRegExp(productCode)}$`,
+          'i',
+        ),
+      })
+      .select({ name: 1, recipeCode: 1 })
+      .lean();
+
+    if (recipeUsingMaterial) {
+      const recipeLabel =
+        recipeUsingMaterial.recipeCode || recipeUsingMaterial.name || 'a recipe';
+      throw new BadRequestException(
+        `Raw material is used by ${recipeLabel} and cannot be deleted.`,
+      );
+    }
+
+    const item = await this.rawMaterialModel.findByIdAndDelete(id).lean();
+    if (!item) throw new NotFoundException('Raw material not found');
+    return { id: String(item._id), productCode: item.productCode };
   }
 
   async findAll(query: ListRawMaterialsQuery) {
