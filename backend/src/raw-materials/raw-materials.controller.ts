@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -63,5 +64,11 @@ export class RawMaterialsController {
       minimumQuantity: dto.minimumQuantity,
       price: dto.price,
     });
+  }
+
+  @Delete(':id')
+  @Roles(AppRole.Superadmin)
+  remove(@Param('id') id: string) {
+    return this.rawMaterials.deleteById(id);
   }
 }
