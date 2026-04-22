@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CategoriesService } from './categories.service';
 import { CategoryIdParamDto } from './dto/category-id.param.dto';
@@ -31,7 +32,7 @@ export class CategoriesController {
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateCategoryDto) {
     return this.categories.create(
       { name: dto.name, isActive: dto.isActive },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -47,7 +48,7 @@ export class CategoriesController {
         search: query.search,
         isActive: query.isActive ?? true,
       },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -61,7 +62,7 @@ export class CategoriesController {
     return this.categories.update(
       params.id,
       { name: dto.name, isActive: dto.isActive },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -71,6 +72,6 @@ export class CategoriesController {
     @Req() req: AuthenticatedRequest,
     @Param() params: CategoryIdParamDto,
   ) {
-    return this.categories.softDelete(params.id, req.user.site);
+    return this.categories.softDelete(params.id, getUserSiteScope(req.user));
   }
 }

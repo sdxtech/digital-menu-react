@@ -5,25 +5,18 @@ export type SiteDocument = HydratedDocument<Site>;
 
 @Schema({ timestamps: true })
 export class Site {
-  @Prop({
-    required: true,
-    unique: true,
-    trim: true,
-    uppercase: true,
-    index: true,
-  })
+  @Prop({ required: true, trim: true })
+  name: string;
+
+  @Prop({ required: true, trim: true, unique: true, index: true })
   code: string;
 
-  @Prop({
-    required: true,
-    unique: true,
-    trim: true,
-    index: true,
-  })
-  name: string;
+  @Prop({ type: String, trim: true })
+  description?: string;
 
   @Prop({ default: true, index: true })
   isActive: boolean;
 }
 
 export const SiteSchema = SchemaFactory.createForClass(Site);
+SiteSchema.index({ createdAt: -1 });

@@ -5,137 +5,239 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Site, SiteDocument } from './schemas/site.schema';
 
-type ListSitesQuery = {
-  search?: string;
-  active?: boolean;
-};
-
-type CreateSiteInput = {
-  code: string;
+export type CreateSiteInput = {
   name: string;
+  code: string;
+  description?: string;
+  isActive?: boolean;
 };
 
-type UpdateSiteInput = {
-  name?: string;
+export type UpdateSiteInput = Partial<CreateSiteInput>;
+
+export type ListSitesQuery = {
+  page: number;
+  limit: number;
+  search?: string;
   isActive?: boolean;
+};
+
+export type SiteSummary = {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  isActive: boolean;
 };
 
 @Injectable()
 export class SitesService {
   constructor(
-    @InjectModel(Site.name) private readonly siteModel: Model<SiteDocument>,
+    @InjectModel(Site.name)
+    private readonly siteModel: Model<SiteDocument>,
   ) {}
 
   async create(input: CreateSiteInput) {
+    const name = input.name.trim();
     const code = this.normalizeCode(input.code);
-    const name = this.normalizeName(input.name);
+    if (!name || !code) {
+      throw new BadRequestException('Site name and code are required.');
+    }
 
-    await this.assertNoConflicts({ code, name });
-
-    return this.siteModel.create({
-      code,
-      name,
-      isActive: true,
-    });
+    try {
+      return await this.siteModel.create({
+        name,
+        code,
+        description: this.normalizeOptionalText(input.description),
+        isActive: input.isActive ?? true,
+      });
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new ConflictException('Site code already exists');
+      }
+      throw error;
+    }
   }
 
-  async list(query: ListSitesQuery = {}) {
+  async update(id: string, input: UpdateSiteInput) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid site id.');
+    }
+
+    const updateFields: UpdateSiteInput = {};
+    if (input.name !== undefined) {
+      const name = input.name.trim();
+      if (!name) throw new BadRequestException('Site name is required.');
+      updateFields.name = name;
+    }
+    if (input.code !== undefined) {
+      const code = this.normalizeCode(input.code);
+      if (!code) throw new BadRequestException('Site code is required.');
+      updateFields.code = code;
+    }
+    if (input.description !== undefined) {
+      updateFields.description = input.description.trim();
+    }
+    if (input.isActive !== undefined) {
+      updateFields.isActive = input.isActive;
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+      throw new BadRequestException('No changes provided');
+    }
+
+    try {
+      const updated = await this.siteModel.findByIdAndUpdate(id, updateFields, {
+        new: true,
+      });
+      if (!updated) throw new NotFoundException('Site not found');
+      return updated;
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new ConflictException('Site code already exists');
+      }
+      throw error;
+    }
+  }
+
+  async setActive(id: string, isActive: boolean) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid site id.');
+    }
+
+    const updated = await this.siteModel.findByIdAndUpdate(
+      id,
+      { isActive },
+      { new: true },
+    );
+    if (!updated) throw new NotFoundException('Site not found');
+    return updated;
+  }
+
+  async softDelete(id: string) {
+    return this.setActive(id, false);
+  }
+
+  async findAll(query: ListSitesQuery) {
     const filter: Record<string, unknown> = {};
     if (query.search?.trim()) {
       const text = query.search.trim();
       filter.$or = [
-        { code: new RegExp(this.escapeRegExp(text), 'i') },
         { name: new RegExp(this.escapeRegExp(text), 'i') },
+        { code: new RegExp(this.escapeRegExp(text), 'i') },
+        { description: new RegExp(this.escapeRegExp(text), 'i') },
       ];
     }
-    if (query.active !== undefined) {
-      filter.isActive = query.active;
+    if (query.isActive !== undefined) {
+      filter.isActive = query.isActive;
     }
 
-    const items = await this.siteModel
-      .find(filter)
-      .sort({ code: 1, name: 1 })
-      .lean();
+    const skip = (query.page - 1) * query.limit;
+    const [items, total] = await Promise.all([
+      this.siteModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(query.limit)
+        .lean(),
+      this.siteModel.countDocuments(filter),
+    ]);
 
-    return { items };
+    return {
+      items: items.map((site) => this.toSummary(site)),
+      total,
+      page: query.page,
+      limit: query.limit,
+      totalPages: Math.max(1, Math.ceil(total / query.limit)),
+    };
   }
 
-  async findByCode(code?: string) {
-    const normalizedCode = code?.trim().toUpperCase();
-    if (!normalizedCode) return null;
-
-    return this.siteModel.findOne({ code: normalizedCode }).lean();
-  }
-
-  async update(id: string, input: UpdateSiteInput) {
+  async findById(id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid site id.');
+    }
     const site = await this.siteModel.findById(id);
     if (!site) throw new NotFoundException('Site not found');
-
-    const nextName =
-      input.name !== undefined ? this.normalizeName(input.name) : undefined;
-    const hasIsActiveUpdate = input.isActive !== undefined;
-
-    if (nextName === undefined && !hasIsActiveUpdate) {
-      throw new BadRequestException('No changes provided');
-    }
-
-    if (nextName && nextName !== site.name) {
-      await this.assertNoConflicts({ name: nextName }, site.id);
-      site.name = nextName;
-    }
-
-    if (hasIsActiveUpdate) {
-      site.isActive = Boolean(input.isActive);
-    }
-
-    await site.save();
-    return site.toObject();
+    return site;
   }
 
-  private async assertNoConflicts(
-    input: { code?: string; name?: string },
-    excludeId?: string,
+  async findSummaryById(id?: string | Types.ObjectId | null) {
+    const normalizedId = this.normalizeId(id);
+    if (!normalizedId) return null;
+
+    const site = await this.siteModel.findById(normalizedId).lean();
+    return site ? this.toSummary(site) : null;
+  }
+
+  async findSummariesByIds(
+    ids: Array<string | Types.ObjectId | undefined | null>,
   ) {
-    if (input.code) {
-      const existingCode = await this.siteModel.findOne({
-        code: input.code,
-        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
-      });
-      if (existingCode) {
-        throw new ConflictException('Site code already exists');
-      }
-    }
+    const normalizedIds = Array.from(
+      new Set(
+        ids
+          .map((id) => this.normalizeId(id))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    if (normalizedIds.length === 0) return new Map<string, SiteSummary>();
 
-    if (input.name) {
-      const existingName = await this.siteModel
-        .findOne({
-          name: input.name,
-          ...(excludeId ? { _id: { $ne: excludeId } } : {}),
-        })
-        .collation({ locale: 'en', strength: 2 });
-      if (existingName) {
-        throw new ConflictException('Site name already exists');
-      }
-    }
+    const sites = await this.siteModel
+      .find({ _id: { $in: normalizedIds } })
+      .lean();
+    const map = new Map<string, SiteSummary>();
+    sites.forEach((site) => {
+      map.set(String(site._id), this.toSummary(site));
+    });
+    return map;
   }
 
-  private normalizeCode(value: string) {
-    const normalized = value.trim().toUpperCase();
-    if (!normalized) {
-      throw new BadRequestException('Site code is required');
-    }
-    return normalized;
+  async findSummariesByCodes(codes: string[]) {
+    const normalizedCodes = Array.from(
+      new Set(codes.map((code) => this.normalizeCode(code)).filter(Boolean)),
+    );
+    if (normalizedCodes.length === 0) return new Map<string, SiteSummary>();
+
+    const sites = await this.siteModel
+      .find({ code: { $in: normalizedCodes } })
+      .lean();
+    const map = new Map<string, SiteSummary>();
+    sites.forEach((site) => {
+      map.set(site.code, this.toSummary(site));
+    });
+    return map;
   }
 
-  private normalizeName(value: string) {
-    const normalized = value.trim();
-    if (!normalized) {
-      throw new BadRequestException('Site name is required');
-    }
-    return normalized;
+  toSummary(site: {
+    _id: unknown;
+    name: string;
+    code: string;
+    description?: string;
+    isActive?: boolean;
+  }): SiteSummary {
+    return {
+      id: String(site._id),
+      name: site.name,
+      code: site.code,
+      description: site.description,
+      isActive: site.isActive ?? true,
+    };
+  }
+
+  private normalizeCode(value?: string) {
+    return (value ?? '').trim().replace(/\s+/g, '-').toUpperCase();
+  }
+
+  private normalizeOptionalText(value?: string) {
+    const trimmed = value?.trim();
+    return trimmed || undefined;
+  }
+
+  private normalizeId(id?: string | Types.ObjectId | null) {
+    if (!id) return undefined;
+    const value = String(id);
+    return Types.ObjectId.isValid(value) ? value : undefined;
   }
 
   private escapeRegExp(value: string) {

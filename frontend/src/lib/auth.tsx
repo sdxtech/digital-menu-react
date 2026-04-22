@@ -1,6 +1,5 @@
 import {
   createContext,
-  useEffect,
   useCallback,
   useContext,
   useMemo,
@@ -12,10 +11,13 @@ import { apiFetch } from './api'
 export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'
 
 export type User = {
-  name: string
+  id?: string
+  name?: string
   email: string
   role: Role
-  siteCode?: string
+  roles?: string[]
+  site?: string
+  siteId?: string
   siteName?: string
 }
 
@@ -35,13 +37,6 @@ const rolePaths: Record<Role, string> = {
   'unit-manager': '/unit-manager',
   storekeeper: '/storekeeper',
   superadmin: '/superadmin',
-}
-
-const roleLabels: Record<Role, string> = {
-  chef: 'Chef',
-  'unit-manager': 'Unit Manager',
-  storekeeper: 'Storekeeper',
-  superadmin: 'Superadmin',
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -109,22 +104,10 @@ const readStoredUser = (): User | null => {
 
     const stored = readSessionStorage(USER_KEY) ?? migrateLegacyUserToSession()
     if (!stored) return null
-    const parsed = JSON.parse(stored) as Partial<User> & { site?: string }
+    const parsed = JSON.parse(stored) as User
     if (!parsed?.role || !(parsed.role in rolePaths)) return null
-    const email = parsed.email?.trim()
-    if (!email) return null
-
-    return {
-      name: parsed.name?.trim() || email,
-      email,
-      role: parsed.role,
-      siteCode: parsed.siteCode?.trim() || parsed.site?.trim() || undefined,
-      siteName:
-        parsed.siteName?.trim() ||
-        parsed.siteCode?.trim() ||
-        parsed.site?.trim() ||
-        undefined,
-    }
+    if (parsed.role !== 'superadmin' && !parsed.site?.trim()) return null
+    return parsed
   } catch {
     return null
   }
@@ -149,37 +132,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     })
 
     let nextRole: Role = 'chef'
-    let nextName = email
-    let nextSiteCode: string | undefined
-    let nextSiteName: string | undefined
-    try {
-      // FRONTEND AUTH: role is provided by backend (/auth/me).
-      const me = await apiFetch<{
-        name?: string
-        roles?: string[]
-        appRole?: Role
-        site?: string
-        siteName?: string
-      }>(
-        '/auth/me',
-        undefined,
-        nextAccessToken,
-      )
-      if (me?.appRole) nextRole = me.appRole as Role
-      else if (me?.roles?.includes('superadmin')) nextRole = 'superadmin'
-      if (me?.name?.trim()) nextName = me.name.trim()
-      if (me?.site?.trim()) nextSiteCode = me.site.trim()
-      if (me?.siteName?.trim()) nextSiteName = me.siteName.trim()
-    } catch {
-      // ignore auth/me failures and use default role
+    let me: {
+      id?: string
+      name?: string
+      email?: string
+      roles?: string[]
+      appRole?: Role
+      site?: string
+      siteId?: string
+      siteName?: string
+    } | null = null
+    // FRONTEND AUTH: role and site scope are verified by backend (/auth/me).
+    me = await apiFetch<{
+      id?: string
+      name?: string
+      email?: string
+      roles?: string[]
+      appRole?: Role
+      site?: string
+      siteId?: string
+      siteName?: string
+    }>('/auth/me', undefined, nextAccessToken)
+    if (me?.appRole) nextRole = me.appRole as Role
+    else if (me?.roles?.includes('superadmin')) nextRole = 'superadmin'
+
+    if (nextRole !== 'superadmin' && !me?.site?.trim()) {
+      throw new Error('Your account does not have an assigned site.')
     }
 
     const nextUser: User = {
-      name: nextName,
-      email,
+      id: me?.id,
+      name: me?.name,
+      email: me?.email ?? email,
       role: nextRole,
-      siteCode: nextSiteCode,
-      siteName: nextSiteName ?? nextSiteCode,
+      roles: me?.roles,
+      site: me?.site,
+      siteId: me?.siteId,
+      siteName: me?.siteName,
     }
     setUser(nextUser)
     writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
@@ -192,44 +181,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     return nextUser
   }
-
-  useEffect(() => {
-    const token = readStoredToken()
-    if (!token) return
-
-    apiFetch<{
-      name?: string
-      email?: string
-      roles?: string[]
-      appRole?: Role
-      site?: string
-      siteName?: string
-    }>('/auth/me', undefined, token)
-      .then((me) => {
-        setUser((current) => {
-          const nextRole =
-            me?.appRole ??
-            (me?.roles?.includes('superadmin') ? 'superadmin' : current?.role)
-          if (!nextRole) return current
-
-          const nextUser: User = {
-            name: me?.name?.trim() || current?.name || me?.email?.trim() || '',
-            email: me?.email?.trim() || current?.email || '',
-            role: nextRole,
-            siteCode: me?.site?.trim() || current?.siteCode,
-            siteName:
-              me?.siteName?.trim() ||
-              me?.site?.trim() ||
-              current?.siteName ||
-              current?.siteCode,
-          }
-
-          writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
-          return nextUser
-        })
-      })
-      .catch(() => null)
-  }, [accessToken])
 
   const logout = useCallback(() => {
     const token = accessToken ?? readStoredToken()
@@ -265,5 +216,3 @@ export const useAuth = () => {
 }
 
 export const rolePathFor = (role: Role) => rolePaths[role]
-
-export const roleLabelFor = (role: Role) => roleLabels[role]

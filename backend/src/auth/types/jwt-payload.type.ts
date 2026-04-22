@@ -7,6 +7,8 @@ export type JwtPayload = {
   roles: AppRole[];
   appRole?: string;
   site?: string;
+  siteId?: string;
+  siteName?: string;
   iat?: number;
   exp?: number;
 };

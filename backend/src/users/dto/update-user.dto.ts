@@ -13,4 +13,8 @@ export class UpdateUserDto {
   @IsArray()
   @IsString({ each: true })
   sites?: string[];
+
+  @IsOptional()
+  @IsString()
+  siteId?: string;
 }

@@ -21,9 +21,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
+import { RejectRecipeDto } from './dto/reject-recipe.dto';
+import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import { RecipesService } from './recipes.service';
@@ -52,13 +55,13 @@ export class RecipesController {
   @Get('categories')
   @Roles(...ALL_APP_ROLES)
   listCategories(@Req() req: AuthenticatedRequest) {
-    return this.recipes.listCategories(req.user.site);
+    return this.recipes.listCategories(getUserSiteScope(req.user));
   }
 
   @Get()
   @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query, req.user.site);
+    return this.recipes.findAll(query, getUserSiteScope(req.user));
   }
 
   @Patch(':id')
@@ -71,6 +74,22 @@ export class RecipesController {
     return this.recipes.updateById(id, dto, this.buildActor(req));
   }
 
+  @Patch(':id/active')
+  @Roles(AppRole.Superadmin)
+  setActive(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: SetRecipeActiveDto,
+  ) {
+    return this.recipes.setActive(id, dto.isActive, this.buildActor(req));
+  }
+
+  @Delete(':id')
+  @Roles(AppRole.Superadmin)
+  remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.softDeleteById(id, this.buildActor(req));
+  }
+
   @Patch(':id/approve')
   @Roles(AppRole.UnitManager, AppRole.Superadmin)
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
@@ -79,8 +98,23 @@ export class RecipesController {
 
   @Patch(':id/reject')
   @Roles(AppRole.UnitManager, AppRole.Superadmin)
-  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.setApprovalStatus(id, 'rejected', this.buildActor(req));
+  reject(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RejectRecipeDto,
+  ) {
+    return this.recipes.setApprovalStatus(
+      id,
+      'rejected',
+      this.buildActor(req),
+      dto.reason,
+    );
+  }
+
+  @Patch(':id/resubmit')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  resubmit(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.resubmitRejectedRecipe(id, this.buildActor(req));
   }
 
   @Patch(':id/photo')
@@ -148,7 +182,8 @@ export class RecipesController {
       id: req.user.sub,
       name: req.user.name,
       email: req.user.email,
-      site: req.user.site,
+      roles: req.user.roles,
+      site: getUserSiteScope(req.user),
     };
   }
 }

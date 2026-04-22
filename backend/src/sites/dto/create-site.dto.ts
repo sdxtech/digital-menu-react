@@ -1,9 +1,19 @@
-import { IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateSiteDto {
   @IsString()
-  code: string;
+  @IsNotEmpty()
+  name: string;
 
   @IsString()
-  name: string;
+  @IsNotEmpty()
+  code: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

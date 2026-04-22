@@ -13,13 +13,13 @@ import { SuperadminUsersController } from './superadmin-users.controller';
     AuthModule,
     MailModule,
     MenuProductionsModule,
-    UsersModule,
     SitesModule,
+    UsersModule,
   ],
   controllers: [
     SuperadminController,
-    SuperadminUsersController,
     SuperadminSitesController,
+    SuperadminUsersController,
   ],
 })
 export class SuperadminModule {}

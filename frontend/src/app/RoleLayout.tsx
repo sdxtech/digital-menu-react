@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import { roleLabelFor, useAuth } from '../lib/auth'
+import { useAuth } from '../lib/auth'
 
 type NavItem = {
   label: string
@@ -11,23 +11,49 @@ type NavItem = {
 }
 
 type RoleLayoutProps = {
+  workspaceLabel: string
+  defaultEmail: string
   navItems: NavItem[]
+  showSite?: boolean
 }
 
-const RoleLayout = ({ navItems }: RoleLayoutProps) => {
+const roleLabels: Record<string, string> = {
+  chef: 'Chef',
+  'unit-manager': 'Unit Manager',
+  storekeeper: 'Storekeeper',
+  superadmin: 'Superadmin',
+}
+
+const formatRoles = (roles?: string[]) => {
+  const labels = (roles ?? [])
+    .map((role) => roleLabels[role] ?? role)
+    .filter(Boolean)
+
+  return labels.length ? labels.join(', ') : undefined
+}
+
+const RoleLayout = ({
+  workspaceLabel,
+  defaultEmail,
+  navItems,
+  showSite = true,
+}: RoleLayoutProps) => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
   )
-  const userName = user?.name?.trim() || user?.email || 'Unknown User'
-  const userRole = user ? roleLabelFor(user.role) : 'Workspace'
-  const userSite = user?.siteName?.trim() || 'No site assigned'
 
   const handleLogout = () => {
     logout()
     navigate('/login', { replace: true })
   }
+  const displayName = user?.name?.trim() || user?.email || defaultEmail
+  const roleLabel = formatRoles(user?.roles) ?? (user ? roleLabels[user.role] : undefined)
+  const identityLabel = roleLabel ? `${displayName} - ${roleLabel}` : workspaceLabel
+  const siteLabel = showSite
+    ? user?.siteName ?? user?.site ?? 'No site assigned'
+    : user?.siteName ?? user?.site ?? workspaceLabel
 
   return (
     <AppShell>
@@ -39,17 +65,17 @@ const RoleLayout = ({ navItems }: RoleLayoutProps) => {
                 DM
               </div>
               <div>
-                <p className="text-sm font-semibold text-white">
-                  {userName} - {userRole}
+                <p className="text-sm font-semibold leading-tight text-white">
+                  {identityLabel}
                 </p>
-                <p className="text-xs text-white/70">
-                  {userSite}
+                <p className="mt-0.5 text-xs text-white/70">
+                  {siteLabel}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white">
-                {user?.email ?? 'No email'}
+                {user?.email ?? defaultEmail}
               </div>
               <button
                 type="button"

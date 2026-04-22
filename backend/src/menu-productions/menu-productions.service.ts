@@ -157,7 +157,7 @@ export class MenuProductionsService implements OnModuleInit {
     }
     const productionCode = await this.nextMenuProductionCode();
 
-    const normalizedSite = this.normalizeSite(site);
+    const normalizedSite = this.requireSite(site);
     return this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
@@ -170,7 +170,7 @@ export class MenuProductionsService implements OnModuleInit {
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
       createdBy,
-      ...(normalizedSite ? { site: normalizedSite } : {}),
+      site: normalizedSite,
     });
   }
 
@@ -189,7 +189,7 @@ export class MenuProductionsService implements OnModuleInit {
       normalizedInputs.map((item) => item.recipeId),
     );
 
-    const normalizedSite = this.normalizeSite(site);
+    const normalizedSite = this.requireSite(site);
     const uniqueDates = Array.from(
       new Set(normalizedInputs.map((item) => item.productionDate)),
     );
@@ -219,7 +219,7 @@ export class MenuProductionsService implements OnModuleInit {
         approvalStatus: 'pending',
         storeRequestStatus: 'not-requested',
         createdBy,
-        ...(normalizedSite ? { site: normalizedSite } : {}),
+        site: normalizedSite,
       };
     });
     return this.menuProductionModel.insertMany(payload, { ordered: false });
@@ -408,7 +408,9 @@ export class MenuProductionsService implements OnModuleInit {
       .lean();
 
     if (menus.length !== normalizedIds.length) {
-      throw new NotFoundException('One or more menu productions were not found.');
+      throw new NotFoundException(
+        'One or more menu productions were not found.',
+      );
     }
 
     menus.forEach((menu) => {
@@ -428,6 +430,7 @@ export class MenuProductionsService implements OnModuleInit {
           this.buildProductionBatchKey({
             productionDate: menu.productionDate,
             productionCode: menu.productionCode,
+            site: menu.site,
             id: String(menu._id ?? menu.id ?? ''),
           }),
         ),
@@ -458,7 +461,9 @@ export class MenuProductionsService implements OnModuleInit {
         item.unitOfMeasures,
       );
       if (!key) {
-        throw new BadRequestException('Each fulfillment item must be identifiable.');
+        throw new BadRequestException(
+          'Each fulfillment item must be identifiable.',
+        );
       }
       if (actualItems.has(key)) {
         throw new BadRequestException(
@@ -589,7 +594,9 @@ export class MenuProductionsService implements OnModuleInit {
       .lean();
 
     if (menus.length !== normalizedIds.length) {
-      throw new NotFoundException('One or more menu productions were not found.');
+      throw new NotFoundException(
+        'One or more menu productions were not found.',
+      );
     }
 
     menus.forEach((menu) => {
@@ -609,6 +616,7 @@ export class MenuProductionsService implements OnModuleInit {
           this.buildProductionBatchKey({
             productionDate: menu.productionDate,
             productionCode: menu.productionCode,
+            site: menu.site,
             id: String(menu._id ?? menu.id ?? ''),
           }),
         ),
@@ -675,7 +683,9 @@ export class MenuProductionsService implements OnModuleInit {
       .lean();
 
     if (menus.length !== normalizedIds.length) {
-      throw new NotFoundException('One or more menu productions were not found.');
+      throw new NotFoundException(
+        'One or more menu productions were not found.',
+      );
     }
 
     menus.forEach((menu) => {
@@ -692,6 +702,7 @@ export class MenuProductionsService implements OnModuleInit {
           this.buildProductionBatchKey({
             productionDate: menu.productionDate,
             productionCode: menu.productionCode,
+            site: menu.site,
             id: String(menu._id ?? menu.id ?? ''),
           }),
         ),
@@ -779,6 +790,7 @@ export class MenuProductionsService implements OnModuleInit {
       const groupKey = this.buildProductionBatchKey({
         productionDate: date,
         productionCode: item.productionCode,
+        site: item.site,
         id: String(item._id ?? item.id ?? ''),
       });
       const bucket = grouped.get(groupKey) ?? {
@@ -992,11 +1004,13 @@ export class MenuProductionsService implements OnModuleInit {
   private buildProductionBatchKey(input: {
     productionDate: string;
     productionCode?: string;
+    site?: string;
     id: string;
   }) {
     const productionCode =
       this.normalizeOptionalProductionCode(input.productionCode) ?? input.id;
-    return `${input.productionDate}__${productionCode}`;
+    const site = this.normalizeSite(input.site) ?? DEFAULT_SITE;
+    return `${site}__${input.productionDate}__${productionCode}`;
   }
 
   private async ensureNonUniqueProductionCodeIndex() {
@@ -1135,6 +1149,7 @@ export class MenuProductionsService implements OnModuleInit {
       const groupKey = this.buildProductionBatchKey({
         productionDate,
         productionCode: String(menu.productionCode ?? ''),
+        site: String(menu.site ?? '') || requestedSite,
         id: String(menu._id ?? menu.id ?? ''),
       });
       const group = groups.get(groupKey) ?? {
@@ -1227,8 +1242,7 @@ export class MenuProductionsService implements OnModuleInit {
       );
       const fulfillmentNote =
         String(menu.storeFulfillmentNote ?? '').trim() || undefined;
-      const fulfilledBy =
-        String(menu.fulfilledBy ?? '').trim() || undefined;
+      const fulfilledBy = String(menu.fulfilledBy ?? '').trim() || undefined;
       const cancelledAtValue = menu.storeCancelledAt;
       const cancelledAt =
         cancelledAtValue instanceof Date
@@ -1262,7 +1276,8 @@ export class MenuProductionsService implements OnModuleInit {
             menu.storeRequestStatus === 'cancelled'
               ? cancellationReason
               : fulfillmentNote,
-          items: menu.storeRequestStatus === 'cancelled' ? [] : fulfillmentItems,
+          items:
+            menu.storeRequestStatus === 'cancelled' ? [] : fulfillmentItems,
         };
       }
 
@@ -1283,9 +1298,8 @@ export class MenuProductionsService implements OnModuleInit {
           ? Number(menu.cost)
           : undefined,
         productionDate,
-        approvalStatus: (menu.approvalStatus ?? 'pending') as ApprovalStatus,
-        storeRequestStatus:
-          (menu.storeRequestStatus ?? 'not-requested') as StoreRequestStatus,
+        approvalStatus: menu.approvalStatus ?? 'pending',
+        storeRequestStatus: menu.storeRequestStatus ?? 'not-requested',
         portionSize,
         ingredients,
         missingRecipe,
@@ -1403,6 +1417,14 @@ export class MenuProductionsService implements OnModuleInit {
   private normalizeSite(site?: string) {
     const trimmed = site?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private requireSite(site?: string) {
+    const normalizedSite = this.normalizeSite(site);
+    if (!normalizedSite) {
+      throw new BadRequestException('Menu production requires a site.');
+    }
+    return normalizedSite;
   }
 
   private buildProductionDateFilter(query: ListMenuProductionsQueryDto) {

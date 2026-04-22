@@ -16,7 +16,6 @@ import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import type { AuthenticatedRequest } from './types/authenticated-request.type';
-import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
 
@@ -26,7 +25,6 @@ const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
-    private readonly sites: SitesService,
     private readonly users: UsersService,
     private readonly config: ConfigService,
   ) {}
@@ -93,19 +91,11 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async me(@Req() req: AuthenticatedRequest) {
-    const { sub, name, email, roles, appRole, site } = req.user;
-    const siteRecord = await this.sites.findByCode(site);
+  me(@Req() req: AuthenticatedRequest) {
+    const { sub, name, email, roles, appRole, site, siteId, siteName } =
+      req.user;
     // BACKEND LOGIC: appRole is derived in auth service and returned here.
-    return {
-      id: sub,
-      name,
-      email,
-      roles,
-      appRole,
-      site,
-      siteName: siteRecord?.name?.trim() || site,
-    };
+    return { id: sub, name, email, roles, appRole, site, siteId, siteName };
   }
 
   private setRefreshCookie(res: Response, refreshToken: string) {

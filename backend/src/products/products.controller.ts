@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ListProductsQueryDto } from './dto/list-products.query.dto';
@@ -38,7 +39,7 @@ export class ProductsController {
         imageUrl: dto.imageUrl,
         isActive: dto.isActive,
       },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -54,13 +55,13 @@ export class ProductsController {
         sortBy: query.sortBy ?? 'createdAt',
         sortDir: query.sortDir ?? 'desc',
       },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
   @Get(':id')
   detail(@Req() req: AuthenticatedRequest, @Param() params: ProductIdParamDto) {
-    return this.products.findById(params.id, req.user.site);
+    return this.products.findById(params.id, getUserSiteScope(req.user));
   }
 
   @Patch(':id')
@@ -80,13 +81,13 @@ export class ProductsController {
         imageUrl: dto.imageUrl,
         isActive: dto.isActive,
       },
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
   @Delete(':id')
   @Roles(AppRole.Superadmin)
   remove(@Req() req: AuthenticatedRequest, @Param() params: ProductIdParamDto) {
-    return this.products.softDelete(params.id, req.user.site);
+    return this.products.softDelete(params.id, getUserSiteScope(req.user));
   }
 }

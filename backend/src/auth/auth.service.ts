@@ -3,11 +3,25 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import type { Types } from 'mongoose';
 import { UsersService } from '../users/users.service';
+import { SitesService } from '../sites/sites.service';
 import { resolveExpiresIn } from './jwt.utils';
 import { AppRole } from './roles.constants';
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+
+type UserSiteInput = {
+  roles?: AppRole[];
+  sites?: string[];
+  siteId?: string | Types.ObjectId | null;
+};
+
+type AuthSiteContext = {
+  site?: string;
+  siteId?: string;
+  siteName?: string;
+};
 
 @Injectable()
 export class AuthService {
@@ -15,6 +29,7 @@ export class AuthService {
 
   constructor(
     private readonly users: UsersService,
+    private readonly sites: SitesService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {
@@ -28,13 +43,13 @@ export class AuthService {
     const user = await this.users.create({ name, email, passwordHash });
 
     const roles = user.roles;
-    const site = this.resolveUserSite(user.sites);
+    const siteContext = await this.resolveUserSite(user);
     const tokens = await this.issueTokens(
       user.id,
       user.name,
       user.email,
       roles,
-      site,
+      siteContext,
     );
     await this.users.setRefreshToken(user.id, tokens.refreshToken);
     return tokens;
@@ -49,13 +64,13 @@ export class AuthService {
     if (!user.isActive) throw new UnauthorizedException('User disabled');
 
     const roles = user.roles;
-    const site = this.resolveUserSite(user.sites);
+    const siteContext = await this.resolveUserSite(user);
     const tokens = await this.issueTokens(
       user.id,
       user.name,
       user.email,
       roles,
-      site,
+      siteContext,
     );
     await this.users.setRefreshToken(user.id, tokens.refreshToken);
     return tokens;
@@ -86,13 +101,13 @@ export class AuthService {
       if (!matches) throw new UnauthorizedException('Invalid refresh token');
 
       const roles = user.roles;
-      const site = this.resolveUserSite(user.sites);
+      const siteContext = await this.resolveUserSite(user);
       const tokens = await this.issueTokens(
         user.id,
         user.name,
         user.email,
         roles,
-        site,
+        siteContext,
       );
       await this.users.setRefreshToken(user.id, tokens.refreshToken);
       return tokens;
@@ -126,9 +141,45 @@ export class AuthService {
     return 'chef';
   }
 
-  private resolveUserSite(sites?: string[]) {
-    const normalized = (sites ?? []).map((site) => site.trim()).filter(Boolean);
-    return normalized[0];
+  private async resolveUserSite(user: UserSiteInput): Promise<AuthSiteContext> {
+    const siteId = user.siteId ? String(user.siteId) : undefined;
+    if (siteId) {
+      const site = await this.sites.findSummaryById(siteId);
+      if (site) {
+        return {
+          site: site.code,
+          siteId: site.id,
+          siteName: site.name,
+        };
+      }
+    }
+
+    const legacySite = (user.sites ?? [])
+      .map((site) => site.trim())
+      .filter(Boolean)[0];
+    if (legacySite) {
+      const site = Array.from(
+        (await this.sites.findSummariesByCodes([legacySite])).values(),
+      )[0];
+      if (site) {
+        return {
+          site: site.code,
+          siteId: site.id,
+          siteName: site.name,
+        };
+      }
+
+      return {
+        site: legacySite,
+        siteName: legacySite,
+      };
+    }
+
+    if (user.roles?.includes(AppRole.Superadmin)) {
+      return {};
+    }
+
+    throw new UnauthorizedException('User site is required');
   }
 
   private async issueTokens(
@@ -136,7 +187,7 @@ export class AuthService {
     name: string,
     email: string,
     roles: AppRole[],
-    site?: string,
+    siteContext: AuthSiteContext,
   ) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
@@ -151,7 +202,16 @@ export class AuthService {
     const refreshTokenId = randomUUID();
 
     const accessToken = await this.jwt.signAsync(
-      { sub, name, email, roles, appRole, site },
+      {
+        sub,
+        name,
+        email,
+        roles,
+        appRole,
+        site: siteContext.site,
+        siteId: siteContext.siteId,
+        siteName: siteContext.siteName,
+      },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(

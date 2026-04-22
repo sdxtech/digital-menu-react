@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
@@ -33,7 +34,11 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionDto,
   ) {
-    return this.menuProductions.create(dto, req.user.sub, req.user.site);
+    return this.menuProductions.create(
+      dto,
+      req.user.sub,
+      getUserSiteScope(req.user),
+    );
   }
 
   @Post('bulk')
@@ -45,7 +50,7 @@ export class MenuProductionsController {
     return this.menuProductions.createMany(
       dto.items ?? [],
       req.user.sub,
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -56,7 +61,10 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
   ) {
-    return this.menuProductions.buildStoreRequestGroups(query, req.user.site);
+    return this.menuProductions.buildStoreRequestGroups(
+      query,
+      getUserSiteScope(req.user),
+    );
   }
 
   // BACKEND LOGIC: timeline grouping + approval stats for production menus.
@@ -66,7 +74,10 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
   ) {
-    return this.menuProductions.buildTimeline(query, req.user.site);
+    return this.menuProductions.buildTimeline(
+      query,
+      getUserSiteScope(req.user),
+    );
   }
 
   @Get()
@@ -75,7 +86,7 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
   ) {
-    return this.menuProductions.findAll(query, req.user.site);
+    return this.menuProductions.findAll(query, getUserSiteScope(req.user));
   }
 
   @Patch('fulfill-batch')
@@ -86,7 +97,7 @@ export class MenuProductionsController {
   ) {
     return this.menuProductions.fulfillStoreRequestBatch(
       dto,
-      req.user.site,
+      getUserSiteScope(req.user),
       req.user.name || req.user.email,
     );
   }
@@ -99,7 +110,7 @@ export class MenuProductionsController {
   ) {
     return this.menuProductions.cancelStoreRequestBatch(
       dto,
-      req.user.site,
+      getUserSiteScope(req.user),
       req.user.name || req.user.email,
     );
   }
@@ -112,7 +123,7 @@ export class MenuProductionsController {
   ) {
     return this.menuProductions.cancelPendingMenuProductionBatch(
       dto,
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -122,7 +133,7 @@ export class MenuProductionsController {
     return this.menuProductions.setApprovalStatus(
       id,
       'approved',
-      req.user.site,
+      getUserSiteScope(req.user),
       req.user.name || req.user.email,
     );
   }
@@ -133,7 +144,7 @@ export class MenuProductionsController {
     return this.menuProductions.setApprovalStatus(
       id,
       'rejected',
-      req.user.site,
+      getUserSiteScope(req.user),
       req.user.name || req.user.email,
     );
   }
@@ -147,7 +158,7 @@ export class MenuProductionsController {
     return this.menuProductions.setStoreRequestStatus(
       id,
       'requested',
-      req.user.site,
+      getUserSiteScope(req.user),
     );
   }
 
@@ -160,7 +171,7 @@ export class MenuProductionsController {
     return this.menuProductions.setStoreRequestStatus(
       id,
       'fulfilled',
-      req.user.site,
+      getUserSiteScope(req.user),
       req.user.name || req.user.email,
     );
   }

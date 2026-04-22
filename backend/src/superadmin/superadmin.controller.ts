@@ -101,8 +101,8 @@ export class SuperadminController {
               ? a.site.localeCompare(b.site)
               : a.date.localeCompare(b.date),
           )
-      : (await this.menuProductions.buildStoreRequestGroups(requestQuery)).items ??
-        [];
+      : ((await this.menuProductions.buildStoreRequestGroups(requestQuery))
+          .items ?? []);
 
     return { items };
   }
