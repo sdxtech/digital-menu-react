@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
-import { apiFetch } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import {
   useChefData,
   type RawMaterial,
@@ -25,12 +23,6 @@ type IngredientRow = {
   name: string
   unitOfMeasures: string
   qty: string
-}
-
-type CategoryApi = {
-  id?: string
-  _id?: string
-  name?: string
 }
 
 export type BaseRecipe = {
@@ -78,7 +70,6 @@ const ChefCreateMenu = ({
   onSaved,
 }: ChefCreateMenuProps) => {
   const location = useLocation()
-  const { accessToken } = useAuth()
   const {
     createRecipe,
     updateRecipe,
@@ -101,9 +92,6 @@ const ChefCreateMenu = ({
   ])
 
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
-  const [categoryOptions, setCategoryOptions] = useState<string[]>([])
-  const [categoriesLoading, setCategoriesLoading] = useState(false)
-  const [categoriesError, setCategoriesError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
   const [ingredientPage, setIngredientPage] = useState(1)
@@ -162,60 +150,6 @@ const ChefCreateMenu = ({
     setSubmitError('')
     setSubmitMessage('')
   }, [baseRecipe])
-
-  useEffect(() => {
-    if (!accessToken) {
-      setCategoryOptions([])
-      setCategoriesLoading(false)
-      setCategoriesError('')
-      return
-    }
-
-    let isCancelled = false
-
-    const loadCategories = async () => {
-      setCategoriesLoading(true)
-      setCategoriesError('')
-
-      try {
-        const params = new URLSearchParams({
-          page: '1',
-          limit: '100',
-          isActive: 'true',
-        })
-        const data = await apiFetch<{ items?: CategoryApi[] }>(
-          `/categories?${params.toString()}`,
-          undefined,
-          accessToken,
-        )
-        if (isCancelled) return
-
-        const names = (data.items ?? [])
-          .map((item) => item.name?.trim() ?? '')
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
-
-        setCategoryOptions(names)
-      } catch (error) {
-        if (isCancelled) return
-
-        setCategoryOptions([])
-        setCategoriesError(
-          error instanceof Error ? error.message : 'Failed to load categories.',
-        )
-      } finally {
-        if (!isCancelled) {
-          setCategoriesLoading(false)
-        }
-      }
-    }
-
-    loadCategories().catch(() => null)
-
-    return () => {
-      isCancelled = true
-    }
-  }, [accessToken])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
@@ -585,12 +519,6 @@ const ChefCreateMenu = ({
     1,
     Math.ceil(ingredientRows.length / INGREDIENT_ROWS_PER_PAGE),
   )
-  const selectedCategory = recipeForm.category.trim()
-  const selectedCategoryMissing =
-    Boolean(selectedCategory) && !categoryOptions.includes(selectedCategory)
-  const availableCategoryOptions = selectedCategoryMissing
-    ? [selectedCategory, ...categoryOptions]
-    : categoryOptions
   const paginatedIngredientRows = ingredientRows.slice(
     (ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE,
     ingredientPage * INGREDIENT_ROWS_PER_PAGE,
@@ -732,46 +660,13 @@ const ChefCreateMenu = ({
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Category</label>
-            <select
+            <input
+              type="text"
               value={recipeForm.category}
               onChange={(event) => updateRecipeForm('category', event.target.value)}
-              disabled={categoriesLoading || availableCategoryOptions.length === 0}
+              placeholder="Main Course / Beverage"
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">
-                {categoriesLoading
-                  ? 'Loading categories...'
-                  : availableCategoryOptions.length
-                    ? 'Select category'
-                    : 'No active categories'}
-              </option>
-              {availableCategoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                  {selectedCategoryMissing && category === selectedCategory
-                    ? ' (current category)'
-                    : ''}
-                </option>
-              ))}
-            </select>
-            {selectedCategoryMissing ? (
-              <p className="mt-2 text-xs text-muted">
-                Current recipe category is not in the active category list.
-              </p>
-            ) : null}
-            {categoriesError ? (
-              <p className="mt-2 text-xs font-medium text-red-600">
-                {categoriesError}
-              </p>
-            ) : null}
-            {!categoriesLoading &&
-            !categoriesError &&
-            availableCategoryOptions.length === 0 ? (
-              <p className="mt-2 text-xs text-muted">
-                No active category is available. Ask Superadmin to create one
-                first.
-              </p>
-            ) : null}
+            />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Base pax</label>
