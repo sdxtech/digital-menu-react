@@ -68,7 +68,7 @@ const formatQuantity = (value: number) => {
   return value.toFixed(3).replace(/\.?0+$/, '')
 }
 
-type RecordStatus = 'fulfilled' | 'cancelled' | 'rejected'
+type RecordStatus = 'requested' | 'fulfilled' | 'cancelled' | 'rejected'
 
 const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => {
   const hasFulfilled = group.items.some(
@@ -77,19 +77,34 @@ const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => 
   const hasCancelled = group.items.some(
     (item) => item.storeRequestStatus === 'cancelled',
   )
+  const hasRequested = group.items.some(
+    (item) =>
+      item.approvalStatus === 'approved' &&
+      (item.storeRequestStatus === 'requested' ||
+        item.storeRequestStatus === 'not-requested'),
+  )
   const hasRejected = group.items.some((item) => item.approvalStatus === 'rejected')
 
-  if (!hasFulfilled && !hasCancelled && hasRejected) {
-    return 'rejected'
-  }
   if (group.fulfillment?.status === 'cancelled' || hasCancelled) {
     return 'cancelled'
   }
   if (group.fulfillment?.status === 'fulfilled' || hasFulfilled) {
     return 'fulfilled'
   }
+  if (hasRequested) {
+    return 'requested'
+  }
+  if (hasRejected) {
+    return 'rejected'
+  }
 
   return null
+}
+
+const getRecordStatusLabel = (status: RecordStatus) => {
+  if (status === 'requested') return 'Waiting for Storekeeper'
+  if (status === 'rejected') return getApprovalStatusLabel('rejected')
+  return getStoreRequestStatusLabel(status)
 }
 
 const UnitManagerMenuProductionRecordsPage = () => {
@@ -157,20 +172,16 @@ const UnitManagerMenuProductionRecordsPage = () => {
     )
   }
 
-  const getHandledByNames = (
-    group: StoreRequestGroup,
-    recordStatus: RecordStatus,
-  ) => {
-    if (recordStatus === 'rejected') {
-      return Array.from(
-        new Set(
-          group.items
-            .map((item) => item.reviewedBy?.trim())
-            .filter((value): value is string => Boolean(value)),
-        ),
-      )
-    }
+  const getReviewedByNames = (group: StoreRequestGroup) =>
+    Array.from(
+      new Set(
+        group.items
+          .map((item) => item.reviewedBy?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    )
 
+  const getHandledByNames = (group: StoreRequestGroup) => {
     return group.fulfillment?.completedBy?.trim()
       ? [group.fulfillment.completedBy.trim()]
       : Array.from(
@@ -188,8 +199,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
         <div>
           <h1 className="text-2xl font-semibold">Menu Production Records</h1>
           <p className="mt-2 text-sm text-muted">
-            Review rejected production batches and store requests completed or
-            cancelled by the Storekeeper.
+            Track approved batches waiting for the Storekeeper, plus rejected,
+            completed, and cancelled production history.
           </p>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
@@ -202,34 +213,36 @@ const UnitManagerMenuProductionRecordsPage = () => {
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
-            summary={`Showing ${paginatedRecords.length} of ${records.length} recorded production batches`}
+            summary={`Showing ${paginatedRecords.length} of ${records.length} tracked production batches`}
           />
           <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                  <th className="w-16 px-4 py-3 font-semibold">No</th>
-                  <th className="px-4 py-3 font-semibold">Production date</th>
-                  <th className="px-4 py-3 font-semibold">Production code</th>
-                  <th className="px-4 py-3 font-semibold">Chef</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Handled by</th>
-                  <th className="px-4 py-3 font-semibold">Action</th>
+                  <th className="w-16 px-5 py-4 font-semibold">No</th>
+                  <th className="px-5 py-4 font-semibold">Production date</th>
+                  <th className="px-5 py-4 font-semibold">Production code</th>
+                  <th className="px-5 py-4 font-semibold">Approval status</th>
+                  <th className="px-5 py-4 font-semibold">Reviewed by</th>
+                  <th className="px-5 py-4 font-semibold">Total menu</th>
+                  <th className="px-5 py-4 font-semibold">Storekeeper</th>
+                  <th className="px-5 py-4 font-semibold">Store request status</th>
+                  <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       Loading production records...
                     </td>
                   </tr>
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
-                        : 'No rejected, completed, or cancelled production batches yet.'}
+                        : 'No approved, rejected, completed, or cancelled production batches yet.'}
                     </td>
                   </tr>
                 ) : (
@@ -248,43 +261,104 @@ const UnitManagerMenuProductionRecordsPage = () => {
                       : '-'
                     const recordStatus = getGroupRecordStatus(group)
                     if (!recordStatus) return null
-                    const handledBy = getHandledByNames(group, recordStatus)
-                    const handledByLabel = handledBy.length ? handledBy.join(', ') : '-'
+                    const reviewedByNames = getReviewedByNames(group)
+                    const reviewedByLabel = reviewedByNames.length
+                      ? reviewedByNames.join(', ')
+                      : '-'
+                    const handledBy =
+                      recordStatus === 'requested' || recordStatus === 'rejected'
+                        ? []
+                        : getHandledByNames(group)
+                    const storekeeperLabel =
+                      recordStatus === 'requested' || recordStatus === 'rejected'
+                          ? '-'
+                          : handledBy.length
+                            ? handledBy.join(', ')
+                            : '-'
+                    const items = group.items
+                    const hasApproved = items.some(
+                      (item) => item.approvalStatus === 'approved',
+                    )
+                    const hasRejected = items.some(
+                      (item) => item.approvalStatus === 'rejected',
+                    )
+                    const hasPendingReview = items.some(
+                      (item) => item.approvalStatus === 'pending',
+                    )
+                    const hasRequested = items.some(
+                      (item) => item.storeRequestStatus === 'requested',
+                    )
+                    const hasDelivered = items.some(
+                      (item) => item.storeRequestStatus === 'fulfilled',
+                    )
+                    const hasCancelled = items.some(
+                      (item) => item.storeRequestStatus === 'cancelled',
+                    )
+                    const hasPendingApproval = items.some(
+                      (item) => item.storeRequestStatus === 'not-requested',
+                    )
                     const summaryItems = aggregateStoreRequestSummary(group.summary)
                     const fulfillmentItems = group.fulfillment?.items ?? []
-                    const statusLabel =
-                      recordStatus === 'rejected'
-                        ? getApprovalStatusLabel('rejected')
-                        : getStoreRequestStatusLabel(recordStatus)
 
                     return (
                       <Fragment key={`record-${groupKey}`}>
-                        <tr className="border-t border-border">
-                          <td className="px-4 py-3 text-sm text-muted">
+                        <tr
+                          className="cursor-pointer border-t border-border"
+                          onClick={() => toggleExpandedGroup(groupKey)}
+                        >
+                          <td className="px-5 py-4 text-sm text-muted">
                             {(page - 1) * RECORD_ITEMS_PER_PAGE + index + 1}
                           </td>
-                          <td className="px-4 py-3">{group.date}</td>
-                          <td className="px-4 py-3 text-xs text-muted">
+                          <td className="px-5 py-4">{group.date}</td>
+                          <td className="px-5 py-4 text-xs text-muted">
                             {group.productionCode ?? '-'}
                           </td>
-                          <td className="px-4 py-3">{submittedByLabel}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                                recordStatus === 'fulfilled'
-                                  ? 'bg-success/10 text-success'
-                                  : 'bg-danger/10 text-danger'
-                              }`}
-                            >
-                              {statusLabel}
-                            </span>
+                          <td className="px-5 py-4">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              {hasPendingReview ? (
+                                <span className="text-muted">Submitted</span>
+                              ) : null}
+                              {hasApproved ? (
+                                <span className="text-primary">Approved</span>
+                              ) : null}
+                              {hasRejected ? (
+                                <span className="text-danger">Rejected</span>
+                              ) : null}
+                            </div>
                           </td>
-                          <td className="px-4 py-3">{handledByLabel}</td>
-                          <td className="px-4 py-3">
+                          <td className="px-5 py-4 text-sm text-muted">
+                            {reviewedByLabel}
+                          </td>
+                          <td className="px-5 py-4 text-sm font-medium">
+                            {group.items.length}
+                          </td>
+                          <td className="px-5 py-4 text-sm text-muted">
+                            {storekeeperLabel}
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              {hasRequested ? (
+                                <span className="text-primary">Requested</span>
+                              ) : null}
+                              {hasDelivered ? (
+                                <span className="text-success">Delivered</span>
+                              ) : null}
+                              {hasCancelled ? (
+                                <span className="text-danger">Cancelled</span>
+                              ) : null}
+                              {hasPendingApproval ? (
+                                <span className="text-muted">Pending approval</span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
                             <button
                               type="button"
-                              onClick={() => toggleExpandedGroup(groupKey)}
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleExpandedGroup(groupKey)
+                              }}
+                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                             >
                               {isExpanded ? 'Hide details' : 'View details'}
                             </button>
@@ -292,7 +366,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={7} className="px-4 py-4">
+                            <td colSpan={9} className="px-5 py-5">
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                   <p className="text-xs text-muted">Menu list</p>
@@ -306,6 +380,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="px-4 py-3 font-semibold">Category</th>
                                           <th className="px-4 py-3 font-semibold">Portion</th>
                                           <th className="px-4 py-3 font-semibold">Approval status</th>
+                                          <th className="px-4 py-3 font-semibold">Store status</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -323,6 +398,11 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                             <td className="px-4 py-3">
                                               {getApprovalStatusLabel(item.approvalStatus)}
                                             </td>
+                                            <td className="px-4 py-3">
+                                              {getStoreRequestStatusLabel(
+                                                item.storeRequestStatus,
+                                              )}
+                                            </td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -334,6 +414,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                   <p className="text-xs text-muted">
                                     {recordStatus === 'rejected'
                                       ? 'Rejected production summary'
+                                      : recordStatus === 'requested'
+                                      ? 'Requested ingredient summary'
                                       : recordStatus === 'cancelled'
                                       ? 'Cancelled ingredient summary'
                                       : 'Planned vs actual issuance'}
@@ -416,17 +498,35 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                     </table>
                                   </div>
                                   <p className="mt-3 text-xs text-muted">
-                                    {recordStatus === 'rejected' ? 'Reviewed by' : 'Handled by'}:{' '}
-                                    {handledByLabel}
+                                    Batch status: {getRecordStatusLabel(recordStatus)}
                                   </p>
                                   <p className="mt-2 text-xs text-muted">
-                                    {recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}:{' '}
-                                    {recordStatus !== 'rejected' && group.fulfillment?.completedAt
-                                      ? new Date(
-                                          group.fulfillment.completedAt,
-                                        ).toLocaleString()
-                                      : '-'}
+                                    Submitted by: {submittedByLabel}
                                   </p>
+                                  <p className="mt-3 text-xs text-muted">
+                                    {recordStatus === 'rejected'
+                                      ? 'Reviewed by'
+                                      : recordStatus === 'requested'
+                                      ? 'Approved by'
+                                      : 'Handled by'}:{' '}
+                                    {recordStatus === 'requested'
+                                      ? reviewedByLabel
+                                      : recordStatus === 'rejected'
+                                        ? reviewedByLabel
+                                        : storekeeperLabel}
+                                  </p>
+                                  {recordStatus !== 'requested' ? (
+                                    <p className="mt-2 text-xs text-muted">
+                                      {`${recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}: ${
+                                        recordStatus !== 'rejected' &&
+                                        group.fulfillment?.completedAt
+                                          ? new Date(
+                                              group.fulfillment.completedAt,
+                                            ).toLocaleString()
+                                          : '-'
+                                      }`}
+                                    </p>
+                                  ) : null}
                                   {group.fulfillment?.note ? (
                                     <p className="mt-2 text-xs text-muted">
                                       {recordStatus === 'cancelled'
