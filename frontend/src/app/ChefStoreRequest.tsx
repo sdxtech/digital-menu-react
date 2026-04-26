@@ -138,10 +138,7 @@ const sanitizeWorksheetName = (value: string) => {
   return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
 }
 
-const buildSpreadsheetXml = (
-  sheetName: string,
-  rows: Array<Array<unknown>>,
-) => {
+const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
   const safeName = sanitizeWorksheetName(sheetName)
   const rowXml = rows
     .map((row, index) => {
@@ -158,6 +155,18 @@ const buildSpreadsheetXml = (
     })
     .join('')
 
+  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>`
+}
+
+const buildWorkbookXml = (
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const worksheetsXml = sheets
+    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
+    .join('')
+
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
@@ -172,18 +181,15 @@ const buildSpreadsheetXml = (
    <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
   </Style>
  </Styles>
- <Worksheet ss:Name="${xmlEscape(safeName)}">
-  <Table>${rowXml}</Table>
- </Worksheet>
+ ${worksheetsXml}
 </Workbook>`
 }
 
 const downloadExcel = (
   filename: string,
-  sheetName: string,
-  rows: Array<Array<unknown>>,
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
 ) => {
-  const xml = buildSpreadsheetXml(sheetName, rows)
+  const xml = buildWorkbookXml(sheets)
   const blob = new Blob([xml], {
     type: 'application/vnd.ms-excel;charset=utf-8;',
   })
@@ -215,66 +221,80 @@ const ChefStoreRequest = () => {
   }
 
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
-    const header = [
-      'Production Date',
-      'Menu Name',
-      'Category',
-      'Portions',
-      'Base Pax',
-      'Approval Status',
-      'Store Request Status',
-      'Notes',
-      'Product Code',
-      'Ingredient Name',
-      'Qty',
-      'Unit',
+    const rows: Array<Array<unknown>> = [
+      [
+        'No',
+        'Production Date',
+        'Production Code',
+        'Menu Name',
+        'Recipe Code',
+        'Category',
+        'Portion',
+        'IT Code',
+        'Ingredient Name',
+        'QTY',
+        'Unit',
+      ],
     ]
 
-    const rows: Array<Array<string>> = []
+    let rowNumber = 1
     group.items.forEach((menu) => {
       const ingredients = menu.ingredients ?? []
-      const note = menu.missingRecipe
-        ? 'Missing recipe'
-        : ingredients.length === 0
-          ? 'No ingredients'
-          : ''
-      const baseRow = [
-        group.date,
-        menu.menuName,
-        menu.category,
-        String(menu.portion),
-        String(menu.portionSize ?? 1),
-        getApprovalStatusLabel(menu.approvalStatus),
-        getStoreRequestStatusLabel(menu.storeRequestStatus),
-        note,
-      ]
-
       if (ingredients.length === 0) {
-        rows.push([...baseRow, '', '', '', ''])
+        rows.push([
+          rowNumber,
+          group.date,
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
+          '',
+          '',
+          '',
+          '',
+        ])
+        rowNumber += 1
         return
       }
 
       ingredients.forEach((ingredient) => {
         rows.push([
-          ...baseRow,
+          rowNumber,
+          group.date,
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
           ingredient.productCode,
           ingredient.name,
           formatQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
+        rowNumber += 1
       })
     })
+
+    const summaryRows: Array<Array<unknown>> = [
+      ['IT Code', 'Ingredient Name', 'QTY', 'Unit'],
+      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+        item.productCode,
+        item.name,
+        formatQuantity(item.qty),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ]
 
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
     const safeProductionCode = (group.productionCode ?? 'no-code').replace(
       /[\\/:*?"<>|]/g,
       '-',
     )
-    downloadExcel(
-      `store-request-menu-${safeDate}-${safeProductionCode}.xls`,
-      `Menus ${group.date}`,
-      [header, ...rows],
-    )
+    downloadExcel(`store-request-${safeDate}-${safeProductionCode}.xls`, [
+      { name: 'Store Request', rows },
+      { name: 'Ingredient Summary', rows: summaryRows },
+    ])
   }
 
   // FRONTEND VIEW: backend returns grouped store requests with multiplied ingredients.
