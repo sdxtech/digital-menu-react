@@ -177,6 +177,35 @@ describe('AuthService', () => {
     );
   });
 
+  it('rejects login when user has no assigned role', async () => {
+    const users = makeUsers();
+    const sites = makeSites();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      sites as never,
+      jwt as never,
+      config as never,
+    );
+
+    users.findByEmail.mockResolvedValue({
+      id: 'user-1',
+      name: 'No Role User',
+      email: 'norole@corp.test',
+      passwordHash: await bcrypt.hash('secret-pass', 10),
+      isActive: true,
+      roles: [],
+      sites: ['A1'],
+    });
+
+    await expect(
+      service.login('norole@corp.test', 'secret-pass'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(users.setRefreshToken).not.toHaveBeenCalled();
+  });
+
   it('rejects non-superadmin login when no site is assigned', async () => {
     const users = makeUsers();
     const sites = makeSites();

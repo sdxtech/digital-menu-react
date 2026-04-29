@@ -176,7 +176,7 @@ const ChefLayout = () => {
           </aside>
 
           <main className="min-w-0 flex-1 pr-4 pt-4">
-            <Outlet />
+            <Outlet /> {/* Tempat untuk merender komponen halaman yang sesuai dengan rute yang dipilih. */ }
           </main>
         </div>
       </div>

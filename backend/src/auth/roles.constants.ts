@@ -5,8 +5,6 @@ export enum AppRole {
   Storekeeper = 'storekeeper',
 }
 
-export const DEFAULT_ROLE = AppRole.Chef;
-
 export const ALL_APP_ROLES: AppRole[] = [
   AppRole.Superadmin,
   AppRole.Chef,
