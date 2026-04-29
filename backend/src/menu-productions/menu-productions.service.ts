@@ -146,6 +146,7 @@ export class MenuProductionsService implements OnModuleInit {
     input: CreateMenuProductionDto,
     createdBy?: string,
     site?: string,
+    assistedBy?: string,
   ) {
     const recipeById = await this.findEligibleRecipesById([input.recipeId]);
     const normalizedRecipeId = this.normalizeRecipeId(input.recipeId);
@@ -158,6 +159,10 @@ export class MenuProductionsService implements OnModuleInit {
     const productionCode = await this.nextMenuProductionCode();
 
     const normalizedSite = this.requireSite(site);
+    const normalizedUnitManagerId = this.normalizeOptionalUserId(
+      input.unitManagerId,
+      'Unit manager id',
+    );
     return this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
@@ -170,6 +175,8 @@ export class MenuProductionsService implements OnModuleInit {
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
       createdBy,
+      unitManagerId: normalizedUnitManagerId,
+      assistedBy,
       site: normalizedSite,
     });
   }
@@ -178,6 +185,7 @@ export class MenuProductionsService implements OnModuleInit {
     inputs: CreateMenuProductionDto[],
     createdBy?: string,
     site?: string,
+    assistedBy?: string,
   ) {
     if (!inputs.length) return [];
     const normalizedInputs = inputs.map((input) => ({
@@ -219,13 +227,22 @@ export class MenuProductionsService implements OnModuleInit {
         approvalStatus: 'pending',
         storeRequestStatus: 'not-requested',
         createdBy,
+        unitManagerId: this.normalizeOptionalUserId(
+          input.unitManagerId,
+          'Unit manager id',
+        ),
+        assistedBy,
         site: normalizedSite,
       };
     });
     return this.menuProductionModel.insertMany(payload, { ordered: false });
   }
 
-  async findAll(query: ListMenuProductionsQueryDto, site?: string) {
+  async findAll(
+    query: ListMenuProductionsQueryDto,
+    site?: string,
+    unitManagerId?: string,
+  ) {
     await this.backfillMissingMenuProductionCodes();
 
     const filter: Record<string, unknown> = {};
@@ -233,6 +250,10 @@ export class MenuProductionsService implements OnModuleInit {
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
       andFilters.push(siteFilter);
+    }
+    const unitManagerFilter = this.buildUnitManagerFilter(unitManagerId);
+    if (Object.keys(unitManagerFilter).length) {
+      andFilters.push(unitManagerFilter);
     }
     if (query.search?.trim()) {
       const text = query.search.trim();
@@ -303,12 +324,16 @@ export class MenuProductionsService implements OnModuleInit {
     status: ApprovalStatus,
     site?: string,
     reviewedBy?: string,
+    unitManagerId?: string,
   ) {
     // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
     const actor = reviewedBy?.trim();
-    const filter = this.withSiteFilter({ _id: id }, site);
+    const filter = this.withUnitManagerFilter(
+      this.withSiteFilter({ _id: id }, site),
+      unitManagerId,
+    );
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
         filter,
@@ -729,7 +754,11 @@ export class MenuProductionsService implements OnModuleInit {
   }
 
   // BACKEND LOGIC: production timeline grouping + approval stats.
-  async buildTimeline(query: ListMenuProductionsQueryDto, site?: string) {
+  async buildTimeline(
+    query: ListMenuProductionsQueryDto,
+    site?: string,
+    unitManagerId?: string,
+  ) {
     await this.backfillMissingMenuProductionCodes();
 
     const filter: Record<string, unknown> = {};
@@ -737,6 +766,10 @@ export class MenuProductionsService implements OnModuleInit {
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
       andFilters.push(siteFilter);
+    }
+    const unitManagerFilter = this.buildUnitManagerFilter(unitManagerId);
+    if (Object.keys(unitManagerFilter).length) {
+      andFilters.push(unitManagerFilter);
     }
     if (query.search?.trim()) {
       const text = query.search.trim();
@@ -856,6 +889,7 @@ export class MenuProductionsService implements OnModuleInit {
   async buildStoreRequestGroups(
     query: ListMenuProductionsQueryDto,
     site?: string,
+    unitManagerId?: string,
   ) {
     await this.backfillMissingMenuProductionCodes();
     const requestedSite = this.normalizeSite(site);
@@ -865,6 +899,10 @@ export class MenuProductionsService implements OnModuleInit {
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
       andFilters.push(siteFilter);
+    }
+    const unitManagerFilter = this.buildUnitManagerFilter(unitManagerId);
+    if (Object.keys(unitManagerFilter).length) {
+      andFilters.push(unitManagerFilter);
     }
     if (query.search?.trim()) {
       const text = query.search.trim();
@@ -986,6 +1024,18 @@ export class MenuProductionsService implements OnModuleInit {
     const trimmed = recipeId?.trim();
     if (!trimmed) return undefined;
     if (!Types.ObjectId.isValid(trimmed)) return trimmed;
+    return new Types.ObjectId(trimmed).toString();
+  }
+
+  private normalizeOptionalUserId(
+    userId?: string,
+    fieldName = 'User id',
+  ): string | undefined {
+    const trimmed = userId?.trim();
+    if (!trimmed) return undefined;
+    if (!Types.ObjectId.isValid(trimmed)) {
+      throw new BadRequestException(`${fieldName} is invalid.`);
+    }
     return new Types.ObjectId(trimmed).toString();
   }
 
@@ -1455,6 +1505,20 @@ export class MenuProductionsService implements OnModuleInit {
     return { site };
   }
 
+  private buildUnitManagerFilter(unitManagerId?: string) {
+    const normalizedUnitManagerId =
+      this.normalizeOptionalUserId(unitManagerId);
+    if (!normalizedUnitManagerId) return {};
+    return {
+      $or: [
+        { unitManagerId: normalizedUnitManagerId },
+        { unitManagerId: { $exists: false } },
+        { unitManagerId: '' },
+        { unitManagerId: null },
+      ],
+    };
+  }
+
   private withSiteFilter(filter: Record<string, unknown>, site?: string) {
     const siteFilter = this.buildSiteFilter(site);
     if (!Object.keys(siteFilter).length) return filter;
@@ -1462,5 +1526,14 @@ export class MenuProductionsService implements OnModuleInit {
       return { $and: [filter, siteFilter] };
     }
     return { ...filter, ...siteFilter };
+  }
+
+  private withUnitManagerFilter(
+    filter: Record<string, unknown>,
+    unitManagerId?: string,
+  ) {
+    const unitManagerFilter = this.buildUnitManagerFilter(unitManagerId);
+    if (!Object.keys(unitManagerFilter).length) return filter;
+    return { $and: [filter, unitManagerFilter] };
   }
 }
