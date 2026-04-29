@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -34,10 +35,12 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionDto,
   ) {
+    this.requireCreateUnitManager(req, dto.unitManagerId);
     return this.menuProductions.create(
       dto,
-      req.user.sub,
-      getUserSiteScope(req.user),
+      this.resolveCreateChef(req, dto.chefId),
+      this.resolveCreateSite(req, dto.site),
+      this.resolveAssistedBy(req),
     );
   }
 
@@ -47,10 +50,43 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateMenuProductionBulkDto,
   ) {
+    const requestedSites = Array.from(
+      new Set(
+        (dto.items ?? [])
+          .map((item) => item.site?.trim())
+          .filter((site): site is string => Boolean(site)),
+      ),
+    );
+    if (requestedSites.length > 1) {
+      throw new BadRequestException(
+        'Bulk menu production can only target one site at a time.',
+      );
+    }
+    const requestedChefIds = this.getUniqueRequestValues(
+      dto.items ?? [],
+      'chefId',
+    );
+    if (requestedChefIds.length > 1) {
+      throw new BadRequestException(
+        'Bulk menu production can only target one chef at a time.',
+      );
+    }
+    const requestedUnitManagerIds = this.getUniqueRequestValues(
+      dto.items ?? [],
+      'unitManagerId',
+    );
+    if (requestedUnitManagerIds.length > 1) {
+      throw new BadRequestException(
+        'Bulk menu production can only target one unit manager at a time.',
+      );
+    }
+    this.requireCreateUnitManager(req, requestedUnitManagerIds[0]);
+
     return this.menuProductions.createMany(
       dto.items ?? [],
-      req.user.sub,
-      getUserSiteScope(req.user),
+      this.resolveCreateChef(req, requestedChefIds[0]),
+      this.resolveCreateSite(req, requestedSites[0]),
+      this.resolveAssistedBy(req),
     );
   }
 
@@ -64,6 +100,7 @@ export class MenuProductionsController {
     return this.menuProductions.buildStoreRequestGroups(
       query,
       getUserSiteScope(req.user),
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 
@@ -77,6 +114,7 @@ export class MenuProductionsController {
     return this.menuProductions.buildTimeline(
       query,
       getUserSiteScope(req.user),
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 
@@ -86,7 +124,11 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
   ) {
-    return this.menuProductions.findAll(query, getUserSiteScope(req.user));
+    return this.menuProductions.findAll(
+      query,
+      this.resolveQuerySite(req, query.site),
+      this.resolveUnitManagerAssignmentScope(req),
+    );
   }
 
   @Patch('fulfill-batch')
@@ -135,6 +177,7 @@ export class MenuProductionsController {
       'approved',
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 
@@ -146,6 +189,7 @@ export class MenuProductionsController {
       'rejected',
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 
@@ -173,6 +217,73 @@ export class MenuProductionsController {
       'fulfilled',
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
+    );
+  }
+
+  private resolveCreateSite(req: AuthenticatedRequest, requestedSite?: string) {
+    const siteScope = getUserSiteScope(req.user);
+    if (siteScope) return siteScope;
+
+    const normalizedSite = requestedSite?.trim();
+    if (!normalizedSite) {
+      throw new BadRequestException('Menu production requires a site.');
+    }
+    return normalizedSite;
+  }
+
+  private resolveCreateChef(req: AuthenticatedRequest, requestedChefId?: string) {
+    const siteScope = getUserSiteScope(req.user);
+    if (siteScope) return req.user.sub;
+
+    const normalizedChefId = requestedChefId?.trim();
+    if (!normalizedChefId) {
+      throw new BadRequestException('Menu production requires a chef.');
+    }
+    return normalizedChefId;
+  }
+
+  private resolveAssistedBy(req: AuthenticatedRequest) {
+    const siteScope = getUserSiteScope(req.user);
+    return siteScope ? undefined : req.user.sub;
+  }
+
+  private requireCreateUnitManager(
+    req: AuthenticatedRequest,
+    requestedUnitManagerId?: string,
+  ) {
+    const siteScope = getUserSiteScope(req.user);
+    if (siteScope) return;
+
+    if (!requestedUnitManagerId?.trim()) {
+      throw new BadRequestException(
+        'Menu production requires a unit manager.',
+      );
+    }
+  }
+
+  private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    const siteScope = getUserSiteScope(req.user);
+    if (siteScope) return siteScope;
+    return requestedSite?.trim() || undefined;
+  }
+
+  private resolveUnitManagerAssignmentScope(req: AuthenticatedRequest) {
+    if (req.user.roles?.includes(AppRole.Superadmin)) return undefined;
+    return req.user.roles?.includes(AppRole.UnitManager)
+      ? req.user.sub
+      : undefined;
+  }
+
+  private getUniqueRequestValues(
+    items: CreateMenuProductionDto[],
+    key: 'chefId' | 'unitManagerId',
+  ) {
+    return Array.from(
+      new Set(
+        items
+          .map((item) => item[key]?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
     );
   }
 }

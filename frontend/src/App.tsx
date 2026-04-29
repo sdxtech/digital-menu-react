@@ -22,6 +22,7 @@ import SuperadminMenuManagementPage from './app/SuperadminMenuManagementPage'
 import SuperadminSitesPage from './app/SuperadminSitesPage'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
+import SuperadminStoreRequestPage from './app/SuperadminStoreRequestPage'
 import { useRouteDocumentTitle } from './lib/document-title'
 
 const RequireAuth = () => {
@@ -103,6 +104,7 @@ function App() {
             <Route path="users" element={<SuperadminUsersPage />} />
             <Route path="sites" element={<SuperadminSitesPage />} />
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
+            <Route path="store-request" element={<SuperadminStoreRequestPage />} />
             <Route
               path="store-request-export"
               element={<SuperadminStoreRequestExportPage />}
