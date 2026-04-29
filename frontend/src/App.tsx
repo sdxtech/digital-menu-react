@@ -39,7 +39,7 @@ const RequireRole = ({ role }: { role: Role }) => {
 
 const RoleLanding = () => {
   const { user } = useAuth()
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/login" replace /> /* Jika belum login, arahkan ke halaman login. */
   return <Navigate to={rolePathFor(user.role)} replace />
 }
 

@@ -64,6 +64,7 @@ export class AuthService {
     if (!user.isActive) throw new UnauthorizedException('User disabled');
 
     const roles = user.roles;
+    this.resolveAppRole(roles);
     const siteContext = await this.resolveUserSite(user);
     const tokens = await this.issueTokens(
       user.id,
@@ -101,6 +102,7 @@ export class AuthService {
       if (!matches) throw new UnauthorizedException('Invalid refresh token');
 
       const roles = user.roles;
+      this.resolveAppRole(roles);
       const siteContext = await this.resolveUserSite(user);
       const tokens = await this.issueTokens(
         user.id,
@@ -138,7 +140,7 @@ export class AuthService {
     if (roles.includes(AppRole.UnitManager)) return 'unit-manager';
     if (roles.includes(AppRole.Storekeeper)) return 'storekeeper';
     if (roles.includes(AppRole.Chef)) return 'chef';
-    return 'chef';
+    throw new UnauthorizedException('User role is required');
   }
 
   private async resolveUserSite(user: UserSiteInput): Promise<AuthSiteContext> {

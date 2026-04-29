@@ -34,6 +34,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('SESSION_REVOKED');
     }
 
+    if (!this.hasValidRole(payload.roles)) {
+      await this.users.setRefreshToken(user.id, null);
+      throw new UnauthorizedException('User role is required');
+    }
+
     if (!payload.roles?.includes(AppRole.Superadmin) && !payload.site?.trim()) {
       throw new UnauthorizedException('SITE_REQUIRED');
     }
@@ -62,5 +67,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   private isSessionIdle(lastActivityAt?: Date) {
     if (!lastActivityAt) return false;
     return Date.now() - lastActivityAt.getTime() > this.idleTimeoutMs;
+  }
+
+  private hasValidRole(roles?: AppRole[]) {
+    if (!roles?.length) return false;
+    return roles.some((role) => Object.values(AppRole).includes(role));
   }
 }
