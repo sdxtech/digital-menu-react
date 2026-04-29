@@ -24,6 +24,20 @@ export class CreateMenuProductionDto {
   @IsOptional()
   category?: string;
 
+  @IsString()
+  @IsOptional()
+  site?: string;
+
+  @IsString()
+  @IsMongoId()
+  @IsOptional()
+  chefId?: string;
+
+  @IsString()
+  @IsMongoId()
+  @IsOptional()
+  unitManagerId?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)

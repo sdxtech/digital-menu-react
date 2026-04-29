@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
 } from 'react'
 import TablePagination from '../components/TablePagination'
+import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -15,7 +16,11 @@ import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type CategoryStatusFilter = 'active' | 'disabled'
-type MenuManagementTab = 'recipes' | 'raw-materials' | 'categories'
+type MenuManagementTab =
+  | 'menu-production'
+  | 'recipes'
+  | 'raw-materials'
+  | 'categories'
 
 type RecipeIngredient = {
   productCode?: string
@@ -134,6 +139,7 @@ const menuManagementTabs: Array<{
   label: string
   icon: string
 }> = [
+  { id: 'menu-production', label: 'Menu Production', icon: 'bi-calendar2-week' },
   { id: 'recipes', label: 'Recipe Data', icon: 'bi-journal-text' },
   { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
   { id: 'categories', label: 'Categories', icon: 'bi-tags' },
@@ -1594,6 +1600,19 @@ const SuperadminMenuManagementPage = () => {
               />
             </div>
           </div>
+        ) : null}
+
+        {activeTab === 'menu-production' ? (
+          <ChefMenuCycle
+            embedded
+            title="Menu Production"
+            description="Create production menus for any site before they move into the approval and store request flow."
+            requireProductionSite
+            requireProductionActors
+            productionSiteOptions={siteOptions}
+            submitLabel="Submit production"
+            emptySiteMessage="Select a production site first."
+          />
         ) : null}
 
         {activeTab === 'recipes' ? (

@@ -51,6 +51,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  site?: string
   date: string
   productionCode?: string
   items: StoreRequestMenu[]
@@ -60,6 +61,16 @@ type StoreRequestGroup = {
 }
 
 const ITEMS_PER_PAGE = 10
+
+type StoreRequestSiteOption = {
+  code: string
+  name: string
+}
+
+type ChefStoreRequestProps = {
+  requireSiteSelection?: boolean
+  siteOptions?: StoreRequestSiteOption[]
+}
 
 const getStoreRequestGroupKey = (group: {
   date: string
@@ -203,9 +214,13 @@ const downloadExcel = (
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-const ChefStoreRequest = () => {
+const ChefStoreRequest = ({
+  requireSiteSelection = false,
+  siteOptions = [],
+}: ChefStoreRequestProps = {}) => {
   const { accessToken } = useAuth()
   const { cancelPendingMenuProductionBatch } = useChefData()
+  const [selectedSite, setSelectedSite] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -303,12 +318,25 @@ const ChefStoreRequest = () => {
       setErrorMessage('Please log in first to load store requests.')
       return
     }
+    if (requireSiteSelection && !selectedSite) {
+      setGroups([])
+      setLoading(false)
+      setErrorMessage('')
+      return
+    }
 
     setLoading(true)
     setErrorMessage('')
     try {
+      const params = new URLSearchParams()
+      if (requireSiteSelection && selectedSite) {
+        params.set('site', selectedSite)
+      }
+      const query = params.toString()
       const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        '/menu-productions/store-requests',
+        query
+          ? `/menu-productions/store-requests?${query}`
+          : '/menu-productions/store-requests',
         undefined,
         accessToken,
       )
@@ -322,7 +350,7 @@ const ChefStoreRequest = () => {
     } finally {
       setLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, requireSiteSelection, selectedSite])
 
   const handleCancelPendingGroup = async (group: StoreRequestGroup) => {
     const pendingItems = group.items.filter((item) => item.approvalStatus === 'pending')
@@ -371,6 +399,13 @@ const ChefStoreRequest = () => {
   }, [fetchStoreRequests])
 
   useEffect(() => {
+    setExpandedGroups([])
+    setPage(1)
+    setActionMessage('')
+    setErrorMessage('')
+  }, [selectedSite])
+
+  useEffect(() => {
     const nextTotalPages = Math.max(
       1,
       Math.ceil(groups.length / ITEMS_PER_PAGE),
@@ -388,6 +423,32 @@ const ChefStoreRequest = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Store Request</h1>
+        {requireSiteSelection ? (
+          <div className="max-w-xs">
+            <label className="text-xs font-medium text-muted">
+              Store request site
+            </label>
+            <select
+              value={selectedSite}
+              onChange={(event) => setSelectedSite(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+            >
+              <option value="">Select site</option>
+              {siteOptions
+                .filter((site) => site.code.trim())
+                .map((site) => (
+                  <option key={site.code} value={site.code}>
+                    {site.name ? `${site.name} (${site.code})` : site.code}
+                  </option>
+                ))}
+            </select>
+            {!selectedSite ? (
+              <p className="mt-2 text-xs text-muted">
+                Select a site to load store request batches.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {errorMessage ? (
           <p className="text-xs font-medium text-red-600">{errorMessage}</p>
         ) : null}

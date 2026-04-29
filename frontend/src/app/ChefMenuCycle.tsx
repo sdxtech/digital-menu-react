@@ -1,9 +1,32 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
-import { useChefData } from '../lib/chef-data'
+import { apiFetch } from '../lib/api'
+import { useChefData, type MenuProduction, type Recipe } from '../lib/chef-data'
+import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
+
+type ProductionSiteOption = {
+  code: string
+  name: string
+}
+
+type ProductionUserOption = {
+  id: string
+  name: string
+  email: string
+  roles: string[]
+}
+
+type ProductionUserApi = {
+  id?: string
+  _id?: string
+  name?: string
+  email?: string
+  roles?: string[]
+  isActive?: boolean
+}
 
 type MenuInputRow = {
   id: string
@@ -19,8 +42,52 @@ const createMenuInputRow = (): MenuInputRow => ({
   portion: '',
 })/* Fungsi untuk membuat baris input menu baru dengan id unik dan nilai default kosong */
 
-const ChefMenuCycle = () => {
-  const { recipes, menuProductions, addMenuProductionsBulk } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
+const mapProductionUser = (item: ProductionUserApi): ProductionUserOption => ({
+  id: item.id ?? item._id ?? '',
+  name: item.name ?? '',
+  email: item.email ?? '',
+  roles: item.roles ?? [],
+})
+
+type ChefMenuCycleProps = {
+  embedded?: boolean
+  title?: string
+  description?: string
+  requireProductionSite?: boolean
+  productionSiteOptions?: ProductionSiteOption[]
+  requireProductionActors?: boolean
+  submitLabel?: string
+  emptySiteMessage?: string
+}
+
+const ChefMenuCycle = ({
+  embedded = false,
+  title = 'Menu Production',
+  description,
+  requireProductionSite = false,
+  productionSiteOptions = [],
+  requireProductionActors = false,
+  submitLabel = 'Submit to Unit Manager',
+  emptySiteMessage = 'Select a production site first.',
+}: ChefMenuCycleProps = {}) => {
+  const { accessToken } = useAuth()
+  const {
+    recipes,
+    menuProductions,
+    addMenuProductionsBulk,
+    fetchRecipes,
+  } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
+  const [productionSite, setProductionSite] = useState('')
+  const [loadedProductionSite, setLoadedProductionSite] = useState('')
+  const [siteRecipes, setSiteRecipes] = useState<Recipe[]>([])
+  const [siteMenuProductions, setSiteMenuProductions] = useState<
+    MenuProduction[]
+  >([])
+  const [siteUsers, setSiteUsers] = useState<ProductionUserOption[]>([])
+  const [productionChefId, setProductionChefId] = useState('')
+  const [productionUnitManagerId, setProductionUnitManagerId] = useState('')
+  const [siteDataLoading, setSiteDataLoading] = useState(false)
+  const [siteDataError, setSiteDataError] = useState('')
   const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
   const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
@@ -30,15 +97,64 @@ const ChefMenuCycle = () => {
 
   const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
 
+  const sortedProductionSiteOptions = useMemo(
+    () =>
+      productionSiteOptions
+        .filter((site) => site.code.trim())
+        .slice()
+        .sort((a, b) =>
+          (a.name || a.code).localeCompare(b.name || b.code, undefined, {
+            sensitivity: 'base',
+          }),
+        ),
+    [productionSiteOptions],
+  )
+
+  const siteDataReady =
+    !requireProductionSite ||
+    (Boolean(productionSite) && loadedProductionSite === productionSite)
+  const scopedRecipes = requireProductionSite
+    ? siteDataReady
+      ? siteRecipes
+      : []
+    : recipes
+  const scopedMenuProductions = requireProductionSite
+    ? siteDataReady
+      ? siteMenuProductions
+      : []
+    : menuProductions
+  const chefOptions = useMemo(
+    () =>
+      siteUsers
+        .filter((user) => user.roles.includes('chef'))
+        .sort((a, b) =>
+          (a.name || a.email).localeCompare(b.name || b.email, undefined, {
+            sensitivity: 'base',
+          }),
+        ),
+    [siteUsers],
+  )
+  const unitManagerOptions = useMemo(
+    () =>
+      siteUsers
+        .filter((user) => user.roles.includes('unit-manager'))
+        .sort((a, b) =>
+          (a.name || a.email).localeCompare(b.name || b.email, undefined, {
+            sensitivity: 'base',
+          }),
+        ),
+    [siteUsers],
+  )
+
   const availableRecipes = useMemo(
     () =>
-      recipes.filter(
+      scopedRecipes.filter(
         (recipe) =>
           recipe.approvalStatus === 'approved' && recipe.status === 'active',
       )
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [recipes],
+    [scopedRecipes],
   )/* Menghitung daftar resep yang tersedia untuk dipilih dalam input menu, yaitu resep yang sudah disetujui oleh Unit Manager dan berstatus aktif. Hasilnya diurutkan berdasarkan nama resep. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */
 
   const recipeById = useMemo(() => {
@@ -56,6 +172,79 @@ const ChefMenuCycle = () => {
     setInputPage((prev) => Math.min(prev, nextTotalPages))
   }, [menuRows.length])/* Efek samping untuk memastikan halaman input tetap valid saat jumlah baris menu berubah, terutama saat menambah atau menghapus baris. Jika jumlah baris berkurang sehingga halaman saat ini melebihi total halaman, maka halaman akan disesuaikan ke total halaman yang baru. */
 
+  useEffect(() => {
+    if (!requireProductionSite) return
+    setMenuRows([createMenuInputRow()])
+    setExpandedMenuRows([])
+    setInputPage(1)
+    setInputError('')
+    setInputMessage('')
+    setProductionChefId('')
+    setProductionUnitManagerId('')
+  }, [productionSite, requireProductionSite])
+
+  useEffect(() => {
+    if (!requireProductionSite) return
+
+    if (!productionSite) {
+      setLoadedProductionSite('')
+      setSiteRecipes([])
+      setSiteMenuProductions([])
+      setSiteUsers([])
+      setSiteDataError('')
+      setSiteDataLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSiteDataLoading(true)
+    setSiteDataError('')
+    Promise.all([
+      fetchRecipes({ site: productionSite }),
+      accessToken
+        ? apiFetch<{ items?: ProductionUserApi[] }>(
+            `/superadmin/users?site=${encodeURIComponent(
+              productionSite,
+            )}&limit=100`,
+            undefined,
+            accessToken,
+          )
+        : Promise.resolve({ items: [] }),
+    ])
+      .then(([nextRecipes, userData]) => {
+        if (cancelled) return
+        setSiteRecipes(nextRecipes)
+        setSiteMenuProductions([])
+        setSiteUsers(
+          (userData.items ?? [])
+            .filter((user) => user.isActive !== false)
+            .map(mapProductionUser)
+            .filter((user) => user.id),
+        )
+        setLoadedProductionSite(productionSite)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load menu production data.'
+        setLoadedProductionSite('')
+        setSiteRecipes([])
+        setSiteMenuProductions([])
+        setSiteUsers([])
+        setSiteDataError(message)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setSiteDataLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, fetchRecipes, productionSite, requireProductionSite])
+
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
@@ -64,17 +253,17 @@ const ChefMenuCycle = () => {
 
   const productionStats = useMemo(
     () => ({
-      approved: menuProductions.filter(
+      approved: scopedMenuProductions.filter(
         (item) => item.approvalStatus === 'approved',
       ).length,
-      pending: menuProductions.filter((item) => item.approvalStatus === 'pending')
+      pending: scopedMenuProductions.filter((item) => item.approvalStatus === 'pending')
         .length,
-      rejected: menuProductions.filter(
+      rejected: scopedMenuProductions.filter(
         (item) => item.approvalStatus === 'rejected',
       ).length,
-      total: menuProductions.length,
+      total: scopedMenuProductions.length,
     }),
-    [menuProductions],
+    [scopedMenuProductions],
   )/* Menghitung statistik produksi menu berdasarkan data menuProductions, termasuk jumlah yang disetujui, menunggu persetujuan, ditolak, dan total. Hasilnya digunakan untuk menampilkan informasi ringkasan di bagian atas halaman. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */  
 
   const formatQuantity = (value: number) => {
@@ -134,7 +323,28 @@ const ChefMenuCycle = () => {
     )
   }/* Fungsi untuk memperbarui nilai porsi dalam baris input menu saat pengguna mengetik. Fungsi ini memastikan bahwa hanya angka yang diterima, dan jika input kosong, nilai porsi akan disimpan sebagai string kosong. Digunakan sebagai onChange handler untuk input porsi. */
 
+  const validateProductionActors = () => {
+    if (!requireProductionActors) return true
+    if (!productionUnitManagerId) {
+      setInputError('Select a unit manager first.')
+      setInputMessage('')
+      return false
+    }
+    if (!productionChefId) {
+      setInputError('Select the chef being assisted first.')
+      setInputMessage('')
+      return false
+    }
+    return true
+  }
+
   const handleAddMenuRow = () => {
+    if (requireProductionSite && !productionSite) {
+      setInputError(emptySiteMessage)
+      setInputMessage('')
+      return
+    }
+
     if (!productionDate) {
       setInputError('Select a production date first.')
       setInputMessage('')
@@ -161,6 +371,14 @@ const ChefMenuCycle = () => {
   }/* Fungsi untuk menghapus baris input menu dari daftar menuRows berdasarkan id saat pengguna mengklik tombol "X" pada baris tersebut. Setelah menghapus, fungsi ini juga memeriksa apakah daftar menuRows menjadi kosong, dan jika ya, akan menambahkan satu baris input menu kosong sebagai gantinya. Digunakan sebagai onClick handler untuk tombol "X" pada setiap baris menu. */
 
   const handleSubmitToTimeline = async () => {
+    if (requireProductionSite && !productionSite) {
+      setInputError(emptySiteMessage)
+      setInputMessage('')
+      return
+    }
+
+    if (!validateProductionActors()) return
+
     if (!productionDate) {
       setInputError('Select a production date first.')
       setInputMessage('')
@@ -179,6 +397,9 @@ const ChefMenuCycle = () => {
       recipeId: string
       menuName: string
       category: string
+      site?: string
+      chefId?: string
+      unitManagerId?: string
       portion: number
       cost: number
       productionDate: string
@@ -211,6 +432,13 @@ const ChefMenuCycle = () => {
         recipeId: recipe.id,
         menuName: recipe.name,
         category: recipe.category,
+        ...(requireProductionSite ? { site: productionSite } : {}),
+        ...(requireProductionActors
+          ? {
+              chefId: productionChefId,
+              unitManagerId: productionUnitManagerId,
+            }
+          : {}),
         portion: portionValue,
         cost: 0,
         productionDate,
@@ -244,7 +472,14 @@ const ChefMenuCycle = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Menu Production</h1>
+          {embedded ? (
+            <h2 className="text-lg font-semibold">{title}</h2>
+          ) : (
+            <h1 className="text-2xl font-semibold">{title}</h1>
+          )}
+          {description ? (
+            <p className="mt-1 text-sm text-muted">{description}</p>
+          ) : null}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -297,18 +532,93 @@ const ChefMenuCycle = () => {
               Only recipes approved by the Unit Manager can be selected.
             </p>
           </div>
-          <div>
-            <label className="text-xs font-medium text-muted">
-              Production date (pick once)
-            </label>
-            <input
-              type="date"
-              value={productionDate}
-              onChange={(event) => setProductionDate(event.target.value)}
-              className="mt-2 w-full max-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
+          <div className="flex flex-wrap items-end gap-3">
+            {requireProductionSite ? (
+              <div>
+                <label className="text-xs font-medium text-muted">
+                  Production site
+                </label>
+                <select
+                  value={productionSite}
+                  onChange={(event) => setProductionSite(event.target.value)}
+                  className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">Select site</option>
+                  {sortedProductionSiteOptions.map((site) => (
+                    <option key={site.code} value={site.code}>
+                      {site.name ? `${site.name} (${site.code})` : site.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            {requireProductionActors ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-muted">
+                    Unit Manager
+                  </label>
+                  <select
+                    value={productionUnitManagerId}
+                    onChange={(event) =>
+                      setProductionUnitManagerId(event.target.value)
+                    }
+                    disabled={!siteDataReady || siteDataLoading}
+                    className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="">Select unit manager</option>
+                    {unitManagerOptions.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name || user.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted">
+                    Assisted chef
+                  </label>
+                  <select
+                    value={productionChefId}
+                    onChange={(event) => setProductionChefId(event.target.value)}
+                    disabled={!siteDataReady || siteDataLoading}
+                    className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="">Select chef</option>
+                    {chefOptions.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name || user.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+            <div>
+              <label className="text-xs font-medium text-muted">
+                Production date (pick once)
+              </label>
+              <input
+                type="date"
+                value={productionDate}
+                onChange={(event) => setProductionDate(event.target.value)}
+                className="mt-2 w-full max-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              />
+            </div>
           </div>
         </div>
+
+        {requireProductionSite ? (
+          <div className="mt-4 rounded-md border border-border bg-background px-4 py-3 text-xs text-muted">
+            {!productionSite
+              ? 'Select a production site to load site recipes and available users.'
+              : siteDataLoading
+                ? 'Loading site recipes and users...'
+                : siteDataError
+                  ? siteDataError
+                  : `Loaded ${availableRecipes.length} approved recipes, ${unitManagerOptions.length} unit managers, and ${chefOptions.length} chefs for ${productionSite}.`}
+          </div>
+        ) : null}
 
         <div className="mt-6 max-w-full overflow-x-auto rounded-md border border-border">
           <TablePagination
@@ -544,7 +854,7 @@ const ChefMenuCycle = () => {
             onClick={handleSubmitToTimeline}
             className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
           >
-            Submit to Unit Manager
+            {submitLabel}
           </button>
         </div>
       </div>

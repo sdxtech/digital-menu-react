@@ -102,6 +102,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Menu Management',
   },
   {
+    path: '/superadmin/store-request',
+    getPageTitle: () => 'Store Request',
+  },
+  {
     path: '/superadmin/store-request-export',
     getPageTitle: () => 'Store Request Export',
   },

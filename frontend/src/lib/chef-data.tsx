@@ -58,6 +58,9 @@ export type MenuProduction = {
   recipeCode?: string
   menuName: string
   category: string
+  site?: string
+  unitManagerId?: string
+  assistedBy?: string
   portion: number
   cost?: number
   productionDate: string
@@ -108,6 +111,9 @@ type AddMenuProductionInput = {
   recipeId: string
   menuName: string
   category: string
+  site?: string
+  chefId?: string
+  unitManagerId?: string
   portion: number
   cost: number
   productionDate: string
@@ -151,6 +157,10 @@ type RawMaterialsMeta = {
   error: string
 }
 
+type SiteScopedFetchOptions = {
+  site?: string
+}
+
 type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<void>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
@@ -175,8 +185,10 @@ type ChefDataContextValue = ChefDataState & {
   cancelPendingMenuProductionBatch: (
     input: CancelPendingMenuProductionBatchInput,
   ) => Promise<void>
-  fetchRecipes: () => Promise<void>
-  fetchMenuProductions: () => Promise<void>
+  fetchRecipes: (options?: SiteScopedFetchOptions) => Promise<Recipe[]>
+  fetchMenuProductions: (
+    options?: SiteScopedFetchOptions,
+  ) => Promise<MenuProduction[]>
 }
 
 const initialState: ChefDataState = {
@@ -247,6 +259,9 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   recipeCode: item.recipeCode ?? undefined,
   menuName: item.menuName ?? '',
   category: item.category ?? '',
+  site: item.site ?? undefined,
+  unitManagerId: item.unitManagerId ?? undefined,
+  assistedBy: item.assistedBy ?? undefined,
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
   cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined,
   productionDate: item.productionDate ?? '',
@@ -272,7 +287,7 @@ const upsertById = <T extends { id: string }>(items: T[], next: T) => {
 }
 
 export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [state, setState] = useState<ChefDataState>(initialState)
   const [rawMaterialsMeta, setRawMaterialsMeta] = useState<RawMaterialsMeta>({
     page: 1,
@@ -283,34 +298,44 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     error: '',
   })
 
-  const fetchRecipes = useCallback(async () => {
-    if (!accessToken) return
+  const fetchRecipes = useCallback(async (options?: SiteScopedFetchOptions) => {
+    if (!accessToken) return []
 
+    const params = new URLSearchParams()
+    if (options?.site?.trim()) params.set('site', options.site.trim())
+    const query = params.toString()
     const data = await apiFetch<{ items: RecipeApi[] } | RecipeApi[]>(
-      '/recipes',
+      query ? `/recipes?${query}` : '/recipes',
       undefined,
       accessToken,
     )
     const items = Array.isArray(data) ? data : data.items ?? []
+    const mapped = items.map(mapRecipe)
     setState((prev) => ({
       ...prev,
-      recipes: items.map(mapRecipe),
+      recipes: mapped,
     }))
+    return mapped
   }, [accessToken])
 
-  const fetchMenuProductions = useCallback(async () => {
-    if (!accessToken) return
+  const fetchMenuProductions = useCallback(async (options?: SiteScopedFetchOptions) => {
+    if (!accessToken) return []
 
+    const params = new URLSearchParams()
+    if (options?.site?.trim()) params.set('site', options.site.trim())
+    const query = params.toString()
     const data = await apiFetch<{ items: MenuProductionApi[] } | MenuProductionApi[]>(
-      '/menu-productions',
+      query ? `/menu-productions?${query}` : '/menu-productions',
       undefined,
       accessToken,
     )
     const items = Array.isArray(data) ? data : data.items ?? []
+    const mapped = items.map(mapMenuProduction)
     setState((prev) => ({
       ...prev,
-      menuProductions: items.map(mapMenuProduction),
+      menuProductions: mapped,
     }))
+    return mapped
   }, [accessToken])
 
   useEffect(() => {
@@ -318,9 +343,13 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
       return
     }
+    if (user?.role === 'superadmin') {
+      setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
+      return
+    }
     fetchRecipes().catch(() => null)
     fetchMenuProductions().catch(() => null)
-  }, [accessToken, fetchMenuProductions, fetchRecipes])
+  }, [accessToken, fetchMenuProductions, fetchRecipes, user?.role])
 
   const createRecipe = async (input: CreateRecipeInput) => {
     if (!accessToken) {

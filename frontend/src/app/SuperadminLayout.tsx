@@ -31,6 +31,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Store Request',
+    to: '/superadmin/store-request',
+    icon: (className: string) => (
+      <i className={`bi bi-clipboard-check ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Store Export',
     to: '/superadmin/store-request-export',
     icon: (className: string) => (

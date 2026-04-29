@@ -7,6 +7,10 @@ export class ListRecipesQueryDto {
   search?: string;
 
   @IsOptional()
+  @IsString()
+  site?: string;
+
+  @IsOptional()
   @IsIn(['draft', 'active'])
   status?: 'draft' | 'active';
 

@@ -63,6 +63,12 @@ export class MenuProduction {
   @Prop({ type: String, trim: true })
   reviewedBy?: string;
 
+  @Prop({ type: String, trim: true, index: true })
+  unitManagerId?: string;
+
+  @Prop({ type: String, trim: true })
+  assistedBy?: string;
+
   @Prop({
     enum: ['not-requested', 'requested', 'fulfilled', 'cancelled'],
     default: 'not-requested',
