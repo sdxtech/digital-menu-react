@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { AppRole, DEFAULT_ROLE } from '../../auth/roles.constants';
+import { AppRole } from '../../auth/roles.constants';
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -30,7 +30,12 @@ export class User {
   @Prop({
     type: [String],
     enum: Object.values(AppRole),
-    default: [DEFAULT_ROLE],
+    required: true,
+    default: undefined,
+    validate: {
+      validator: (roles?: AppRole[]) => Array.isArray(roles) && roles.length > 0,
+      message: 'User role is required',
+    },
     index: true,
   })
   roles: AppRole[];

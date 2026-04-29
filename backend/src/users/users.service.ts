@@ -7,7 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { AppRole, DEFAULT_ROLE } from '../auth/roles.constants';
+import { ALL_APP_ROLES, AppRole } from '../auth/roles.constants';
 import { SiteSummary, SitesService } from '../sites/sites.service';
 import { User, UserDocument } from './schemas/user.schema';
 
@@ -110,7 +110,7 @@ export class UsersService {
     const created = await this.userModel.create({
       ...input,
       email: input.email.toLowerCase().trim(),
-      roles: input.roles?.length ? input.roles : [DEFAULT_ROLE],
+      roles: this.normalizeRoles(input.roles),
       sites: siteAssignment.sites,
       siteId: siteAssignment.siteId,
     });
@@ -377,5 +377,16 @@ export class UsersService {
       .map((site) => site.trim())
       .filter(Boolean)
       .slice(0, 1);
+  }
+
+  private normalizeRoles(roles?: AppRole[]) {
+    const allowedRoles = new Set<AppRole>(ALL_APP_ROLES);
+    const normalized = Array.from(
+      new Set((roles ?? []).filter((role) => allowedRoles.has(role))),
+    );
+    if (normalized.length === 0) {
+      throw new BadRequestException('User role is required');
+    }
+    return normalized;
   }
 }

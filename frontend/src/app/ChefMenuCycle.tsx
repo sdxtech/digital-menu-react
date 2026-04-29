@@ -3,32 +3,32 @@ import TablePagination from '../components/TablePagination'
 import { useChefData } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
-const INPUT_ROWS_PER_PAGE = 8
+const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
 
 type MenuInputRow = {
   id: string
   recipeId: string
   recipeQuery: string
   portion: number | ''
-}
+}/* Tipe data untuk menyimpan informasi setiap baris input menu, termasuk id unik, id resep yang dipilih, query teks untuk pencarian resep, dan jumlah porsi */
 
 const createMenuInputRow = (): MenuInputRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   recipeId: '',
   recipeQuery: '',
   portion: '',
-})
+})/* Fungsi untuk membuat baris input menu baru dengan id unik dan nilai default kosong */
 
 const ChefMenuCycle = () => {
-  const { recipes, menuProductions, addMenuProductionsBulk } = useChefData()
-  const [productionDate, setProductionDate] = useState('')
-  const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])
-  const [inputError, setInputError] = useState('')
-  const [inputMessage, setInputMessage] = useState('')
-  const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])
-  const [inputPage, setInputPage] = useState(1)
+  const { recipes, menuProductions, addMenuProductionsBulk } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
+  const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
+  const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
+  const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
+  const [inputMessage, setInputMessage] = useState('')/* Menyimpan pesan informasi yang terkait dengan input menu, seperti keberhasilan penambahan baris atau submit */
+  const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])/* Menyimpan daftar baris menu yang diperluas untuk menampilkan detail */
+  const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
 
-  const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''
+  const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
 
   const availableRecipes = useMemo(
     () =>
@@ -39,7 +39,7 @@ const ChefMenuCycle = () => {
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name)),
     [recipes],
-  )
+  )/* Menghitung daftar resep yang tersedia untuk dipilih dalam input menu, yaitu resep yang sudah disetujui oleh Unit Manager dan berstatus aktif. Hasilnya diurutkan berdasarkan nama resep. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */
 
   const recipeById = useMemo(() => {
     return availableRecipes.reduce<Record<string, (typeof availableRecipes)[number]>>(
@@ -49,18 +49,18 @@ const ChefMenuCycle = () => {
       },
       {},
     )
-  }, [availableRecipes])
+  }, [availableRecipes])/* Membuat objek lookup untuk resep berdasarkan id, sehingga memudahkan pencarian informasi resep saat pengguna memilih menu dalam input. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */
 
   useEffect(() => {
     const nextTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
     setInputPage((prev) => Math.min(prev, nextTotalPages))
-  }, [menuRows.length])
+  }, [menuRows.length])/* Efek samping untuk memastikan halaman input tetap valid saat jumlah baris menu berubah, terutama saat menambah atau menghapus baris. Jika jumlah baris berkurang sehingga halaman saat ini melebihi total halaman, maka halaman akan disesuaikan ke total halaman yang baru. */
 
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     )
-  }
+  }/* Fungsi untuk menambahkan atau menghapus id baris menu dari daftar expandedMenuRows, yang menentukan apakah detail resep untuk baris tersebut ditampilkan atau disembunyikan. */
 
   const productionStats = useMemo(
     () => ({
@@ -75,13 +75,13 @@ const ChefMenuCycle = () => {
       total: menuProductions.length,
     }),
     [menuProductions],
-  )
+  )/* Menghitung statistik produksi menu berdasarkan data menuProductions, termasuk jumlah yang disetujui, menunggu persetujuan, ditolak, dan total. Hasilnya digunakan untuk menampilkan informasi ringkasan di bagian atas halaman. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */  
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
-  }
+  }/* Fungsi untuk memformat nilai kuantitas dengan aturan berikut: jika nilai tidak finite, tampilkan '0'; jika nilai adalah bilangan bulat, tampilkan tanpa desimal; jika nilai memiliki desimal, tampilkan hingga 3 angka di belakang koma dan hapus trailing zero. Digunakan untuk menampilkan jumlah bahan dalam detail resep dengan format yang lebih bersih. */
 
   const findRecipeByExactQuery = (query: string) => {
     const normalized = normalizeText(query)
@@ -91,7 +91,7 @@ const ChefMenuCycle = () => {
       const recipeCode = normalizeText(recipe.recipeCode)
       return name === normalized || recipeCode === normalized
     })
-  }
+  }/* Fungsi untuk mencari resep yang cocok dengan query pencarian secara tepat, baik berdasarkan nama resep maupun kode resep. Query dan data resep dinormalisasi untuk memastikan pencarian tidak sensitif terhadap spasi atau huruf kapital. Digunakan untuk menentukan apakah input pengguna cocok dengan salah satu resep yang tersedia saat mereka mengetik di kolom menu. */
 
   const getRecipeSuggestions = (query: string) => {
     const normalized = normalizeText(query)
@@ -103,7 +103,7 @@ const ChefMenuCycle = () => {
           return name.includes(normalized) || recipeCode.includes(normalized)
         })
     return filtered.slice(0, 5)
-  }
+  }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial, baik berdasarkan nama resep maupun kode resep. Query dan data resep dinormalisasi untuk memastikan pencarian tidak sensitif terhadap spasi atau huruf kapital. Hasilnya dibatasi maksimal 5 resep untuk ditampilkan sebagai saran saat pengguna mengetik di kolom menu. */
 
   const updateRowMenuQuery = (id: string, value: string) => {
     const matchedRecipe = findRecipeByExactQuery(value)
@@ -118,7 +118,7 @@ const ChefMenuCycle = () => {
           : row,
       ),
     )
-  }
+  }/* Fungsi untuk memperbarui query menu dan id resep yang terkait dalam baris input menu saat pengguna mengetik. Fungsi ini mencari apakah query yang dimasukkan cocok dengan salah satu resep yang tersedia secara tepat, dan jika cocok, id resep akan disimpan di state. Jika tidak cocok, id resep akan dikosongkan. Digunakan sebagai onChange handler untuk input menu. */
 
   const updateRowPortion = (id: string, value: string) => {
     const digitsOnly = value.replace(/\D/g, '')
@@ -132,7 +132,7 @@ const ChefMenuCycle = () => {
           : row,
       ),
     )
-  }
+  }/* Fungsi untuk memperbarui nilai porsi dalam baris input menu saat pengguna mengetik. Fungsi ini memastikan bahwa hanya angka yang diterima, dan jika input kosong, nilai porsi akan disimpan sebagai string kosong. Digunakan sebagai onChange handler untuk input porsi. */
 
   const handleAddMenuRow = () => {
     if (!productionDate) {
@@ -149,7 +149,7 @@ const ChefMenuCycle = () => {
     })
     setInputError('')
     setInputMessage('New menu row added.')
-  }
+  }/* Fungsi untuk menambahkan baris input menu baru ke daftar menuRows saat pengguna mengklik tombol "Add menu". Fungsi ini juga memeriksa apakah tanggal produksi sudah dipilih sebelum menambahkan baris baru, dan jika belum, akan menampilkan pesan error. Setelah menambahkan baris baru, fungsi ini juga menghitung total halaman yang baru dan mengatur halaman saat ini ke halaman terakhir untuk memastikan baris baru terlihat. Digunakan sebagai onClick handler untuk tombol "Add menu". */
 
   const handleRemoveMenuRow = (id: string) => {
     setMenuRows((prev) => {
@@ -158,7 +158,7 @@ const ChefMenuCycle = () => {
     })
     setInputError('')
     setInputMessage('Menu row removed.')
-  }
+  }/* Fungsi untuk menghapus baris input menu dari daftar menuRows berdasarkan id saat pengguna mengklik tombol "X" pada baris tersebut. Setelah menghapus, fungsi ini juga memeriksa apakah daftar menuRows menjadi kosong, dan jika ya, akan menambahkan satu baris input menu kosong sebagai gantinya. Digunakan sebagai onClick handler untuk tombol "X" pada setiap baris menu. */
 
   const handleSubmitToTimeline = async () => {
     if (!productionDate) {
@@ -232,13 +232,13 @@ const ChefMenuCycle = () => {
       setInputError(message)
       setInputMessage('')
     }
-  }
+  }/* Fungsi untuk menangani submit input menu ke Unit Manager. Fungsi ini melakukan validasi pada tanggal produksi, memastikan ada setidaknya satu baris menu yang diisi, dan memeriksa setiap baris untuk memastikan menu dan porsi valid. Jika semua validasi lolos, fungsi ini akan memanggil addMenuProductionsBulk dengan payload yang berisi data produksi menu yang akan disimpan. Setelah berhasil, fungsi ini juga mereset input menu dan menampilkan pesan keberhasilan. Jika terjadi error saat menyimpan, fungsi ini akan menampilkan pesan error yang sesuai. Digunakan sebagai onClick handler untuk tombol "Submit to Unit Manager". */
 
   const inputTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
   const paginatedMenuRows = menuRows.slice(
     (inputPage - 1) * INPUT_ROWS_PER_PAGE,
     inputPage * INPUT_ROWS_PER_PAGE,
-  )
+  )/* Menghitung total halaman untuk paginasi berdasarkan jumlah baris menu dan jumlah baris per halaman. Kemudian, menghitung daftar baris menu yang akan ditampilkan pada halaman saat ini dengan melakukan slicing pada menuRows. Digunakan untuk menampilkan hanya sebagian baris menu sesuai dengan halaman yang dipilih oleh pengguna. */
 
   return (
     <div className="space-y-6">
