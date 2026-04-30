@@ -347,7 +347,12 @@ export class RecipesService {
     }
 
     const filter = this.withSiteFilter(
-      { _id: id, approvalStatus: 'pending' },
+      {
+        _id: id,
+        ...(this.isSuperadminActor(actor)
+          ? {}
+          : { approvalStatus: 'pending' }),
+      },
       actor?.site,
     );
     const updatedFields = this.buildActorFields(actor, 'updated');

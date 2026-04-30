@@ -31,6 +31,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Approval Centers',
+    to: '/superadmin/approval-centers',
+    icon: (className: string) => (
+      <i className={`bi bi-shield-check ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Store Request',
     to: '/superadmin/store-request',
     icon: (className: string) => (
