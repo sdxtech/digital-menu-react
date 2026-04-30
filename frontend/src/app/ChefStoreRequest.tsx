@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
@@ -60,6 +61,17 @@ type StoreRequestGroup = {
   fulfillment?: StoreRequestFulfillment
 }
 
+type ReconciliationRow = {
+  id: string
+  productCode: string
+  name: string
+  unitOfMeasures: string
+  plannedQty: number
+  actualQty: string
+  reason: string
+  isAdditional: boolean
+}
+
 const ITEMS_PER_PAGE = 10
 
 type StoreRequestSiteOption = {
@@ -70,6 +82,8 @@ type StoreRequestSiteOption = {
 type ChefStoreRequestProps = {
   requireSiteSelection?: boolean
   siteOptions?: StoreRequestSiteOption[]
+  enableStoreRequestCancellation?: boolean
+  enableStoreRequestCompletion?: boolean
 }
 
 const getStoreRequestGroupKey = (group: {
@@ -217,9 +231,15 @@ const downloadExcel = (
 const ChefStoreRequest = ({
   requireSiteSelection = false,
   siteOptions = [],
+  enableStoreRequestCancellation = false,
+  enableStoreRequestCompletion = false,
 }: ChefStoreRequestProps = {}) => {
   const { accessToken } = useAuth()
-  const { cancelPendingMenuProductionBatch } = useChefData()
+  const {
+    cancelPendingMenuProductionBatch,
+    cancelStoreRequestBatch,
+    fulfillStoreRequestBatch,
+  } = useChefData()
   const [selectedSite, setSelectedSite] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -228,11 +248,77 @@ const ChefStoreRequest = ({
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [cancellingGroupKey, setCancellingGroupKey] = useState<string | null>(null)
+  const [cancellationGroup, setCancellationGroup] =
+    useState<StoreRequestGroup | null>(null)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancellationError, setCancellationError] = useState('')
+  const [completionGroup, setCompletionGroup] =
+    useState<StoreRequestGroup | null>(null)
+  const [completionRows, setCompletionRows] = useState<ReconciliationRow[]>([])
+  const [completionNote, setCompletionNote] = useState('')
+  const [completionError, setCompletionError] = useState('')
 
   const formatQuantity = (value: number) => {
     if (!Number.isFinite(value)) return '0'
     if (Number.isInteger(value)) return String(value)
     return value.toFixed(3).replace(/\.?0+$/, '')
+  }
+
+  const formatSignedQuantity = (value: number) => {
+    const formatted = formatQuantity(Math.abs(value))
+    if (value > 0) return `+${formatted}`
+    if (value < 0) return `-${formatted}`
+    return '0'
+  }
+
+  const parseDotDecimal = (value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return { valid: false as const, reason: 'empty' as const }
+    if (trimmed.includes(',')) {
+      return { valid: false as const, reason: 'comma' as const }
+    }
+    if (!/^(?:\d+|\d+\.\d+|\.\d+)$/.test(trimmed)) {
+      return { valid: false as const, reason: 'format' as const }
+    }
+
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return { valid: false as const, reason: 'range' as const }
+    }
+
+    return { valid: true as const, value: parsed }
+  }
+
+  const makeReconciliationRowId = () => {
+    if (
+      typeof crypto !== 'undefined' &&
+      typeof crypto.randomUUID === 'function'
+    ) {
+      return `recon-${crypto.randomUUID()}`
+    }
+    return `recon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  }
+
+  const createAdditionalReconciliationRow = (): ReconciliationRow => ({
+    id: makeReconciliationRowId(),
+    productCode: '',
+    name: '',
+    unitOfMeasures: '',
+    plannedQty: 0,
+    actualQty: '',
+    reason: '',
+    isAdditional: true,
+  })
+
+  const buildReconciliationItemKey = (
+    productCode: string,
+    name: string,
+    unitOfMeasures: string,
+  ) => {
+    const identity = (productCode || name).trim().toLowerCase()
+    const unit = unitOfMeasures.trim().toLowerCase()
+    if (!identity || !unit) return ''
+    return `${identity}__${unit}`
   }
 
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
@@ -386,6 +472,289 @@ const ChefStoreRequest = ({
     }
   }
 
+  const buildCompletionRows = (group: StoreRequestGroup): ReconciliationRow[] => {
+    const fulfilledByKey = new Map<string, StoreRequestFulfillment['items'][number]>()
+    const fulfilledItems = group.fulfillment?.items ?? []
+    fulfilledItems.forEach((item) => {
+      const key = buildReconciliationItemKey(
+        item.productCode,
+        item.name,
+        item.unitOfMeasures,
+      )
+      if (key) fulfilledByKey.set(key, item)
+    })
+
+    const plannedKeys = new Set<string>()
+    const plannedRows = aggregateStoreRequestSummary(group.summary ?? []).map(
+      (item) => {
+        const key = buildReconciliationItemKey(
+          item.productCode,
+          item.name,
+          item.unitOfMeasures,
+        )
+        if (key) plannedKeys.add(key)
+        const fulfilledItem = key ? fulfilledByKey.get(key) : undefined
+        return {
+          id: makeReconciliationRowId(),
+          productCode: item.productCode,
+          name: item.name,
+          unitOfMeasures: item.unitOfMeasures,
+          plannedQty: item.qty,
+          actualQty: formatQuantity(fulfilledItem?.actualQty ?? item.qty),
+          reason: fulfilledItem?.reason ?? '',
+          isAdditional: false,
+        }
+      },
+    )
+
+    const additionalRows = fulfilledItems
+      .filter((item) => {
+        const key = buildReconciliationItemKey(
+          item.productCode,
+          item.name,
+          item.unitOfMeasures,
+        )
+        return key && !plannedKeys.has(key)
+      })
+      .map((item) => ({
+        id: makeReconciliationRowId(),
+        productCode: item.productCode,
+        name: item.name,
+        unitOfMeasures: item.unitOfMeasures,
+        plannedQty: 0,
+        actualQty: formatQuantity(item.actualQty),
+        reason: item.reason ?? '',
+        isAdditional: true,
+      }))
+
+    return [...plannedRows, ...additionalRows]
+  }
+
+  const openCompletionModal = (group: StoreRequestGroup) => {
+    setCompletionGroup(group)
+    setCompletionRows(buildCompletionRows(group))
+    setCompletionNote(group.fulfillment?.note ?? '')
+    setCompletionError('')
+    setErrorMessage('')
+    setActionMessage('')
+  }
+
+  const closeCompletionModal = () => {
+    if (cancellingGroupKey) return
+    setCompletionGroup(null)
+    setCompletionRows([])
+    setCompletionNote('')
+    setCompletionError('')
+  }
+
+  const updateCompletionRow = <K extends keyof ReconciliationRow>(
+    rowId: string,
+    field: K,
+    value: ReconciliationRow[K],
+  ) => {
+    setCompletionRows((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)),
+    )
+  }
+
+  const handleAddCompletionRow = () => {
+    setCompletionRows((prev) => [...prev, createAdditionalReconciliationRow()])
+    setCompletionError('')
+  }
+
+  const handleRemoveCompletionRow = (rowId: string) => {
+    setCompletionRows((prev) => prev.filter((row) => row.id !== rowId))
+    setCompletionError('')
+  }
+
+  const getVarianceQty = (plannedQty: number, actualQtyText: string) => {
+    const parsed = parseDotDecimal(actualQtyText)
+    if (!parsed.valid) return null
+    return parsed.value - plannedQty
+  }
+
+  const handleSubmitCompletion = async () => {
+    if (!completionGroup) return
+
+    const groupKey = getStoreRequestGroupKey(completionGroup)
+    const menuProductionIds = completionGroup.items
+      .map((item) => item.id)
+      .filter(Boolean)
+
+    if (menuProductionIds.length === 0) {
+      setCompletionError('Menu production data is missing for this batch.')
+      return
+    }
+
+    if (completionRows.length === 0) {
+      setCompletionError('No planned raw materials available to reconcile.')
+      return
+    }
+
+    const payloadItems = []
+    const seenKeys = new Set<string>()
+    for (const row of completionRows) {
+      const productCode = row.productCode.trim()
+      const name = row.name.trim()
+      const unitOfMeasures = row.unitOfMeasures.trim()
+      const fieldLabel = productCode || name
+
+      if (row.isAdditional && (!productCode || !name || !unitOfMeasures)) {
+        setCompletionError(
+          'Additional ingredient rows must include product code, ingredient name, and unit.',
+        )
+        return
+      }
+
+      const itemKey = buildReconciliationItemKey(productCode, name, unitOfMeasures)
+      if (!itemKey) {
+        setCompletionError(
+          `Ingredient identity is incomplete for ${fieldLabel || 'an actual qty row'}.`,
+        )
+        return
+      }
+      if (seenKeys.has(itemKey)) {
+        setCompletionError(
+          `Duplicate ingredient found in actual qty for ${fieldLabel}.`,
+        )
+        return
+      }
+      seenKeys.add(itemKey)
+
+      const actualQtyText = row.actualQty.trim()
+      if (!actualQtyText) {
+        setCompletionError(
+          `Actual qty is required for ${fieldLabel || 'an ingredient'}.`,
+        )
+        return
+      }
+
+      const parsedActualQty = parseDotDecimal(actualQtyText)
+      if (!parsedActualQty.valid) {
+        if (parsedActualQty.reason === 'comma') {
+          setCompletionError(
+            `Use dot decimal format for ${fieldLabel}, for example 0.5.`,
+          )
+          return
+        }
+        setCompletionError(
+          `Actual qty for ${fieldLabel} must be a valid number using dot decimals, for example 0.5.`,
+        )
+        return
+      }
+
+      const actualQty = parsedActualQty.value
+      if (row.isAdditional && actualQty <= 0) {
+        setCompletionError(
+          `Actual qty for added ingredient ${fieldLabel} must be greater than 0.`,
+        )
+        return
+      }
+      const varianceQty = actualQty - row.plannedQty
+      const reason = row.reason.trim()
+      if (Math.abs(varianceQty) > 0.000001 && !reason) {
+        setCompletionError(
+          `Reason is required when actual qty differs for ${fieldLabel}.`,
+        )
+        return
+      }
+
+      payloadItems.push({
+        productCode,
+        name,
+        unitOfMeasures,
+        actualQty,
+        reason: reason || undefined,
+      })
+    }
+
+    setCompletionError('')
+    setErrorMessage('')
+    setCancellingGroupKey(groupKey)
+    try {
+      await fulfillStoreRequestBatch({
+        menuProductionIds,
+        items: payloadItems,
+        note: completionNote.trim() || undefined,
+      })
+      const label = completionGroup.productionCode
+        ? `${completionGroup.date} (${completionGroup.productionCode})`
+        : completionGroup.date
+      setActionMessage(`Actual qty for ${label} saved.`)
+      await fetchStoreRequests()
+      setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      setCompletionGroup(null)
+      setCompletionRows([])
+      setCompletionNote('')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to save actual qty.'
+      setCompletionError(message)
+    } finally {
+      setCancellingGroupKey(null)
+    }
+  }
+
+  const openCancellationModal = (group: StoreRequestGroup) => {
+    setCancellationGroup(group)
+    setCancellationReason('')
+    setCancellationError('')
+    setErrorMessage('')
+    setActionMessage('')
+  }
+
+  const closeCancellationModal = () => {
+    if (cancellingGroupKey) return
+    setCancellationGroup(null)
+    setCancellationReason('')
+    setCancellationError('')
+  }
+
+  const handleSubmitCancellation = async () => {
+    if (!cancellationGroup) return
+
+    const reason = cancellationReason.trim()
+    if (!reason) {
+      setCancellationError('Cancellation reason is required.')
+      return
+    }
+
+    const menuProductionIds = cancellationGroup.items
+      .map((item) => item.id)
+      .filter(Boolean)
+
+    if (menuProductionIds.length === 0) {
+      setCancellationError('Menu production data is missing for this batch.')
+      return
+    }
+
+    const groupKey = getStoreRequestGroupKey(cancellationGroup)
+    setCancellingGroupKey(groupKey)
+    setCancellationError('')
+    setErrorMessage('')
+
+    try {
+      await cancelStoreRequestBatch({
+        menuProductionIds,
+        reason,
+      })
+      const label = cancellationGroup.productionCode
+        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
+        : cancellationGroup.date
+      setActionMessage(`Store request for ${label} cancelled.`)
+      await fetchStoreRequests()
+      setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      setCancellationGroup(null)
+      setCancellationReason('')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to cancel store request.'
+      setCancellationError(message)
+    } finally {
+      setCancellingGroupKey(null)
+    }
+  }
+
   const toggleExpanded = (groupKey: string) => {
     setExpandedGroups((prev) =>
       prev.includes(groupKey)
@@ -403,6 +772,13 @@ const ChefStoreRequest = ({
     setPage(1)
     setActionMessage('')
     setErrorMessage('')
+    setCancellationGroup(null)
+    setCancellationReason('')
+    setCancellationError('')
+    setCompletionGroup(null)
+    setCompletionRows([])
+    setCompletionNote('')
+    setCompletionError('')
   }, [selectedSite])
 
   useEffect(() => {
@@ -617,7 +993,8 @@ const ChefStoreRequest = ({
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          {pendingItems.length > 0 ? (
+                          {!enableStoreRequestCancellation &&
+                          pendingItems.length > 0 ? (
                             <button
                               type="button"
                               onClick={(event) => {
@@ -630,13 +1007,50 @@ const ChefStoreRequest = ({
                               {cancellingGroupKey === groupKey ? 'Cancelling...' : 'Cancel'}
                             </button>
                           ) : null}
+                          {enableStoreRequestCancellation &&
+                          items.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openCancellationModal(group)
+                              }}
+                              disabled={cancellingGroupKey === groupKey}
+                              className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {cancellingGroupKey === groupKey
+                                ? 'Cancelling...'
+                                : 'Cancel request'}
+                            </button>
+                          ) : null}
+                          {enableStoreRequestCompletion && items.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openCompletionModal(group)
+                              }}
+                              disabled={cancellingGroupKey === groupKey}
+                              className={
+                                hasDelivered
+                                  ? 'rounded-md border border-amber-500 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60'
+                                  : 'rounded-md border border-success bg-success/10 px-3 py-1 text-xs font-semibold text-success hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-60'
+                              }
+                            >
+                              {cancellingGroupKey === groupKey
+                                ? 'Saving...'
+                                : hasDelivered
+                                  ? 'Correct actual'
+                                  : 'Complete actual'}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
                               toggleExpanded(groupKey)
                             }}
-                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                            className="rounded-md border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground hover:bg-white"
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
@@ -907,6 +1321,439 @@ const ChefStoreRequest = ({
           </table>
         </div>
       </div>
+
+      {completionGroup && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+              <div
+                className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+                  <div>
+                    <p className="text-xs text-muted">
+                      Superadmin Actual Qty Override
+                    </p>
+                    <h3 className="mt-1 text-lg font-semibold text-foreground">
+                      {completionGroup.productionCode
+                        ? `${completionGroup.date} (${completionGroup.productionCode})`
+                        : completionGroup.date}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      Save actual raw material delivery for this batch, or
+                      correct previously completed actual qty.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCompletionModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-6 overflow-y-auto px-6 py-5">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production date</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {completionGroup.date}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production code</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {completionGroup.productionCode ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menus in batch</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {completionGroup.items.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-border bg-surface p-4">
+                    <p className="text-xs text-muted">Planned menu basis</p>
+                    <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                      <table className="dm-table min-w-full text-sm">
+                        <thead className="bg-background">
+                          <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                            <th className="w-12 px-3 py-1.5 font-semibold">No</th>
+                            <th className="px-3 py-1.5 font-semibold">Menu ID</th>
+                            <th className="px-3 py-1.5 font-semibold">Menu</th>
+                            <th className="px-3 py-1.5 font-semibold">Category</th>
+                            <th className="px-3 py-1.5 font-semibold">Portion</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {completionGroup.items.map((menu, index) => (
+                            <tr key={menu.id} className="border-t border-border">
+                              <td className="px-3 py-1.5 text-sm text-muted">
+                                {index + 1}
+                              </td>
+                              <td className="px-3 py-1.5 font-medium">
+                                {menu.recipeCode ?? '-'}
+                              </td>
+                              <td className="px-3 py-1.5">{menu.menuName}</td>
+                              <td className="px-3 py-1.5">{menu.category}</td>
+                              <td className="px-3 py-1.5">{menu.portion}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-border bg-surface p-4">
+                    <div>
+                      <p className="text-xs text-muted">Actual issuance</p>
+                      <p className="mt-1 text-sm text-muted">
+                        Actual qty uses dot decimal format like `0.5`. Reason
+                        is required when actual qty differs from planned qty.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                      <table className="dm-table min-w-full text-sm">
+                        <thead className="bg-background">
+                          <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                            <th className="w-12 px-3 py-1.5 font-semibold">No</th>
+                            <th className="px-3 py-1.5 font-semibold">
+                              Product code
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold">
+                              Ingredient
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold">
+                              Planned qty
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold">
+                              Actual qty
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold">
+                              Variance
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold">Unit</th>
+                            <th className="min-w-[220px] px-3 py-1.5 font-semibold">
+                              Reason
+                            </th>
+                            <th className="w-24 px-3 py-1.5 font-semibold">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {completionRows.map((row, index) => {
+                            const varianceQty = getVarianceQty(
+                              row.plannedQty,
+                              row.actualQty,
+                            )
+                            const varianceClass =
+                              varianceQty === null
+                                ? 'text-muted'
+                                : Math.abs(varianceQty) <= 0.000001
+                                  ? 'text-muted'
+                                  : varianceQty > 0
+                                    ? 'text-primary'
+                                    : 'text-danger'
+
+                            return (
+                              <tr key={row.id} className="border-t border-border">
+                                <td className="px-3 py-1.5 text-sm text-muted">
+                                  {index + 1}
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  {row.isAdditional ? (
+                                    <input
+                                      type="text"
+                                      value={row.productCode}
+                                      onChange={(event) =>
+                                        updateCompletionRow(
+                                          row.id,
+                                          'productCode',
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Product code"
+                                      className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                    />
+                                  ) : (
+                                    row.productCode
+                                  )}
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  {row.isAdditional ? (
+                                    <input
+                                      type="text"
+                                      value={row.name}
+                                      onChange={(event) =>
+                                        updateCompletionRow(
+                                          row.id,
+                                          'name',
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Ingredient name"
+                                      className="w-48 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                    />
+                                  ) : (
+                                    row.name
+                                  )}
+                                </td>
+                                <td className="px-3 py-1.5 font-medium">
+                                  {formatQuantity(row.plannedQty)}
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={row.actualQty}
+                                    onChange={(event) =>
+                                      updateCompletionRow(
+                                        row.id,
+                                        'actualQty',
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder="0"
+                                    className="w-28 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                  />
+                                </td>
+                                <td
+                                  className={`px-3 py-1.5 font-medium ${varianceClass}`}
+                                >
+                                  {varianceQty === null
+                                    ? '-'
+                                    : formatSignedQuantity(varianceQty)}
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  {row.isAdditional ? (
+                                    <input
+                                      type="text"
+                                      value={row.unitOfMeasures}
+                                      onChange={(event) =>
+                                        updateCompletionRow(
+                                          row.id,
+                                          'unitOfMeasures',
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Unit"
+                                      className="w-28 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                    />
+                                  ) : (
+                                    formatUnitLabel(row.unitOfMeasures)
+                                  )}
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <input
+                                    type="text"
+                                    value={row.reason}
+                                    onChange={(event) =>
+                                      updateCompletionRow(
+                                        row.id,
+                                        'reason',
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder={
+                                      row.isAdditional
+                                        ? 'Required for added ingredient'
+                                        : 'Required if variance exists'
+                                    }
+                                    className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                  />
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  {row.isAdditional ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleRemoveCompletionRow(row.id)
+                                      }
+                                      disabled={Boolean(cancellingGroupKey)}
+                                      className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Remove
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-muted">
+                                      Planned
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          <tr className="border-t border-border">
+                            <td colSpan={9} className="px-3 py-3">
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  onClick={handleAddCompletionRow}
+                                  disabled={Boolean(cancellingGroupKey)}
+                                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  + Add ingredient
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-sm font-medium text-foreground">
+                        Batch note
+                      </label>
+                      <textarea
+                        value={completionNote}
+                        onChange={(event) => setCompletionNote(event.target.value)}
+                        rows={3}
+                        placeholder="Optional note for this delivery batch"
+                        className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      />
+                    </div>
+
+                    {completionError ? (
+                      <p className="mt-4 text-xs font-medium text-red-600">
+                        {completionError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={closeCompletionModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitCompletion}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {cancellingGroupKey ? 'Saving...' : 'Save actual qty'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {cancellationGroup && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+              <div
+                className="flex w-full max-w-2xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+                  <div>
+                    <p className="text-xs text-muted">Cancel Store Request</p>
+                    <h3 className="mt-1 text-lg font-semibold text-foreground">
+                      {cancellationGroup.productionCode
+                        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
+                        : cancellationGroup.date}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      This superadmin override cancels every menu in this batch,
+                      regardless of approval or store request status. A reason
+                      is required.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCancellationModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-5 px-6 py-5">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production date</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.date}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production code</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.productionCode ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menus in batch</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationGroup.items.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      Cancellation reason
+                    </label>
+                    <textarea
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      rows={4}
+                      placeholder="Explain why this store request must be cancelled."
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                    />
+                    <p className="mt-2 text-xs text-muted">
+                      The reason will be saved and shown in related store
+                      request records.
+                    </p>
+                  </div>
+
+                  {cancellationError ? (
+                    <p className="text-xs font-medium text-red-600">
+                      {cancellationError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={closeCancellationModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitCancellation}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md bg-danger px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {cancellingGroupKey ? 'Cancelling...' : 'Confirm cancel'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

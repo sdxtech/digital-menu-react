@@ -55,7 +55,14 @@ const SuperadminStoreRequestPage = () => {
     fetchSites().catch(() => null)
   }, [fetchSites])
 
-  return <ChefStoreRequest requireSiteSelection siteOptions={siteOptions} />
+  return (
+    <ChefStoreRequest
+      requireSiteSelection
+      siteOptions={siteOptions}
+      enableStoreRequestCancellation
+      enableStoreRequestCompletion
+    />
+  )
 }
 
 export default SuperadminStoreRequestPage
