@@ -113,16 +113,19 @@ const ChefMenuCycle = ({
   const siteDataReady =
     !requireProductionSite ||
     (Boolean(productionSite) && loadedProductionSite === productionSite)
-  const scopedRecipes = requireProductionSite
-    ? siteDataReady
-      ? siteRecipes
-      : []
-    : recipes
-  const scopedMenuProductions = requireProductionSite
-    ? siteDataReady
-      ? siteMenuProductions
-      : []
-    : menuProductions
+  const scopedRecipes = useMemo(() => {
+    if (!requireProductionSite) return recipes
+    return siteDataReady ? siteRecipes : []
+  }, [recipes, requireProductionSite, siteDataReady, siteRecipes])
+  const scopedMenuProductions = useMemo(() => {
+    if (!requireProductionSite) return menuProductions
+    return siteDataReady ? siteMenuProductions : []
+  }, [
+    menuProductions,
+    requireProductionSite,
+    siteDataReady,
+    siteMenuProductions,
+  ])
   const chefOptions = useMemo(
     () =>
       siteUsers
