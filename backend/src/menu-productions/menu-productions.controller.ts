@@ -141,6 +141,7 @@ export class MenuProductionsController {
       dto,
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
+      { allowStatusOverride: req.user.roles?.includes(AppRole.Superadmin) },
     );
   }
 
@@ -154,6 +155,7 @@ export class MenuProductionsController {
       dto,
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
+      { allowStatusOverride: req.user.roles?.includes(AppRole.Superadmin) },
     );
   }
 
