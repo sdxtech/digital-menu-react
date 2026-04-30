@@ -415,6 +415,7 @@ export class MenuProductionsService implements OnModuleInit {
     input: FulfillStoreRequestBatchDto,
     site?: string,
     fulfilledBy?: string,
+    options: { allowStatusOverride?: boolean } = {},
   ) {
     const normalizedIds = Array.from(
       new Set(
@@ -438,16 +439,18 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    menus.forEach((menu) => {
-      if (menu.approvalStatus !== 'approved') {
-        throw new BadRequestException('Menu production is not approved yet.');
-      }
-      if (menu.storeRequestStatus !== 'requested') {
-        throw new BadRequestException(
-          'Store request has not been submitted yet or is already processed.',
-        );
-      }
-    });
+    if (!options.allowStatusOverride) {
+      menus.forEach((menu) => {
+        if (menu.approvalStatus !== 'approved') {
+          throw new BadRequestException('Menu production is not approved yet.');
+        }
+        if (menu.storeRequestStatus !== 'requested') {
+          throw new BadRequestException(
+            'Store request has not been submitted yet or is already processed.',
+          );
+        }
+      });
+    }
 
     const batchKeys = Array.from(
       new Set(
@@ -596,6 +599,7 @@ export class MenuProductionsService implements OnModuleInit {
     input: CancelStoreRequestBatchDto,
     site?: string,
     cancelledBy?: string,
+    options: { allowStatusOverride?: boolean } = {},
   ) {
     const normalizedIds = Array.from(
       new Set(
@@ -624,16 +628,18 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    menus.forEach((menu) => {
-      if (menu.approvalStatus !== 'approved') {
-        throw new BadRequestException('Menu production is not approved yet.');
-      }
-      if (menu.storeRequestStatus !== 'requested') {
-        throw new BadRequestException(
-          'Store request has not been submitted yet or is already processed.',
-        );
-      }
-    });
+    if (!options.allowStatusOverride) {
+      menus.forEach((menu) => {
+        if (menu.approvalStatus !== 'approved') {
+          throw new BadRequestException('Menu production is not approved yet.');
+        }
+        if (menu.storeRequestStatus !== 'requested') {
+          throw new BadRequestException(
+            'Store request has not been submitted yet or is already processed.',
+          );
+        }
+      });
+    }
 
     const batchKeys = Array.from(
       new Set(
