@@ -17,6 +17,7 @@ import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductio
 import UnitManagerPage from './app/UnitManagerPage'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import SuperadminLayout from './app/SuperadminLayout'
+import SuperadminApprovalCentersPage from './app/SuperadminApprovalCentersPage'
 import SuperadminDashboardPage from './app/SuperadminDashboardPage'
 import SuperadminMenuManagementPage from './app/SuperadminMenuManagementPage'
 import SuperadminSitesPage from './app/SuperadminSitesPage'
@@ -104,6 +105,10 @@ function App() {
             <Route path="users" element={<SuperadminUsersPage />} />
             <Route path="sites" element={<SuperadminSitesPage />} />
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
+            <Route
+              path="approval-centers"
+              element={<SuperadminApprovalCentersPage />}
+            />
             <Route path="store-request" element={<SuperadminStoreRequestPage />} />
             <Route
               path="store-request-export"
