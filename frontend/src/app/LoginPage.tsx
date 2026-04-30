@@ -45,13 +45,17 @@ const LoginPage = () => {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-14 lg:px-10">
         <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-12">
           <section className="lg:col-span-7 flex items-center justify-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-white shadow-[0_12px_30px_rgba(11,41,87,0.25)]">
-                DM
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_12px_30px_rgba(11,41,87,0.25)] ring-1 ring-border">
+                <img
+                  src="/Logo.png"
+                  alt="Food Recipe System logo"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Digital Menu Engineering
+                  Food Recipe System
                 </h1>
               </div>
             </div>
