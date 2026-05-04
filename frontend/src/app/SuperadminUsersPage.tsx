@@ -712,10 +712,16 @@ const SuperadminUsersPage = () => {
                     <li>email</li>
                     <li>password</li>
                     <li>roles</li>
+                    <li>sites</li>
                   </ul>
                   <p className="mt-3 text-xs text-muted">
                     roles: superadmin, chef, unit-manager, storekeeper. You can
                     separate multiple roles with commas.
+                  </p>
+                  <p className="mt-2 text-xs text-muted">
+                    sites can contain an existing site code or a new site name.
+                    New sites will be created automatically with the next SXXX
+                    code.
                   </p>
                 </div>
 

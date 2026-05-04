@@ -34,6 +34,7 @@ const USER_HEADER_ALIASES = {
   email: ['email', 'e-mail', 'mail'],
   password: ['password', 'pass', 'pwd', 'kata sandi', 'katasandi'],
   roles: ['roles', 'role', 'jabatan', 'posisi'],
+  sites: ['sites', 'site', 'site code', 'kode site', 'kode situs'],
 };
 
 const USER_IMPORT_EXTENSIONS = new Set(['.xlsx', '.xls']);
@@ -178,10 +179,11 @@ export class SuperadminUsersController {
       !headerMap.name ||
       !headerMap.email ||
       !headerMap.password ||
-      !headerMap.roles
+      !headerMap.roles ||
+      !headerMap.sites
     ) {
       throw new BadRequestException(
-        'Header harus berisi name, email, password, dan roles untuk import akun.',
+        'Header harus berisi name, email, password, roles, dan sites untuk import akun.',
       );
     }
 
@@ -190,6 +192,7 @@ export class SuperadminUsersController {
       email: string;
       password: string;
       roles: AppRole[];
+      sites: string[];
     }> = [];
     const seenEmails = new Set<string>();
     let skippedCount = 0;
@@ -200,7 +203,8 @@ export class SuperadminUsersController {
       const name = this.getCellValue(values, headerMap.name);
       const emailRaw = this.getCellValue(values, headerMap.email);
       const password = this.getCellValue(values, headerMap.password);
-      if (!name || !emailRaw || !password) {
+      const sites = this.parseSites(this.getCellValue(values, headerMap.sites));
+      if (!name || !emailRaw || !password || sites.length === 0) {
         skippedCount += 1;
         return;
       }
@@ -224,6 +228,7 @@ export class SuperadminUsersController {
         email,
         password,
         roles,
+        sites,
       });
     });
 
@@ -236,6 +241,8 @@ export class SuperadminUsersController {
           email: row.email,
           passwordHash,
           roles: row.roles.length ? row.roles : undefined,
+          sites: row.sites,
+          createMissingSites: true,
         });
         insertedCount += 1;
       } catch (error) {
@@ -316,5 +323,17 @@ export class SuperadminUsersController {
     });
 
     return Array.from(roles.values());
+  }
+
+  private parseSites(value?: string) {
+    if (!value) return [];
+    return Array.from(
+      new Set(
+        value
+          .split(/[,|;/]/)
+          .map((site) => site.trim())
+          .filter(Boolean),
+      ),
+    );
   }
 }
