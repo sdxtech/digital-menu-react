@@ -547,6 +547,14 @@ const StorekeeperPage = () => {
           ? error.message
           : 'Failed to complete ingredient issuance.'
       setReconciliationError(message)
+      if (
+        message.toLowerCase().includes('already completed') ||
+        message.toLowerCase().includes('already processed') ||
+        message.toLowerCase().includes('already completed or cancelled')
+      ) {
+        await fetchStoreRequests()
+        setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      }
     } finally {
       setProcessingGroupKey(null)
     }
