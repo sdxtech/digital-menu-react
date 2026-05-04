@@ -18,6 +18,7 @@ type CreateUserInput = {
   roles?: AppRole[];
   sites?: string[];
   siteId?: string | null;
+  createMissingSites?: boolean;
 };
 
 type UpdateUserInput = {
@@ -106,6 +107,7 @@ export class UsersService {
     const siteAssignment = await this.resolveSiteAssignment(
       input.siteId,
       input.sites,
+      input.createMissingSites,
     );
     const created = await this.userModel.create({
       ...input,
@@ -298,6 +300,7 @@ export class UsersService {
   private async resolveSiteAssignment(
     siteId?: string | null,
     sites?: string[],
+    createMissingSites = false,
   ) {
     const normalizedSiteId = siteId?.trim();
     if (normalizedSiteId) {
@@ -309,9 +312,45 @@ export class UsersService {
       };
     }
 
+    return this.resolveSiteCodes(sites, createMissingSites);
+  }
+
+  private async resolveSiteCodes(sites?: string[], createMissingSites = false) {
+    const normalizedSites = this.normalizeSites(sites);
+    if (normalizedSites.length === 0) {
+      return { siteId: undefined, sites: [] as string[] };
+    }
+
+    const requestedSite = normalizedSites[0];
+    const siteCodes = normalizedSites.map((site) => this.normalizeSiteCode(site));
+    const siteByCode = await this.sites.findSummariesByCodes(siteCodes);
+    const primarySiteCode = siteCodes[0];
+    let site = siteByCode.get(primarySiteCode);
+    if (!site) {
+      const siteByName = await this.sites.findAll({
+        page: 1,
+        limit: 1,
+        search: requestedSite,
+        isActive: true,
+      });
+      site = siteByName.items.find(
+        (item) =>
+          item.name.trim().toLowerCase() === requestedSite.trim().toLowerCase(),
+      );
+    }
+    if (!site && createMissingSites) {
+      const created = await this.sites.createWithNextSequentialCode(
+        requestedSite,
+      );
+      site = this.sites.toSummary(created);
+    }
+    if (!site) {
+      throw new BadRequestException(`Site not found: ${primarySiteCode}`);
+    }
+
     return {
-      siteId: undefined,
-      sites: this.normalizeSites(sites),
+      siteId: new Types.ObjectId(site.id),
+      sites: [site.code],
     };
   }
 
@@ -377,6 +416,10 @@ export class UsersService {
       .map((site) => site.trim())
       .filter(Boolean)
       .slice(0, 1);
+  }
+
+  private normalizeSiteCode(site: string) {
+    return site.trim().replace(/\s+/g, '-').toUpperCase();
   }
 
   private normalizeRoles(roles?: AppRole[]) {

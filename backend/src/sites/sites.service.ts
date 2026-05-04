@@ -61,6 +61,29 @@ export class SitesService {
     }
   }
 
+  async createWithNextSequentialCode(name: string) {
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      throw new BadRequestException('Site name is required.');
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const code = await this.nextSequentialCode();
+      try {
+        return await this.create({
+          name: normalizedName,
+          code,
+          isActive: true,
+        });
+      } catch (error) {
+        if (error instanceof ConflictException) continue;
+        throw error;
+      }
+    }
+
+    throw new ConflictException('Failed to reserve next site code');
+  }
+
   async update(id: string, input: UpdateSiteInput) {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid site id.');
@@ -227,6 +250,20 @@ export class SitesService {
 
   private normalizeCode(value?: string) {
     return (value ?? '').trim().replace(/\s+/g, '-').toUpperCase();
+  }
+
+  private async nextSequentialCode() {
+    const sites = await this.siteModel
+      .find({ code: /^S\d{3}$/ })
+      .select({ code: 1 })
+      .lean();
+    const lastNumber = sites.reduce((max, site) => {
+      const match = /^S(\d{3})$/.exec(site.code);
+      if (!match) return max;
+      return Math.max(max, Number(match[1]));
+    }, 0);
+
+    return `S${String(lastNumber + 1).padStart(3, '0')}`;
   }
 
   private normalizeOptionalText(value?: string) {
