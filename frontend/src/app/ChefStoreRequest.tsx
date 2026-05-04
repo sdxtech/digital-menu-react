@@ -981,7 +981,7 @@ const ChefStoreRequest = ({
                             <span className="text-primary">Requested</span>
                           ) : null}
                           {hasDelivered ? (
-                            <span className="text-success">Delivered</span>
+                            <span className="text-success">Completed</span>
                           ) : null}
                           {hasCancelled ? (
                             <span className="text-danger">Cancelled</span>
