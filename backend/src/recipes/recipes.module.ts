@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
+import { SitesModule } from '../sites/sites.module';
 import { UsersModule } from '../users/users.module';
 import {
   RecipeCodeCounter,
@@ -20,6 +21,7 @@ import { RecipesService } from './recipes.service';
     AuthModule,
     UsersModule,
     RawMaterialsModule,
+    SitesModule,
   ],
   controllers: [RecipesController],
   providers: [RecipesService],

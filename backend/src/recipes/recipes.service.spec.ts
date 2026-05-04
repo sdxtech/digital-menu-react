@@ -13,12 +13,16 @@ describe('RecipesService site visibility', () => {
     const users = {
       findNamesByIds: jest.fn().mockResolvedValue(new Map()),
     };
+    const sites = {
+      findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
       {} as never,
       {} as never,
       users as never,
+      sites as never,
     );
     jest
       .spyOn(

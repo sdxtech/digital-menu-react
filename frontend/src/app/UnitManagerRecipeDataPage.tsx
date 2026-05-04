@@ -20,6 +20,8 @@ type Recipe = {
   recipeCode?: string
   name: string
   category: string
+  site?: string
+  siteName?: string
   description?: string
   createdAt?: string
   updatedAt?: string
@@ -40,6 +42,9 @@ const statusLabel = (status: 'draft' | 'active') =>
 
 const formatActorLabel = (name?: string, email?: string, fallback?: string) =>
   name?.trim() || email?.trim() || fallback?.trim() || 'Unknown'
+
+const formatRecipeSite = (recipe: Recipe) =>
+  recipe.siteName?.trim() || recipe.site?.trim() || 'All sites'
 
 const formatTimestamp = (value?: string) => {
   if (!value) return 'Unknown'
@@ -335,6 +340,7 @@ const UnitManagerRecipeDataPage = () => {
                   <th className="px-5 py-4 font-semibold">Recipe code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
+                  <th className="px-5 py-4 font-semibold">Site</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
@@ -343,13 +349,13 @@ const UnitManagerRecipeDataPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes found.'}
                     </td>
                   </tr>
@@ -368,6 +374,7 @@ const UnitManagerRecipeDataPage = () => {
                         </td>
                         <td className="px-5 py-4">{recipe.name}</td>
                         <td className="px-5 py-4">{recipe.category}</td>
+                        <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">{statusLabel(recipe.status)}</td>
                         <td className="px-5 py-4">
                           {getApprovalStatusLabel(recipe.approvalStatus)}

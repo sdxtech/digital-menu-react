@@ -20,6 +20,8 @@ type Recipe = {
   recipeCode?: string
   name: string
   category: string
+  site?: string
+  siteName?: string
   description?: string
   imageUrl?: string
   createdAt?: string
@@ -63,6 +65,9 @@ const formatActorLabel = (name?: string) => {
   if (name) return name
   return 'Unknown'
 }
+
+const formatRecipeSite = (recipe: Recipe) =>
+  recipe.siteName?.trim() || recipe.site?.trim() || 'All sites'
 
 const formatTimestamp = (value?: string) => {
   if (!value) return 'Unknown'
@@ -777,6 +782,7 @@ const ChefMenuBank = () => {
                   <th className="px-5 py-4 font-semibold">Recipe ID</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
+                  <th className="px-5 py-4 font-semibold">Site</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
@@ -785,13 +791,13 @@ const ChefMenuBank = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes yet.'}
                     </td>
                   </tr>
@@ -813,6 +819,7 @@ const ChefMenuBank = () => {
                         </td>
                         <td className="px-5 py-4">{recipe.name}</td>
                         <td className="px-5 py-4">{recipe.category}</td>
+                        <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
                           <span>{statusLabel(recipe.status)}</span>
                         </td>
