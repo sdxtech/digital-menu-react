@@ -36,6 +36,7 @@ type Recipe = {
   name: string
   category: string
   site?: string
+  siteName?: string
   description?: string
   createdAt?: string
   updatedAt?: string
@@ -301,6 +302,8 @@ const SuperadminMenuManagementPage = () => {
     : 'Unknown'
 
   const getRecipeSiteLabel = (recipe: Recipe) => {
+    const siteName = recipe.siteName?.trim()
+    if (siteName) return siteName
     const siteCode = recipe.site?.trim()
     if (!siteCode) return 'All sites'
     return siteNameByCode.get(siteCode) ?? siteCode

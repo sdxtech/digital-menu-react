@@ -23,6 +23,7 @@ import {
   RawMaterialsService,
   type RawMaterialLookup,
 } from '../raw-materials/raw-materials.service';
+import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 
@@ -168,6 +169,7 @@ export class RecipesService {
     private readonly recipeCodeCounterModel: Model<RecipeCodeCounterDocument>,
     private readonly rawMaterials: RawMaterialsService,
     private readonly users: UsersService,
+    private readonly sites: SitesService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
@@ -282,6 +284,7 @@ export class RecipesService {
     }
 
     await this.attachActorNames(items);
+    await this.attachSiteNames(items);
 
     return {
       items,
@@ -1485,6 +1488,26 @@ export class RecipesService {
         const name = nameMap.get(item.reviewedBy);
         if (name) item.reviewedByName = name;
       }
+    });
+  }
+
+  private async attachSiteNames(
+    items: Array<{ site?: string; siteName?: string }>,
+  ): Promise<void> {
+    const siteCodes = Array.from(
+      new Set(
+        items
+          .map((item) => this.normalizeSite(item.site))
+          .filter((site): site is string => Boolean(site)),
+      ),
+    );
+    if (siteCodes.length === 0) return;
+
+    const siteByCode = await this.sites.findSummariesByCodes(siteCodes);
+    items.forEach((item) => {
+      const siteCode = this.normalizeSite(item.site);
+      if (!siteCode) return;
+      item.siteName = siteByCode.get(siteCode)?.name ?? siteCode;
     });
   }
 
