@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { formatQuantity } from '../lib/quantity'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -261,12 +262,6 @@ const UnitManagerPage = () => {
     }
 
     fetchPending().catch(() => null)
-  }
-
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
   }
 
   const recipeTotalPages = Math.max(

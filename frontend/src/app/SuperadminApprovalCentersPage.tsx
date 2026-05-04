@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatQuantity } from '../lib/quantity'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import {
   getApprovalStatusLabel,
@@ -104,12 +105,6 @@ const approvalStatusClass = (status: ApprovalStatus) => {
   if (status === 'approved') return 'text-primary'
   if (status === 'rejected') return 'text-danger'
   return 'text-muted'
-}
-
-const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return '0'
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
 }
 
 const getRecipeKey = (recipe: Recipe) =>

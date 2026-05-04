@@ -26,6 +26,8 @@ import {
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 
+const QUANTITY_DECIMAL_PLACES = 6;
+
 type RecipeActor = {
   id?: string;
   name?: string;
@@ -1224,6 +1226,11 @@ export class RecipesService {
     return tokenized;
   }
 
+  private roundQuantity(value: number) {
+    if (!Number.isFinite(value)) return undefined;
+    return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
+  }
+
   private convertQty(
     qty: number,
     from?: string,
@@ -1233,10 +1240,10 @@ export class RecipesService {
     if (!from || !to) return undefined;
     if (from === to) return qty;
 
-    if (from === 'gram' && to === 'kg') return Number((qty / 1000).toFixed(6));
-    if (from === 'kg' && to === 'gram') return Number((qty * 1000).toFixed(6));
-    if (from === 'ml' && to === 'liter') return Number((qty / 1000).toFixed(6));
-    if (from === 'liter' && to === 'ml') return Number((qty * 1000).toFixed(6));
+    if (from === 'gram' && to === 'kg') return this.roundQuantity(qty / 1000);
+    if (from === 'kg' && to === 'gram') return this.roundQuantity(qty * 1000);
+    if (from === 'ml' && to === 'liter') return this.roundQuantity(qty / 1000);
+    if (from === 'liter' && to === 'ml') return this.roundQuantity(qty * 1000);
 
     return undefined;
   }

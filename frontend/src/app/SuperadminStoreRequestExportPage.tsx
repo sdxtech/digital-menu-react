@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatQuantity as formatRawQuantity } from '../lib/quantity'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -174,9 +175,7 @@ const buildIngredientKey = (
   `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
 
 const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return ''
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  return formatRawQuantity(value, '')
 }
 
 const SuperadminStoreRequestExportPage = () => {

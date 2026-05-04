@@ -61,6 +61,7 @@ const SuperadminStoreRequestPage = () => {
       siteOptions={siteOptions}
       enableStoreRequestCancellation
       enableStoreRequestCompletion
+      actionMode="select"
     />
   )
 }
