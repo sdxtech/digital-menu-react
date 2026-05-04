@@ -573,8 +573,16 @@ export class MenuProductionsService implements OnModuleInit {
     const completedAt = new Date();
     const note = input.note?.trim();
 
-    await this.menuProductionModel.updateMany(
-      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
+    const updateFilter: Record<string, unknown> = {
+      _id: { $in: normalizedIds },
+    };
+    if (!options.allowStatusOverride) {
+      updateFilter.approvalStatus = 'approved';
+      updateFilter.storeRequestStatus = 'requested';
+    }
+
+    const updateResult = await this.menuProductionModel.updateMany(
+      this.withSiteFilter(updateFilter, site),
       {
         $set: {
           storeRequestStatus: 'fulfilled',
@@ -591,6 +599,14 @@ export class MenuProductionsService implements OnModuleInit {
         },
       },
     );
+    const completedCount = options.allowStatusOverride
+      ? updateResult.matchedCount
+      : updateResult.modifiedCount;
+    if (completedCount !== normalizedIds.length) {
+      throw new BadRequestException(
+        'Store request was already completed or cancelled by another user. Please refresh the list.',
+      );
+    }
 
     return {
       productionDate: batch.date,

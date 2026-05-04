@@ -365,6 +365,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Ingredient Name',
           'QTY Planned',
           'QTY Actual',
+          'Variance',
           'Unit Of Measures',
           'Approved By',
           'Approval Status',
@@ -416,6 +417,7 @@ const SuperadminStoreRequestExportPage = () => {
               '',
               '',
               '',
+              '',
               approvedBy,
               approvalStatus,
               completedBy,
@@ -448,6 +450,9 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.name,
               formatQuantity(ingredient.qty),
               fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
+              fulfillmentItem
+                ? formatQuantity(fulfillmentItem.varianceQty)
+                : '',
               formatUnitLabel(ingredient.unitOfMeasures),
               approvedBy,
               approvalStatus,
