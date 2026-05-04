@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
+import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -84,6 +85,7 @@ type ChefStoreRequestProps = {
   siteOptions?: StoreRequestSiteOption[]
   enableStoreRequestCancellation?: boolean
   enableStoreRequestCompletion?: boolean
+  actionMode?: 'buttons' | 'select'
 }
 
 const getStoreRequestGroupKey = (group: {
@@ -233,6 +235,7 @@ const ChefStoreRequest = ({
   siteOptions = [],
   enableStoreRequestCancellation = false,
   enableStoreRequestCompletion = false,
+  actionMode = 'buttons',
 }: ChefStoreRequestProps = {}) => {
   const { accessToken } = useAuth()
   const {
@@ -257,19 +260,6 @@ const ChefStoreRequest = ({
   const [completionRows, setCompletionRows] = useState<ReconciliationRow[]>([])
   const [completionNote, setCompletionNote] = useState('')
   const [completionError, setCompletionError] = useState('')
-
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
-  }
-
-  const formatSignedQuantity = (value: number) => {
-    const formatted = formatQuantity(Math.abs(value))
-    if (value > 0) return `+${formatted}`
-    if (value < 0) return `-${formatted}`
-    return '0'
-  }
 
   const parseDotDecimal = (value: string) => {
     const trimmed = value.trim()
@@ -650,9 +640,8 @@ const ChefStoreRequest = ({
         )
         return
       }
-      const varianceQty = actualQty - row.plannedQty
       const reason = row.reason.trim()
-      if (Math.abs(varianceQty) > 0.000001 && !reason) {
+      if (quantitiesDiffer(actualQty, row.plannedQty) && !reason) {
         setCompletionError(
           `Reason is required when actual qty differs for ${fieldLabel}.`,
         )
@@ -917,6 +906,11 @@ const ChefStoreRequest = ({
                 const hasPendingApproval = items.some(
                   (item) => item.storeRequestStatus === 'not-requested',
                 )
+                const canCancelRequest =
+                  enableStoreRequestCancellation &&
+                  items.some(
+                    (item) => item.storeRequestStatus !== 'cancelled',
+                  )
                 const reviewedByNames = Array.from(
                   new Set(
                     items
@@ -993,57 +987,6 @@ const ChefStoreRequest = ({
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          {!enableStoreRequestCancellation &&
-                          pendingItems.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                handleCancelPendingGroup(group).catch(() => null)
-                              }}
-                              disabled={cancellingGroupKey === groupKey}
-                              className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {cancellingGroupKey === groupKey ? 'Cancelling...' : 'Cancel'}
-                            </button>
-                          ) : null}
-                          {enableStoreRequestCancellation &&
-                          items.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openCancellationModal(group)
-                              }}
-                              disabled={cancellingGroupKey === groupKey}
-                              className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {cancellingGroupKey === groupKey
-                                ? 'Cancelling...'
-                                : 'Cancel request'}
-                            </button>
-                          ) : null}
-                          {enableStoreRequestCompletion && items.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openCompletionModal(group)
-                              }}
-                              disabled={cancellingGroupKey === groupKey}
-                              className={
-                                hasDelivered
-                                  ? 'rounded-md border border-amber-500 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60'
-                                  : 'rounded-md border border-success bg-success/10 px-3 py-1 text-xs font-semibold text-success hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-60'
-                              }
-                            >
-                              {cancellingGroupKey === groupKey
-                                ? 'Saving...'
-                                : hasDelivered
-                                  ? 'Correct actual'
-                                  : 'Complete actual'}
-                            </button>
-                          ) : null}
                           <button
                             type="button"
                             onClick={(event) => {
@@ -1054,6 +997,94 @@ const ChefStoreRequest = ({
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
+                          {actionMode === 'select' ? (
+                            <select
+                              value=""
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                const action = event.target.value as
+                                  | 'cancel'
+                                  | 'complete'
+                                  | ''
+                                event.target.value = ''
+                                if (!action) return
+                                if (action === 'cancel') {
+                                  openCancellationModal(group)
+                                  return
+                                }
+                                openCompletionModal(group)
+                              }}
+                              disabled={cancellingGroupKey === groupKey}
+                              className="h-8 w-36 rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <option value="">Select action</option>
+                              {canCancelRequest ? (
+                                <option value="cancel">Cancel request</option>
+                              ) : null}
+                              {enableStoreRequestCompletion && items.length > 0 ? (
+                                <option value="complete">
+                                  {hasDelivered
+                                    ? 'Correct actual'
+                                    : 'Complete actual'}
+                                </option>
+                              ) : null}
+                            </select>
+                          ) : (
+                            <>
+                              {!enableStoreRequestCancellation &&
+                              pendingItems.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleCancelPendingGroup(group).catch(() => null)
+                                  }}
+                                  disabled={cancellingGroupKey === groupKey}
+                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {cancellingGroupKey === groupKey
+                                    ? 'Cancelling...'
+                                    : 'Cancel'}
+                                </button>
+                              ) : null}
+                              {canCancelRequest ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openCancellationModal(group)
+                                  }}
+                                  disabled={cancellingGroupKey === groupKey}
+                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {cancellingGroupKey === groupKey
+                                    ? 'Cancelling...'
+                                    : 'Cancel request'}
+                                </button>
+                              ) : null}
+                              {enableStoreRequestCompletion && items.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openCompletionModal(group)
+                                  }}
+                                  disabled={cancellingGroupKey === groupKey}
+                                  className={
+                                    hasDelivered
+                                      ? 'rounded-md border border-amber-500 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60'
+                                      : 'rounded-md border border-success bg-success/10 px-3 py-1 text-xs font-semibold text-success hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-60'
+                                  }
+                                >
+                                  {cancellingGroupKey === groupKey
+                                    ? 'Saving...'
+                                    : hasDelivered
+                                      ? 'Correct actual'
+                                      : 'Complete actual'}
+                                </button>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1456,7 +1487,7 @@ const ChefStoreRequest = ({
                             const varianceClass =
                               varianceQty === null
                                 ? 'text-muted'
-                                : Math.abs(varianceQty) <= 0.000001
+                                : !quantitiesDiffer(varianceQty, 0)
                                   ? 'text-muted'
                                   : varianceQty > 0
                                     ? 'text-primary'

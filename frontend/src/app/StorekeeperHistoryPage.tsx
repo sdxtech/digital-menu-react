@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { formatQuantity, formatSignedQuantity } from '../lib/quantity'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
@@ -136,19 +137,6 @@ const downloadExcel = (
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return '0'
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
-}
-
-const formatSignedQuantity = (value: number) => {
-  const formatted = formatQuantity(Math.abs(value))
-  if (value > 0) return `+${formatted}`
-  if (value < 0) return `-${formatted}`
-  return '0'
 }
 
 const buildHistoryIngredientKey = (

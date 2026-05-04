@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
+import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
@@ -152,19 +153,6 @@ const downloadExcel = (
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return '0'
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
-}
-
-const formatSignedQuantity = (value: number) => {
-  const formatted = formatQuantity(Math.abs(value))
-  if (value > 0) return `+${formatted}`
-  if (value < 0) return `-${formatted}`
-  return '0'
 }
 
 const parseDotDecimal = (value: string) => {
@@ -518,9 +506,8 @@ const StorekeeperPage = () => {
         )
         return
       }
-      const varianceQty = actualQty - row.plannedQty
       const reason = row.reason.trim()
-      if (Math.abs(varianceQty) > 0.000001 && !reason) {
+      if (quantitiesDiffer(actualQty, row.plannedQty) && !reason) {
         setReconciliationError(
           `Reason is required when actual qty differs for ${fieldLabel}.`,
         )
@@ -1144,7 +1131,7 @@ const StorekeeperPage = () => {
                         const varianceClass =
                           varianceQty === null
                             ? 'text-muted'
-                            : Math.abs(varianceQty) <= 0.000001
+                            : !quantitiesDiffer(varianceQty, 0)
                               ? 'text-muted'
                               : varianceQty > 0
                                 ? 'text-primary'

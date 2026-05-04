@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData, type MenuProduction, type Recipe } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { formatQuantity } from '../lib/quantity'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
@@ -268,12 +269,6 @@ const ChefMenuCycle = ({
     }),
     [scopedMenuProductions],
   )/* Menghitung statistik produksi menu berdasarkan data menuProductions, termasuk jumlah yang disetujui, menunggu persetujuan, ditolak, dan total. Hasilnya digunakan untuk menampilkan informasi ringkasan di bagian atas halaman. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */  
-
-  const formatQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return '0'
-    if (Number.isInteger(value)) return String(value)
-    return value.toFixed(3).replace(/\.?0+$/, '')
-  }/* Fungsi untuk memformat nilai kuantitas dengan aturan berikut: jika nilai tidak finite, tampilkan '0'; jika nilai adalah bilangan bulat, tampilkan tanpa desimal; jika nilai memiliki desimal, tampilkan hingga 3 angka di belakang koma dan hapus trailing zero. Digunakan untuk menampilkan jumlah bahan dalam detail resep dengan format yang lebih bersih. */
 
   const findRecipeByExactQuery = (query: string) => {
     const normalized = normalizeText(query)

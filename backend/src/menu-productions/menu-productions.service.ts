@@ -123,6 +123,7 @@ const DEFAULT_SITE = 'A1';
 const MENU_PRODUCTION_CODE_PREFIX = 'MPR';
 const MENU_PRODUCTION_CODE_MIN_DIGITS = 4;
 const MENU_PRODUCTION_CODE_COUNTER_KEY = 'menu_production_code';
+const QUANTITY_DECIMAL_PLACES = 6;
 
 @Injectable()
 export class MenuProductionsService implements OnModuleInit {
@@ -137,6 +138,11 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
   ) {}
+
+  private roundQuantity(value: number) {
+    if (!Number.isFinite(value)) return 0;
+    return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
+  }
 
   async onModuleInit() {
     await this.ensureNonUniqueProductionCodeIndex();
@@ -515,11 +521,11 @@ export class MenuProductionsService implements OnModuleInit {
           );
         }
 
-        const plannedQty = Number(plannedItem.qty);
-        const actualQty = Number(actualItem.actualQty);
-        const varianceQty = actualQty - plannedQty;
+        const plannedQty = this.roundQuantity(Number(plannedItem.qty));
+        const actualQty = this.roundQuantity(Number(actualItem.actualQty));
+        const varianceQty = this.roundQuantity(actualQty - plannedQty);
         const normalizedReason = actualItem.reason?.trim();
-        if (Math.abs(varianceQty) > 0.000001 && !normalizedReason) {
+        if (varianceQty !== 0 && !normalizedReason) {
           throw new BadRequestException(
             `Variance reason is required for ${plannedItem.productCode || plannedItem.name}.`,
           );
@@ -539,7 +545,7 @@ export class MenuProductionsService implements OnModuleInit {
     );
 
     actualItems.forEach((actualItem) => {
-      const actualQty = Number(actualItem.actualQty);
+      const actualQty = this.roundQuantity(Number(actualItem.actualQty));
       const normalizedReason = actualItem.reason?.trim();
       if (!Number.isFinite(actualQty) || actualQty <= 0) {
         throw new BadRequestException(
