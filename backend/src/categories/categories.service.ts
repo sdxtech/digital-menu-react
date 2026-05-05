@@ -7,8 +7,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 
-const DEFAULT_SITE = 'A1';
-
 export type CreateCategoryInput = {
   name: string;
   isActive?: boolean;
@@ -181,16 +179,9 @@ export class CategoriesService {
 
   private buildSiteFilter(site?: string) {
     if (!site) return {};
-    if (site === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
-    return { site };
+    return {
+      $or: [{ site }, { site: { $exists: false } }, { site: '' }],
+    };
   }
 
   private withSiteFilter(filter: Record<string, unknown>, site?: string) {
