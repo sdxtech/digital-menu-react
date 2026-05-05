@@ -6,6 +6,8 @@ import {
   type RawMaterial,
   type RecipeIngredient,
 } from '../lib/chef-data'
+import { apiFetch } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INGREDIENT_ROWS_PER_PAGE = 8
@@ -23,6 +25,13 @@ type IngredientRow = {
   name: string
   unitOfMeasures: string
   qty: string
+}
+
+type CategoryApi = {
+  id?: string
+  _id?: string
+  name?: string
+  isActive?: boolean
 }
 
 export type BaseRecipe = {
@@ -77,6 +86,7 @@ const ChefCreateMenu = ({
     importRecipesFromExcel,
     searchRawMaterials,
   } = useChefData()
+  const { accessToken } = useAuth()
 
   const baseRecipe =
     baseRecipeProp ??
@@ -94,6 +104,9 @@ const ChefCreateMenu = ({
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([])
+  const [categoriesLoading, setCategoriesLoading] = useState(false)
+  const [categoriesError, setCategoriesError] = useState('')
   const [ingredientPage, setIngredientPage] = useState(1)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
@@ -150,6 +163,59 @@ const ChefCreateMenu = ({
     setSubmitError('')
     setSubmitMessage('')
   }, [baseRecipe])
+
+  useEffect(() => {
+    if (!accessToken) return
+
+    let cancelled = false
+    const fetchCategories = async () => {
+      setCategoriesLoading(true)
+      setCategoriesError('')
+      try {
+        const allCategories: CategoryApi[] = []
+        const limit = 100
+        let page = 1
+        let total = 0
+
+        do {
+          const params = new URLSearchParams()
+          params.set('page', String(page))
+          params.set('limit', String(limit))
+          params.set('isActive', 'true')
+
+          const data = await apiFetch<{
+            items?: CategoryApi[]
+            total?: number
+          }>(`/categories?${params.toString()}`, undefined, accessToken)
+
+          const items = data.items ?? []
+          allCategories.push(...items)
+          total = data.total ?? allCategories.length
+          if (items.length < limit) break
+          page += 1
+        } while (allCategories.length < total)
+
+        if (cancelled) return
+        const nextCategories = allCategories
+          .map((category) => category.name?.trim() ?? '')
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+        setCategoryOptions(nextCategories)
+      } catch {
+        if (cancelled) return
+        setCategoryOptions([])
+        setCategoriesError('Unable to load categories.')
+      } finally {
+        if (!cancelled) setCategoriesLoading(false)
+      }
+    }
+
+    fetchCategories().catch(() => null)
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
@@ -660,13 +726,34 @@ const ChefCreateMenu = ({
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Category</label>
-            <input
-              type="text"
+            <select
               value={recipeForm.category}
               onChange={(event) => updateRecipeForm('category', event.target.value)}
-              placeholder="Main Course / Beverage"
+              disabled={categoriesLoading}
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
+            >
+              <option value="">
+                {categoriesLoading
+                  ? 'Loading categories...'
+                  : categoryOptions.length
+                    ? 'Select category'
+                    : 'No active categories available'}
+              </option>
+              {recipeForm.category &&
+              !categoryOptions.includes(recipeForm.category) ? (
+                <option value={recipeForm.category}>
+                  {recipeForm.category}
+                </option>
+              ) : null}
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+            {categoriesError ? (
+              <p className="mt-2 text-xs text-red-600">{categoriesError}</p>
+            ) : null}
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Base pax</label>

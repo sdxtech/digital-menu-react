@@ -58,7 +58,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(),
       refreshTokenHash,
     });
@@ -97,7 +97,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(),
       refreshTokenHash: await bcrypt.hash('another-token', 10),
     });
@@ -128,7 +128,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(Date.now() - 31 * 60 * 1000),
       refreshTokenHash: await bcrypt.hash(refreshToken, 10),
     });
@@ -159,7 +159,7 @@ describe('AuthService', () => {
       passwordHash: await bcrypt.hash('secret-pass', 10),
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
     });
     jwt.signAsync
       .mockResolvedValueOnce('access-token')
@@ -196,7 +196,7 @@ describe('AuthService', () => {
       passwordHash: await bcrypt.hash('secret-pass', 10),
       isActive: true,
       roles: [],
-      sites: ['A1'],
+      sites: ['SITE-001'],
     });
 
     await expect(
