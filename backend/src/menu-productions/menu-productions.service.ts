@@ -119,7 +119,6 @@ type EligibleRecipe = {
   category: string;
 };
 
-const DEFAULT_SITE = 'A1';
 const MENU_PRODUCTION_CODE_PREFIX = 'MPR';
 const MENU_PRODUCTION_CODE_MIN_DIGITS = 4;
 const MENU_PRODUCTION_CODE_COUNTER_KEY = 'menu_production_code';
@@ -971,21 +970,13 @@ export class MenuProductionsService implements OnModuleInit {
   }
 
   async listStoreRequestSites() {
-    const [rawSites, hasLegacyDefaultSiteRows] = await Promise.all([
-      this.menuProductionModel.distinct('site', { approvalStatus: 'approved' }),
-      this.menuProductionModel.exists({
-        approvalStatus: 'approved',
-        $or: [{ site: { $exists: false } }, { site: '' }],
-      }),
-    ]);
+    const rawSites = await this.menuProductionModel.distinct('site', {
+      approvalStatus: 'approved',
+    });
 
     const normalized = rawSites
       .map((site) => String(site).trim())
       .filter(Boolean);
-
-    if (hasLegacyDefaultSiteRows) {
-      normalized.push(DEFAULT_SITE);
-    }
 
     return Array.from(new Set(normalized)).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
@@ -1087,7 +1078,7 @@ export class MenuProductionsService implements OnModuleInit {
   }) {
     const productionCode =
       this.normalizeOptionalProductionCode(input.productionCode) ?? input.id;
-    const site = this.normalizeSite(input.site) ?? DEFAULT_SITE;
+    const site = this.normalizeSite(input.site) ?? '';
     return `${site}__${input.productionDate}__${productionCode}`;
   }
 
@@ -1233,8 +1224,7 @@ export class MenuProductionsService implements OnModuleInit {
       const group = groups.get(groupKey) ?? {
         site:
           this.normalizeSite(String(menu.site ?? '')) ??
-          requestedSite ??
-          DEFAULT_SITE,
+          requestedSite,
         date: productionDate,
         productionCode: this.normalizeOptionalProductionCode(
           String(menu.productionCode ?? ''),
@@ -1521,15 +1511,6 @@ export class MenuProductionsService implements OnModuleInit {
 
   private buildSiteFilter(site?: string) {
     if (!site) return {};
-    if (site === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
     return { site };
   }
 

@@ -325,7 +325,7 @@ const SuperadminSitesPage = () => {
                     onChange={(event) =>
                       updateCreateForm('code', event.target.value)
                     }
-                    placeholder="e.g. A1"
+                    placeholder="e.g. SITE-001"
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                   />
                 </div>

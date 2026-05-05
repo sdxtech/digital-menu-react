@@ -10,8 +10,6 @@ import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 import { Site, SiteDocument } from '../sites/schemas/site.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 
-const DEFAULT_SITE = 'A1';
-
 @Injectable()
 export class DashboardService {
   constructor(
@@ -187,15 +185,6 @@ export class DashboardService {
 
   private buildSiteFilter(site?: string) {
     if (!site) return {};
-    if (site === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
     return { site };
   }
 }

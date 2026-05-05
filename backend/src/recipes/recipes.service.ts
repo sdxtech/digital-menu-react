@@ -158,7 +158,6 @@ const UOM_ALIASES: Record<string, string> = {
 const RECIPE_CODE_PREFIX = 'RCP';
 const RECIPE_CODE_MIN_DIGITS = 4;
 const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
-const DEFAULT_SITE = 'A1';
 
 @Injectable()
 export class RecipesService {
@@ -1519,15 +1518,6 @@ export class RecipesService {
   private buildSiteFilter(site?: string) {
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
-    if (normalizedSite === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
     return { site: normalizedSite };
   }
 
