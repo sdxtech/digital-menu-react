@@ -22,6 +22,7 @@ import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
+import { RejectMenuProductionDto } from './dto/reject-menu-production.dto';
 import { MenuProductionsService } from './menu-productions.service';
 
 @Controller('menu-productions')
@@ -185,13 +186,18 @@ export class MenuProductionsController {
 
   @Patch(':id/reject')
   @Roles(AppRole.UnitManager, AppRole.Superadmin)
-  reject(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  reject(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RejectMenuProductionDto,
+  ) {
     return this.menuProductions.setApprovalStatus(
       id,
       'rejected',
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
       this.resolveUnitManagerAssignmentScope(req),
+      dto.reason,
     );
   }
 

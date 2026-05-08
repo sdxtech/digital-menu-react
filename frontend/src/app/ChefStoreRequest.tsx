@@ -40,6 +40,7 @@ type StoreRequestMenu = {
   category: string
   portion: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  rejectionReason?: string
   reviewedBy?: string
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
@@ -251,8 +252,14 @@ const ChefStoreRequest = ({
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [cancellingGroupKey, setCancellingGroupKey] = useState<string | null>(null)
+  const [pendingCancellationGroup, setPendingCancellationGroup] =
+    useState<StoreRequestGroup | null>(null)
+  const [pendingCancellationMenu, setPendingCancellationMenu] =
+    useState<StoreRequestMenu | null>(null)
   const [cancellationGroup, setCancellationGroup] =
     useState<StoreRequestGroup | null>(null)
+  const [cancellationMenu, setCancellationMenu] =
+    useState<StoreRequestMenu | null>(null)
   const [cancellationReason, setCancellationReason] = useState('')
   const [cancellationError, setCancellationError] = useState('')
   const [completionGroup, setCompletionGroup] =
@@ -428,29 +435,43 @@ const ChefStoreRequest = ({
     }
   }, [accessToken, requireSiteSelection, selectedSite])
 
-  const handleCancelPendingGroup = async (group: StoreRequestGroup) => {
-    const pendingItems = group.items.filter((item) => item.approvalStatus === 'pending')
-    if (pendingItems.length === 0) return
+  const openPendingCancellationModal = (
+    group: StoreRequestGroup,
+    menu: StoreRequestMenu,
+  ) => {
+    if (menu.approvalStatus !== 'pending') return
+    setPendingCancellationGroup(group)
+    setPendingCancellationMenu(menu)
+    setErrorMessage('')
+    setActionMessage('')
+  }
 
-    const productionCodeLabel = group.productionCode ?? 'this batch'
-    const confirmed = window.confirm(
-      `Cancel ${pendingItems.length} pending menu(s) from ${productionCodeLabel} for ${group.date}?`,
-    )
-    if (!confirmed) return
+  const closePendingCancellationModal = () => {
+    if (cancellingGroupKey) return
+    setPendingCancellationGroup(null)
+    setPendingCancellationMenu(null)
+  }
 
-    const groupKey = getStoreRequestGroupKey(group)
+  const handleConfirmPendingCancellation = async () => {
+    if (!pendingCancellationGroup || !pendingCancellationMenu) return
+
+    const productionCodeLabel =
+      pendingCancellationGroup.productionCode ?? 'this batch'
+    const groupKey = getStoreRequestGroupKey(pendingCancellationGroup)
     setCancellingGroupKey(groupKey)
     setErrorMessage('')
     setActionMessage('')
 
     try {
       await cancelPendingMenuProductionBatch({
-        menuProductionIds: pendingItems.map((item) => item.id),
+        menuProductionIds: [pendingCancellationMenu.id],
       })
       setActionMessage(
-        `${pendingItems.length} pending menu${pendingItems.length > 1 ? 's were' : ' was'} cancelled from ${productionCodeLabel} for ${group.date}.`,
+        `${pendingCancellationMenu.menuName} was cancelled from ${productionCodeLabel} for ${pendingCancellationGroup.date}.`,
       )
       await fetchStoreRequests()
+      setPendingCancellationGroup(null)
+      setPendingCancellationMenu(null)
     } catch (error) {
       const message =
         error instanceof Error
@@ -684,8 +705,12 @@ const ChefStoreRequest = ({
     }
   }
 
-  const openCancellationModal = (group: StoreRequestGroup) => {
+  const openCancellationModal = (
+    group: StoreRequestGroup,
+    menu: StoreRequestMenu,
+  ) => {
     setCancellationGroup(group)
+    setCancellationMenu(menu)
     setCancellationReason('')
     setCancellationError('')
     setErrorMessage('')
@@ -695,12 +720,13 @@ const ChefStoreRequest = ({
   const closeCancellationModal = () => {
     if (cancellingGroupKey) return
     setCancellationGroup(null)
+    setCancellationMenu(null)
     setCancellationReason('')
     setCancellationError('')
   }
 
   const handleSubmitCancellation = async () => {
-    if (!cancellationGroup) return
+    if (!cancellationGroup || !cancellationMenu) return
 
     const reason = cancellationReason.trim()
     if (!reason) {
@@ -708,12 +734,10 @@ const ChefStoreRequest = ({
       return
     }
 
-    const menuProductionIds = cancellationGroup.items
-      .map((item) => item.id)
-      .filter(Boolean)
+    const menuProductionIds = cancellationMenu.id ? [cancellationMenu.id] : []
 
     if (menuProductionIds.length === 0) {
-      setCancellationError('Menu production data is missing for this batch.')
+      setCancellationError('Menu production data is missing for this menu.')
       return
     }
 
@@ -727,13 +751,11 @@ const ChefStoreRequest = ({
         menuProductionIds,
         reason,
       })
-      const label = cancellationGroup.productionCode
-        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
-        : cancellationGroup.date
-      setActionMessage(`Store request for ${label} cancelled.`)
+      setActionMessage(`Store request for ${cancellationMenu.menuName} cancelled.`)
       await fetchStoreRequests()
       setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
       setCancellationGroup(null)
+      setCancellationMenu(null)
       setCancellationReason('')
     } catch (error) {
       const message =
@@ -761,7 +783,10 @@ const ChefStoreRequest = ({
     setPage(1)
     setActionMessage('')
     setErrorMessage('')
+    setPendingCancellationGroup(null)
+    setPendingCancellationMenu(null)
     setCancellationGroup(null)
+    setCancellationMenu(null)
     setCancellationReason('')
     setCancellationError('')
     setCompletionGroup(null)
@@ -856,24 +881,22 @@ const ChefStoreRequest = ({
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Production code</th>
-                <th className="px-5 py-4 font-semibold">Approval status</th>
                 <th className="px-5 py-4 font-semibold">Reviewed by</th>
                 <th className="px-5 py-4 font-semibold">Total menu</th>
                 <th className="px-5 py-4 font-semibold">Storekeeper</th>
-                <th className="px-5 py-4 font-semibold">Store request status</th>
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     No production batches submitted yet.
                   </td>
                 </tr>
@@ -882,35 +905,29 @@ const ChefStoreRequest = ({
                 const date = group.date
                 const groupKey = getStoreRequestGroupKey(group)
                 const items = group.items
-                const pendingItems = items.filter(
-                  (item) => item.approvalStatus === 'pending',
-                )
                 const summaryItems = aggregateStoreRequestSummary(group.summary ?? [])
                 const isExpanded = expandedGroups.includes(groupKey)
-                const hasApproved = items.some(
-                  (item) => item.approvalStatus === 'approved',
-                )
-                const hasRejected = items.some(
-                  (item) => item.approvalStatus === 'rejected',
-                )
-                const hasPendingReview = pendingItems.length > 0
-                const hasRequested = items.some(
-                  (item) => item.storeRequestStatus === 'requested',
-                )
+                const cancelledCount = items.filter(
+                  (item) => item.storeRequestStatus === 'cancelled',
+                ).length
+                const approvedCount = items.filter(
+                  (item) =>
+                    item.approvalStatus === 'approved' &&
+                    item.storeRequestStatus !== 'cancelled',
+                ).length
+                const rejectedCount = items.filter(
+                  (item) =>
+                    item.approvalStatus === 'rejected' &&
+                    item.storeRequestStatus !== 'cancelled',
+                ).length
+                const pendingCount = items.filter(
+                  (item) =>
+                    item.approvalStatus === 'pending' &&
+                    item.storeRequestStatus !== 'cancelled',
+                ).length
                 const hasDelivered = items.some(
                   (item) => item.storeRequestStatus === 'fulfilled',
                 )
-                const hasCancelled = items.some(
-                  (item) => item.storeRequestStatus === 'cancelled',
-                )
-                const hasPendingApproval = items.some(
-                  (item) => item.storeRequestStatus === 'not-requested',
-                )
-                const canCancelRequest =
-                  enableStoreRequestCancellation &&
-                  items.some(
-                    (item) => item.storeRequestStatus !== 'cancelled',
-                  )
                 const reviewedByNames = Array.from(
                   new Set(
                     items
@@ -949,41 +966,38 @@ const ChefStoreRequest = ({
                       <td className="px-5 py-4 text-xs text-muted">
                         {group.productionCode ?? '-'}
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          {hasPendingReview ? (
-                            <span className="text-muted">Submitted</span>
-                          ) : null}
-                          {hasApproved ? (
-                            <span className="text-primary">Approved</span>
-                          ) : null}
-                          {hasRejected ? (
-                            <span className="text-danger">Rejected</span>
-                          ) : null}
-                        </div>
-                      </td>
                       <td className="px-5 py-4 text-sm text-muted">
                         {reviewedByLabel}
                       </td>
-                      <td className="px-5 py-4 text-sm font-medium">{items.length}</td>
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {handledByLabel}
-                      </td>
                       <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          {hasRequested ? (
-                            <span className="text-primary">Requested</span>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="font-semibold text-foreground">
+                            {items.length} total
+                          </span>
+                          {approvedCount > 0 ? (
+                            <span className="rounded-full bg-primary-soft px-2 py-1 font-semibold text-primary">
+                              {approvedCount} approved
+                            </span>
                           ) : null}
-                          {hasDelivered ? (
-                            <span className="text-success">Completed</span>
+                          {rejectedCount > 0 ? (
+                            <span className="rounded-full bg-red-100 px-2 py-1 font-semibold text-red-700">
+                              {rejectedCount} rejected
+                            </span>
                           ) : null}
-                          {hasCancelled ? (
-                            <span className="text-danger">Cancelled</span>
+                          {cancelledCount > 0 ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
+                              {cancelledCount} cancelled
+                            </span>
                           ) : null}
-                          {hasPendingApproval ? (
-                            <span className="text-muted">Pending approval</span>
+                          {pendingCount > 0 ? (
+                            <span className="rounded-full bg-background px-2 py-1 font-semibold text-muted">
+                              {pendingCount} pending
+                            </span>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {handledByLabel}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1008,19 +1022,12 @@ const ChefStoreRequest = ({
                                   | ''
                                 event.target.value = ''
                                 if (!action) return
-                                if (action === 'cancel') {
-                                  openCancellationModal(group)
-                                  return
-                                }
                                 openCompletionModal(group)
                               }}
                               disabled={cancellingGroupKey === groupKey}
                               className="h-8 w-36 rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <option value="">Select action</option>
-                              {canCancelRequest ? (
-                                <option value="cancel">Cancel request</option>
-                              ) : null}
                               {enableStoreRequestCompletion && items.length > 0 ? (
                                 <option value="complete">
                                   {hasDelivered
@@ -1031,37 +1038,6 @@ const ChefStoreRequest = ({
                             </select>
                           ) : (
                             <>
-                              {!enableStoreRequestCancellation &&
-                              pendingItems.length > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    handleCancelPendingGroup(group).catch(() => null)
-                                  }}
-                                  disabled={cancellingGroupKey === groupKey}
-                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {cancellingGroupKey === groupKey
-                                    ? 'Cancelling...'
-                                    : 'Cancel'}
-                                </button>
-                              ) : null}
-                              {canCancelRequest ? (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    openCancellationModal(group)
-                                  }}
-                                  disabled={cancellingGroupKey === groupKey}
-                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {cancellingGroupKey === groupKey
-                                    ? 'Cancelling...'
-                                    : 'Cancel request'}
-                                </button>
-                              ) : null}
                               {enableStoreRequestCompletion && items.length > 0 ? (
                                 <button
                                   type="button"
@@ -1090,7 +1066,7 @@ const ChefStoreRequest = ({
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={9} className="px-5 py-5">
+                        <td colSpan={7} className="px-5 py-5">
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
@@ -1114,6 +1090,12 @@ const ChefStoreRequest = ({
 
                             {items.map((menu) => {
                               const ingredients = menu.ingredients ?? []
+                              const canCancelPendingMenu =
+                                !enableStoreRequestCancellation &&
+                                menu.approvalStatus === 'pending'
+                              const canCancelStoreRequestMenu =
+                                enableStoreRequestCancellation &&
+                                menu.storeRequestStatus !== 'cancelled'
 
                               return (
                                 <div
@@ -1168,10 +1150,57 @@ const ChefStoreRequest = ({
                                       </div>
                                     </div>
 
+                                    {canCancelPendingMenu ||
+                                    canCancelStoreRequestMenu ? (
+                                      <div className="mt-4 flex flex-wrap gap-2">
+                                        {canCancelPendingMenu ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openPendingCancellationModal(
+                                                group,
+                                                menu,
+                                              )
+                                            }
+                                            disabled={
+                                              cancellingGroupKey === groupKey
+                                            }
+                                            className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                          >
+                                            {cancellingGroupKey === groupKey
+                                              ? 'Cancelling...'
+                                              : 'Cancel menu'}
+                                          </button>
+                                        ) : null}
+                                        {canCancelStoreRequestMenu ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openCancellationModal(group, menu)
+                                            }
+                                            disabled={
+                                              cancellingGroupKey === groupKey
+                                            }
+                                            className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                          >
+                                            {cancellingGroupKey === groupKey
+                                              ? 'Cancelling...'
+                                              : 'Cancel request'}
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+
                                     {menu.storeRequestStatus === 'cancelled' ? (
                                       <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
                                         Cancel reason:{' '}
                                         {menu.cancellationReason?.trim() || '-'}
+                                      </div>
+                                    ) : null}
+                                    {menu.approvalStatus === 'rejected' ? (
+                                      <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+                                        Reject reason:{' '}
+                                        {menu.rejectionReason?.trim() || '-'}
                                       </div>
                                     ) : null}
                                   </div>
@@ -1684,6 +1713,88 @@ const ChefStoreRequest = ({
           )
         : null}
 
+      {pendingCancellationGroup &&
+      pendingCancellationMenu &&
+      typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+              <div
+                className="flex w-full max-w-xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+                  <div>
+                    <p className="text-xs text-muted">Cancel Menu</p>
+                    <h3 className="mt-1 text-lg font-semibold text-foreground">
+                      {pendingCancellationMenu.menuName}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      This will remove only this pending menu from the
+                      production batch.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closePendingCancellationModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-5 px-6 py-5">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production date</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {pendingCancellationGroup.date}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Production code</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {pendingCancellationGroup.productionCode ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menu ID</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {pendingCancellationMenu.recipeCode ?? '-'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-muted">
+                    Are you sure you want to cancel this menu?
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={closePendingCancellationModal}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmPendingCancellation}
+                    disabled={Boolean(cancellingGroupKey)}
+                    className="rounded-md bg-danger px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {cancellingGroupKey ? 'Cancelling...' : 'Confirm cancel'}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
       {cancellationGroup && typeof document !== 'undefined'
         ? createPortal(
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
@@ -1696,14 +1807,11 @@ const ChefStoreRequest = ({
                   <div>
                     <p className="text-xs text-muted">Cancel Store Request</p>
                     <h3 className="mt-1 text-lg font-semibold text-foreground">
-                      {cancellationGroup.productionCode
-                        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
-                        : cancellationGroup.date}
+                      {cancellationMenu?.menuName ?? 'Selected menu'}
                     </h3>
                     <p className="mt-2 text-sm text-muted">
-                      This superadmin override cancels every menu in this batch,
-                      regardless of approval or store request status. A reason
-                      is required.
+                      This superadmin override cancels this menu regardless of
+                      approval or store request status. A reason is required.
                     </p>
                   </div>
                   <button
@@ -1734,6 +1842,18 @@ const ChefStoreRequest = ({
                       <p className="text-xs text-muted">Menus in batch</p>
                       <p className="mt-2 text-sm font-medium text-foreground">
                         {cancellationGroup.items.length}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menu</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationMenu?.menuName ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menu ID</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationMenu?.recipeCode ?? '-'}
                       </p>
                     </div>
                   </div>
