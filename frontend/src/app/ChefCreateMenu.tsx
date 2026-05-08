@@ -93,6 +93,7 @@ const ChefCreateMenu = ({
     (location.state as { baseRecipe?: BaseRecipe } | null)?.baseRecipe
   const editingRecipeId = baseRecipe?.id ?? ''
   const isEditMode = Boolean(editingRecipeId)
+  const isCreateFromRecipe = Boolean(baseRecipe && !isEditMode)
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -160,6 +161,7 @@ const ChefCreateMenu = ({
           )
         : [createIngredientRow()],
     )
+    setIngredientPage(1)
     setSubmitError('')
     setSubmitMessage('')
   }, [baseRecipe])
@@ -480,6 +482,18 @@ const ChefCreateMenu = ({
 
     if (!nextName || !nextCategory) {
       setSubmitError('Complete the recipe name and category first.')
+      setSubmitMessage('')
+      return
+    }
+
+    if (
+      isCreateFromRecipe &&
+      baseRecipe?.name?.trim() &&
+      normalizeValue(nextName) === normalizeValue(baseRecipe.name)
+    ) {
+      setSubmitError(
+        'The menu name must be different from the original recipe name.',
+      )
       setSubmitMessage('')
       return
     }
@@ -913,6 +927,7 @@ const ChefCreateMenu = ({
                         onChange={(event) =>
                           updateIngredientRow(row.id, 'qty', event.target.value)
                         }
+                        onWheel={(event) => event.currentTarget.blur()}
                         placeholder="2"
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
