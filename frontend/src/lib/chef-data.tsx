@@ -65,6 +65,7 @@ export type MenuProduction = {
   cost?: number
   productionDate: string
   approvalStatus: ApprovalStatus
+  rejectionReason?: string
   storeRequestStatus: StoreRequestStatus
   createdAt: string
 }
@@ -171,7 +172,7 @@ type ChefDataContextValue = ChefDataState & {
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
   addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
-  rejectMenuProduction: (id: string) => Promise<void>
+  rejectMenuProduction: (id: string, reason: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
   searchRawMaterials: (search: string, limit?: number) => Promise<RawMaterial[]>
@@ -266,6 +267,7 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined,
   productionDate: item.productionDate ?? '',
   approvalStatus: item.approvalStatus ?? 'pending',
+  rejectionReason: item.rejectionReason ?? undefined,
   storeRequestStatus: item.storeRequestStatus ?? 'not-requested',
   createdAt: item.createdAt ?? new Date().toISOString(),
 })
@@ -528,13 +530,16 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
-  const rejectMenuProduction = async (id: string) => {
+  const rejectMenuProduction = async (id: string, reason: string) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${id}/reject`,
-      { method: 'PATCH' },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      },
       accessToken,
     )
     const mapped = mapMenuProduction(updated)

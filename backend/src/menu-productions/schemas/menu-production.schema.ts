@@ -63,6 +63,9 @@ export class MenuProduction {
   @Prop({ type: String, trim: true })
   reviewedBy?: string;
 
+  @Prop({ type: String, trim: true })
+  rejectionReason?: string;
+
   @Prop({ type: String, trim: true, index: true })
   unitManagerId?: string;
 
