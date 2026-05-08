@@ -143,6 +143,16 @@ export class MenuProductionsService implements OnModuleInit {
     return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
   }
 
+  private resolveMenuSnapshot(
+    input: CreateMenuProductionDto,
+    recipe: EligibleRecipe,
+  ) {
+    return {
+      menuName: input.menuName?.trim() || recipe.name,
+      category: input.category?.trim() || recipe.category,
+    };
+  }
+
   async onModuleInit() {
     await this.ensureNonUniqueProductionCodeIndex();
   }
@@ -168,12 +178,13 @@ export class MenuProductionsService implements OnModuleInit {
       input.unitManagerId,
       'Unit manager id',
     );
+    const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
     return this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
       recipeCode: recipe.recipeCode,
-      menuName: recipe.name,
-      category: recipe.category,
+      menuName: menuSnapshot.menuName,
+      category: menuSnapshot.category,
       portion: input.portion,
       cost: input.cost,
       productionDate: input.productionDate,
@@ -219,13 +230,14 @@ export class MenuProductionsService implements OnModuleInit {
           `Only approved recipes can be used for menu production. Not eligible recipe id: ${input.recipeId}.`,
         );
       }
+      const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
 
       return {
         productionCode: productionCodeByDate.get(input.productionDate),
         recipeId: recipe.id,
         recipeCode: recipe.recipeCode,
-        menuName: recipe.name,
-        category: recipe.category,
+        menuName: menuSnapshot.menuName,
+        category: menuSnapshot.category,
         portion: input.portion,
         cost: input.cost,
         productionDate: input.productionDate,
@@ -1222,9 +1234,7 @@ export class MenuProductionsService implements OnModuleInit {
         id: String(menu._id ?? menu.id ?? ''),
       });
       const group = groups.get(groupKey) ?? {
-        site:
-          this.normalizeSite(String(menu.site ?? '')) ??
-          requestedSite,
+        site: this.normalizeSite(String(menu.site ?? '')) ?? requestedSite,
         date: productionDate,
         productionCode: this.normalizeOptionalProductionCode(
           String(menu.productionCode ?? ''),
@@ -1515,8 +1525,7 @@ export class MenuProductionsService implements OnModuleInit {
   }
 
   private buildUnitManagerFilter(unitManagerId?: string) {
-    const normalizedUnitManagerId =
-      this.normalizeOptionalUserId(unitManagerId);
+    const normalizedUnitManagerId = this.normalizeOptionalUserId(unitManagerId);
     if (!normalizedUnitManagerId) return {};
     return {
       $or: [
