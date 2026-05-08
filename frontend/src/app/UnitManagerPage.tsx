@@ -55,6 +55,7 @@ type StoreRequestMenu = {
   cost?: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  rejectionReason?: string
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   portionSize: number
   ingredients: StoreRequestIngredient[]
@@ -102,6 +103,11 @@ const UnitManagerPage = () => {
   const [recipeRejectReason, setRecipeRejectReason] = useState('')
   const [recipeRejectError, setRecipeRejectError] = useState('')
   const [recipeRejectSubmitting, setRecipeRejectSubmitting] = useState(false)
+  const [menuRejectTarget, setMenuRejectTarget] =
+    useState<StoreRequestMenu | null>(null)
+  const [menuRejectReason, setMenuRejectReason] = useState('')
+  const [menuRejectError, setMenuRejectError] = useState('')
+  const [menuRejectSubmitting, setMenuRejectSubmitting] = useState(false)
   const [expandedRecipeKeys, setExpandedRecipeKeys] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
@@ -196,6 +202,21 @@ const UnitManagerPage = () => {
     setRecipeRejectError('')
   }
 
+  const openMenuRejectModal = (menu: StoreRequestMenu) => {
+    setActionError('')
+    setActionMessage('')
+    setMenuRejectTarget(menu)
+    setMenuRejectReason('')
+    setMenuRejectError('')
+  }
+
+  const closeMenuRejectModal = () => {
+    if (menuRejectSubmitting) return
+    setMenuRejectTarget(null)
+    setMenuRejectReason('')
+    setMenuRejectError('')
+  }
+
   const handleRejectRecipe = async () => {
     if (!recipeRejectTarget) return
     const id = recipeRejectTarget.id ?? recipeRejectTarget._id ?? ''
@@ -228,40 +249,62 @@ const UnitManagerPage = () => {
     }
   }
 
-  const handleBulkApproval = async (
-    batchLabel: string,
-    items: StoreRequestMenu[],
-    action: 'approve' | 'reject',
-  ) => {
-    if (items.length === 0) return
+  const handleMenuApproval = async (menu: StoreRequestMenu) => {
+    const id = menu.id ?? ''
+    if (!id) {
+      setActionError('Menu production id is missing.')
+      setActionMessage('')
+      return
+    }
+
     setActionError('')
     setActionMessage('')
 
-    const requests = items.map((item) => {
-      const id = item.id ?? ''
-      if (!id) {
-        return Promise.reject(new Error('Menu production id is missing.'))
-      }
-      return action === 'approve'
-        ? approveMenuProduction(id)
-        : rejectMenuProduction(id)
-    })
-
-    const results = await Promise.allSettled(requests)
-    const successCount = results.filter((result) => result.status === 'fulfilled')
-      .length
-    const failedCount = results.length - successCount
-
-    if (successCount > 0) {
-      setActionMessage(
-        `${successCount} menu ${action === 'approve' ? 'approved' : 'rejected'} for ${batchLabel}.`,
+    try {
+      await approveMenuProduction(id)
+      setActionMessage(`${menu.menuName} approved.`)
+      fetchPending().catch(() => null)
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to approve menu production.',
       )
     }
-    if (failedCount > 0) {
-      setActionError(`${failedCount} menu failed to ${action} for ${batchLabel}.`)
+  }
+
+  const handleRejectMenuProduction = async () => {
+    if (!menuRejectTarget) return
+    const id = menuRejectTarget.id ?? ''
+    const reason = menuRejectReason.trim()
+    if (!id) {
+      setMenuRejectError('Menu production id is missing.')
+      return
+    }
+    if (!reason) {
+      setMenuRejectError('Rejection reason is required.')
+      return
     }
 
-    fetchPending().catch(() => null)
+    setMenuRejectSubmitting(true)
+    setActionError('')
+    setActionMessage('')
+    setMenuRejectError('')
+    try {
+      await rejectMenuProduction(id, reason)
+      setActionMessage(`${menuRejectTarget.menuName} rejected.`)
+      setMenuRejectTarget(null)
+      setMenuRejectReason('')
+      fetchPending().catch(() => null)
+    } catch (error) {
+      setMenuRejectError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to reject menu production.',
+      )
+    } finally {
+      setMenuRejectSubmitting(false)
+    }
   }
 
   const recipeTotalPages = Math.max(
@@ -368,6 +411,82 @@ const UnitManagerPage = () => {
                   className="rounded-md border border-danger bg-white px-4 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {recipeRejectSubmitting ? 'Rejecting...' : 'Reject recipe'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {menuRejectTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Reject Menu</h2>
+                  <p className="mt-1 text-sm text-muted">
+                    {menuRejectTarget.menuName}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {menuRejectTarget.productionDate}
+                    {menuRejectTarget.productionCode
+                      ? ` (${menuRejectTarget.productionCode})`
+                      : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMenuRejectModal}
+                  className="dm-x-button"
+                  aria-label="Close menu rejection form"
+                  title="Close"
+                >
+                  <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
+                </button>
+              </div>
+
+              <label className="mt-5 block text-sm font-medium text-foreground">
+                Rejection reason
+              </label>
+              <textarea
+                value={menuRejectReason}
+                onChange={(event) => {
+                  setMenuRejectReason(event.target.value)
+                  if (menuRejectError) setMenuRejectError('')
+                }}
+                maxLength={500}
+                rows={5}
+                className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                placeholder="Tell the Chef why this menu production is rejected."
+              />
+              <p className="mt-2 text-xs text-muted">
+                {menuRejectReason.trim().length}/500 characters
+              </p>
+              {menuRejectError ? (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {menuRejectError}
+                </p>
+              ) : null}
+
+              <div className="mt-5 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeMenuRejectModal}
+                  disabled={menuRejectSubmitting}
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectMenuProduction}
+                  disabled={menuRejectSubmitting}
+                  className="rounded-md border border-danger bg-white px-4 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {menuRejectSubmitting ? 'Rejecting...' : 'Reject menu'}
                 </button>
               </div>
             </div>
@@ -662,9 +781,6 @@ const UnitManagerPage = () => {
                       const groupKey = getGroupKey(group)
                       const isExpanded = expandedGroups.includes(groupKey)
                       const summaryItems = aggregateStoreRequestSummary(group.summary)
-                      const batchLabel = group.productionCode
-                        ? `${group.date} (${group.productionCode})`
-                        : group.date
                       const submittedByNames = Array.from(
                         new Set(
                           group.items
@@ -708,32 +824,6 @@ const UnitManagerPage = () => {
                                 >
                                   {isExpanded ? 'Hide details' : 'View details'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleBulkApproval(
-                                      batchLabel,
-                                      group.items,
-                                      'approve',
-                                    )
-                                  }
-                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                  Approve all
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleBulkApproval(
-                                      batchLabel,
-                                      group.items,
-                                      'reject',
-                                    )
-                                  }
-                                  className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
-                                >
-                                  Reject all
-                                </button>
                               </div>
                             </td>
                           </tr>
@@ -762,13 +852,16 @@ const UnitManagerPage = () => {
                                             <th className="px-4 py-3 font-semibold">
                                               Portion
                                             </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Action
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {group.items.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={5}
+                                                colSpan={6}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No menus pending in this group.
@@ -794,6 +887,28 @@ const UnitManagerPage = () => {
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   {item.portion}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                  <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        handleMenuApproval(item)
+                                                      }
+                                                      className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                                    >
+                                                      Approve
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        openMenuRejectModal(item)
+                                                      }
+                                                      className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
+                                                    >
+                                                      Reject
+                                                    </button>
+                                                  </div>
                                                 </td>
                                               </tr>
                                             ))

@@ -67,6 +67,7 @@ type StoreRequestMenu = {
   cost?: number;
   productionDate: string;
   approvalStatus: ApprovalStatus;
+  rejectionReason?: string;
   storeRequestStatus: StoreRequestStatus;
   portionSize: number;
   ingredients: StoreRequestIngredient[];
@@ -342,11 +343,16 @@ export class MenuProductionsService implements OnModuleInit {
     site?: string,
     reviewedBy?: string,
     unitManagerId?: string,
+    rejectionReason?: string,
   ) {
     // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
     const actor = reviewedBy?.trim();
+    const reason = rejectionReason?.trim();
+    if (status === 'rejected' && !reason) {
+      throw new BadRequestException('Rejection reason is required.');
+    }
     const filter = this.withUnitManagerFilter(
       this.withSiteFilter({ _id: id }, site),
       unitManagerId,
@@ -359,8 +365,10 @@ export class MenuProductionsService implements OnModuleInit {
             approvalStatus: status,
             storeRequestStatus: nextStoreStatus,
             ...(actor ? { reviewedBy: actor } : {}),
+            ...(status === 'rejected' ? { rejectionReason: reason } : {}),
           },
           $unset: {
+            ...(status === 'approved' ? { rejectionReason: 1 } : {}),
             fulfilledBy: 1,
             storeFulfillmentItems: 1,
             storeFulfillmentCompletedAt: 1,
@@ -1377,6 +1385,7 @@ export class MenuProductionsService implements OnModuleInit {
           : undefined,
         productionDate,
         approvalStatus: menu.approvalStatus ?? 'pending',
+        rejectionReason: String(menu.rejectionReason ?? '').trim() || undefined,
         storeRequestStatus: menu.storeRequestStatus ?? 'not-requested',
         portionSize,
         ingredients,
