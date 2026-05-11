@@ -63,7 +63,10 @@ export class DashboardService {
         approvalStatus: 'approved',
         storeRequestStatus: 'fulfilled',
       }),
-      this.recipeModel.countDocuments({ approvalStatus: 'pending' }),
+      this.recipeModel.countDocuments({
+        approvalStatus: 'pending',
+        deletedAt: { $exists: false },
+      }),
     ]);
 
     return {
