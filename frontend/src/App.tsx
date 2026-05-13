@@ -71,7 +71,10 @@ function App() {
           <Route path="/chef" element={<ChefLayout />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ChefDashboard />} />
-            <Route path="menu-cycle" element={<ChefMenuCycle />} />
+            <Route
+              path="menu-cycle"
+              element={<ChefMenuCycle showIngredientCostColumns />}
+            />
             <Route path="menu-bank" element={<ChefMenuBank />} />
             <Route path="menu-create" element={<ChefCreateMenu />} />
             <Route

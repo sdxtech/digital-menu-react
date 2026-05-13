@@ -59,6 +59,9 @@ type ChefMenuCycleProps = {
   requireProductionActors?: boolean
   submitLabel?: string
   emptySiteMessage?: string
+  showEstimatedCostColumns?: boolean
+  showIngredientCostColumns?: boolean
+  allowIngredientCostSync?: boolean
 }
 
 const ChefMenuCycle = ({
@@ -70,6 +73,9 @@ const ChefMenuCycle = ({
   requireProductionActors = false,
   submitLabel = 'Submit to Unit Manager',
   emptySiteMessage = 'Select a production site first.',
+  showEstimatedCostColumns = false,
+  showIngredientCostColumns = false,
+  allowIngredientCostSync = false,
 }: ChefMenuCycleProps = {}) => {
   const { accessToken } = useAuth()
   const {
@@ -89,6 +95,9 @@ const ChefMenuCycle = ({
   const [productionUnitManagerId, setProductionUnitManagerId] = useState('')
   const [siteDataLoading, setSiteDataLoading] = useState(false)
   const [siteDataError, setSiteDataError] = useState('')
+  const [costSyncLoading, setCostSyncLoading] = useState(false)
+  const [costSyncMessage, setCostSyncMessage] = useState('')
+  const [costSyncError, setCostSyncError] = useState('')
   const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
   const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
@@ -97,6 +106,33 @@ const ChefMenuCycle = ({
   const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
 
   const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
+
+  const formatPrice = (value?: number) => {
+    if (value === undefined || value === null || !Number.isFinite(value)) {
+      return '-'
+    }
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0,
+    }).format(value)
+  }
+
+  const getIngredientUnitPrice = (
+    ingredient: Recipe['ingredients'][number],
+  ) => {
+    if (Number.isFinite(Number(ingredient.priceUom))) {
+      return Number(ingredient.priceUom)
+    }
+    if (
+      Number.isFinite(Number(ingredient.foodCost)) &&
+      Number.isFinite(Number(ingredient.qty)) &&
+      Number(ingredient.qty) > 0
+    ) {
+      return Number(ingredient.foodCost) / Number(ingredient.qty)
+    }
+    return undefined
+  }
 
   const sortedProductionSiteOptions = useMemo(
     () =>
@@ -460,11 +496,53 @@ const ChefMenuCycle = ({
     }
   }/* Fungsi untuk menangani submit input menu ke Unit Manager. Fungsi ini melakukan validasi pada tanggal produksi, memastikan ada setidaknya satu baris menu yang diisi, dan memeriksa setiap baris untuk memastikan menu dan porsi valid. Jika semua validasi lolos, fungsi ini akan memanggil addMenuProductionsBulk dengan payload yang berisi data produksi menu yang akan disimpan. Setelah berhasil, fungsi ini juga mereset input menu dan menampilkan pesan keberhasilan. Jika terjadi error saat menyimpan, fungsi ini akan menampilkan pesan error yang sesuai. Digunakan sebagai onClick handler untuk tombol "Submit to Unit Manager". */
 
+  const handleBackfillIngredientCosts = async () => {
+    if (!accessToken || costSyncLoading) return
+
+    setCostSyncLoading(true)
+    setCostSyncMessage('')
+    setCostSyncError('')
+    try {
+      const result = await apiFetch<{
+        scannedRecipes: number
+        updatedRecipes: number
+        updatedIngredients: number
+        skippedNoRawMaterial: number
+        skippedMissingPrice: number
+      }>(
+        '/recipes/ingredient-costs/backfill',
+        { method: 'PATCH' },
+        accessToken,
+      )
+      const nextRecipes = await fetchRecipes(
+        requireProductionSite && productionSite
+          ? { site: productionSite }
+          : undefined,
+      )
+      if (requireProductionSite && productionSite) {
+        setSiteRecipes(nextRecipes)
+        setLoadedProductionSite(productionSite)
+      }
+      setCostSyncMessage(
+        `Synced ${result.updatedIngredients} ingredient prices across ${result.updatedRecipes} recipes.`,
+      )
+    } catch (error) {
+      setCostSyncError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to sync ingredient prices.',
+      )
+    } finally {
+      setCostSyncLoading(false)
+    }
+  }
+
   const inputTotalPages = Math.max(1, Math.ceil(menuRows.length / INPUT_ROWS_PER_PAGE))
   const paginatedMenuRows = menuRows.slice(
     (inputPage - 1) * INPUT_ROWS_PER_PAGE,
     inputPage * INPUT_ROWS_PER_PAGE,
   )/* Menghitung total halaman untuk paginasi berdasarkan jumlah baris menu dan jumlah baris per halaman. Kemudian, menghitung daftar baris menu yang akan ditampilkan pada halaman saat ini dengan melakukan slicing pada menuRows. Digunakan untuk menampilkan hanya sebagian baris menu sesuai dengan halaman yang dipilih oleh pengguna. */
+  const inputTableColumnCount = showEstimatedCostColumns ? 9 : 7
 
   return (
     <div className="space-y-6">
@@ -531,6 +609,19 @@ const ChefMenuCycle = ({
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
+            {allowIngredientCostSync ? (
+              <button
+                type="button"
+                onClick={handleBackfillIngredientCosts}
+                disabled={!accessToken || costSyncLoading || siteDataLoading}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
+                <span>
+                  {costSyncLoading ? 'Syncing prices...' : 'Sync prices'}
+                </span>
+              </button>
+            ) : null}
             {requireProductionSite ? (
               <div>
                 <label className="text-xs font-medium text-muted">
@@ -618,6 +709,17 @@ const ChefMenuCycle = ({
           </div>
         ) : null}
 
+        {costSyncMessage ? (
+          <p className="mt-3 text-xs font-medium text-primary">
+            {costSyncMessage}
+          </p>
+        ) : null}
+        {costSyncError ? (
+          <p className="mt-3 text-xs font-medium text-danger">
+            {costSyncError}
+          </p>
+        ) : null}
+
         <div className="mt-6 max-w-full overflow-x-auto rounded-md border border-border">
           <TablePagination
             page={inputPage}
@@ -635,6 +737,14 @@ const ChefMenuCycle = ({
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 font-semibold">Portion</th>
+                {showEstimatedCostColumns ? (
+                  <>
+                    <th className="px-4 py-3 font-semibold">
+                      Estimated Total Cost
+                    </th>
+                    <th className="px-4 py-3 font-semibold">Cost/Pax</th>
+                  </>
+                ) : null}
                 <th className="px-4 py-3 font-semibold">Recipe details</th>
               </tr>
             </thead>
@@ -651,6 +761,34 @@ const ChefMenuCycle = ({
                   typeof row.portion === 'number' && row.portion > 0
                     ? row.portion
                     : null
+                const estimatedCostSummary = ingredients.reduce(
+                  (summary, ingredient) => {
+                    const ingredientQty = Number(ingredient.qty)
+                    if (!Number.isFinite(ingredientQty)) return summary
+
+                    const scaledQty =
+                      portionForPreview === null
+                        ? ingredientQty
+                        : (ingredientQty * portionForPreview) / basePax
+                    const unitPrice = getIngredientUnitPrice(ingredient)
+                    if (unitPrice === undefined) return summary
+
+                    return {
+                      total: summary.total + scaledQty * unitPrice,
+                      hasCost: true,
+                    }
+                  },
+                  { total: 0, hasCost: false },
+                )
+                const estimatedTotalCost = estimatedCostSummary.hasCost
+                  ? estimatedCostSummary.total
+                  : undefined
+                const estimatedCostPerPax =
+                  estimatedTotalCost !== undefined
+                    ? portionForPreview !== null && portionForPreview > 0
+                      ? estimatedTotalCost / portionForPreview
+                      : estimatedTotalCost / basePax
+                    : undefined
                 const recipeSuggestions = getRecipeSuggestions(row.recipeQuery)
                 return (
                   <Fragment key={row.id}>
@@ -715,6 +853,16 @@ const ChefMenuCycle = ({
                           className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         />
                       </td>
+                      {showEstimatedCostColumns ? (
+                        <>
+                          <td className="px-4 py-3 font-medium">
+                            {formatPrice(estimatedTotalCost)}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {formatPrice(estimatedCostPerPax)}
+                          </td>
+                        </>
+                      ) : null}
                       <td className="px-4 py-3">
                         <button
                           type="button"
@@ -732,7 +880,7 @@ const ChefMenuCycle = ({
                     </tr>
                     {isDetailsOpen ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={7} className="px-4 py-4">
+                        <td colSpan={inputTableColumnCount} className="px-4 py-4">
                           {!selectedRecipe ? (
                             <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
                               Select a menu to view recipe details.
@@ -774,6 +922,16 @@ const ChefMenuCycle = ({
                                           <th className="px-4 py-3 font-semibold">
                                             Unit
                                           </th>
+                                          {showIngredientCostColumns ? (
+                                            <>
+                                              <th className="px-4 py-3 font-semibold">
+                                                Price
+                                              </th>
+                                              <th className="px-4 py-3 font-semibold">
+                                                Ingredient Cost
+                                              </th>
+                                            </>
+                                          ) : null}
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -783,6 +941,12 @@ const ChefMenuCycle = ({
                                               ? ingredient.qty
                                               : (ingredient.qty * portionForPreview) /
                                                 basePax
+                                          const unitPrice =
+                                            getIngredientUnitPrice(ingredient)
+                                          const totalCost =
+                                            unitPrice === undefined
+                                              ? undefined
+                                              : scaledQty * unitPrice
                                           return (
                                             <tr
                                               key={`${ingredient.productCode}-${idx}`}
@@ -805,10 +969,46 @@ const ChefMenuCycle = ({
                                                   ingredient.unitOfMeasures,
                                                 )}
                                               </td>
+                                              {showIngredientCostColumns ? (
+                                                <>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(unitPrice)}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(totalCost)}
+                                                  </td>
+                                                </>
+                                              ) : null}
                                             </tr>
                                           )
                                         })}
                                       </tbody>
+                                      {showIngredientCostColumns ? (
+                                        <tfoot className="bg-background">
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={6}
+                                              className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
+                                            >
+                                              Estimated Total Cost
+                                            </td>
+                                            <td className="px-4 py-3 font-semibold">
+                                              {formatPrice(estimatedTotalCost)}
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={6}
+                                              className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
+                                            >
+                                              Estimated Cost/Pax
+                                            </td>
+                                            <td className="px-4 py-3 font-semibold">
+                                              {formatPrice(estimatedCostPerPax)}
+                                            </td>
+                                          </tr>
+                                        </tfoot>
+                                      ) : null}
                                     </table>
                                   </div>
                                 )}
@@ -821,7 +1021,7 @@ const ChefMenuCycle = ({
                 )
               })}
               <tr className="border-t border-border">
-                <td colSpan={8} className="px-4 py-3">
+                <td colSpan={inputTableColumnCount} className="px-4 py-3">
                   <div className="flex justify-center">
                     <button
                       type="button"
