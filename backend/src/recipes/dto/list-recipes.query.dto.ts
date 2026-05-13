@@ -11,6 +11,10 @@ export class ListRecipesQueryDto {
   site?: string;
 
   @IsOptional()
+  @IsIn(['true', 'false'])
+  strictSite?: 'true' | 'false';
+
+  @IsOptional()
   @IsIn(['draft', 'active'])
   status?: 'draft' | 'active';
 
