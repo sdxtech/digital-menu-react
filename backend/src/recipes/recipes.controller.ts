@@ -64,6 +64,12 @@ export class RecipesController {
     return this.recipes.findAll(query, this.resolveQuerySite(req, query.site));
   }
 
+  @Patch('ingredient-costs/backfill')
+  @Roles(AppRole.Superadmin)
+  backfillIngredientCosts(@Req() req: AuthenticatedRequest) {
+    return this.recipes.backfillApprovedIngredientCosts(this.buildActor(req));
+  }
+
   @Patch(':id')
   @Roles(AppRole.Chef, AppRole.Superadmin)
   update(

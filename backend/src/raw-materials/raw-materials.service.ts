@@ -22,6 +22,12 @@ export type RawMaterialUpsertInput = {
   extraFields?: Record<string, string>;
 };
 
+export type RawMaterialPriceUpdateInput = {
+  productCode: string;
+  price: number;
+  rowNumber?: number;
+};
+
 type ListRawMaterialsQuery = {
   page: number;
   limit: number;
@@ -33,6 +39,7 @@ export type RawMaterialLookup = {
   productCodeNormalized: string;
   unitOfMeasures: string;
   name: string;
+  price?: number;
 };
 
 @Injectable()
@@ -103,8 +110,32 @@ export class RawMaterialsService {
         productCodeNormalized: 1,
         unitOfMeasures: 1,
         name: 1,
+        price: 1,
       })
       .lean<RawMaterialLookup>();
+  }
+
+  async findLookupsByNormalizedCodes(productCodes: string[]) {
+    const normalizedCodes = Array.from(
+      new Set(
+        productCodes
+          .map((productCode) => this.normalizeProductCode(productCode))
+          .filter(Boolean),
+      ),
+    );
+
+    if (normalizedCodes.length === 0) return [];
+
+    return this.rawMaterialModel
+      .find({ productCodeNormalized: { $in: normalizedCodes } })
+      .select({
+        productCode: 1,
+        productCodeNormalized: 1,
+        unitOfMeasures: 1,
+        name: 1,
+        price: 1,
+      })
+      .lean<RawMaterialLookup[]>();
   }
 
   async updateById(id: string, input: RawMaterialUpsertInput) {
@@ -262,6 +293,67 @@ export class RawMaterialsService {
       matchedCount: result.matchedCount ?? 0,
       modifiedCount: result.modifiedCount ?? 0,
       upsertedCount: result.upsertedCount ?? 0,
+    };
+  }
+
+  async bulkUpdatePricesByProductCode(rows: RawMaterialPriceUpdateInput[]) {
+    const validRows = rows.filter(
+      (row) =>
+        row.productCode.trim() &&
+        typeof row.price === 'number' &&
+        Number.isFinite(row.price) &&
+        row.price >= 0,
+    );
+
+    if (validRows.length === 0) {
+      return {
+        requestedCount: rows.length,
+        matchedCount: 0,
+        modifiedCount: 0,
+        notFoundCount: 0,
+        notFoundProductCodes: [],
+      };
+    }
+
+    const priceByCode = new Map<string, RawMaterialPriceUpdateInput>();
+    for (const row of validRows) {
+      priceByCode.set(this.normalizeProductCode(row.productCode), row);
+    }
+
+    const normalizedCodes = Array.from(priceByCode.keys());
+    const existing = await this.rawMaterialModel
+      .find({ productCodeNormalized: { $in: normalizedCodes } })
+      .select({ productCode: 1, productCodeNormalized: 1 })
+      .lean<Array<{ productCode: string; productCodeNormalized: string }>>();
+    const existingCodes = new Set(
+      existing.map((item) => item.productCodeNormalized),
+    );
+    const operations = normalizedCodes
+      .filter((code) => existingCodes.has(code))
+      .map((code) => ({
+        updateOne: {
+          filter: { productCodeNormalized: code },
+          update: {
+            $set: {
+              price: priceByCode.get(code)?.price ?? 0,
+            },
+          },
+        },
+      }));
+
+    const result = operations.length
+      ? await this.rawMaterialModel.bulkWrite(operations, { ordered: false })
+      : null;
+    const notFoundProductCodes = normalizedCodes
+      .filter((code) => !existingCodes.has(code))
+      .map((code) => priceByCode.get(code)?.productCode.trim() ?? code);
+
+    return {
+      requestedCount: rows.length,
+      matchedCount: result?.matchedCount ?? 0,
+      modifiedCount: result?.modifiedCount ?? 0,
+      notFoundCount: notFoundProductCodes.length,
+      notFoundProductCodes: notFoundProductCodes.slice(0, 20),
     };
   }
 

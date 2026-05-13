@@ -22,6 +22,8 @@ export type RecipeIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  priceUom?: number
+  foodCost?: number
 }
 
 export type Recipe = {
@@ -235,6 +237,12 @@ const mapRecipe = (item: RecipeApi): Recipe => {
           qty: Number.isFinite(Number(ingredient.qty))
             ? Number(ingredient.qty)
             : 0,
+          priceUom: Number.isFinite(Number(ingredient.priceUom))
+            ? Number(ingredient.priceUom)
+            : undefined,
+          foodCost: Number.isFinite(Number(ingredient.foodCost))
+            ? Number(ingredient.foodCost)
+            : undefined,
         }))
       : [],
     createdAt: item.createdAt ?? new Date().toISOString(),
