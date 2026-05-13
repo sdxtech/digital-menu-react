@@ -100,7 +100,7 @@ export class MenuProductionsController {
   ) {
     return this.menuProductions.buildStoreRequestGroups(
       query,
-      getUserSiteScope(req.user),
+      this.resolveQuerySite(req, query.site),
       this.resolveUnitManagerAssignmentScope(req),
     );
   }
@@ -114,7 +114,7 @@ export class MenuProductionsController {
   ) {
     return this.menuProductions.buildTimeline(
       query,
-      getUserSiteScope(req.user),
+      this.resolveQuerySite(req, query.site),
       this.resolveUnitManagerAssignmentScope(req),
     );
   }

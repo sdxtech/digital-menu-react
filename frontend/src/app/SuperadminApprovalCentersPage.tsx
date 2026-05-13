@@ -188,6 +188,7 @@ const SuperadminApprovalCentersPage = () => {
     try {
       const recipeParams = new URLSearchParams()
       recipeParams.set('site', selectedSite)
+      recipeParams.set('strictSite', 'true')
       recipeParams.set('limit', '100')
       if (approvalFilter) recipeParams.set('approvalStatus', approvalFilter)
 

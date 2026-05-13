@@ -209,10 +209,10 @@ export class RecipesService {
       deletedAt: { $exists: false },
     };
     const andFilters: Record<string, unknown>[] = [];
-    const visibilityFilter = this.buildVisibilityFilter(
-      site,
-      query.approvalStatus,
-    );
+    const visibilityFilter =
+      query.strictSite === 'true'
+        ? this.buildSiteFilter(site)
+        : this.buildVisibilityFilter(site, query.approvalStatus);
     if (Object.keys(visibilityFilter).length) {
       andFilters.push(visibilityFilter);
     }
