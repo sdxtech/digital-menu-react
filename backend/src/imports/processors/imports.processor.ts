@@ -39,6 +39,7 @@ type RawMaterialHeaderMap = {
   productCode: number;
   name: number;
   unitOfMeasures: number;
+  site: number;
   vendor: number;
   currency: number;
   minimumQuantity: number;
@@ -263,6 +264,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode: string;
         name: string;
         unitOfMeasures: string;
+        site?: string;
         vendor?: string;
         currency?: string;
         minimumQuantity?: number;
@@ -273,12 +275,13 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     ) => {
       if (batch.length === 0) return;
       try {
-        const result = await this.rawMaterials.bulkUpsertByProductCode(
+        await this.rawMaterials.bulkUpsertByProductCode(
           batch.map(
             ({
               productCode,
               name,
               unitOfMeasures,
+              site,
               vendor,
               currency,
               minimumQuantity,
@@ -288,6 +291,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               productCode,
               name,
               unitOfMeasures,
+              site,
               vendor,
               currency,
               minimumQuantity,
@@ -296,7 +300,32 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
             }),
           ),
         );
-        successCount += result.upsertedCount + result.matchedCount;
+        await this.rawMaterials.bulkUpsertVendorPrices(
+          batch.map(
+            ({
+              productCode,
+              name,
+              unitOfMeasures,
+              site,
+              vendor,
+              currency,
+              minimumQuantity,
+              price,
+              extraFields,
+            }) => ({
+              productCode,
+              name,
+              unitOfMeasures,
+              site,
+              vendor,
+              currency,
+              minimumQuantity,
+              price,
+              extraFields,
+            }),
+          ),
+        );
+        successCount += batch.length;
       } catch (error) {
         this.logger.warn(
           `Raw material batch failed: ${(error as Error).message}`,
@@ -330,20 +359,18 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         ? this.rawMaterialRowsFromExcel(stream)
         : this.rawMaterialRowsFromCsv(stream);
 
-      const batch = new Map<
-        string,
-        {
-          productCode: string;
-          name: string;
-          unitOfMeasures: string;
-          vendor?: string;
-          currency?: string;
-          minimumQuantity?: number;
-          price?: number;
-          extraFields?: Record<string, string>;
-          row: number;
-        }
-      >();
+      const batch: Array<{
+        productCode: string;
+        name: string;
+        unitOfMeasures: string;
+        site?: string;
+        vendor?: string;
+        currency?: string;
+        minimumQuantity?: number;
+        price?: number;
+        extraFields?: Record<string, string>;
+        row: number;
+      }> = [];
       const batchSize = 1000;
 
       for await (const record of rows) {
@@ -351,6 +378,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const productCode = record.productCode.trim();
         const name = record.name.trim();
         const unitOfMeasures = record.unitOfMeasures.trim();
+        const site = record.site;
         const vendor = record.vendor;
         const currency = record.currency;
         const minimumQuantity = record.minimumQuantity;
@@ -366,11 +394,11 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        const normalizedCode = this.normalizeProductCode(productCode);
-        batch.set(normalizedCode, {
+        batch.push({
           productCode,
           name,
           unitOfMeasures,
+          site,
           vendor,
           currency,
           minimumQuantity,
@@ -379,9 +407,9 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           row: record.rowNumber,
         });
 
-        if (batch.size >= batchSize) {
-          await flushBatch(Array.from(batch.values()));
-          batch.clear();
+        if (batch.length >= batchSize) {
+          await flushBatch(batch);
+          batch.length = 0;
         }
 
         if (processed % 1000 === 0) {
@@ -394,7 +422,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      await flushBatch(Array.from(batch.values()));
+      await flushBatch(batch);
 
       const summary = { successCount, failCount, errors };
       await this.notifications.create(
@@ -440,6 +468,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
       );
+      const site = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.site);
       const vendor = this.pickValue(
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.vendor,
@@ -469,6 +498,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode,
         name,
         unitOfMeasures,
+        site: this.normalizeOptionalText(site),
         vendor: this.normalizeOptionalText(vendor),
         currency: this.normalizeOptionalText(currency),
         minimumQuantity,
@@ -503,6 +533,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           values,
           headerMap.unitOfMeasures,
         );
+        const site = this.getCellValue(values, headerMap.site);
         const vendor = this.getCellValue(values, headerMap.vendor);
         const currency = this.getCellValue(values, headerMap.currency);
         const minimumQuantityRaw = this.getCellValue(
@@ -522,6 +553,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode,
           name,
           unitOfMeasures,
+          site: this.normalizeOptionalText(site),
           vendor: this.normalizeOptionalText(vendor),
           currency: this.normalizeOptionalText(currency),
           minimumQuantity,
@@ -560,6 +592,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       productCode: 0,
       name: 0,
       unitOfMeasures: 0,
+      site: 0,
       vendor: 0,
       currency: 0,
       minimumQuantity: 0,
@@ -583,6 +616,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.site.includes(header)) {
+        map.site = idx;
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.vendor.includes(header)) {

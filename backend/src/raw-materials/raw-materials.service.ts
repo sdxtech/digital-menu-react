@@ -9,6 +9,10 @@ import {
   RawMaterial,
   RawMaterialDocument,
 } from './schemas/raw-material.schema';
+import {
+  RawMaterialVendorPrice,
+  RawMaterialVendorPriceDocument,
+} from './schemas/raw-material-vendor-price.schema';
 import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 
 export type RawMaterialUpsertInput = {
@@ -22,6 +26,10 @@ export type RawMaterialUpsertInput = {
   extraFields?: Record<string, string>;
 };
 
+export type RawMaterialVendorPriceUpsertInput = RawMaterialUpsertInput & {
+  site?: string;
+};
+
 export type RawMaterialPriceUpdateInput = {
   productCode: string;
   price: number;
@@ -32,6 +40,12 @@ type ListRawMaterialsQuery = {
   page: number;
   limit: number;
   search?: string;
+};
+
+type ListRawMaterialVendorPricesQuery = {
+  productCode: string;
+  site?: string;
+  vendor?: string;
 };
 
 export type RawMaterialLookup = {
@@ -47,6 +61,8 @@ export class RawMaterialsService {
   constructor(
     @InjectModel(RawMaterial.name)
     private readonly rawMaterialModel: Model<RawMaterialDocument>,
+    @InjectModel(RawMaterialVendorPrice.name)
+    private readonly rawMaterialVendorPriceModel: Model<RawMaterialVendorPriceDocument>,
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
   ) {}
@@ -195,7 +211,9 @@ export class RawMaterialsService {
 
     if (recipeUsingMaterial) {
       const recipeLabel =
-        recipeUsingMaterial.recipeCode || recipeUsingMaterial.name || 'a recipe';
+        recipeUsingMaterial.recipeCode ||
+        recipeUsingMaterial.name ||
+        'a recipe';
       throw new BadRequestException(
         `Raw material is used by ${recipeLabel} and cannot be deleted.`,
       );
@@ -236,6 +254,27 @@ export class RawMaterialsService {
     };
   }
 
+  async findVendorPrices(query: ListRawMaterialVendorPricesQuery) {
+    const productCodeNormalized = this.normalizeProductCode(query.productCode);
+    if (!productCodeNormalized) return [];
+
+    const filter: Record<string, unknown> = { productCodeNormalized };
+    const siteNormalized = this.normalizeOptionalText(
+      query.site,
+    )?.toLowerCase();
+    const vendorNormalized = this.normalizeOptionalText(
+      query.vendor,
+    )?.toLowerCase();
+    if (siteNormalized) filter.siteNormalized = siteNormalized;
+    if (vendorNormalized) filter.vendorNormalized = vendorNormalized;
+
+    return this.rawMaterialVendorPriceModel
+      .find(filter)
+      .sort({ site: 1, vendor: 1, minimumQuantity: 1 })
+      .limit(500)
+      .lean();
+  }
+
   async bulkUpsertByProductCode(rows: RawMaterialUpsertInput[]) {
     if (rows.length === 0) {
       return {
@@ -246,47 +285,137 @@ export class RawMaterialsService {
       };
     }
 
-    const operations = rows.map((row) => {
-      const productCode = row.productCode.trim();
-      const name = row.name.trim();
-      const unitOfMeasures = row.unitOfMeasures.trim();
-      const normalizedCode = this.normalizeProductCode(productCode);
-      const vendor = this.normalizeOptionalText(row.vendor);
-      const currency = this.normalizeOptionalText(row.currency);
-      const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
-      const price = this.normalizeOptionalNumber(row.price);
-      const updateFields: Record<string, unknown> = {
-        productCode,
-        name,
-        unitOfMeasures,
-      };
-      if (vendor !== undefined) updateFields.vendor = vendor;
-      if (currency !== undefined) updateFields.currency = currency;
-      if (minimumQuantity !== undefined) {
-        updateFields.minimumQuantity = minimumQuantity;
-      }
-      if (price !== undefined) updateFields.price = price;
-      if (row.extraFields !== undefined) {
-        updateFields.extraFields = row.extraFields;
-      }
+    const latestByCode = new Map<string, RawMaterialUpsertInput>();
+    for (const row of rows) {
+      const normalizedCode = this.normalizeProductCode(row.productCode);
+      if (normalizedCode) latestByCode.set(normalizedCode, row);
+    }
 
-      return {
-        updateOne: {
-          filter: { productCodeNormalized: normalizedCode },
-          update: {
-            $set: updateFields,
-            $setOnInsert: {
-              productCodeNormalized: normalizedCode,
+    const operations = Array.from(latestByCode.entries()).map(
+      ([normalizedCode, row]) => {
+        const productCode = row.productCode.trim();
+        const name = row.name.trim();
+        const unitOfMeasures = row.unitOfMeasures.trim();
+        const updateFields: Record<string, unknown> = {
+          productCode,
+          name,
+          unitOfMeasures,
+        };
+        const vendor = this.normalizeOptionalText(row.vendor);
+        const currency = this.normalizeOptionalText(row.currency);
+        if (vendor !== undefined) updateFields.vendor = vendor;
+        if (currency !== undefined) updateFields.currency = currency;
+        if (row.minimumQuantity !== undefined) {
+          updateFields.minimumQuantity = row.minimumQuantity;
+        }
+        if (row.price !== undefined) updateFields.price = row.price;
+        if (row.extraFields !== undefined) {
+          updateFields.extraFields = row.extraFields;
+        }
+
+        return {
+          updateOne: {
+            filter: { productCodeNormalized: normalizedCode },
+            update: {
+              $set: updateFields,
+              $setOnInsert: {
+                productCodeNormalized: normalizedCode,
+              },
             },
+            upsert: true,
           },
-          upsert: true,
-        },
-      };
-    });
+        };
+      },
+    );
 
     const result = await this.rawMaterialModel.bulkWrite(operations, {
       ordered: false,
     });
+
+    return {
+      insertedCount: result.insertedCount ?? 0,
+      matchedCount: result.matchedCount ?? 0,
+      modifiedCount: result.modifiedCount ?? 0,
+      upsertedCount: result.upsertedCount ?? 0,
+    };
+  }
+
+  async bulkUpsertVendorPrices(rows: RawMaterialVendorPriceUpsertInput[]) {
+    const validRows = rows
+      .map((row) => this.normalizeVendorPriceRow(row))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    if (validRows.length === 0) {
+      return {
+        insertedCount: 0,
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+      };
+    }
+
+    const latestByKey = new Map<string, (typeof validRows)[number]>();
+    for (const row of validRows) {
+      const key = [
+        row.productCodeNormalized,
+        row.siteNormalized,
+        row.vendorNormalized,
+        row.currencyNormalized ?? '',
+        row.unitOfMeasuresNormalized,
+        row.minimumQuantity ?? '',
+      ].join('|');
+      const existing = latestByKey.get(key);
+      if (!existing || this.isHigherPrice(row.price, existing.price)) {
+        latestByKey.set(key, row);
+      }
+    }
+
+    const operations = Array.from(latestByKey.values()).map((row) => ({
+      updateOne: {
+        filter: {
+          productCodeNormalized: row.productCodeNormalized,
+          siteNormalized: row.siteNormalized,
+          vendorNormalized: row.vendorNormalized,
+          currencyNormalized: row.currencyNormalized,
+          unitOfMeasuresNormalized: row.unitOfMeasuresNormalized,
+          minimumQuantity: row.minimumQuantity,
+        },
+        update: {
+          $set: {
+            productCode: row.productCode,
+            name: row.name,
+            unitOfMeasures: row.unitOfMeasures,
+            site: row.site,
+            vendor: row.vendor,
+            ...(row.currency !== undefined ? { currency: row.currency } : {}),
+            ...(row.currencyNormalized !== undefined
+              ? { currencyNormalized: row.currencyNormalized }
+              : {}),
+            ...(row.minimumQuantity !== undefined
+              ? { minimumQuantity: row.minimumQuantity }
+              : {}),
+            ...(row.price !== undefined ? { price: row.price } : {}),
+            ...(row.extraFields !== undefined
+              ? { extraFields: row.extraFields }
+              : {}),
+          },
+          $setOnInsert: {
+            productCodeNormalized: row.productCodeNormalized,
+            siteNormalized: row.siteNormalized,
+            vendorNormalized: row.vendorNormalized,
+            unitOfMeasuresNormalized: row.unitOfMeasuresNormalized,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await this.rawMaterialVendorPriceModel.bulkWrite(
+      operations,
+      {
+        ordered: false,
+      },
+    );
 
     return {
       insertedCount: result.insertedCount ?? 0,
@@ -359,6 +488,45 @@ export class RawMaterialsService {
 
   private normalizeProductCode(productCode: string) {
     return productCode.trim().toLowerCase();
+  }
+
+  private normalizeVendorPriceRow(row: RawMaterialVendorPriceUpsertInput) {
+    const productCode = row.productCode.trim();
+    const name = row.name.trim();
+    const unitOfMeasures = row.unitOfMeasures.trim();
+    const site = this.normalizeOptionalText(row.site);
+    const vendor = this.normalizeOptionalText(row.vendor);
+
+    if (!productCode || !name || !unitOfMeasures || !site || !vendor) {
+      return null;
+    }
+
+    const currency = this.normalizeOptionalText(row.currency);
+    const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
+    const price = this.normalizeOptionalNumber(row.price);
+
+    return {
+      productCode,
+      productCodeNormalized: this.normalizeProductCode(productCode),
+      name,
+      unitOfMeasures,
+      unitOfMeasuresNormalized: unitOfMeasures.toLowerCase(),
+      site,
+      siteNormalized: site.toLowerCase(),
+      vendor,
+      vendorNormalized: vendor.toLowerCase(),
+      currency,
+      currencyNormalized: currency?.toLowerCase(),
+      minimumQuantity,
+      price,
+      extraFields: row.extraFields,
+    };
+  }
+
+  private isHigherPrice(next?: number, current?: number) {
+    if (next === undefined) return current === undefined;
+    if (current === undefined) return true;
+    return next > current;
   }
 
   private normalizeOptionalText(value?: string) {
