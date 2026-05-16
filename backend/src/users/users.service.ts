@@ -184,7 +184,7 @@ export class UsersService {
   async listSites() {
     const [rawSites, activeSites] = await Promise.all([
       this.userModel.distinct('sites'),
-      this.sites.findAll({ page: 1, limit: 100, isActive: true }),
+      this.sites.findAll({ page: 1, limit: 200, isActive: true }),
     ]);
     const values = [
       ...activeSites.items.map((site) => site.code),
@@ -322,7 +322,9 @@ export class UsersService {
     }
 
     const requestedSite = normalizedSites[0];
-    const siteCodes = normalizedSites.map((site) => this.normalizeSiteCode(site));
+    const siteCodes = normalizedSites.map((site) =>
+      this.normalizeSiteCode(site),
+    );
     const siteByCode = await this.sites.findSummariesByCodes(siteCodes);
     const primarySiteCode = siteCodes[0];
     let site = siteByCode.get(primarySiteCode);
@@ -339,9 +341,8 @@ export class UsersService {
       );
     }
     if (!site && createMissingSites) {
-      const created = await this.sites.createWithNextSequentialCode(
-        requestedSite,
-      );
+      const created =
+        await this.sites.createWithNextSequentialCode(requestedSite);
       site = this.sites.toSummary(created);
     }
     if (!site) {

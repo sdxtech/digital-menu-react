@@ -1008,7 +1008,7 @@ const SuperadminMenuManagementPage = () => {
 
     try {
       const data = await apiFetch<{ items?: SiteApi[] }>(
-        '/superadmin/sites?limit=100',
+        '/superadmin/sites?limit=200',
         undefined,
         accessToken,
       )
