@@ -14,6 +14,8 @@ if (!workbookPath) {
 
 const normalizeText = (value) => String(value ?? '').trim();
 const normalizeKey = (value) => normalizeText(value).toLowerCase();
+const normalizeSiteKey = (value) =>
+  normalizeKey(value).replace(/[^a-z0-9]/g, '');
 
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -243,6 +245,11 @@ const flush = async (rawMaterials, vendorPrices) => {
       if (!site || !vendor) {
         skippedVendorPrice += 1;
       } else {
+        const siteNormalized = normalizeSiteKey(site);
+        if (!siteNormalized) {
+          skippedVendorPrice += 1;
+          continue;
+        }
         const item = {
           productCode,
           productCodeNormalized,
@@ -250,7 +257,7 @@ const flush = async (rawMaterials, vendorPrices) => {
           unitOfMeasures,
           unitOfMeasuresNormalized: normalizeKey(unitOfMeasures),
           site,
-          siteNormalized: normalizeKey(site),
+          siteNormalized,
           vendor,
           vendorNormalized: normalizeKey(vendor),
           currency: currency || undefined,
