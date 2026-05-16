@@ -184,7 +184,7 @@ const SuperadminUsersPage = () => {
           isActive?: boolean
         }>
       }>(
-        '/superadmin/sites?limit=100',
+        '/superadmin/sites?limit=200',
         undefined,
         accessToken,
       )

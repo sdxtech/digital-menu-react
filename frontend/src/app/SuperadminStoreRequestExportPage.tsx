@@ -109,6 +109,25 @@ const buildSiteFilenameSegment = (sites: string[]) => {
   return `${sites.length}-sites`
 }
 
+const getSequentialSiteCodeNumber = (code: string) => {
+  const match = /^S(\d+)$/i.exec(code.trim())
+  return match ? Number(match[1]) : undefined
+}
+
+const compareSiteCodes = (a: string, b: string) => {
+  const aNumber = getSequentialSiteCodeNumber(a)
+  const bNumber = getSequentialSiteCodeNumber(b)
+
+  if (aNumber !== undefined && bNumber !== undefined) {
+    return aNumber - bNumber
+  }
+
+  return a.localeCompare(b, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
+
 const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
   const safeName = sanitizeWorksheetName(sheetName)
   const rowXml = rows
@@ -227,7 +246,7 @@ const SuperadminStoreRequestExportPage = () => {
             accessToken,
           ),
           apiFetch<{ items?: SiteApi[] }>(
-            '/superadmin/sites?limit=100',
+            '/superadmin/sites?limit=200',
             undefined,
             accessToken,
           ),
@@ -237,6 +256,7 @@ const SuperadminStoreRequestExportPage = () => {
         const normalized = (storeRequestSitesData.items ?? [])
           .map((site) => site.trim())
           .filter(Boolean)
+          .sort(compareSiteCodes)
         const nameByCode = (sitesData.items ?? []).reduce<Record<string, string>>(
           (acc, site) => {
             const code = site.code?.trim()
