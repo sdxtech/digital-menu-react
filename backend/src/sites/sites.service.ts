@@ -161,7 +161,8 @@ export class SitesService {
     const [items, total] = await Promise.all([
       this.siteModel
         .find(filter)
-        .sort({ createdAt: -1 })
+        .collation({ locale: 'en', numericOrdering: true })
+        .sort({ code: 1 })
         .skip(skip)
         .limit(query.limit)
         .lean(),

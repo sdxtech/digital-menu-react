@@ -101,6 +101,25 @@ const mapSite = (item: SiteApi): SiteOption => ({
   name: item.name ?? '',
 })
 
+const getSequentialSiteCodeNumber = (code: string) => {
+  const match = /^S(\d+)$/i.exec(code.trim())
+  return match ? Number(match[1]) : undefined
+}
+
+const compareSiteOptionsByCode = (a: SiteOption, b: SiteOption) => {
+  const aNumber = getSequentialSiteCodeNumber(a.code)
+  const bNumber = getSequentialSiteCodeNumber(b.code)
+
+  if (aNumber !== undefined && bNumber !== undefined) {
+    return aNumber - bNumber
+  }
+
+  return a.code.localeCompare(b.code, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
+}
+
 const approvalStatusClass = (status: ApprovalStatus) => {
   if (status === 'approved') return 'text-primary'
   if (status === 'rejected') return 'text-danger'
@@ -152,7 +171,7 @@ const SuperadminApprovalCentersPage = () => {
 
     try {
       const data = await apiFetch<{ items?: SiteApi[] }>(
-        '/superadmin/sites?limit=100',
+        '/superadmin/sites?limit=200',
         undefined,
         accessToken,
       )
@@ -160,11 +179,7 @@ const SuperadminApprovalCentersPage = () => {
         (data.items ?? [])
           .map(mapSite)
           .filter((site) => site.code)
-          .sort((a, b) =>
-            (a.name || a.code).localeCompare(b.name || b.code, undefined, {
-              sensitivity: 'base',
-            }),
-          ),
+          .sort(compareSiteOptionsByCode),
       )
     } catch {
       setSiteOptions([])
