@@ -259,9 +259,7 @@ export class RawMaterialsService {
     if (!productCodeNormalized) return [];
 
     const filter: Record<string, unknown> = { productCodeNormalized };
-    const siteNormalized = this.normalizeOptionalText(
-      query.site,
-    )?.toLowerCase();
+    const siteNormalized = this.normalizeSiteKey(query.site);
     const vendorNormalized = this.normalizeOptionalText(
       query.vendor,
     )?.toLowerCase();
@@ -500,6 +498,8 @@ export class RawMaterialsService {
     if (!productCode || !name || !unitOfMeasures || !site || !vendor) {
       return null;
     }
+    const siteNormalized = this.normalizeSiteKey(site);
+    if (!siteNormalized) return null;
 
     const currency = this.normalizeOptionalText(row.currency);
     const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
@@ -512,7 +512,7 @@ export class RawMaterialsService {
       unitOfMeasures,
       unitOfMeasuresNormalized: unitOfMeasures.toLowerCase(),
       site,
-      siteNormalized: site.toLowerCase(),
+      siteNormalized,
       vendor,
       vendorNormalized: vendor.toLowerCase(),
       currency,
@@ -532,6 +532,13 @@ export class RawMaterialsService {
   private normalizeOptionalText(value?: string) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private normalizeSiteKey(value?: string) {
+    const normalized = this.normalizeOptionalText(value)
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    return normalized || undefined;
   }
 
   private normalizeOptionalNumber(value?: number) {
