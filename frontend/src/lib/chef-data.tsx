@@ -77,6 +77,7 @@ export type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  vendor?: string
   createdAt: string
 }
 
@@ -285,6 +286,7 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   productCode: item.productCode,
   name: item.name,
   unitOfMeasures: item.unitOfMeasures,
+  vendor: item.vendor,
   createdAt: item.createdAt,
 })
 

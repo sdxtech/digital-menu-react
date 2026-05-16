@@ -76,6 +76,21 @@ export class RawMaterialsController {
     });
   }
 
+  @Get(':productCode/vendor-prices')
+  @Roles(
+    AppRole.Chef,
+    AppRole.Superadmin,
+    AppRole.UnitManager,
+    AppRole.Storekeeper,
+  )
+  listVendorPrices(
+    @Param('productCode') productCode: string,
+    @Query('site') site?: string,
+    @Query('vendor') vendor?: string,
+  ) {
+    return this.rawMaterials.findVendorPrices({ productCode, site, vendor });
+  }
+
   @Post('prices/upload')
   @Roles(AppRole.Superadmin)
   @UseInterceptors(
@@ -104,12 +119,19 @@ export class RawMaterialsController {
   )
   async uploadPriceUpdates(
     @UploadedFile()
-    file?: { path: string; originalname: string; mimetype: string },
+    file?: {
+      path: string;
+      originalname: string;
+      mimetype: string;
+    },
   ) {
     if (!file) throw new BadRequestException('file is required');
 
     try {
-      const rows = await this.parsePriceUpdateFile(file.path, file.originalname);
+      const rows = await this.parsePriceUpdateFile(
+        file.path,
+        file.originalname,
+      );
       if (rows.length === 0) {
         throw new BadRequestException(
           'File must include at least one row with product code and price.',
@@ -147,7 +169,9 @@ export class RawMaterialsController {
     return this.parsePriceWorkbook(filePath);
   }
 
-  private async parsePriceWorkbook(filePath: string): Promise<PriceUpdateRow[]> {
+  private async parsePriceWorkbook(
+    filePath: string,
+  ): Promise<PriceUpdateRow[]> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     const worksheet = workbook.worksheets[0];

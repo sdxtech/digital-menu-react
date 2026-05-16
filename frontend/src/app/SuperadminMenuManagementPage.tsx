@@ -81,6 +81,7 @@ type RawMaterialApi = {
   productCode?: string
   name?: string
   unitOfMeasures?: string
+  vendor?: string
   price?: number
   createdAt?: string
 }
@@ -90,8 +91,29 @@ type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  vendor: string
   price?: number
   createdAt: string
+}
+
+type RawMaterialVendorPriceApi = {
+  id?: string
+  _id?: string
+  productCode?: string
+  unitOfMeasures?: string
+  site?: string
+  vendor?: string
+  currency?: string
+  minimumQuantity?: number
+  price?: number
+}
+
+type RawMaterialVendorPriceOption = {
+  key: string
+  vendor: string
+  site?: string
+  minimumQuantity?: number
+  price?: number
 }
 
 type SiteApi = {
@@ -221,6 +243,11 @@ const formatPrice = (value?: number) => {
   }).format(value)
 }
 
+const normalizeTextKey = (value?: string) => value?.trim().toLowerCase() ?? ''
+
+const getRawMaterialVendorProductKey = (productCode: string) =>
+  normalizeTextKey(productCode)
+
 const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
 
@@ -236,9 +263,59 @@ const mapRawMaterial = (item: RawMaterialApi): RawMaterial => ({
   productCode: item.productCode ?? '',
   name: item.name ?? '',
   unitOfMeasures: item.unitOfMeasures ?? '',
+  vendor: item.vendor ?? '',
   price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
   createdAt: item.createdAt ?? '',
 })
+
+const mapRawMaterialVendorPriceOption = (
+  item: RawMaterialVendorPriceApi,
+): RawMaterialVendorPriceOption | null => {
+  const vendor = item.vendor?.trim() ?? ''
+  if (!vendor) return null
+
+  const site = item.site?.trim() || undefined
+  const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
+    ? Number(item.minimumQuantity)
+    : undefined
+  const price = Number.isFinite(Number(item.price))
+    ? Number(item.price)
+    : undefined
+  const key = [normalizeTextKey(vendor), price ?? ''].join('|')
+
+  return {
+    key,
+    vendor,
+    site,
+    minimumQuantity,
+    price,
+  }
+}
+
+const formatVendorOptionLabel = (option: RawMaterialVendorPriceOption) =>
+  option.vendor
+
+const pickDefaultVendorOption = (
+  rawMaterial: RawMaterial,
+  options: RawMaterialVendorPriceOption[],
+) => {
+  if (options.length === 0) return undefined
+
+  const currentVendor = normalizeTextKey(rawMaterial.vendor)
+  if (currentVendor) {
+    const byVendor = options.find(
+      (option) => normalizeTextKey(option.vendor) === currentVendor,
+    )
+    if (byVendor) return byVendor
+  }
+
+  if (rawMaterial.price !== undefined) {
+    const byPrice = options.find((option) => option.price === rawMaterial.price)
+    if (byPrice) return byPrice
+  }
+
+  return options[0]
+}
 
 const mapSite = (item: SiteApi): SiteOption => ({
   id: item.id ?? item._id ?? '',
@@ -873,6 +950,16 @@ const SuperadminMenuManagementPage = () => {
     useState('')
   const [rawMaterialPriceUploading, setRawMaterialPriceUploading] =
     useState(false)
+  const [rawMaterialVendorOptionsByCode, setRawMaterialVendorOptionsByCode] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [rawMaterialVendorLoadingByCode, setRawMaterialVendorLoadingByCode] =
+    useState<Record<string, boolean>>({})
+  const [rawMaterialVendorErrorByCode, setRawMaterialVendorErrorByCode] =
+    useState<Record<string, string>>({})
+  const [selectedRawMaterialVendorByCode, setSelectedRawMaterialVendorByCode] =
+    useState<Record<string, string>>({})
+  const [openRawMaterialVendorDropdownKey, setOpenRawMaterialVendorDropdownKey] =
+    useState<string | null>(null)
 
   const selectedRecipe = useMemo(
     () =>
@@ -1093,11 +1180,15 @@ const SuperadminMenuManagementPage = () => {
 
         const total = data.total ?? 0
         const nextLimit = data.limit ?? limit
-        setRawMaterials(
-          (data.items ?? [])
-            .map(mapRawMaterial)
-            .filter((rawMaterial) => rawMaterial.id),
-        )
+        const nextRawMaterials = (data.items ?? [])
+          .map(mapRawMaterial)
+          .filter((rawMaterial) => rawMaterial.id)
+        setRawMaterials(nextRawMaterials)
+        setRawMaterialVendorOptionsByCode({})
+        setRawMaterialVendorLoadingByCode({})
+        setRawMaterialVendorErrorByCode({})
+        setSelectedRawMaterialVendorByCode({})
+        setOpenRawMaterialVendorDropdownKey(null)
         setRawMaterialMeta({
           page: data.page ?? page,
           limit: nextLimit,
@@ -1113,6 +1204,11 @@ const SuperadminMenuManagementPage = () => {
             ? error.message
             : 'Failed to load raw material data.'
         setRawMaterials([])
+        setRawMaterialVendorOptionsByCode({})
+        setRawMaterialVendorLoadingByCode({})
+        setRawMaterialVendorErrorByCode({})
+        setSelectedRawMaterialVendorByCode({})
+        setOpenRawMaterialVendorDropdownKey(null)
         setRawMaterialMeta((prev) => ({
           ...prev,
           loading: false,
@@ -1121,6 +1217,89 @@ const SuperadminMenuManagementPage = () => {
       }
     },
     [accessToken, rawMaterialSearch],
+  )
+
+  const loadRawMaterialVendorPrices = useCallback(
+    async (rawMaterial: RawMaterial) => {
+      if (!accessToken) return
+
+      const productCode = rawMaterial.productCode.trim()
+      const productKey = getRawMaterialVendorProductKey(productCode)
+      if (!productCode || !productKey) return
+      if (
+        Object.prototype.hasOwnProperty.call(
+          rawMaterialVendorOptionsByCode,
+          productKey,
+        ) ||
+        rawMaterialVendorLoadingByCode[productKey]
+      ) {
+        return
+      }
+
+      setRawMaterialVendorLoadingByCode((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setRawMaterialVendorErrorByCode((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const data = await apiFetch<RawMaterialVendorPriceApi[]>(
+          `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices`,
+          undefined,
+          accessToken,
+        )
+        const optionsByKey = new Map<string, RawMaterialVendorPriceOption>()
+        const mappedOptions = (data ?? [])
+          .map(mapRawMaterialVendorPriceOption)
+          .filter(
+            (option): option is RawMaterialVendorPriceOption =>
+              option !== null,
+          )
+        mappedOptions.forEach((option) => {
+          optionsByKey.set(option.key, option)
+        })
+
+        const options = Array.from(optionsByKey.values()).sort((a, b) =>
+          [
+            a.vendor,
+            String(a.price ?? ''),
+          ]
+            .join(' ')
+            .localeCompare(
+              [b.vendor, String(b.price ?? '')].join(' '),
+            ),
+        )
+
+        setRawMaterialVendorOptionsByCode((prev) => ({
+          ...prev,
+          [productKey]: options,
+        }))
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to load vendors.'
+        setRawMaterialVendorOptionsByCode((prev) => ({
+          ...prev,
+          [productKey]: [],
+        }))
+        setRawMaterialVendorErrorByCode((prev) => ({
+          ...prev,
+          [productKey]: message,
+        }))
+      } finally {
+        setRawMaterialVendorLoadingByCode((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      rawMaterialVendorLoadingByCode,
+      rawMaterialVendorOptionsByCode,
+    ],
   )
 
   useEffect(() => {
@@ -1142,6 +1321,20 @@ const SuperadminMenuManagementPage = () => {
   useEffect(() => {
     fetchRawMaterials(1, DEFAULT_LIMIT, rawMaterialSearch).catch(() => null)
   }, [fetchRawMaterials, rawMaterialSearch])
+
+  useEffect(() => {
+    if (activeTab !== 'raw-materials') return
+
+    const seenProductKeys = new Set<string>()
+    rawMaterials.forEach((rawMaterial) => {
+      const productKey = getRawMaterialVendorProductKey(
+        rawMaterial.productCode,
+      )
+      if (!productKey || seenProductKeys.has(productKey)) return
+      seenProductKeys.add(productKey)
+      loadRawMaterialVendorPrices(rawMaterial).catch(() => null)
+    })
+  }, [activeTab, loadRawMaterialVendorPrices, rawMaterials])
 
   const applyRecipeSearch = () => {
     setRecipeSearch(recipeSearchInput.trim())
@@ -2415,6 +2608,7 @@ const SuperadminMenuManagementPage = () => {
             emptySiteMessage="Select a production site first."
             showEstimatedCostColumns
             showIngredientCostColumns
+            showIngredientVendorColumn
           />
         ) : null}
 
@@ -2902,6 +3096,7 @@ const SuperadminMenuManagementPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Product Code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Vendor</th>
                   <th className="px-5 py-4 font-semibold">Unit of Measures</th>
                   <th className="px-5 py-4 font-semibold">Price</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
@@ -2910,58 +3105,154 @@ const SuperadminMenuManagementPage = () => {
               <tbody>
                 {rawMaterialMeta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       Loading raw materials...
                     </td>
                   </tr>
                 ) : rawMaterials.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {rawMaterialMeta.error
                         ? rawMaterialMeta.error
                         : 'No raw materials yet.'}
                     </td>
                   </tr>
                 ) : (
-                  rawMaterials.map((rawMaterial, index) => (
-                    <tr key={rawMaterial.id} className="border-t border-border">
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {(rawMaterialMeta.page - 1) * rawMaterialMeta.limit +
-                          index +
-                          1}
-                      </td>
-                      <td className="px-5 py-4">{rawMaterial.productCode}</td>
-                      <td className="px-5 py-4">{rawMaterial.name}</td>
-                      <td className="px-5 py-4">
-                        {formatUnitLabel(rawMaterial.unitOfMeasures)}
-                      </td>
-                      <td className="px-5 py-4 font-medium">
-                        {formatPrice(rawMaterial.price)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditRawMaterial(rawMaterial)}
-                            className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
-                            aria-label="Edit raw material"
-                            title="Edit raw material"
-                          >
-                            <i className="bi bi-pencil-square text-base" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteRawMaterial(rawMaterial)}
-                            className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
-                            aria-label="Delete raw material"
-                            title="Delete raw material"
-                          >
-                            <i className="bi bi-trash text-base" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  rawMaterials.map((rawMaterial, index) => {
+                    const productKey = getRawMaterialVendorProductKey(
+                      rawMaterial.productCode,
+                    )
+                    const vendorOptions =
+                      rawMaterialVendorOptionsByCode[productKey] ?? []
+                    const vendorLoading =
+                      rawMaterialVendorLoadingByCode[productKey] ?? false
+                    const vendorError =
+                      rawMaterialVendorErrorByCode[productKey] ?? ''
+                    const selectedVendorKey =
+                      selectedRawMaterialVendorByCode[productKey] ??
+                      pickDefaultVendorOption(rawMaterial, vendorOptions)?.key ??
+                      ''
+                    const selectedVendorOption = vendorOptions.find(
+                      (option) => option.key === selectedVendorKey,
+                    )
+                    const displayPrice = selectedVendorOption
+                      ? selectedVendorOption.price
+                      : rawMaterial.price
+
+                    return (
+                      <tr
+                        key={rawMaterial.id}
+                        className="border-t border-border"
+                      >
+                        <td className="px-5 py-4 text-sm text-muted">
+                          {(rawMaterialMeta.page - 1) * rawMaterialMeta.limit +
+                            index +
+                            1}
+                        </td>
+                        <td className="px-5 py-4">
+                          {rawMaterial.productCode}
+                        </td>
+                        <td className="px-5 py-4">{rawMaterial.name}</td>
+                        <td className="px-5 py-4 align-top">
+                          {vendorOptions.length > 0 ? (
+                            <div className="w-56">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenRawMaterialVendorDropdownKey((prev) =>
+                                    prev === productKey ? null : productKey,
+                                  )
+                                }
+                                aria-expanded={
+                                  openRawMaterialVendorDropdownKey ===
+                                  productKey
+                                }
+                                className="flex min-h-11 w-56 items-start justify-between gap-2 rounded-xl border border-border bg-white px-3 py-2 text-left text-sm leading-snug outline-none transition focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              >
+                                <span className="whitespace-normal break-words">
+                                  {selectedVendorOption
+                                    ? formatVendorOptionLabel(
+                                        selectedVendorOption,
+                                      )
+                                    : rawMaterial.vendor || 'Select vendor'}
+                                </span>
+                                <i
+                                  className="bi bi-chevron-down mt-0.5 shrink-0 text-xs text-muted"
+                                  aria-hidden="true"
+                                />
+                              </button>
+                              {openRawMaterialVendorDropdownKey ===
+                              productKey ? (
+                                <div className="mt-1 max-h-60 w-56 overflow-y-auto rounded-xl border border-border bg-white py-1 shadow-lg">
+                                  {vendorOptions.map((option) => (
+                                    <button
+                                      key={option.key}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedRawMaterialVendorByCode(
+                                          (prev) => ({
+                                            ...prev,
+                                            [productKey]: option.key,
+                                          }),
+                                        )
+                                        setOpenRawMaterialVendorDropdownKey(null)
+                                      }}
+                                      className={`block w-full px-3 py-2 text-left text-sm leading-snug transition hover:bg-primary-soft hover:text-primary ${
+                                        option.key === selectedVendorKey
+                                          ? 'bg-primary-soft text-primary'
+                                          : 'text-foreground'
+                                      }`}
+                                    >
+                                      <span className="block whitespace-normal break-words">
+                                        {formatVendorOptionLabel(option)}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span
+                              title={vendorError || undefined}
+                              className="block w-56 whitespace-normal break-words"
+                            >
+                              {vendorLoading
+                                ? 'Loading vendors...'
+                                : rawMaterial.vendor || '-'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          {formatUnitLabel(rawMaterial.unitOfMeasures)}
+                        </td>
+                        <td className="px-5 py-4 font-medium">
+                          {formatPrice(displayPrice)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditRawMaterial(rawMaterial)}
+                              className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                              aria-label="Edit raw material"
+                              title="Edit raw material"
+                            >
+                              <i className="bi bi-pencil-square text-base" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteRawMaterial(rawMaterial)}
+                              className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
+                              aria-label="Delete raw material"
+                              title="Delete raw material"
+                            >
+                              <i className="bi bi-trash text-base" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>

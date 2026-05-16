@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData, type MenuProduction, type Recipe } from '../lib/chef-data'
@@ -27,6 +27,29 @@ type ProductionUserApi = {
   email?: string
   roles?: string[]
   isActive?: boolean
+}
+
+type RawMaterialVendorPriceApi = {
+  id?: string
+  _id?: string
+  productCode?: string
+  site?: string
+  vendor?: string
+  currency?: string
+  unitOfMeasures?: string
+  minimumQuantity?: number
+  price?: number
+}
+
+type RawMaterialVendorPriceOption = {
+  key: string
+  productCode: string
+  site: string
+  vendor: string
+  currency?: string
+  unitOfMeasures: string
+  minimumQuantity?: number
+  price?: number
 }
 
 type MenuInputRow = {
@@ -61,6 +84,7 @@ type ChefMenuCycleProps = {
   emptySiteMessage?: string
   showEstimatedCostColumns?: boolean
   showIngredientCostColumns?: boolean
+  showIngredientVendorColumn?: boolean
   allowIngredientCostSync?: boolean
 }
 
@@ -75,6 +99,7 @@ const ChefMenuCycle = ({
   emptySiteMessage = 'Select a production site first.',
   showEstimatedCostColumns = false,
   showIngredientCostColumns = false,
+  showIngredientVendorColumn = false,
   allowIngredientCostSync = false,
 }: ChefMenuCycleProps = {}) => {
   const { accessToken } = useAuth()
@@ -98,6 +123,15 @@ const ChefMenuCycle = ({
   const [costSyncLoading, setCostSyncLoading] = useState(false)
   const [costSyncMessage, setCostSyncMessage] = useState('')
   const [costSyncError, setCostSyncError] = useState('')
+  const [vendorPricesByProductKey, setVendorPricesByProductKey] = useState<
+    Record<string, RawMaterialVendorPriceOption[]>
+  >({})
+  const [vendorPriceLoadingByProductKey, setVendorPriceLoadingByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [vendorPriceErrorByProductKey, setVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [selectedVendorPriceByIngredientKey, setSelectedVendorPriceByIngredientKey] =
+    useState<Record<string, string>>({})
   const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
   const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
@@ -105,7 +139,20 @@ const ChefMenuCycle = ({
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])/* Menyimpan daftar baris menu yang diperluas untuk menampilkan detail */
   const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
 
-  const normalizeText = (value?: string) => value?.trim().toLowerCase() ?? ''/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
+  const normalizeText = useCallback(
+    (value?: string) => value?.trim().toLowerCase() ?? '',
+    [],
+  )/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
+  const getVendorPricesProductKey = useCallback(
+    (productCode?: string) =>
+      `${productionSite || 'all'}::${normalizeText(productCode)}`,
+    [normalizeText, productionSite],
+  )
+  const getIngredientVendorSelectionKey = useCallback(
+    (rowId: string, index: number, productCode?: string) =>
+      `${rowId}::${index}::${normalizeText(productCode)}`,
+    [normalizeText],
+  )
 
   const formatPrice = (value?: number) => {
     if (value === undefined || value === null || !Number.isFinite(value)) {
@@ -118,9 +165,63 @@ const ChefMenuCycle = ({
     }).format(value)
   }
 
+  const mapVendorPriceOption = useCallback(
+    (item: RawMaterialVendorPriceApi): RawMaterialVendorPriceOption | null => {
+      const productCode = item.productCode?.trim() ?? ''
+      const site = item.site?.trim() ?? ''
+      const vendor = item.vendor?.trim() ?? ''
+      const unitOfMeasures = item.unitOfMeasures?.trim() ?? ''
+      if (!productCode || !site || !vendor || !unitOfMeasures) return null
+
+      const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
+        ? Number(item.minimumQuantity)
+        : undefined
+      const price = Number.isFinite(Number(item.price))
+        ? Number(item.price)
+        : undefined
+      const currency = item.currency?.trim() || undefined
+      const key = [
+        normalizeText(productCode),
+        normalizeText(site),
+        normalizeText(vendor),
+        normalizeText(currency),
+        normalizeText(unitOfMeasures),
+        minimumQuantity ?? '',
+        price ?? '',
+      ].join('|')
+
+      return {
+        key,
+        productCode,
+        site,
+        vendor,
+        currency,
+        unitOfMeasures,
+        minimumQuantity,
+        price,
+      }
+    },
+    [normalizeText],
+  )
+
+  const formatVendorPriceLabel = (option: RawMaterialVendorPriceOption) => {
+    const parts = [option.vendor]
+    if (option.site && normalizeText(option.site) !== normalizeText(productionSite)) {
+      parts.push(option.site)
+    }
+    if (option.price !== undefined) {
+      parts.push(formatPrice(option.price))
+    }
+    return parts.join(' - ')
+  }
+
   const getIngredientUnitPrice = (
     ingredient: Recipe['ingredients'][number],
+    vendorPrice?: RawMaterialVendorPriceOption,
   ) => {
+    if (Number.isFinite(Number(vendorPrice?.price))) {
+      return Number(vendorPrice?.price)
+    }
     if (Number.isFinite(Number(ingredient.priceUom))) {
       return Number(ingredient.priceUom)
     }
@@ -221,6 +322,10 @@ const ChefMenuCycle = ({
     setInputMessage('')
     setProductionChefId('')
     setProductionUnitManagerId('')
+    setVendorPricesByProductKey({})
+    setVendorPriceLoadingByProductKey({})
+    setVendorPriceErrorByProductKey({})
+    setSelectedVendorPriceByIngredientKey({})
   }, [productionSite, requireProductionSite])
 
   useEffect(() => {
@@ -284,6 +389,106 @@ const ChefMenuCycle = ({
       cancelled = true
     }
   }, [accessToken, fetchRecipes, productionSite, requireProductionSite])
+
+  useEffect(() => {
+    if (!showIngredientVendorColumn || !accessToken) return
+
+    const productCodes = new Set<string>()
+    expandedMenuRows.forEach((rowId) => {
+      const row = menuRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById[row.recipeId] : undefined
+      ;(recipe?.ingredients ?? []).forEach((ingredient) => {
+        if (ingredient.productCode?.trim()) {
+          productCodes.add(ingredient.productCode.trim())
+        }
+      })
+    })
+
+    productCodes.forEach((productCode) => {
+      const productKey = getVendorPricesProductKey(productCode)
+      if (
+        vendorPricesByProductKey[productKey] ||
+        vendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      const fetchVendorPrices = async (site?: string) => {
+        const params = new URLSearchParams()
+        if (site?.trim()) params.set('site', site.trim())
+        const query = params.toString()
+        return apiFetch<RawMaterialVendorPriceApi[]>(
+          `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices${
+            query ? `?${query}` : ''
+          }`,
+          undefined,
+          accessToken,
+        )
+      }
+
+      ;(async () => {
+        try {
+          const siteScopedItems = productionSite
+            ? await fetchVendorPrices(productionSite)
+            : []
+          const items = siteScopedItems.length
+            ? siteScopedItems
+            : await fetchVendorPrices()
+          const byKey = new Map<string, RawMaterialVendorPriceOption>()
+          items.forEach((item) => {
+            const option = mapVendorPriceOption(item)
+            if (option) byKey.set(option.key, option)
+          })
+          const options = Array.from(byKey.values()).sort((a, b) =>
+            [a.vendor, a.site, String(a.minimumQuantity ?? '')]
+              .join(' ')
+              .localeCompare(
+                [b.vendor, b.site, String(b.minimumQuantity ?? '')].join(' '),
+                undefined,
+                { sensitivity: 'base' },
+              ),
+          )
+          setVendorPricesByProductKey((prev) => ({
+            ...prev,
+            [productKey]: options,
+          }))
+        } catch (error) {
+          setVendorPriceErrorByProductKey((prev) => ({
+            ...prev,
+            [productKey]:
+              error instanceof Error
+                ? error.message
+                : 'Failed to load vendors.',
+          }))
+        } finally {
+          setVendorPriceLoadingByProductKey((prev) => ({
+            ...prev,
+            [productKey]: false,
+          }))
+        }
+      })()
+    })
+  }, [
+    accessToken,
+    expandedMenuRows,
+    getVendorPricesProductKey,
+    mapVendorPriceOption,
+    menuRows,
+    productionSite,
+    recipeById,
+    showIngredientVendorColumn,
+    vendorPriceLoadingByProductKey,
+    vendorPricesByProductKey,
+  ])
 
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
@@ -762,7 +967,7 @@ const ChefMenuCycle = ({
                     ? row.portion
                     : null
                 const estimatedCostSummary = ingredients.reduce(
-                  (summary, ingredient) => {
+                  (summary, ingredient, ingredientIndex) => {
                     const ingredientQty = Number(ingredient.qty)
                     if (!Number.isFinite(ingredientQty)) return summary
 
@@ -770,7 +975,28 @@ const ChefMenuCycle = ({
                       portionForPreview === null
                         ? ingredientQty
                         : (ingredientQty * portionForPreview) / basePax
-                    const unitPrice = getIngredientUnitPrice(ingredient)
+                    const productKey = getVendorPricesProductKey(
+                      ingredient.productCode,
+                    )
+                    const vendorOptions =
+                      vendorPricesByProductKey[productKey] ?? []
+                    const vendorSelectionKey = getIngredientVendorSelectionKey(
+                      row.id,
+                      ingredientIndex,
+                      ingredient.productCode,
+                    )
+                    const selectedVendorKey =
+                      selectedVendorPriceByIngredientKey[vendorSelectionKey] ??
+                      (vendorOptions.length === 1
+                        ? vendorOptions[0]?.key
+                        : '')
+                    const selectedVendorPrice = vendorOptions.find(
+                      (option) => option.key === selectedVendorKey,
+                    )
+                    const unitPrice = getIngredientUnitPrice(
+                      ingredient,
+                      selectedVendorPrice,
+                    )
                     if (unitPrice === undefined) return summary
 
                     return {
@@ -922,6 +1148,11 @@ const ChefMenuCycle = ({
                                           <th className="px-4 py-3 font-semibold">
                                             Unit
                                           </th>
+                                          {showIngredientVendorColumn ? (
+                                            <th className="px-4 py-3 font-semibold">
+                                              Vendor
+                                            </th>
+                                          ) : null}
                                           {showIngredientCostColumns ? (
                                             <>
                                               <th className="px-4 py-3 font-semibold">
@@ -936,13 +1167,51 @@ const ChefMenuCycle = ({
                                       </thead>
                                       <tbody>
                                         {ingredients.map((ingredient, idx) => {
+                                          const productKey =
+                                            getVendorPricesProductKey(
+                                              ingredient.productCode,
+                                            )
+                                          const vendorOptions =
+                                            vendorPricesByProductKey[
+                                              productKey
+                                            ] ?? []
+                                          const vendorLoading =
+                                            vendorPriceLoadingByProductKey[
+                                              productKey
+                                            ] ?? false
+                                          const vendorError =
+                                            vendorPriceErrorByProductKey[
+                                              productKey
+                                            ] ?? ''
+                                          const vendorSelectionKey =
+                                            getIngredientVendorSelectionKey(
+                                              row.id,
+                                              idx,
+                                              ingredient.productCode,
+                                            )
+                                          const selectedVendorKey =
+                                            selectedVendorPriceByIngredientKey[
+                                              vendorSelectionKey
+                                            ] ??
+                                            (vendorOptions.length === 1
+                                              ? vendorOptions[0]?.key
+                                              : '')
+                                          const selectedVendorPrice =
+                                            vendorOptions.find(
+                                              (option) =>
+                                                option.key ===
+                                                selectedVendorKey,
+                                            )
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty
                                               : (ingredient.qty * portionForPreview) /
                                                 basePax
                                           const unitPrice =
-                                            getIngredientUnitPrice(ingredient)
+                                            getIngredientUnitPrice(
+                                              ingredient,
+                                              selectedVendorPrice,
+                                            )
                                           const totalCost =
                                             unitPrice === undefined
                                               ? undefined
@@ -969,6 +1238,56 @@ const ChefMenuCycle = ({
                                                   ingredient.unitOfMeasures,
                                                 )}
                                               </td>
+                                              {showIngredientVendorColumn ? (
+                                                <td className="min-w-56 px-4 py-3">
+                                                  <select
+                                                    value={selectedVendorKey}
+                                                    onChange={(event) =>
+                                                      setSelectedVendorPriceByIngredientKey(
+                                                        (prev) => ({
+                                                          ...prev,
+                                                          [vendorSelectionKey]:
+                                                            event.target.value,
+                                                        }),
+                                                      )
+                                                    }
+                                                    disabled={
+                                                      vendorLoading ||
+                                                      vendorOptions.length === 0
+                                                    }
+                                                    className="w-full rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                                  >
+                                                    {vendorLoading ? (
+                                                      <option value="">
+                                                        Loading vendors...
+                                                      </option>
+                                                    ) : vendorOptions.length ===
+                                                      0 ? (
+                                                      <option value="">
+                                                        {vendorError ||
+                                                          'No vendor'}
+                                                      </option>
+                                                    ) : vendorOptions.length >
+                                                      1 ? (
+                                                      <option value="">
+                                                        Select vendor
+                                                      </option>
+                                                    ) : null}
+                                                    {vendorOptions.map(
+                                                      (option) => (
+                                                        <option
+                                                          key={option.key}
+                                                          value={option.key}
+                                                        >
+                                                          {formatVendorPriceLabel(
+                                                            option,
+                                                          )}
+                                                        </option>
+                                                      ),
+                                                    )}
+                                                  </select>
+                                                </td>
+                                              ) : null}
                                               {showIngredientCostColumns ? (
                                                 <>
                                                   <td className="px-4 py-3 font-medium">
@@ -987,7 +1306,11 @@ const ChefMenuCycle = ({
                                         <tfoot className="bg-background">
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={6}
+                                              colSpan={
+                                                showIngredientVendorColumn
+                                                  ? 7
+                                                  : 6
+                                              }
                                               className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
                                             >
                                               Estimated Total Cost
@@ -998,7 +1321,11 @@ const ChefMenuCycle = ({
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={6}
+                                              colSpan={
+                                                showIngredientVendorColumn
+                                                  ? 7
+                                                  : 6
+                                              }
                                               className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
                                             >
                                               Estimated Cost/Pax
