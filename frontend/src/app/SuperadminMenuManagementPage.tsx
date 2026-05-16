@@ -182,6 +182,7 @@ type IngredientCostBackfillResult = {
 
 const DEFAULT_LIMIT = 10
 const CALCULATOR_ROWS_PER_PAGE = 8
+const USE_OTHER_SITE_VENDOR_OPTION = '__use_other_site_vendor__'
 
 const menuManagementTabs: Array<{
   id: MenuManagementTab
@@ -247,6 +248,11 @@ const normalizeTextKey = (value?: string) => value?.trim().toLowerCase() ?? ''
 
 const getRawMaterialVendorProductKey = (productCode: string) =>
   normalizeTextKey(productCode)
+
+const getRecipeCalculatorVendorProductKey = (
+  productCode?: string,
+  site?: string,
+) => `${normalizeTextKey(site)}::${normalizeTextKey(productCode)}`
 
 const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
@@ -342,7 +348,13 @@ const getRecipeOptionLabel = (recipe: Recipe) => recipe.name
 const getRecipeSiteText = (recipe: Recipe) =>
   recipe.siteName?.trim() || recipe.site?.trim() || 'All sites'
 
-const getIngredientUnitPrice = (ingredient: RecipeIngredient) => {
+const getIngredientUnitPrice = (
+  ingredient: RecipeIngredient,
+  vendorPrice?: RawMaterialVendorPriceOption,
+) => {
+  if (Number.isFinite(Number(vendorPrice?.price))) {
+    return Number(vendorPrice?.price)
+  }
   if (Number.isFinite(Number(ingredient.priceUom))) {
     return Number(ingredient.priceUom)
   }
@@ -364,26 +376,59 @@ const getRecipeBasePax = (recipe: Recipe) =>
 const getRecipeTargetPortion = (recipe: Recipe, portion: number | '') =>
   typeof portion === 'number' && portion > 0 ? portion : getRecipeBasePax(recipe)
 
-const getRecipeEstimatedCost = (recipe: Recipe, portion: number | '') => {
-  const ingredients = recipe.ingredients ?? []
-  if (!ingredients.length) return undefined
+const sortVendorPriceOptions = (options: RawMaterialVendorPriceOption[]) =>
+  options.sort((a, b) =>
+    [a.vendor, a.site, String(a.minimumQuantity ?? '')]
+      .join(' ')
+      .localeCompare(
+        [b.vendor, b.site, String(b.minimumQuantity ?? '')].join(' '),
+        undefined,
+        { sensitivity: 'base' },
+      ),
+  )
 
-  const basePax = getRecipeBasePax(recipe)
-  const targetPortion = getRecipeTargetPortion(recipe, portion)
-  let total = 0
-  let hasCost = false
+const pickHighestVendorPriceOption = (
+  options: RawMaterialVendorPriceOption[],
+) => {
+  if (options.length === 0) return undefined
 
-  ingredients.forEach((ingredient) => {
-    const ingredientQty = Number(ingredient.qty)
-    const unitPrice = getIngredientUnitPrice(ingredient)
-    if (!Number.isFinite(ingredientQty) || unitPrice === undefined) return
+  return options.reduce((selected, option) => {
+    const selectedPrice = Number(selected.price)
+    const optionPrice = Number(option.price)
+    const selectedHasPrice = Number.isFinite(selectedPrice)
+    const optionHasPrice = Number.isFinite(optionPrice)
 
-    const scaledQty = (ingredientQty * targetPortion) / basePax
-    total += scaledQty * unitPrice
-    hasCost = true
+    if (optionHasPrice && !selectedHasPrice) return option
+    if (optionHasPrice && selectedHasPrice && optionPrice > selectedPrice) {
+      return option
+    }
+    return selected
+  }, options[0])
+}
+
+const dedupeVendorPricesByVendor = (
+  options: RawMaterialVendorPriceOption[],
+) => {
+  const byVendor = new Map<string, RawMaterialVendorPriceOption>()
+  options.forEach((option) => {
+    const vendorKey = normalizeTextKey(option.vendor)
+    if (!vendorKey) return
+
+    const existing = byVendor.get(vendorKey)
+    if (!existing) {
+      byVendor.set(vendorKey, option)
+      return
+    }
+
+    const existingPrice = Number(existing.price)
+    const optionPrice = Number(option.price)
+    const existingHasPrice = Number.isFinite(existingPrice)
+    const optionHasPrice = Number.isFinite(optionPrice)
+    if (optionHasPrice && (!existingHasPrice || optionPrice > existingPrice)) {
+      byVendor.set(vendorKey, option)
+    }
   })
-
-  return hasCost ? total : undefined
+  return sortVendorPriceOptions(Array.from(byVendor.values()))
 }
 
 const RecipeCalculator = () => {
@@ -396,6 +441,27 @@ const RecipeCalculator = () => {
   const [calculatorPage, setCalculatorPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [vendorPricesByProductKey, setVendorPricesByProductKey] = useState<
+    Record<string, RawMaterialVendorPriceOption[]>
+  >({})
+  const [vendorPriceLoadingByProductKey, setVendorPriceLoadingByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [vendorPriceErrorByProductKey, setVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [otherSiteVendorPricesByProductKey, setOtherSiteVendorPricesByProductKey] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [otherSiteVendorPriceLoadedByProductKey, setOtherSiteVendorPriceLoadedByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [
+    otherSiteVendorPriceLoadingByProductKey,
+    setOtherSiteVendorPriceLoadingByProductKey,
+  ] = useState<Record<string, boolean>>({})
+  const [otherSiteVendorPriceErrorByProductKey, setOtherSiteVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [selectedVendorPriceByIngredientKey, setSelectedVendorPriceByIngredientKey] =
+    useState<Record<string, string>>({})
+  const [useOtherSiteVendorByIngredientKey, setUseOtherSiteVendorByIngredientKey] =
+    useState<Record<string, boolean>>({})
 
   const sortedCalculatorRecipes = useMemo(
     () =>
@@ -418,6 +484,51 @@ const RecipeCalculator = () => {
     })
     return map
   }, [sortedCalculatorRecipes])
+
+  const getIngredientVendorSelectionKey = useCallback(
+    (rowId: string, index: number, productCode?: string) =>
+      `${rowId}::${index}::${normalizeTextKey(productCode)}`,
+    [],
+  )
+
+  const getSelectedSiteVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return pickHighestVendorPriceOption(options)?.key ?? ''
+  }
+
+  const getSelectedOtherSiteVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return ''
+  }
+
+  const fetchVendorPrices = useCallback(
+    async (productCode: string, site?: string) => {
+      if (!accessToken) return []
+      const params = new URLSearchParams()
+      if (site?.trim()) params.set('site', site.trim())
+      const query = params.toString()
+      return apiFetch<RawMaterialVendorPriceApi[]>(
+        `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices${
+          query ? `?${query}` : ''
+        }`,
+        undefined,
+        accessToken,
+      )
+    },
+    [accessToken],
+  )
 
   const fetchCalculatorRecipes = useCallback(async () => {
     if (!accessToken) {
@@ -452,9 +563,173 @@ const RecipeCalculator = () => {
     }
   }, [accessToken])
 
+  const loadRecipeSiteVendorPrices = useCallback(
+    async (productCode?: string, site?: string) => {
+      const trimmedProductCode = productCode?.trim()
+      const vendorSite = site?.trim()
+      if (!trimmedProductCode || !vendorSite || !accessToken) return
+
+      const productKey = getRecipeCalculatorVendorProductKey(
+        trimmedProductCode,
+        vendorSite,
+      )
+      if (
+        vendorPricesByProductKey[productKey] ||
+        vendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const items = await fetchVendorPrices(trimmedProductCode, vendorSite)
+        const optionsByKey = new Map<string, RawMaterialVendorPriceOption>()
+        items.forEach((item) => {
+          const option = mapRawMaterialVendorPriceOption(item)
+          if (option) optionsByKey.set(option.key, option)
+        })
+        setVendorPricesByProductKey((prev) => ({
+          ...prev,
+          [productKey]: sortVendorPriceOptions(Array.from(optionsByKey.values())),
+        }))
+      } catch (loadError) {
+        setVendorPriceErrorByProductKey((prev) => ({
+          ...prev,
+          [productKey]:
+            loadError instanceof Error
+              ? loadError.message
+              : 'Failed to load vendors.',
+        }))
+      } finally {
+        setVendorPriceLoadingByProductKey((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      fetchVendorPrices,
+      vendorPriceLoadingByProductKey,
+      vendorPricesByProductKey,
+    ],
+  )
+
+  const loadOtherSiteVendorPrices = useCallback(
+    async (productCode?: string, site?: string) => {
+      const trimmedProductCode = productCode?.trim()
+      const vendorSite = site?.trim()
+      if (!trimmedProductCode || !vendorSite || !accessToken) return
+
+      const productKey = getRecipeCalculatorVendorProductKey(
+        trimmedProductCode,
+        vendorSite,
+      )
+      if (
+        otherSiteVendorPriceLoadedByProductKey[productKey] ||
+        otherSiteVendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const items = await fetchVendorPrices(trimmedProductCode)
+        const options = dedupeVendorPricesByVendor(
+          items
+            .map(mapRawMaterialVendorPriceOption)
+            .filter(
+              (option): option is RawMaterialVendorPriceOption =>
+                Boolean(option),
+            ),
+        )
+        setOtherSiteVendorPricesByProductKey((prev) => ({
+          ...prev,
+          [productKey]: options,
+        }))
+        setOtherSiteVendorPriceLoadedByProductKey((prev) => ({
+          ...prev,
+          [productKey]: true,
+        }))
+      } catch (loadError) {
+        setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+          ...prev,
+          [productKey]:
+            loadError instanceof Error
+              ? loadError.message
+              : 'Failed to load other site vendors.',
+        }))
+      } finally {
+        setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      fetchVendorPrices,
+      otherSiteVendorPriceLoadedByProductKey,
+      otherSiteVendorPriceLoadingByProductKey,
+    ],
+  )
+
   useEffect(() => {
     fetchCalculatorRecipes().catch(() => null)
   }, [fetchCalculatorRecipes])
+
+  useEffect(() => {
+    expandedRows.forEach((rowId) => {
+      const row = calculatorRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById.get(row.recipeId) : undefined
+      const site = recipe ? getRecipeSiteText(recipe) : ''
+      ;(recipe?.ingredients ?? []).forEach((ingredient) => {
+        loadRecipeSiteVendorPrices(ingredient.productCode, site).catch(
+          () => null,
+        )
+      })
+    })
+  }, [calculatorRows, expandedRows, loadRecipeSiteVendorPrices, recipeById])
+
+  useEffect(() => {
+    expandedRows.forEach((rowId) => {
+      const row = calculatorRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById.get(row.recipeId) : undefined
+      const site = recipe ? getRecipeSiteText(recipe) : ''
+      ;(recipe?.ingredients ?? []).forEach((ingredient, idx) => {
+        const vendorSelectionKey = getIngredientVendorSelectionKey(
+          rowId,
+          idx,
+          ingredient.productCode,
+        )
+        if (!useOtherSiteVendorByIngredientKey[vendorSelectionKey]) return
+        loadOtherSiteVendorPrices(ingredient.productCode, site).catch(() => null)
+      })
+    })
+  }, [
+    calculatorRows,
+    expandedRows,
+    getIngredientVendorSelectionKey,
+    loadOtherSiteVendorPrices,
+    recipeById,
+    useOtherSiteVendorByIngredientKey,
+  ])
 
   const totalPages = Math.max(
     1,
@@ -557,6 +832,70 @@ const RecipeCalculator = () => {
     )
   }
 
+  const getSelectedIngredientVendorPrice = (
+    rowId: string,
+    ingredientIndex: number,
+    ingredient: RecipeIngredient,
+    recipe: Recipe,
+  ) => {
+    const site = getRecipeSiteText(recipe)
+    const productKey = getRecipeCalculatorVendorProductKey(
+      ingredient.productCode,
+      site,
+    )
+    const vendorSelectionKey = getIngredientVendorSelectionKey(
+      rowId,
+      ingredientIndex,
+      ingredient.productCode,
+    )
+    const useOtherSiteVendor =
+      useOtherSiteVendorByIngredientKey[vendorSelectionKey] ?? false
+    const siteVendorOptions = vendorPricesByProductKey[productKey] ?? []
+    const otherSiteVendorOptions =
+      otherSiteVendorPricesByProductKey[productKey] ?? []
+    const vendorOptions = useOtherSiteVendor
+      ? otherSiteVendorOptions
+      : siteVendorOptions
+    const selectedVendorKey = useOtherSiteVendor
+      ? getSelectedOtherSiteVendorPriceKey(vendorSelectionKey, vendorOptions)
+      : getSelectedSiteVendorPriceKey(vendorSelectionKey, vendorOptions)
+
+    return vendorOptions.find((option) => option.key === selectedVendorKey)
+  }
+
+  const getCalculatorEstimatedCost = (
+    rowId: string,
+    recipe: Recipe,
+    portion: number | '',
+  ) => {
+    const ingredients = recipe.ingredients ?? []
+    if (!ingredients.length) return undefined
+
+    const basePax = getRecipeBasePax(recipe)
+    const targetPortion = getRecipeTargetPortion(recipe, portion)
+    let total = 0
+    let hasCost = false
+
+    ingredients.forEach((ingredient, ingredientIndex) => {
+      const ingredientQty = Number(ingredient.qty)
+      if (!Number.isFinite(ingredientQty)) return
+
+      const vendorPrice = getSelectedIngredientVendorPrice(
+        rowId,
+        ingredientIndex,
+        ingredient,
+        recipe,
+      )
+      const unitPrice = getIngredientUnitPrice(ingredient, vendorPrice)
+      if (unitPrice === undefined) return
+
+      total += ((ingredientQty * targetPortion) / basePax) * unitPrice
+      hasCost = true
+    })
+
+    return hasCost ? total : undefined
+  }
+
   return (
     <section className="rounded-md border border-border bg-surface shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -617,6 +956,7 @@ const RecipeCalculator = () => {
               <th className="px-4 py-3 font-semibold">Base pax</th>
               <th className="px-4 py-3 font-semibold">Portion</th>
               <th className="px-4 py-3 font-semibold">Estimated Cost</th>
+              <th className="px-4 py-3 font-semibold">Cost/Pax</th>
               <th className="px-4 py-3 font-semibold">Recipe details</th>
             </tr>
           </thead>
@@ -632,7 +972,11 @@ const RecipeCalculator = () => {
                 : 1
               const ingredients = selectedRecipe?.ingredients ?? []
               const estimatedTotalCost = selectedRecipe
-                ? getRecipeEstimatedCost(selectedRecipe, row.portion)
+                ? getCalculatorEstimatedCost(
+                    row.id,
+                    selectedRecipe,
+                    row.portion,
+                  )
                 : undefined
               const estimatedCostPerPax =
                 estimatedTotalCost !== undefined && targetPortion > 0
@@ -714,6 +1058,9 @@ const RecipeCalculator = () => {
                     <td className="px-4 py-3 font-medium">
                       {formatPrice(estimatedTotalCost)}
                     </td>
+                    <td className="px-4 py-3 font-medium">
+                      {formatPrice(estimatedCostPerPax)}
+                    </td>
                     <td className="px-4 py-3">
                       <button
                         type="button"
@@ -729,7 +1076,7 @@ const RecipeCalculator = () => {
 
                   {isDetailsOpen ? (
                     <tr className="border-t border-border bg-background">
-                      <td colSpan={10} className="px-4 py-4">
+                      <td colSpan={11} className="px-4 py-4">
                         {!selectedRecipe ? (
                           <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
                             Select a recipe to view calculation details.
@@ -769,6 +1116,9 @@ const RecipeCalculator = () => {
                                         Unit
                                       </th>
                                       <th className="px-4 py-3 font-semibold">
+                                        Vendor
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
                                         Price
                                       </th>
                                       <th className="px-4 py-3 font-semibold">
@@ -785,8 +1135,68 @@ const RecipeCalculator = () => {
                                         ? (ingredientQty * targetPortion) /
                                           basePax
                                         : 0
+                                      const site = getRecipeSiteText(selectedRecipe)
+                                      const productKey =
+                                        getRecipeCalculatorVendorProductKey(
+                                          ingredient.productCode,
+                                          site,
+                                        )
+                                      const siteVendorOptions =
+                                        vendorPricesByProductKey[productKey] ??
+                                        []
+                                      const vendorLoading =
+                                        vendorPriceLoadingByProductKey[
+                                          productKey
+                                        ] ?? false
+                                      const vendorError =
+                                        vendorPriceErrorByProductKey[
+                                          productKey
+                                        ] ?? ''
+                                      const vendorSelectionKey =
+                                        getIngredientVendorSelectionKey(
+                                          row.id,
+                                          idx,
+                                          ingredient.productCode,
+                                        )
+                                      const useOtherSiteVendor =
+                                        useOtherSiteVendorByIngredientKey[
+                                          vendorSelectionKey
+                                        ] ?? false
+                                      const otherSiteVendorOptions =
+                                        otherSiteVendorPricesByProductKey[
+                                          productKey
+                                        ] ?? []
+                                      const otherSiteVendorLoading =
+                                        otherSiteVendorPriceLoadingByProductKey[
+                                          productKey
+                                        ] ?? false
+                                      const otherSiteVendorError =
+                                        otherSiteVendorPriceErrorByProductKey[
+                                          productKey
+                                        ] ?? ''
+                                      const vendorOptions = useOtherSiteVendor
+                                        ? otherSiteVendorOptions
+                                        : siteVendorOptions
+                                      const selectedVendorKey =
+                                        useOtherSiteVendor
+                                          ? getSelectedOtherSiteVendorPriceKey(
+                                              vendorSelectionKey,
+                                              vendorOptions,
+                                            )
+                                          : getSelectedSiteVendorPriceKey(
+                                              vendorSelectionKey,
+                                              vendorOptions,
+                                            )
+                                      const selectedVendorPrice =
+                                        vendorOptions.find(
+                                          (option) =>
+                                            option.key === selectedVendorKey,
+                                        )
                                       const unitPrice =
-                                        getIngredientUnitPrice(ingredient)
+                                        getIngredientUnitPrice(
+                                          ingredient,
+                                          selectedVendorPrice,
+                                        )
                                       const totalCost =
                                         unitPrice === undefined
                                           ? undefined
@@ -816,6 +1226,99 @@ const RecipeCalculator = () => {
                                                 )
                                               : '-'}
                                           </td>
+                                          <td className="min-w-56 px-4 py-3">
+                                            <select
+                                              value={selectedVendorKey}
+                                              onChange={(event) => {
+                                                const nextValue =
+                                                  event.target.value
+                                                if (
+                                                  nextValue ===
+                                                  USE_OTHER_SITE_VENDOR_OPTION
+                                                ) {
+                                                  setUseOtherSiteVendorByIngredientKey(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [vendorSelectionKey]:
+                                                        true,
+                                                    }),
+                                                  )
+                                                  setSelectedVendorPriceByIngredientKey(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [vendorSelectionKey]: '',
+                                                    }),
+                                                  )
+                                                  loadOtherSiteVendorPrices(
+                                                    ingredient.productCode,
+                                                    site,
+                                                  ).catch(() => null)
+                                                  return
+                                                }
+                                                setSelectedVendorPriceByIngredientKey(
+                                                  (prev) => ({
+                                                    ...prev,
+                                                    [vendorSelectionKey]:
+                                                      nextValue,
+                                                  }),
+                                                )
+                                              }}
+                                              disabled={
+                                                vendorLoading ||
+                                                otherSiteVendorLoading
+                                              }
+                                              className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {vendorLoading ? (
+                                                <option value="">
+                                                  Loading vendors...
+                                                </option>
+                                              ) : siteVendorOptions.length ===
+                                                  0 && !useOtherSiteVendor ? (
+                                                <>
+                                                  <option value="">
+                                                    {vendorError ||
+                                                      'No vendor for this site'}
+                                                  </option>
+                                                  <option
+                                                    value={
+                                                      USE_OTHER_SITE_VENDOR_OPTION
+                                                    }
+                                                  >
+                                                    Use vendor from other site
+                                                  </option>
+                                                </>
+                                              ) : otherSiteVendorLoading ? (
+                                                <option value="">
+                                                  Loading vendors...
+                                                </option>
+                                              ) : useOtherSiteVendor &&
+                                                vendorOptions.length === 0 ? (
+                                                <option value="">
+                                                  {otherSiteVendorError ||
+                                                    'No vendor from other site'}
+                                                </option>
+                                              ) : useOtherSiteVendor ? (
+                                                <option value="">
+                                                  Select vendor
+                                                </option>
+                                              ) : vendorOptions.length === 0 ? (
+                                                <option value="">
+                                                  {vendorError || 'No vendor'}
+                                                </option>
+                                              ) : null}
+                                              {vendorOptions.map((option) => (
+                                                <option
+                                                  key={option.key}
+                                                  value={option.key}
+                                                >
+                                                  {formatVendorOptionLabel(
+                                                    option,
+                                                  )}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </td>
                                           <td className="px-4 py-3 font-medium">
                                             {formatPrice(unitPrice)}
                                           </td>
@@ -829,7 +1332,7 @@ const RecipeCalculator = () => {
                                   <tfoot className="bg-background">
                                     <tr className="border-t border-border">
                                       <td
-                                        colSpan={6}
+                                        colSpan={7}
                                         className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
                                       >
                                         Estimated Total Cost
@@ -840,7 +1343,7 @@ const RecipeCalculator = () => {
                                     </tr>
                                     <tr className="border-t border-border">
                                       <td
-                                        colSpan={6}
+                                        colSpan={7}
                                         className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
                                       >
                                         Estimated Cost/Pax
