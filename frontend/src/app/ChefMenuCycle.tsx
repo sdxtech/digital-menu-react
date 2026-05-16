@@ -7,6 +7,7 @@ import { formatQuantity } from '../lib/quantity'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
+const USE_OTHER_SITE_VENDOR_OPTION = '__use_other_site_vendor__'
 
 type ProductionSiteOption = {
   code: string
@@ -132,6 +133,18 @@ const ChefMenuCycle = ({
     useState<Record<string, string>>({})
   const [selectedVendorPriceByIngredientKey, setSelectedVendorPriceByIngredientKey] =
     useState<Record<string, string>>({})
+  const [otherSiteVendorPricesByProductKey, setOtherSiteVendorPricesByProductKey] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [otherSiteVendorPriceLoadedByProductKey, setOtherSiteVendorPriceLoadedByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [
+    otherSiteVendorPriceLoadingByProductKey,
+    setOtherSiteVendorPriceLoadingByProductKey,
+  ] = useState<Record<string, boolean>>({})
+  const [otherSiteVendorPriceErrorByProductKey, setOtherSiteVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [useOtherSiteVendorByIngredientKey, setUseOtherSiteVendorByIngredientKey] =
+    useState<Record<string, boolean>>({})
   const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
   const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
@@ -205,15 +218,92 @@ const ChefMenuCycle = ({
   )
 
   const formatVendorPriceLabel = (option: RawMaterialVendorPriceOption) => {
-    const parts = [option.vendor]
-    if (option.site && normalizeText(option.site) !== normalizeText(productionSite)) {
-      parts.push(option.site)
-    }
-    if (option.price !== undefined) {
-      parts.push(formatPrice(option.price))
-    }
-    return parts.join(' - ')
+    return option.vendor
   }
+
+  const sortVendorPriceOptions = useCallback(
+    (options: RawMaterialVendorPriceOption[]) =>
+      options.sort((a, b) =>
+        [a.vendor, a.site, String(a.minimumQuantity ?? '')]
+          .join(' ')
+          .localeCompare(
+            [b.vendor, b.site, String(b.minimumQuantity ?? '')].join(' '),
+            undefined,
+            { sensitivity: 'base' },
+          ),
+      ),
+    [],
+  )
+
+  const pickDefaultVendorPriceOption = (
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    if (options.length === 0) return undefined
+
+    return options.reduce((selected, option) => {
+      const selectedPrice = Number(selected.price)
+      const optionPrice = Number(option.price)
+      const selectedHasPrice = Number.isFinite(selectedPrice)
+      const optionHasPrice = Number.isFinite(optionPrice)
+
+      if (optionHasPrice && !selectedHasPrice) return option
+      if (optionHasPrice && selectedHasPrice && optionPrice > selectedPrice) {
+        return option
+      }
+      return selected
+    }, options[0])
+  }
+
+  const getSelectedVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return pickDefaultVendorPriceOption(options)?.key ?? ''
+  }
+
+  const getSelectedOtherSiteVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return ''
+  }
+
+  const dedupeVendorPricesByVendor = useCallback(
+    (options: RawMaterialVendorPriceOption[]) => {
+      const byVendor = new Map<string, RawMaterialVendorPriceOption>()
+      options.forEach((option) => {
+        const vendorKey = normalizeText(option.vendor)
+        if (!vendorKey) return
+
+        const existing = byVendor.get(vendorKey)
+        if (!existing) {
+          byVendor.set(vendorKey, option)
+          return
+        }
+
+        const existingPrice = Number(existing.price)
+        const optionPrice = Number(option.price)
+        const existingHasPrice = Number.isFinite(existingPrice)
+        const optionHasPrice = Number.isFinite(optionPrice)
+        if (
+          optionHasPrice &&
+          (!existingHasPrice || optionPrice > existingPrice)
+        ) {
+          byVendor.set(vendorKey, option)
+        }
+      })
+      return sortVendorPriceOptions(Array.from(byVendor.values()))
+    },
+    [normalizeText, sortVendorPriceOptions],
+  )
 
   const getIngredientUnitPrice = (
     ingredient: Recipe['ingredients'][number],
@@ -247,6 +337,13 @@ const ChefMenuCycle = ({
         ),
     [productionSiteOptions],
   )
+  const selectedProductionSiteName = useMemo(
+    () =>
+      sortedProductionSiteOptions
+        .find((site) => site.code === productionSite)
+        ?.name.trim() ?? '',
+    [productionSite, sortedProductionSiteOptions],
+  )
 
   const siteDataReady =
     !requireProductionSite ||
@@ -264,6 +361,75 @@ const ChefMenuCycle = ({
     siteDataReady,
     siteMenuProductions,
   ])
+
+  const loadOtherSiteVendorPrices = useCallback(
+    async (productCode?: string) => {
+      const trimmedProductCode = productCode?.trim()
+      if (!trimmedProductCode || !accessToken) return
+
+      const productKey = getVendorPricesProductKey(trimmedProductCode)
+      if (
+        otherSiteVendorPriceLoadedByProductKey[productKey] ||
+        otherSiteVendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const items = await apiFetch<RawMaterialVendorPriceApi[]>(
+          `/raw-materials/${encodeURIComponent(trimmedProductCode)}/vendor-prices`,
+          undefined,
+          accessToken,
+        )
+        const options = dedupeVendorPricesByVendor(
+          items
+            .map(mapVendorPriceOption)
+            .filter(
+              (option): option is RawMaterialVendorPriceOption =>
+                Boolean(option),
+            ),
+        )
+        setOtherSiteVendorPricesByProductKey((prev) => ({
+          ...prev,
+          [productKey]: options,
+        }))
+        setOtherSiteVendorPriceLoadedByProductKey((prev) => ({
+          ...prev,
+          [productKey]: true,
+        }))
+      } catch (error) {
+        setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+          ...prev,
+          [productKey]:
+            error instanceof Error
+              ? error.message
+              : 'Failed to load other site vendors.',
+        }))
+      } finally {
+        setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      dedupeVendorPricesByVendor,
+      getVendorPricesProductKey,
+      mapVendorPriceOption,
+      otherSiteVendorPriceLoadedByProductKey,
+      otherSiteVendorPriceLoadingByProductKey,
+    ],
+  )
   const chefOptions = useMemo(
     () =>
       siteUsers
@@ -437,26 +603,16 @@ const ChefMenuCycle = ({
 
       ;(async () => {
         try {
-          const siteScopedItems = productionSite
-            ? await fetchVendorPrices(productionSite)
-            : []
-          const items = siteScopedItems.length
-            ? siteScopedItems
+          const vendorPriceSite = selectedProductionSiteName || productionSite
+          const items = vendorPriceSite
+            ? await fetchVendorPrices(vendorPriceSite)
             : await fetchVendorPrices()
           const byKey = new Map<string, RawMaterialVendorPriceOption>()
           items.forEach((item) => {
             const option = mapVendorPriceOption(item)
             if (option) byKey.set(option.key, option)
           })
-          const options = Array.from(byKey.values()).sort((a, b) =>
-            [a.vendor, a.site, String(a.minimumQuantity ?? '')]
-              .join(' ')
-              .localeCompare(
-                [b.vendor, b.site, String(b.minimumQuantity ?? '')].join(' '),
-                undefined,
-                { sensitivity: 'base' },
-              ),
-          )
+          const options = sortVendorPriceOptions(Array.from(byKey.values()))
           setVendorPricesByProductKey((prev) => ({
             ...prev,
             [productKey]: options,
@@ -485,9 +641,38 @@ const ChefMenuCycle = ({
     menuRows,
     productionSite,
     recipeById,
+    selectedProductionSiteName,
     showIngredientVendorColumn,
+    sortVendorPriceOptions,
     vendorPriceLoadingByProductKey,
     vendorPricesByProductKey,
+  ])
+
+  useEffect(() => {
+    if (!showIngredientVendorColumn || !accessToken) return
+
+    expandedMenuRows.forEach((rowId) => {
+      const row = menuRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById[row.recipeId] : undefined
+      ;(recipe?.ingredients ?? []).forEach((ingredient, idx) => {
+        const vendorSelectionKey = getIngredientVendorSelectionKey(
+          rowId,
+          idx,
+          ingredient.productCode,
+        )
+        if (!useOtherSiteVendorByIngredientKey[vendorSelectionKey]) return
+        loadOtherSiteVendorPrices(ingredient.productCode).catch(() => null)
+      })
+    })
+  }, [
+    accessToken,
+    expandedMenuRows,
+    getIngredientVendorSelectionKey,
+    loadOtherSiteVendorPrices,
+    menuRows,
+    recipeById,
+    showIngredientVendorColumn,
+    useOtherSiteVendorByIngredientKey,
   ])
 
   const toggleMenuRowDetails = (id: string) => {
@@ -978,18 +1163,30 @@ const ChefMenuCycle = ({
                     const productKey = getVendorPricesProductKey(
                       ingredient.productCode,
                     )
-                    const vendorOptions =
-                      vendorPricesByProductKey[productKey] ?? []
                     const vendorSelectionKey = getIngredientVendorSelectionKey(
                       row.id,
                       ingredientIndex,
                       ingredient.productCode,
                     )
-                    const selectedVendorKey =
-                      selectedVendorPriceByIngredientKey[vendorSelectionKey] ??
-                      (vendorOptions.length === 1
-                        ? vendorOptions[0]?.key
-                        : '')
+                    const useOtherSiteVendor =
+                      useOtherSiteVendorByIngredientKey[vendorSelectionKey] ??
+                      false
+                    const siteVendorOptions =
+                      vendorPricesByProductKey[productKey] ?? []
+                    const otherSiteVendorOptions =
+                      otherSiteVendorPricesByProductKey[productKey] ?? []
+                    const vendorOptions = useOtherSiteVendor
+                      ? otherSiteVendorOptions
+                      : siteVendorOptions
+                    const selectedVendorKey = useOtherSiteVendor
+                      ? getSelectedOtherSiteVendorPriceKey(
+                          vendorSelectionKey,
+                          vendorOptions,
+                        )
+                      : getSelectedVendorPriceKey(
+                          vendorSelectionKey,
+                          vendorOptions,
+                        )
                     const selectedVendorPrice = vendorOptions.find(
                       (option) => option.key === selectedVendorKey,
                     )
@@ -1171,7 +1368,7 @@ const ChefMenuCycle = ({
                                             getVendorPricesProductKey(
                                               ingredient.productCode,
                                             )
-                                          const vendorOptions =
+                                          const siteVendorOptions =
                                             vendorPricesByProductKey[
                                               productKey
                                             ] ?? []
@@ -1189,13 +1386,36 @@ const ChefMenuCycle = ({
                                               idx,
                                               ingredient.productCode,
                                             )
-                                          const selectedVendorKey =
-                                            selectedVendorPriceByIngredientKey[
+                                          const useOtherSiteVendor =
+                                            useOtherSiteVendorByIngredientKey[
                                               vendorSelectionKey
-                                            ] ??
-                                            (vendorOptions.length === 1
-                                              ? vendorOptions[0]?.key
-                                              : '')
+                                            ] ?? false
+                                          const otherSiteVendorOptions =
+                                            otherSiteVendorPricesByProductKey[
+                                              productKey
+                                            ] ?? []
+                                          const otherSiteVendorLoading =
+                                            otherSiteVendorPriceLoadingByProductKey[
+                                              productKey
+                                            ] ?? false
+                                          const otherSiteVendorError =
+                                            otherSiteVendorPriceErrorByProductKey[
+                                              productKey
+                                            ] ?? ''
+                                          const vendorOptions =
+                                            useOtherSiteVendor
+                                              ? otherSiteVendorOptions
+                                              : siteVendorOptions
+                                          const selectedVendorKey =
+                                            useOtherSiteVendor
+                                              ? getSelectedOtherSiteVendorPriceKey(
+                                                  vendorSelectionKey,
+                                                  vendorOptions,
+                                                )
+                                              : getSelectedVendorPriceKey(
+                                                  vendorSelectionKey,
+                                                  vendorOptions,
+                                                )
                                           const selectedVendorPrice =
                                             vendorOptions.find(
                                               (option) =>
@@ -1242,35 +1462,86 @@ const ChefMenuCycle = ({
                                                 <td className="min-w-56 px-4 py-3">
                                                   <select
                                                     value={selectedVendorKey}
-                                                    onChange={(event) =>
+                                                    onChange={(event) => {
+                                                      const nextValue =
+                                                        event.target.value
+                                                      if (
+                                                        nextValue ===
+                                                        USE_OTHER_SITE_VENDOR_OPTION
+                                                      ) {
+                                                        setUseOtherSiteVendorByIngredientKey(
+                                                          (prev) => ({
+                                                            ...prev,
+                                                            [vendorSelectionKey]:
+                                                              true,
+                                                          }),
+                                                        )
+                                                        setSelectedVendorPriceByIngredientKey(
+                                                          (prev) => ({
+                                                            ...prev,
+                                                            [vendorSelectionKey]:
+                                                              '',
+                                                          }),
+                                                        )
+                                                        loadOtherSiteVendorPrices(
+                                                          ingredient.productCode,
+                                                        ).catch(() => null)
+                                                        return
+                                                      }
                                                       setSelectedVendorPriceByIngredientKey(
                                                         (prev) => ({
                                                           ...prev,
                                                           [vendorSelectionKey]:
-                                                            event.target.value,
+                                                            nextValue,
                                                         }),
                                                       )
-                                                    }
+                                                    }}
                                                     disabled={
                                                       vendorLoading ||
-                                                      vendorOptions.length === 0
+                                                      otherSiteVendorLoading
                                                     }
-                                                    className="w-full rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                                    className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
                                                   >
                                                     {vendorLoading ? (
                                                       <option value="">
                                                         Loading vendors...
+                                                      </option>
+                                                    ) : siteVendorOptions.length ===
+                                                        0 &&
+                                                      !useOtherSiteVendor ? (
+                                                      <>
+                                                        <option value="">
+                                                          {vendorError ||
+                                                            'No vendor for this site'}
+                                                        </option>
+                                                        <option
+                                                          value={
+                                                            USE_OTHER_SITE_VENDOR_OPTION
+                                                          }
+                                                        >
+                                                          Use vendor from other site
+                                                        </option>
+                                                      </>
+                                                    ) : otherSiteVendorLoading ? (
+                                                      <option value="">
+                                                        Loading vendors...
+                                                      </option>
+                                                    ) : useOtherSiteVendor &&
+                                                      vendorOptions.length ===
+                                                        0 ? (
+                                                      <option value="">
+                                                        {otherSiteVendorError ||
+                                                          'No vendor from other site'}
+                                                      </option>
+                                                    ) : useOtherSiteVendor ? (
+                                                      <option value="">
+                                                        Select vendor
                                                       </option>
                                                     ) : vendorOptions.length ===
                                                       0 ? (
                                                       <option value="">
                                                         {vendorError ||
                                                           'No vendor'}
-                                                      </option>
-                                                    ) : vendorOptions.length >
-                                                      1 ? (
-                                                      <option value="">
-                                                        Select vendor
                                                       </option>
                                                     ) : null}
                                                     {vendorOptions.map(
