@@ -958,8 +958,6 @@ const SuperadminMenuManagementPage = () => {
     useState<Record<string, string>>({})
   const [selectedRawMaterialVendorByCode, setSelectedRawMaterialVendorByCode] =
     useState<Record<string, string>>({})
-  const [openRawMaterialVendorDropdownKey, setOpenRawMaterialVendorDropdownKey] =
-    useState<string | null>(null)
 
   const selectedRecipe = useMemo(
     () =>
@@ -1188,7 +1186,6 @@ const SuperadminMenuManagementPage = () => {
         setRawMaterialVendorLoadingByCode({})
         setRawMaterialVendorErrorByCode({})
         setSelectedRawMaterialVendorByCode({})
-        setOpenRawMaterialVendorDropdownKey(null)
         setRawMaterialMeta({
           page: data.page ?? page,
           limit: nextLimit,
@@ -1208,7 +1205,6 @@ const SuperadminMenuManagementPage = () => {
         setRawMaterialVendorLoadingByCode({})
         setRawMaterialVendorErrorByCode({})
         setSelectedRawMaterialVendorByCode({})
-        setOpenRawMaterialVendorDropdownKey(null)
         setRawMaterialMeta((prev) => ({
           ...prev,
           loading: false,
@@ -3155,62 +3151,25 @@ const SuperadminMenuManagementPage = () => {
                         <td className="px-5 py-4">{rawMaterial.name}</td>
                         <td className="px-5 py-4 align-top">
                           {vendorOptions.length > 0 ? (
-                            <div className="w-56">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenRawMaterialVendorDropdownKey((prev) =>
-                                    prev === productKey ? null : productKey,
-                                  )
-                                }
-                                aria-expanded={
-                                  openRawMaterialVendorDropdownKey ===
-                                  productKey
-                                }
-                                className="flex min-h-11 w-56 items-start justify-between gap-2 rounded-xl border border-border bg-white px-3 py-2 text-left text-sm leading-snug outline-none transition focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                              >
-                                <span className="whitespace-normal break-words">
-                                  {selectedVendorOption
-                                    ? formatVendorOptionLabel(
-                                        selectedVendorOption,
-                                      )
-                                    : rawMaterial.vendor || 'Select vendor'}
-                                </span>
-                                <i
-                                  className="bi bi-chevron-down mt-0.5 shrink-0 text-xs text-muted"
-                                  aria-hidden="true"
-                                />
-                              </button>
-                              {openRawMaterialVendorDropdownKey ===
-                              productKey ? (
-                                <div className="mt-1 max-h-60 w-56 overflow-y-auto rounded-xl border border-border bg-white py-1 shadow-lg">
-                                  {vendorOptions.map((option) => (
-                                    <button
-                                      key={option.key}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedRawMaterialVendorByCode(
-                                          (prev) => ({
-                                            ...prev,
-                                            [productKey]: option.key,
-                                          }),
-                                        )
-                                        setOpenRawMaterialVendorDropdownKey(null)
-                                      }}
-                                      className={`block w-full px-3 py-2 text-left text-sm leading-snug transition hover:bg-primary-soft hover:text-primary ${
-                                        option.key === selectedVendorKey
-                                          ? 'bg-primary-soft text-primary'
-                                          : 'text-foreground'
-                                      }`}
-                                    >
-                                      <span className="block whitespace-normal break-words">
-                                        {formatVendorOptionLabel(option)}
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
+                            <select
+                              value={selectedVendorKey}
+                              onChange={(event) =>
+                                setSelectedRawMaterialVendorByCode((prev) => ({
+                                  ...prev,
+                                  [productKey]: event.target.value,
+                                }))
+                              }
+                              className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            >
+                              {vendorOptions.length > 1 ? (
+                                <option value="">Select vendor</option>
                               ) : null}
-                            </div>
+                              {vendorOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {formatVendorOptionLabel(option)}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
                             <span
                               title={vendorError || undefined}
