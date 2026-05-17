@@ -19,6 +19,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Calculator Recipe',
+    to: '/chef/recipe-calculator',
+    icon: (className: string) => (
+      <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Recipe Data',
     to: '/chef/menu-bank',
     icon: (className: string) => (

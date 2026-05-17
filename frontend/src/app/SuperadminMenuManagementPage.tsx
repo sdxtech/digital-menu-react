@@ -431,7 +431,7 @@ const dedupeVendorPricesByVendor = (
   return sortVendorPriceOptions(Array.from(byVendor.values()))
 }
 
-const RecipeCalculator = () => {
+export const RecipeCalculator = () => {
   const { accessToken } = useAuth()
   const [calculatorRecipes, setCalculatorRecipes] = useState<Recipe[]>([])
   const [calculatorRows, setCalculatorRows] = useState<RecipeCalculatorRow[]>([
