@@ -19,7 +19,9 @@ import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminApprovalCentersPage from './app/SuperadminApprovalCentersPage'
 import SuperadminDashboardPage from './app/SuperadminDashboardPage'
-import SuperadminMenuManagementPage from './app/SuperadminMenuManagementPage'
+import SuperadminMenuManagementPage, {
+  RecipeCalculator,
+} from './app/SuperadminMenuManagementPage'
 import SuperadminSitesPage from './app/SuperadminSitesPage'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
@@ -73,8 +75,15 @@ function App() {
             <Route path="dashboard" element={<ChefDashboard />} />
             <Route
               path="menu-cycle"
-              element={<ChefMenuCycle showIngredientCostColumns />}
+              element={
+                <ChefMenuCycle
+                  showEstimatedCostColumns
+                  showIngredientCostColumns
+                  showIngredientVendorColumn
+                />
+              }
             />
+            <Route path="recipe-calculator" element={<RecipeCalculator />} />
             <Route path="menu-bank" element={<ChefMenuBank />} />
             <Route path="menu-create" element={<ChefCreateMenu />} />
             <Route

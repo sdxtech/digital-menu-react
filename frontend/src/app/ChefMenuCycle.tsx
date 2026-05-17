@@ -103,7 +103,7 @@ const ChefMenuCycle = ({
   showIngredientVendorColumn = false,
   allowIngredientCostSync = false,
 }: ChefMenuCycleProps = {}) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const {
     recipes,
     menuProductions,
@@ -156,10 +156,16 @@ const ChefMenuCycle = ({
     (value?: string) => value?.trim().toLowerCase() ?? '',
     [],
   )/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
+  const chefProductionSite = useMemo(() => {
+    if (requireProductionSite) return ''
+    return user?.siteName?.trim() || user?.site?.trim() || ''
+  }, [requireProductionSite, user?.site, user?.siteName])
   const getVendorPricesProductKey = useCallback(
     (productCode?: string) =>
-      `${productionSite || 'all'}::${normalizeText(productCode)}`,
-    [normalizeText, productionSite],
+      `${productionSite || chefProductionSite || 'all'}::${normalizeText(
+        productCode,
+      )}`,
+    [chefProductionSite, normalizeText, productionSite],
   )
   const getIngredientVendorSelectionKey = useCallback(
     (rowId: string, index: number, productCode?: string) =>
@@ -344,6 +350,8 @@ const ChefMenuCycle = ({
         ?.name.trim() ?? '',
     [productionSite, sortedProductionSiteOptions],
   )
+  const getRecipeSiteText = (recipe: Recipe) =>
+    recipe.siteName?.trim() || recipe.site?.trim() || 'All sites'
 
   const siteDataReady =
     !requireProductionSite ||
@@ -560,9 +568,8 @@ const ChefMenuCycle = ({
     if (!showIngredientVendorColumn || !accessToken) return
 
     const productCodes = new Set<string>()
-    expandedMenuRows.forEach((rowId) => {
-      const row = menuRows.find((item) => item.id === rowId)
-      const recipe = row ? recipeById[row.recipeId] : undefined
+    menuRows.forEach((row) => {
+      const recipe = recipeById[row.recipeId]
       ;(recipe?.ingredients ?? []).forEach((ingredient) => {
         if (ingredient.productCode?.trim()) {
           productCodes.add(ingredient.productCode.trim())
@@ -603,7 +610,8 @@ const ChefMenuCycle = ({
 
       ;(async () => {
         try {
-          const vendorPriceSite = selectedProductionSiteName || productionSite
+          const vendorPriceSite =
+            selectedProductionSiteName || productionSite || chefProductionSite
           const items = vendorPriceSite
             ? await fetchVendorPrices(vendorPriceSite)
             : await fetchVendorPrices()
@@ -635,7 +643,7 @@ const ChefMenuCycle = ({
     })
   }, [
     accessToken,
-    expandedMenuRows,
+    chefProductionSite,
     getVendorPricesProductKey,
     mapVendorPriceOption,
     menuRows,
@@ -711,12 +719,18 @@ const ChefMenuCycle = ({
     const filtered = !normalized
       ? availableRecipes
       : availableRecipes.filter((recipe) => {
-          const name = normalizeText(recipe.name)
-          const recipeCode = normalizeText(recipe.recipeCode)
-          return name.includes(normalized) || recipeCode.includes(normalized)
+          const searchable = [
+            recipe.recipeCode,
+            recipe.name,
+            recipe.category,
+            getRecipeSiteText(recipe),
+          ]
+            .filter(Boolean)
+            .join(' ')
+          return normalizeText(searchable).includes(normalized)
         })
-    return filtered.slice(0, 5)
-  }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial, baik berdasarkan nama resep maupun kode resep. Query dan data resep dinormalisasi untuk memastikan pencarian tidak sensitif terhadap spasi atau huruf kapital. Hasilnya dibatasi maksimal 5 resep untuk ditampilkan sebagai saran saat pengguna mengetik di kolom menu. */
+    return filtered.slice(0, 20)
+  }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial berdasarkan kode, nama, kategori, dan site. */
 
   const updateRowMenuQuery = (id: string, value: string) => {
     const matchedRecipe = findRecipeByExactQuery(value)
@@ -1173,6 +1187,20 @@ const ChefMenuCycle = ({
                       false
                     const siteVendorOptions =
                       vendorPricesByProductKey[productKey] ?? []
+                    const hasSiteVendorResult =
+                      Object.prototype.hasOwnProperty.call(
+                        vendorPricesByProductKey,
+                        productKey,
+                      )
+                    const vendorLoading =
+                      vendorPriceLoadingByProductKey[productKey] ?? false
+                    const vendorError =
+                      vendorPriceErrorByProductKey[productKey] ?? ''
+                    const vendorDataPending =
+                      showIngredientVendorColumn &&
+                      Boolean(ingredient.productCode?.trim()) &&
+                      (vendorLoading ||
+                        (!hasSiteVendorResult && !vendorError))
                     const otherSiteVendorOptions =
                       otherSiteVendorPricesByProductKey[productKey] ?? []
                     const vendorOptions = useOtherSiteVendor
@@ -1194,14 +1222,20 @@ const ChefMenuCycle = ({
                       ingredient,
                       selectedVendorPrice,
                     )
-                    if (unitPrice === undefined) return summary
+                    if (unitPrice === undefined || vendorDataPending) {
+                      return {
+                        ...summary,
+                        pending: summary.pending || vendorDataPending,
+                      }
+                    }
 
                     return {
                       total: summary.total + scaledQty * unitPrice,
                       hasCost: true,
+                      pending: summary.pending,
                     }
                   },
-                  { total: 0, hasCost: false },
+                  { total: 0, hasCost: false, pending: false },
                 )
                 const estimatedTotalCost = estimatedCostSummary.hasCost
                   ? estimatedCostSummary.total
@@ -1255,7 +1289,7 @@ const ChefMenuCycle = ({
                             <option
                               key={recipe.id}
                               value={recipe.name}
-                              label={recipe.category}
+                              label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
                             />
                           ))}
                         </datalist>
@@ -1279,10 +1313,14 @@ const ChefMenuCycle = ({
                       {showEstimatedCostColumns ? (
                         <>
                           <td className="px-4 py-3 font-medium">
-                            {formatPrice(estimatedTotalCost)}
+                            {estimatedCostSummary.pending
+                              ? 'Loading...'
+                              : formatPrice(estimatedTotalCost)}
                           </td>
                           <td className="px-4 py-3 font-medium">
-                            {formatPrice(estimatedCostPerPax)}
+                            {estimatedCostSummary.pending
+                              ? 'Loading...'
+                              : formatPrice(estimatedCostPerPax)}
                           </td>
                         </>
                       ) : null}
