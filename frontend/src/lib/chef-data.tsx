@@ -51,6 +51,8 @@ export type Recipe = {
   reviewedByEmail?: string
   reviewedAt?: string
   rejectionReason?: string
+  site?: string
+  siteName?: string
 }
 
 export type MenuProduction = {
@@ -259,6 +261,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     reviewedByEmail: item.reviewedByEmail ?? '',
     reviewedAt: item.reviewedAt ?? '',
     rejectionReason: item.rejectionReason ?? '',
+    site: item.site ?? undefined,
+    siteName: item.siteName ?? undefined,
   }
 }
 

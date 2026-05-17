@@ -14,6 +14,7 @@ import {
   RawMaterialVendorPriceDocument,
 } from './schemas/raw-material-vendor-price.schema';
 import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
+import { SitesService } from '../sites/sites.service';
 
 export type RawMaterialUpsertInput = {
   productCode: string;
@@ -65,6 +66,7 @@ export class RawMaterialsService {
     private readonly rawMaterialVendorPriceModel: Model<RawMaterialVendorPriceDocument>,
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
+    private readonly sites: SitesService,
   ) {}
 
   async create(input: RawMaterialUpsertInput) {
@@ -259,11 +261,15 @@ export class RawMaterialsService {
     if (!productCodeNormalized) return [];
 
     const filter: Record<string, unknown> = { productCodeNormalized };
-    const siteNormalized = this.normalizeSiteKey(query.site);
+    const siteNormalizedValues = await this.resolveSiteNormalizedValues(
+      query.site,
+    );
     const vendorNormalized = this.normalizeOptionalText(
       query.vendor,
     )?.toLowerCase();
-    if (siteNormalized) filter.siteNormalized = siteNormalized;
+    if (siteNormalizedValues.length) {
+      filter.siteNormalized = { $in: siteNormalizedValues };
+    }
     if (vendorNormalized) filter.vendorNormalized = vendorNormalized;
 
     return this.rawMaterialVendorPriceModel
@@ -532,6 +538,33 @@ export class RawMaterialsService {
   private normalizeOptionalText(value?: string) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private async resolveSiteNormalizedValues(site?: string) {
+    const values = new Set<string>();
+    const siteNormalized = this.normalizeSiteKey(site);
+    if (siteNormalized) values.add(siteNormalized);
+    const legacySiteNormalized = this.normalizeSiteKeyLegacy(site);
+    if (legacySiteNormalized) values.add(legacySiteNormalized);
+
+    const siteCode = this.normalizeOptionalText(site);
+    if (siteCode) {
+      const siteSummary = Array.from(
+        (await this.sites.findSummariesByCodes([siteCode])).values(),
+      )[0];
+      const siteNameNormalized = this.normalizeSiteKey(siteSummary?.name);
+      if (siteNameNormalized) values.add(siteNameNormalized);
+      const legacySiteNameNormalized = this.normalizeSiteKeyLegacy(
+        siteSummary?.name,
+      );
+      if (legacySiteNameNormalized) values.add(legacySiteNameNormalized);
+    }
+
+    return Array.from(values);
+  }
+
+  private normalizeSiteKeyLegacy(value?: string) {
+    return this.normalizeOptionalText(value)?.toLowerCase();
   }
 
   private normalizeSiteKey(value?: string) {

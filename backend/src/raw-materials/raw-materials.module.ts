@@ -9,6 +9,7 @@ import {
 } from './schemas/raw-material-vendor-price.schema';
 import { AuthModule } from '../auth/auth.module';
 import { Recipe, RecipeSchema } from '../recipes/schemas/recipe.schema';
+import { SitesModule } from '../sites/sites.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { Recipe, RecipeSchema } from '../recipes/schemas/recipe.schema';
       { name: Recipe.name, schema: RecipeSchema },
     ]),
     AuthModule,
+    SitesModule,
   ],
   providers: [RawMaterialsService],
   controllers: [RawMaterialsController],
