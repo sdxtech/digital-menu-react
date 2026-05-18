@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatQuantity as formatRawQuantity } from '../lib/quantity'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -57,6 +58,13 @@ type StoreRequestGroup = {
 
 type ExportMode = 'all' | 'range'
 
+type SiteApi = {
+  id?: string
+  _id?: string
+  name?: string
+  code?: string
+}
+
 const toInputDate = (date: Date) => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -99,6 +107,25 @@ const buildSiteFilenameSegment = (sites: string[]) => {
     return sanitizeFilenameSegment(sites[0]) || 'selected-site'
   }
   return `${sites.length}-sites`
+}
+
+const getSequentialSiteCodeNumber = (code: string) => {
+  const match = /^S(\d+)$/i.exec(code.trim())
+  return match ? Number(match[1]) : undefined
+}
+
+const compareSiteCodes = (a: string, b: string) => {
+  const aNumber = getSequentialSiteCodeNumber(a)
+  const bNumber = getSequentialSiteCodeNumber(b)
+
+  if (aNumber !== undefined && bNumber !== undefined) {
+    return aNumber - bNumber
+  }
+
+  return a.localeCompare(b, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  })
 }
 
 const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
@@ -174,9 +201,7 @@ const buildIngredientKey = (
   `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
 
 const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return ''
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  return formatRawQuantity(value, '')
 }
 
 const SuperadminStoreRequestExportPage = () => {
@@ -191,6 +216,7 @@ const SuperadminStoreRequestExportPage = () => {
   })
   const [endDate, setEndDate] = useState(() => toInputDate(new Date()))
   const [siteOptions, setSiteOptions] = useState<string[]>([])
+  const [siteNameByCode, setSiteNameByCode] = useState<Record<string, string>>({})
   const [selectedSites, setSelectedSites] = useState<string[]>([])
   const [siteError, setSiteError] = useState('')
   const [sitesLoading, setSitesLoading] = useState(false)
@@ -203,6 +229,7 @@ const SuperadminStoreRequestExportPage = () => {
     const loadSiteOptions = async () => {
       if (!accessToken) {
         setSiteOptions([])
+        setSiteNameByCode({})
         setSelectedSites([])
         setSiteError('')
         setSitesLoading(false)
@@ -212,24 +239,43 @@ const SuperadminStoreRequestExportPage = () => {
       setSitesLoading(true)
       setSiteError('')
       try {
-        const data = await apiFetch<{ items?: string[] }>(
-          '/superadmin/store-requests/sites',
-          undefined,
-          accessToken,
-        )
+        const [storeRequestSitesData, sitesData] = await Promise.all([
+          apiFetch<{ items?: string[] }>(
+            '/superadmin/store-requests/sites',
+            undefined,
+            accessToken,
+          ),
+          apiFetch<{ items?: SiteApi[] }>(
+            '/superadmin/sites?limit=200',
+            undefined,
+            accessToken,
+          ),
+        ])
         if (cancelled) return
 
-        const normalized = (data.items ?? [])
+        const normalized = (storeRequestSitesData.items ?? [])
           .map((site) => site.trim())
           .filter(Boolean)
+          .sort(compareSiteCodes)
+        const nameByCode = (sitesData.items ?? []).reduce<Record<string, string>>(
+          (acc, site) => {
+            const code = site.code?.trim()
+            const name = site.name?.trim()
+            if (code && name) acc[code] = name
+            return acc
+          },
+          {},
+        )
 
         setSiteOptions(normalized)
+        setSiteNameByCode(nameByCode)
         setSelectedSites((current) =>
           current.filter((site) => normalized.includes(site)),
         )
       } catch (error) {
         if (cancelled) return
         setSiteOptions([])
+        setSiteNameByCode({})
         setSelectedSites([])
         setSiteError(
           error instanceof Error ? error.message : 'Failed to load sites.',
@@ -278,6 +324,9 @@ const SuperadminStoreRequestExportPage = () => {
   }
 
   const allSitesSelected = selectedSites.length === 0
+
+  const getSiteDisplayName = (siteCode: string) =>
+    siteNameByCode[siteCode] ?? siteCode
 
   const handleExport = async () => {
     if (!accessToken) {
@@ -336,6 +385,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Ingredient Name',
           'QTY Planned',
           'QTY Actual',
+          'Variance',
           'Unit Of Measures',
           'Approved By',
           'Approval Status',
@@ -347,6 +397,7 @@ const SuperadminStoreRequestExportPage = () => {
 
       let rowNumber = 1
       groups.forEach((group) => {
+        const siteName = getSiteDisplayName(group.site)
         const fulfillmentByKey = new Map(
           (group.fulfillment?.items ?? []).map((item) => [
             buildIngredientKey(
@@ -375,12 +426,13 @@ const SuperadminStoreRequestExportPage = () => {
             rows.push([
               rowNumber,
               group.date,
-              group.site,
+              siteName,
               group.productionCode ?? '',
               menu.menuName,
               menu.category,
               menu.recipeCode ?? '',
               menu.portion,
+              '',
               '',
               '',
               '',
@@ -408,7 +460,7 @@ const SuperadminStoreRequestExportPage = () => {
             rows.push([
               rowNumber,
               group.date,
-              group.site,
+              siteName,
               group.productionCode ?? '',
               menu.menuName,
               menu.category,
@@ -418,6 +470,9 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.name,
               formatQuantity(ingredient.qty),
               fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
+              fulfillmentItem
+                ? formatQuantity(fulfillmentItem.varianceQty)
+                : '',
               formatUnitLabel(ingredient.unitOfMeasures),
               approvedBy,
               approvalStatus,

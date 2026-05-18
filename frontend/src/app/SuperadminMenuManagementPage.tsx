@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -6,22 +7,31 @@ import {
   type ChangeEvent,
 } from 'react'
 import TablePagination from '../components/TablePagination'
+import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatQuantity } from '../lib/quantity'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type CategoryStatusFilter = 'active' | 'disabled'
-type MenuManagementTab = 'recipes' | 'raw-materials' | 'categories'
+type MenuManagementTab =
+  | 'menu-production'
+  | 'recipe-calculator'
+  | 'recipes'
+  | 'raw-materials'
+  | 'categories'
 
 type RecipeIngredient = {
   productCode?: string
   name?: string
   unitOfMeasures?: string
   qty?: number
+  priceUom?: number
+  foodCost?: number
 }
 
 type Recipe = {
@@ -31,6 +41,7 @@ type Recipe = {
   name: string
   category: string
   site?: string
+  siteName?: string
   description?: string
   createdAt?: string
   updatedAt?: string
@@ -40,7 +51,9 @@ type Recipe = {
   updatedBy?: string
   updatedByName?: string
   updatedByEmail?: string
+  price?: number
   portionSize: number
+  foodCostRecipe?: number
   status: RecipeStatus
   approvalStatus: ApprovalStatus
   isActive?: boolean
@@ -68,6 +81,8 @@ type RawMaterialApi = {
   productCode?: string
   name?: string
   unitOfMeasures?: string
+  vendor?: string
+  price?: number
   createdAt?: string
 }
 
@@ -76,7 +91,29 @@ type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  vendor: string
+  price?: number
   createdAt: string
+}
+
+type RawMaterialVendorPriceApi = {
+  id?: string
+  _id?: string
+  productCode?: string
+  unitOfMeasures?: string
+  site?: string
+  vendor?: string
+  currency?: string
+  minimumQuantity?: number
+  price?: number
+}
+
+type RawMaterialVendorPriceOption = {
+  key: string
+  vendor: string
+  site?: string
+  minimumQuantity?: number
+  price?: number
 }
 
 type SiteApi = {
@@ -127,13 +164,33 @@ type ImportResult = {
   message: string
 }
 
+type RawMaterialPriceUploadResult = {
+  requestedCount: number
+  matchedCount: number
+  modifiedCount: number
+  notFoundCount: number
+  notFoundProductCodes: string[]
+}
+
+type IngredientCostBackfillResult = {
+  scannedRecipes: number
+  updatedRecipes: number
+  updatedIngredients: number
+  skippedNoRawMaterial: number
+  skippedMissingPrice: number
+}
+
 const DEFAULT_LIMIT = 10
+const CALCULATOR_ROWS_PER_PAGE = 8
+const USE_OTHER_SITE_VENDOR_OPTION = '__use_other_site_vendor__'
 
 const menuManagementTabs: Array<{
   id: MenuManagementTab
   label: string
   icon: string
 }> = [
+  { id: 'menu-production', label: 'Menu Production', icon: 'bi-calendar2-week' },
+  { id: 'recipe-calculator', label: 'Calculator Recipe', icon: 'bi-calculator' },
   { id: 'recipes', label: 'Recipe Data', icon: 'bi-journal-text' },
   { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
   { id: 'categories', label: 'Categories', icon: 'bi-tags' },
@@ -178,6 +235,25 @@ const formatTimestamp = (value?: string) => {
   return parsed.toLocaleString('en-GB')
 }
 
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) return '-'
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+const normalizeTextKey = (value?: string) => value?.trim().toLowerCase() ?? ''
+
+const getRawMaterialVendorProductKey = (productCode: string) =>
+  normalizeTextKey(productCode)
+
+const getRecipeCalculatorVendorProductKey = (
+  productCode?: string,
+  site?: string,
+) => `${normalizeTextKey(site)}::${normalizeTextKey(productCode)}`
+
 const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
 
@@ -193,14 +269,1119 @@ const mapRawMaterial = (item: RawMaterialApi): RawMaterial => ({
   productCode: item.productCode ?? '',
   name: item.name ?? '',
   unitOfMeasures: item.unitOfMeasures ?? '',
+  vendor: item.vendor ?? '',
+  price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
   createdAt: item.createdAt ?? '',
 })
+
+const mapRawMaterialVendorPriceOption = (
+  item: RawMaterialVendorPriceApi,
+): RawMaterialVendorPriceOption | null => {
+  const vendor = item.vendor?.trim() ?? ''
+  if (!vendor) return null
+
+  const site = item.site?.trim() || undefined
+  const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
+    ? Number(item.minimumQuantity)
+    : undefined
+  const price = Number.isFinite(Number(item.price))
+    ? Number(item.price)
+    : undefined
+  const key = [normalizeTextKey(vendor), price ?? ''].join('|')
+
+  return {
+    key,
+    vendor,
+    site,
+    minimumQuantity,
+    price,
+  }
+}
+
+const formatVendorOptionLabel = (option: RawMaterialVendorPriceOption) =>
+  option.vendor
+
+const pickDefaultVendorOption = (
+  rawMaterial: RawMaterial,
+  options: RawMaterialVendorPriceOption[],
+) => {
+  if (options.length === 0) return undefined
+
+  const currentVendor = normalizeTextKey(rawMaterial.vendor)
+  if (currentVendor) {
+    const byVendor = options.find(
+      (option) => normalizeTextKey(option.vendor) === currentVendor,
+    )
+    if (byVendor) return byVendor
+  }
+
+  if (rawMaterial.price !== undefined) {
+    const byPrice = options.find((option) => option.price === rawMaterial.price)
+    if (byPrice) return byPrice
+  }
+
+  return options[0]
+}
 
 const mapSite = (item: SiteApi): SiteOption => ({
   id: item.id ?? item._id ?? '',
   name: item.name ?? '',
   code: item.code ?? '',
 })
+
+type RecipeCalculatorRow = {
+  id: string
+  recipeId: string
+  recipeQuery: string
+  portion: number | ''
+}
+
+const createRecipeCalculatorRow = (): RecipeCalculatorRow => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  recipeId: '',
+  recipeQuery: '',
+  portion: '',
+})
+
+const getRecipeOptionLabel = (recipe: Recipe) => recipe.name
+
+const getRecipeSiteText = (recipe: Recipe) =>
+  recipe.siteName?.trim() || recipe.site?.trim() || 'All sites'
+
+const getIngredientUnitPrice = (
+  ingredient: RecipeIngredient,
+  vendorPrice?: RawMaterialVendorPriceOption,
+) => {
+  if (Number.isFinite(Number(vendorPrice?.price))) {
+    return Number(vendorPrice?.price)
+  }
+  if (Number.isFinite(Number(ingredient.priceUom))) {
+    return Number(ingredient.priceUom)
+  }
+  if (
+    Number.isFinite(Number(ingredient.foodCost)) &&
+    Number.isFinite(Number(ingredient.qty)) &&
+    Number(ingredient.qty) > 0
+  ) {
+    return Number(ingredient.foodCost) / Number(ingredient.qty)
+  }
+  return undefined
+}
+
+const getRecipeBasePax = (recipe: Recipe) =>
+  Number.isFinite(Number(recipe.portionSize)) && Number(recipe.portionSize) > 0
+    ? Number(recipe.portionSize)
+    : 1
+
+const getRecipeTargetPortion = (recipe: Recipe, portion: number | '') =>
+  typeof portion === 'number' && portion > 0 ? portion : getRecipeBasePax(recipe)
+
+const sortVendorPriceOptions = (options: RawMaterialVendorPriceOption[]) =>
+  options.sort((a, b) =>
+    [a.vendor, a.site, String(a.minimumQuantity ?? '')]
+      .join(' ')
+      .localeCompare(
+        [b.vendor, b.site, String(b.minimumQuantity ?? '')].join(' '),
+        undefined,
+        { sensitivity: 'base' },
+      ),
+  )
+
+const pickHighestVendorPriceOption = (
+  options: RawMaterialVendorPriceOption[],
+) => {
+  if (options.length === 0) return undefined
+
+  return options.reduce((selected, option) => {
+    const selectedPrice = Number(selected.price)
+    const optionPrice = Number(option.price)
+    const selectedHasPrice = Number.isFinite(selectedPrice)
+    const optionHasPrice = Number.isFinite(optionPrice)
+
+    if (optionHasPrice && !selectedHasPrice) return option
+    if (optionHasPrice && selectedHasPrice && optionPrice > selectedPrice) {
+      return option
+    }
+    return selected
+  }, options[0])
+}
+
+const dedupeVendorPricesByVendor = (
+  options: RawMaterialVendorPriceOption[],
+) => {
+  const byVendor = new Map<string, RawMaterialVendorPriceOption>()
+  options.forEach((option) => {
+    const vendorKey = normalizeTextKey(option.vendor)
+    if (!vendorKey) return
+
+    const existing = byVendor.get(vendorKey)
+    if (!existing) {
+      byVendor.set(vendorKey, option)
+      return
+    }
+
+    const existingPrice = Number(existing.price)
+    const optionPrice = Number(option.price)
+    const existingHasPrice = Number.isFinite(existingPrice)
+    const optionHasPrice = Number.isFinite(optionPrice)
+    if (optionHasPrice && (!existingHasPrice || optionPrice > existingPrice)) {
+      byVendor.set(vendorKey, option)
+    }
+  })
+  return sortVendorPriceOptions(Array.from(byVendor.values()))
+}
+
+export const RecipeCalculator = () => {
+  const { accessToken } = useAuth()
+  const [calculatorRecipes, setCalculatorRecipes] = useState<Recipe[]>([])
+  const [calculatorRows, setCalculatorRows] = useState<RecipeCalculatorRow[]>([
+    createRecipeCalculatorRow(),
+  ])
+  const [expandedRows, setExpandedRows] = useState<string[]>([])
+  const [calculatorPage, setCalculatorPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [vendorPricesByProductKey, setVendorPricesByProductKey] = useState<
+    Record<string, RawMaterialVendorPriceOption[]>
+  >({})
+  const [vendorPriceLoadingByProductKey, setVendorPriceLoadingByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [vendorPriceErrorByProductKey, setVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [otherSiteVendorPricesByProductKey, setOtherSiteVendorPricesByProductKey] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [otherSiteVendorPriceLoadedByProductKey, setOtherSiteVendorPriceLoadedByProductKey] =
+    useState<Record<string, boolean>>({})
+  const [
+    otherSiteVendorPriceLoadingByProductKey,
+    setOtherSiteVendorPriceLoadingByProductKey,
+  ] = useState<Record<string, boolean>>({})
+  const [otherSiteVendorPriceErrorByProductKey, setOtherSiteVendorPriceErrorByProductKey] =
+    useState<Record<string, string>>({})
+  const [selectedVendorPriceByIngredientKey, setSelectedVendorPriceByIngredientKey] =
+    useState<Record<string, string>>({})
+  const [useOtherSiteVendorByIngredientKey, setUseOtherSiteVendorByIngredientKey] =
+    useState<Record<string, boolean>>({})
+
+  const sortedCalculatorRecipes = useMemo(
+    () =>
+      calculatorRecipes
+        .filter((recipe) => recipe.isActive ?? true)
+        .slice()
+        .sort((a, b) =>
+          (a.name || '').localeCompare(b.name || '', undefined, {
+            sensitivity: 'base',
+          }),
+        ),
+    [calculatorRecipes],
+  )
+
+  const recipeById = useMemo(() => {
+    const map = new Map<string, Recipe>()
+    sortedCalculatorRecipes.forEach((recipe) => {
+      const key = getRecipeKey(recipe)
+      if (key) map.set(key, recipe)
+    })
+    return map
+  }, [sortedCalculatorRecipes])
+
+  const getIngredientVendorSelectionKey = useCallback(
+    (rowId: string, index: number, productCode?: string) =>
+      `${rowId}::${index}::${normalizeTextKey(productCode)}`,
+    [],
+  )
+
+  const getSelectedSiteVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return pickHighestVendorPriceOption(options)?.key ?? ''
+  }
+
+  const getSelectedOtherSiteVendorPriceKey = (
+    selectionKey: string,
+    options: RawMaterialVendorPriceOption[],
+  ) => {
+    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
+    if (selectedKey && options.some((option) => option.key === selectedKey)) {
+      return selectedKey
+    }
+    return ''
+  }
+
+  const fetchVendorPrices = useCallback(
+    async (productCode: string, site?: string) => {
+      if (!accessToken) return []
+      const params = new URLSearchParams()
+      if (site?.trim()) params.set('site', site.trim())
+      const query = params.toString()
+      return apiFetch<RawMaterialVendorPriceApi[]>(
+        `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices${
+          query ? `?${query}` : ''
+        }`,
+        undefined,
+        accessToken,
+      )
+    },
+    [accessToken],
+  )
+
+  const fetchCalculatorRecipes = useCallback(async () => {
+    if (!accessToken) {
+      setCalculatorRecipes([])
+      setError('Please log in first to load recipes.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      params.set('page', '1')
+      params.set('limit', '500')
+      params.set('status', 'active')
+      params.set('approvalStatus', 'approved')
+
+      const data = await apiFetch<{
+        items?: Recipe[]
+      }>(`/recipes?${params.toString()}`, undefined, accessToken)
+
+      setCalculatorRecipes(data.items ?? [])
+    } catch (fetchError) {
+      const message =
+        fetchError instanceof Error
+          ? fetchError.message
+          : 'Failed to load recipes.'
+      setCalculatorRecipes([])
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }, [accessToken])
+
+  const loadRecipeSiteVendorPrices = useCallback(
+    async (productCode?: string, site?: string) => {
+      const trimmedProductCode = productCode?.trim()
+      const vendorSite = site?.trim()
+      if (!trimmedProductCode || !vendorSite || !accessToken) return
+
+      const productKey = getRecipeCalculatorVendorProductKey(
+        trimmedProductCode,
+        vendorSite,
+      )
+      if (
+        vendorPricesByProductKey[productKey] ||
+        vendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const items = await fetchVendorPrices(trimmedProductCode, vendorSite)
+        const optionsByKey = new Map<string, RawMaterialVendorPriceOption>()
+        items.forEach((item) => {
+          const option = mapRawMaterialVendorPriceOption(item)
+          if (option) optionsByKey.set(option.key, option)
+        })
+        setVendorPricesByProductKey((prev) => ({
+          ...prev,
+          [productKey]: sortVendorPriceOptions(Array.from(optionsByKey.values())),
+        }))
+      } catch (loadError) {
+        setVendorPriceErrorByProductKey((prev) => ({
+          ...prev,
+          [productKey]:
+            loadError instanceof Error
+              ? loadError.message
+              : 'Failed to load vendors.',
+        }))
+      } finally {
+        setVendorPriceLoadingByProductKey((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      fetchVendorPrices,
+      vendorPriceLoadingByProductKey,
+      vendorPricesByProductKey,
+    ],
+  )
+
+  const loadOtherSiteVendorPrices = useCallback(
+    async (productCode?: string, site?: string) => {
+      const trimmedProductCode = productCode?.trim()
+      const vendorSite = site?.trim()
+      if (!trimmedProductCode || !vendorSite || !accessToken) return
+
+      const productKey = getRecipeCalculatorVendorProductKey(
+        trimmedProductCode,
+        vendorSite,
+      )
+      if (
+        otherSiteVendorPriceLoadedByProductKey[productKey] ||
+        otherSiteVendorPriceLoadingByProductKey[productKey]
+      ) {
+        return
+      }
+
+      setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const items = await fetchVendorPrices(trimmedProductCode)
+        const options = dedupeVendorPricesByVendor(
+          items
+            .map(mapRawMaterialVendorPriceOption)
+            .filter(
+              (option): option is RawMaterialVendorPriceOption =>
+                Boolean(option),
+            ),
+        )
+        setOtherSiteVendorPricesByProductKey((prev) => ({
+          ...prev,
+          [productKey]: options,
+        }))
+        setOtherSiteVendorPriceLoadedByProductKey((prev) => ({
+          ...prev,
+          [productKey]: true,
+        }))
+      } catch (loadError) {
+        setOtherSiteVendorPriceErrorByProductKey((prev) => ({
+          ...prev,
+          [productKey]:
+            loadError instanceof Error
+              ? loadError.message
+              : 'Failed to load other site vendors.',
+        }))
+      } finally {
+        setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      fetchVendorPrices,
+      otherSiteVendorPriceLoadedByProductKey,
+      otherSiteVendorPriceLoadingByProductKey,
+    ],
+  )
+
+  useEffect(() => {
+    fetchCalculatorRecipes().catch(() => null)
+  }, [fetchCalculatorRecipes])
+
+  useEffect(() => {
+    expandedRows.forEach((rowId) => {
+      const row = calculatorRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById.get(row.recipeId) : undefined
+      const site = recipe ? getRecipeSiteText(recipe) : ''
+      ;(recipe?.ingredients ?? []).forEach((ingredient) => {
+        loadRecipeSiteVendorPrices(ingredient.productCode, site).catch(
+          () => null,
+        )
+      })
+    })
+  }, [calculatorRows, expandedRows, loadRecipeSiteVendorPrices, recipeById])
+
+  useEffect(() => {
+    expandedRows.forEach((rowId) => {
+      const row = calculatorRows.find((item) => item.id === rowId)
+      const recipe = row ? recipeById.get(row.recipeId) : undefined
+      const site = recipe ? getRecipeSiteText(recipe) : ''
+      ;(recipe?.ingredients ?? []).forEach((ingredient, idx) => {
+        const vendorSelectionKey = getIngredientVendorSelectionKey(
+          rowId,
+          idx,
+          ingredient.productCode,
+        )
+        if (!useOtherSiteVendorByIngredientKey[vendorSelectionKey]) return
+        loadOtherSiteVendorPrices(ingredient.productCode, site).catch(() => null)
+      })
+    })
+  }, [
+    calculatorRows,
+    expandedRows,
+    getIngredientVendorSelectionKey,
+    loadOtherSiteVendorPrices,
+    recipeById,
+    useOtherSiteVendorByIngredientKey,
+  ])
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(calculatorRows.length / CALCULATOR_ROWS_PER_PAGE),
+  )
+  const paginatedRows = calculatorRows.slice(
+    (calculatorPage - 1) * CALCULATOR_ROWS_PER_PAGE,
+    calculatorPage * CALCULATOR_ROWS_PER_PAGE,
+  )
+
+  useEffect(() => {
+    if (calculatorPage > totalPages) {
+      setCalculatorPage(totalPages)
+    }
+  }, [calculatorPage, totalPages])
+
+  const getRecipeSuggestions = (query: string) => {
+    const normalizedQuery = query.trim().toLowerCase()
+    const matches = normalizedQuery
+      ? sortedCalculatorRecipes.filter((recipe) => {
+          const searchable = [
+            recipe.recipeCode,
+            recipe.name,
+            recipe.category,
+            getRecipeSiteText(recipe),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          return searchable.includes(normalizedQuery)
+        })
+      : sortedCalculatorRecipes
+
+    return matches.slice(0, 20)
+  }
+
+  const updateRowRecipe = (rowId: string, value: string) => {
+    const normalizedValue = value.trim().toLowerCase()
+    const matchedRecipe = sortedCalculatorRecipes.find((recipe) => {
+      const optionLabel = getRecipeOptionLabel(recipe).toLowerCase()
+      return (
+        optionLabel === normalizedValue ||
+        recipe.name.toLowerCase() === normalizedValue ||
+        recipe.recipeCode?.toLowerCase() === normalizedValue
+      )
+    })
+
+    setCalculatorRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              recipeQuery: value,
+              recipeId: matchedRecipe ? getRecipeKey(matchedRecipe) : '',
+            }
+          : row,
+      ),
+    )
+  }
+
+  const updateRowPortion = (rowId: string, value: string) => {
+    const digitsOnly = value.replace(/\D/g, '')
+    setCalculatorRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              portion:
+                digitsOnly === '' ? '' : Number.parseInt(digitsOnly, 10),
+            }
+          : row,
+      ),
+    )
+  }
+
+  const handleAddRow = () => {
+    setCalculatorRows((prev) => {
+      const nextRows = [...prev, createRecipeCalculatorRow()]
+      setCalculatorPage(
+        Math.max(1, Math.ceil(nextRows.length / CALCULATOR_ROWS_PER_PAGE)),
+      )
+      return nextRows
+    })
+  }
+
+  const handleRemoveRow = (rowId: string) => {
+    setCalculatorRows((prev) =>
+      prev.length === 1
+        ? [createRecipeCalculatorRow()]
+        : prev.filter((row) => row.id !== rowId),
+    )
+    setExpandedRows((prev) => prev.filter((id) => id !== rowId))
+  }
+
+  const toggleRowDetails = (rowId: string) => {
+    setExpandedRows((prev) =>
+      prev.includes(rowId)
+        ? prev.filter((id) => id !== rowId)
+        : [...prev, rowId],
+    )
+  }
+
+  const getSelectedIngredientVendorPrice = (
+    rowId: string,
+    ingredientIndex: number,
+    ingredient: RecipeIngredient,
+    recipe: Recipe,
+  ) => {
+    const site = getRecipeSiteText(recipe)
+    const productKey = getRecipeCalculatorVendorProductKey(
+      ingredient.productCode,
+      site,
+    )
+    const vendorSelectionKey = getIngredientVendorSelectionKey(
+      rowId,
+      ingredientIndex,
+      ingredient.productCode,
+    )
+    const useOtherSiteVendor =
+      useOtherSiteVendorByIngredientKey[vendorSelectionKey] ?? false
+    const siteVendorOptions = vendorPricesByProductKey[productKey] ?? []
+    const otherSiteVendorOptions =
+      otherSiteVendorPricesByProductKey[productKey] ?? []
+    const vendorOptions = useOtherSiteVendor
+      ? otherSiteVendorOptions
+      : siteVendorOptions
+    const selectedVendorKey = useOtherSiteVendor
+      ? getSelectedOtherSiteVendorPriceKey(vendorSelectionKey, vendorOptions)
+      : getSelectedSiteVendorPriceKey(vendorSelectionKey, vendorOptions)
+
+    return vendorOptions.find((option) => option.key === selectedVendorKey)
+  }
+
+  const getCalculatorEstimatedCost = (
+    rowId: string,
+    recipe: Recipe,
+    portion: number | '',
+  ) => {
+    const ingredients = recipe.ingredients ?? []
+    if (!ingredients.length) return undefined
+
+    const basePax = getRecipeBasePax(recipe)
+    const targetPortion = getRecipeTargetPortion(recipe, portion)
+    let total = 0
+    let hasCost = false
+
+    ingredients.forEach((ingredient, ingredientIndex) => {
+      const ingredientQty = Number(ingredient.qty)
+      if (!Number.isFinite(ingredientQty)) return
+
+      const vendorPrice = getSelectedIngredientVendorPrice(
+        rowId,
+        ingredientIndex,
+        ingredient,
+        recipe,
+      )
+      const unitPrice = getIngredientUnitPrice(ingredient, vendorPrice)
+      if (unitPrice === undefined) return
+
+      total += ((ingredientQty * targetPortion) / basePax) * unitPrice
+      hasCost = true
+    })
+
+    return hasCost ? total : undefined
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">Calculator Recipe</h2>
+          <p className="mt-1 text-xs text-muted">
+            Select saved recipes and preview price with estimated ingredient cost.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fetchCalculatorRecipes().catch(() => null)}
+            disabled={loading}
+            aria-label="Refresh calculator recipes"
+            title="Refresh calculator recipes"
+            className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <p className="border-b border-border px-5 py-3 text-xs font-medium text-red-600">
+          {error}
+        </p>
+      ) : null}
+      {!error && loading ? (
+        <p className="border-b border-border px-5 py-3 text-xs text-muted">
+          Loading recipes...
+        </p>
+      ) : null}
+      {!error && !loading && sortedCalculatorRecipes.length === 0 ? (
+        <p className="border-b border-border px-5 py-3 text-xs text-muted">
+          No approved active recipes available for calculation.
+        </p>
+      ) : null}
+
+      <TablePagination
+        page={calculatorPage}
+        totalPages={totalPages}
+        onPageChange={setCalculatorPage}
+        summary={`Showing ${paginatedRows.length} of ${calculatorRows.length} calculator rows`}
+        className="border-b border-border bg-white px-5 py-4"
+      />
+
+      <div className="max-w-full overflow-x-auto">
+        <table className="dm-table min-w-full text-sm">
+          <thead className="bg-background">
+            <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+              <th className="w-20 px-2 py-3 font-semibold" />
+              <th className="w-14 px-2 py-3 text-center font-semibold">No</th>
+              <th className="px-4 py-3 font-semibold">Recipe ID</th>
+              <th className="px-4 py-3 font-semibold">Recipe</th>
+              <th className="px-4 py-3 font-semibold">Category</th>
+              <th className="px-4 py-3 font-semibold">Site</th>
+              <th className="px-4 py-3 font-semibold">Base pax</th>
+              <th className="px-4 py-3 font-semibold">Portion</th>
+              <th className="px-4 py-3 font-semibold">Estimated Cost</th>
+              <th className="px-4 py-3 font-semibold">Cost/Pax</th>
+              <th className="px-4 py-3 font-semibold">Recipe details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => {
+              const selectedRecipe = recipeById.get(row.recipeId)
+              const isDetailsOpen = expandedRows.includes(row.id)
+              const basePax = selectedRecipe
+                ? getRecipeBasePax(selectedRecipe)
+                : 1
+              const targetPortion = selectedRecipe
+                ? getRecipeTargetPortion(selectedRecipe, row.portion)
+                : 1
+              const ingredients = selectedRecipe?.ingredients ?? []
+              const estimatedTotalCost = selectedRecipe
+                ? getCalculatorEstimatedCost(
+                    row.id,
+                    selectedRecipe,
+                    row.portion,
+                  )
+                : undefined
+              const estimatedCostPerPax =
+                estimatedTotalCost !== undefined && targetPortion > 0
+                  ? estimatedTotalCost / targetPortion
+                  : undefined
+              const recipeSuggestions = getRecipeSuggestions(row.recipeQuery)
+              const rowNumber =
+                (calculatorPage - 1) * CALCULATOR_ROWS_PER_PAGE + index + 1
+
+              return (
+                <Fragment key={row.id}>
+                  <tr className="border-t border-border">
+                    <td className="px-2 py-3">
+                      <div className="flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRow(row.id)}
+                          className="dm-x-button text-sm font-semibold leading-none"
+                          aria-label="Remove calculator row"
+                          title="Remove row"
+                        >
+                          X
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3 text-center text-sm text-muted">
+                      {rowNumber}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted">
+                      {selectedRecipe?.recipeCode ?? '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        list={`calculator-recipe-options-${row.id}`}
+                        value={row.recipeQuery}
+                        onChange={(event) =>
+                          updateRowRecipe(row.id, event.target.value)
+                        }
+                        placeholder={
+                          sortedCalculatorRecipes.length === 0
+                            ? 'No approved recipe available'
+                            : 'Search recipe'
+                        }
+                        className="w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      />
+                      <datalist id={`calculator-recipe-options-${row.id}`}>
+                        {recipeSuggestions.map((recipe) => (
+                          <option
+                            key={getRecipeKey(recipe)}
+                            value={getRecipeOptionLabel(recipe)}
+                            label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
+                          />
+                        ))}
+                      </datalist>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted">
+                      {selectedRecipe?.category || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted">
+                      {selectedRecipe ? getRecipeSiteText(selectedRecipe) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted">
+                      {selectedRecipe ? basePax : '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={row.portion === '' ? '' : String(row.portion)}
+                        onChange={(event) =>
+                          updateRowPortion(row.id, event.target.value)
+                        }
+                        placeholder={selectedRecipe ? String(basePax) : '0'}
+                        className="w-full min-w-[120px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                      />
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {formatPrice(estimatedTotalCost)}
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {formatPrice(estimatedCostPerPax)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        disabled={!selectedRecipe}
+                        onClick={() => toggleRowDetails(row.id)}
+                        className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-expanded={isDetailsOpen}
+                      >
+                        {isDetailsOpen ? 'Hide details' : 'View details'}
+                      </button>
+                    </td>
+                  </tr>
+
+                  {isDetailsOpen ? (
+                    <tr className="border-t border-border bg-background">
+                      <td colSpan={11} className="px-4 py-4">
+                        {!selectedRecipe ? (
+                          <div className="rounded-md border border-border bg-surface p-4 text-sm text-muted">
+                            Select a recipe to view calculation details.
+                          </div>
+                        ) : (
+                          <div className="rounded-md border border-border bg-surface p-4">
+                            <h3 className="font-semibold text-foreground">
+                              Ingredients
+                            </h3>
+                            <p className="mt-1 text-xs text-muted">
+                              Qty calculated from base pax ({basePax}) for{' '}
+                              {targetPortion} portions.
+                            </p>
+
+                            {ingredients.length === 0 ? (
+                              <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
+                                No ingredients for this recipe yet.
+                              </div>
+                            ) : (
+                              <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                                <table className="dm-table min-w-full text-sm">
+                                  <thead className="bg-background">
+                                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                      <th className="w-12 px-4 py-3 font-semibold">
+                                        No
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Product code
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Ingredient name
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Qty
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Unit
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Vendor
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Price
+                                      </th>
+                                      <th className="px-4 py-3 font-semibold">
+                                        Ingredient Cost
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ingredients.map((ingredient, idx) => {
+                                      const ingredientQty = Number(ingredient.qty)
+                                      const scaledQty = Number.isFinite(
+                                        ingredientQty,
+                                      )
+                                        ? (ingredientQty * targetPortion) /
+                                          basePax
+                                        : 0
+                                      const site = getRecipeSiteText(selectedRecipe)
+                                      const productKey =
+                                        getRecipeCalculatorVendorProductKey(
+                                          ingredient.productCode,
+                                          site,
+                                        )
+                                      const siteVendorOptions =
+                                        vendorPricesByProductKey[productKey] ??
+                                        []
+                                      const vendorLoading =
+                                        vendorPriceLoadingByProductKey[
+                                          productKey
+                                        ] ?? false
+                                      const vendorError =
+                                        vendorPriceErrorByProductKey[
+                                          productKey
+                                        ] ?? ''
+                                      const vendorSelectionKey =
+                                        getIngredientVendorSelectionKey(
+                                          row.id,
+                                          idx,
+                                          ingredient.productCode,
+                                        )
+                                      const useOtherSiteVendor =
+                                        useOtherSiteVendorByIngredientKey[
+                                          vendorSelectionKey
+                                        ] ?? false
+                                      const otherSiteVendorOptions =
+                                        otherSiteVendorPricesByProductKey[
+                                          productKey
+                                        ] ?? []
+                                      const otherSiteVendorLoading =
+                                        otherSiteVendorPriceLoadingByProductKey[
+                                          productKey
+                                        ] ?? false
+                                      const otherSiteVendorError =
+                                        otherSiteVendorPriceErrorByProductKey[
+                                          productKey
+                                        ] ?? ''
+                                      const vendorOptions = useOtherSiteVendor
+                                        ? otherSiteVendorOptions
+                                        : siteVendorOptions
+                                      const selectedVendorKey =
+                                        useOtherSiteVendor
+                                          ? getSelectedOtherSiteVendorPriceKey(
+                                              vendorSelectionKey,
+                                              vendorOptions,
+                                            )
+                                          : getSelectedSiteVendorPriceKey(
+                                              vendorSelectionKey,
+                                              vendorOptions,
+                                            )
+                                      const selectedVendorPrice =
+                                        vendorOptions.find(
+                                          (option) =>
+                                            option.key === selectedVendorKey,
+                                        )
+                                      const unitPrice =
+                                        getIngredientUnitPrice(
+                                          ingredient,
+                                          selectedVendorPrice,
+                                        )
+                                      const totalCost =
+                                        unitPrice === undefined
+                                          ? undefined
+                                          : scaledQty * unitPrice
+
+                                      return (
+                                        <tr
+                                          key={`${ingredient.productCode}-${idx}`}
+                                          className="border-t border-border"
+                                        >
+                                          <td className="px-4 py-3 text-sm text-muted">
+                                            {idx + 1}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.productCode || '-'}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.name || '-'}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {formatQuantity(scaledQty)}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.unitOfMeasures
+                                              ? formatUnitLabel(
+                                                  ingredient.unitOfMeasures,
+                                                )
+                                              : '-'}
+                                          </td>
+                                          <td className="min-w-56 px-4 py-3">
+                                            <select
+                                              value={selectedVendorKey}
+                                              onChange={(event) => {
+                                                const nextValue =
+                                                  event.target.value
+                                                if (
+                                                  nextValue ===
+                                                  USE_OTHER_SITE_VENDOR_OPTION
+                                                ) {
+                                                  setUseOtherSiteVendorByIngredientKey(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [vendorSelectionKey]:
+                                                        true,
+                                                    }),
+                                                  )
+                                                  setSelectedVendorPriceByIngredientKey(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [vendorSelectionKey]: '',
+                                                    }),
+                                                  )
+                                                  loadOtherSiteVendorPrices(
+                                                    ingredient.productCode,
+                                                    site,
+                                                  ).catch(() => null)
+                                                  return
+                                                }
+                                                setSelectedVendorPriceByIngredientKey(
+                                                  (prev) => ({
+                                                    ...prev,
+                                                    [vendorSelectionKey]:
+                                                      nextValue,
+                                                  }),
+                                                )
+                                              }}
+                                              disabled={
+                                                vendorLoading ||
+                                                otherSiteVendorLoading
+                                              }
+                                              className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {vendorLoading ? (
+                                                <option value="">
+                                                  Loading vendors...
+                                                </option>
+                                              ) : siteVendorOptions.length ===
+                                                  0 && !useOtherSiteVendor ? (
+                                                <>
+                                                  <option value="">
+                                                    {vendorError ||
+                                                      'No vendor for this site'}
+                                                  </option>
+                                                  <option
+                                                    value={
+                                                      USE_OTHER_SITE_VENDOR_OPTION
+                                                    }
+                                                  >
+                                                    Use vendor from other site
+                                                  </option>
+                                                </>
+                                              ) : otherSiteVendorLoading ? (
+                                                <option value="">
+                                                  Loading vendors...
+                                                </option>
+                                              ) : useOtherSiteVendor &&
+                                                vendorOptions.length === 0 ? (
+                                                <option value="">
+                                                  {otherSiteVendorError ||
+                                                    'No vendor from other site'}
+                                                </option>
+                                              ) : useOtherSiteVendor ? (
+                                                <option value="">
+                                                  Select vendor
+                                                </option>
+                                              ) : vendorOptions.length === 0 ? (
+                                                <option value="">
+                                                  {vendorError || 'No vendor'}
+                                                </option>
+                                              ) : null}
+                                              {vendorOptions.map((option) => (
+                                                <option
+                                                  key={option.key}
+                                                  value={option.key}
+                                                >
+                                                  {formatVendorOptionLabel(
+                                                    option,
+                                                  )}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {formatPrice(unitPrice)}
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {formatPrice(totalCost)}
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                  <tfoot className="bg-background">
+                                    <tr className="border-t border-border">
+                                      <td
+                                        colSpan={7}
+                                        className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
+                                      >
+                                        Estimated Total Cost
+                                      </td>
+                                      <td className="px-4 py-3 font-semibold">
+                                        {formatPrice(estimatedTotalCost)}
+                                      </td>
+                                    </tr>
+                                    <tr className="border-t border-border">
+                                      <td
+                                        colSpan={7}
+                                        className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.18em] text-foreground"
+                                      >
+                                        Estimated Cost/Pax
+                                      </td>
+                                      <td className="px-4 py-3 font-semibold">
+                                        {formatPrice(estimatedCostPerPax)}
+                                      </td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-border bg-white px-5 py-4 text-center">
+        <button
+          type="button"
+          onClick={handleAddRow}
+          className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+        >
+          <span className="flex items-center gap-2">
+            <i className="bi bi-plus-circle text-base" aria-hidden="true" />
+            <span>Add row</span>
+          </span>
+        </button>
+      </div>
+    </section>
+  )
+}
 
 const SuperadminMenuManagementPage = () => {
   const { accessToken } = useAuth()
@@ -223,6 +1404,7 @@ const SuperadminMenuManagementPage = () => {
   const [recipeImportError, setRecipeImportError] = useState('')
   const [recipeImportMessage, setRecipeImportMessage] = useState('')
   const [recipeImporting, setRecipeImporting] = useState(false)
+  const [recipeCostSyncing, setRecipeCostSyncing] = useState(false)
 
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryMeta, setCategoryMeta] = useState<TableMeta>(emptyMeta)
@@ -261,6 +1443,24 @@ const SuperadminMenuManagementPage = () => {
     useState<number | null>(null)
   const [rawMaterialImportResult, setRawMaterialImportResult] =
     useState<ImportResult | null>(null)
+  const [rawMaterialPriceUploadOpen, setRawMaterialPriceUploadOpen] =
+    useState(false)
+  const [rawMaterialPriceUploadFile, setRawMaterialPriceUploadFile] =
+    useState<File | null>(null)
+  const [rawMaterialPriceUploadError, setRawMaterialPriceUploadError] =
+    useState('')
+  const [rawMaterialPriceUploadMessage, setRawMaterialPriceUploadMessage] =
+    useState('')
+  const [rawMaterialPriceUploading, setRawMaterialPriceUploading] =
+    useState(false)
+  const [rawMaterialVendorOptionsByCode, setRawMaterialVendorOptionsByCode] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [rawMaterialVendorLoadingByCode, setRawMaterialVendorLoadingByCode] =
+    useState<Record<string, boolean>>({})
+  const [rawMaterialVendorErrorByCode, setRawMaterialVendorErrorByCode] =
+    useState<Record<string, string>>({})
+  const [selectedRawMaterialVendorByCode, setSelectedRawMaterialVendorByCode] =
+    useState<Record<string, string>>({})
 
   const selectedRecipe = useMemo(
     () =>
@@ -293,8 +1493,9 @@ const SuperadminMenuManagementPage = () => {
         selectedRecipe.updatedBy ?? selectedRecipe.createdBy,
       )
     : 'Unknown'
-
   const getRecipeSiteLabel = (recipe: Recipe) => {
+    const siteName = recipe.siteName?.trim()
+    if (siteName) return siteName
     const siteCode = recipe.site?.trim()
     if (!siteCode) return 'All sites'
     return siteNameByCode.get(siteCode) ?? siteCode
@@ -308,7 +1509,7 @@ const SuperadminMenuManagementPage = () => {
 
     try {
       const data = await apiFetch<{ items?: SiteApi[] }>(
-        '/superadmin/sites?limit=100',
+        '/superadmin/sites?limit=200',
         undefined,
         accessToken,
       )
@@ -480,11 +1681,14 @@ const SuperadminMenuManagementPage = () => {
 
         const total = data.total ?? 0
         const nextLimit = data.limit ?? limit
-        setRawMaterials(
-          (data.items ?? [])
-            .map(mapRawMaterial)
-            .filter((rawMaterial) => rawMaterial.id),
-        )
+        const nextRawMaterials = (data.items ?? [])
+          .map(mapRawMaterial)
+          .filter((rawMaterial) => rawMaterial.id)
+        setRawMaterials(nextRawMaterials)
+        setRawMaterialVendorOptionsByCode({})
+        setRawMaterialVendorLoadingByCode({})
+        setRawMaterialVendorErrorByCode({})
+        setSelectedRawMaterialVendorByCode({})
         setRawMaterialMeta({
           page: data.page ?? page,
           limit: nextLimit,
@@ -500,6 +1704,10 @@ const SuperadminMenuManagementPage = () => {
             ? error.message
             : 'Failed to load raw material data.'
         setRawMaterials([])
+        setRawMaterialVendorOptionsByCode({})
+        setRawMaterialVendorLoadingByCode({})
+        setRawMaterialVendorErrorByCode({})
+        setSelectedRawMaterialVendorByCode({})
         setRawMaterialMeta((prev) => ({
           ...prev,
           loading: false,
@@ -508,6 +1716,89 @@ const SuperadminMenuManagementPage = () => {
       }
     },
     [accessToken, rawMaterialSearch],
+  )
+
+  const loadRawMaterialVendorPrices = useCallback(
+    async (rawMaterial: RawMaterial) => {
+      if (!accessToken) return
+
+      const productCode = rawMaterial.productCode.trim()
+      const productKey = getRawMaterialVendorProductKey(productCode)
+      if (!productCode || !productKey) return
+      if (
+        Object.prototype.hasOwnProperty.call(
+          rawMaterialVendorOptionsByCode,
+          productKey,
+        ) ||
+        rawMaterialVendorLoadingByCode[productKey]
+      ) {
+        return
+      }
+
+      setRawMaterialVendorLoadingByCode((prev) => ({
+        ...prev,
+        [productKey]: true,
+      }))
+      setRawMaterialVendorErrorByCode((prev) => ({
+        ...prev,
+        [productKey]: '',
+      }))
+
+      try {
+        const data = await apiFetch<RawMaterialVendorPriceApi[]>(
+          `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices`,
+          undefined,
+          accessToken,
+        )
+        const optionsByKey = new Map<string, RawMaterialVendorPriceOption>()
+        const mappedOptions = (data ?? [])
+          .map(mapRawMaterialVendorPriceOption)
+          .filter(
+            (option): option is RawMaterialVendorPriceOption =>
+              option !== null,
+          )
+        mappedOptions.forEach((option) => {
+          optionsByKey.set(option.key, option)
+        })
+
+        const options = Array.from(optionsByKey.values()).sort((a, b) =>
+          [
+            a.vendor,
+            String(a.price ?? ''),
+          ]
+            .join(' ')
+            .localeCompare(
+              [b.vendor, String(b.price ?? '')].join(' '),
+            ),
+        )
+
+        setRawMaterialVendorOptionsByCode((prev) => ({
+          ...prev,
+          [productKey]: options,
+        }))
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to load vendors.'
+        setRawMaterialVendorOptionsByCode((prev) => ({
+          ...prev,
+          [productKey]: [],
+        }))
+        setRawMaterialVendorErrorByCode((prev) => ({
+          ...prev,
+          [productKey]: message,
+        }))
+      } finally {
+        setRawMaterialVendorLoadingByCode((prev) => ({
+          ...prev,
+          [productKey]: false,
+        }))
+      }
+    },
+    [
+      accessToken,
+      rawMaterialVendorLoadingByCode,
+      rawMaterialVendorOptionsByCode,
+    ],
   )
 
   useEffect(() => {
@@ -529,6 +1820,20 @@ const SuperadminMenuManagementPage = () => {
   useEffect(() => {
     fetchRawMaterials(1, DEFAULT_LIMIT, rawMaterialSearch).catch(() => null)
   }, [fetchRawMaterials, rawMaterialSearch])
+
+  useEffect(() => {
+    if (activeTab !== 'raw-materials') return
+
+    const seenProductKeys = new Set<string>()
+    rawMaterials.forEach((rawMaterial) => {
+      const productKey = getRawMaterialVendorProductKey(
+        rawMaterial.productCode,
+      )
+      if (!productKey || seenProductKeys.has(productKey)) return
+      seenProductKeys.add(productKey)
+      loadRawMaterialVendorPrices(rawMaterial).catch(() => null)
+    })
+  }, [activeTab, loadRawMaterialVendorPrices, rawMaterials])
 
   const applyRecipeSearch = () => {
     setRecipeSearch(recipeSearchInput.trim())
@@ -633,6 +1938,33 @@ const SuperadminMenuManagementPage = () => {
       () => null,
     )
     fetchRecipeCategories().catch(() => null)
+  }
+
+  const syncRecipeCosts = async () => {
+    if (!accessToken || recipeCostSyncing) return
+
+    setRecipeCostSyncing(true)
+    setRecipeMessage('')
+    setRecipeMeta((prev) => ({ ...prev, error: '' }))
+    try {
+      const result = await apiFetch<IngredientCostBackfillResult>(
+        '/recipes/ingredient-costs/backfill',
+        { method: 'PATCH' },
+        accessToken,
+      )
+      setRecipeMessage(
+        `Synced ${result.updatedRecipes} recipes and ${result.updatedIngredients} ingredient costs.`,
+      )
+      fetchRecipes(recipeMeta.page, recipeMeta.limit, recipeSearch).catch(
+        () => null,
+      )
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to sync recipe costs.'
+      setRecipeMeta((prev) => ({ ...prev, error: message }))
+    } finally {
+      setRecipeCostSyncing(false)
+    }
   }
 
   const openRecipeImportModal = () => {
@@ -989,6 +2321,98 @@ const SuperadminMenuManagementPage = () => {
 
   const closeRawMaterialImportResult = () => {
     setRawMaterialImportResult(null)
+  }
+
+  const openRawMaterialPriceUploadModal = () => {
+    setRawMaterialPriceUploadFile(null)
+    setRawMaterialPriceUploadError('')
+    setRawMaterialPriceUploadMessage('')
+    setRawMaterialPriceUploadOpen(true)
+  }
+
+  const closeRawMaterialPriceUploadModal = () => {
+    if (rawMaterialPriceUploading) return
+    setRawMaterialPriceUploadOpen(false)
+  }
+
+  const handleRawMaterialPriceUploadFileChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const nextFile = event.target.files?.[0] ?? null
+    setRawMaterialPriceUploadMessage('')
+
+    if (!nextFile) {
+      setRawMaterialPriceUploadFile(null)
+      setRawMaterialPriceUploadError('')
+      return
+    }
+
+    const isValidFile = /\.(xlsx|csv)$/i.test(nextFile.name)
+    if (!isValidFile) {
+      setRawMaterialPriceUploadFile(null)
+      setRawMaterialPriceUploadError('File must be .xlsx or .csv')
+      return
+    }
+
+    setRawMaterialPriceUploadFile(nextFile)
+    setRawMaterialPriceUploadError('')
+  }
+
+  const handleUploadRawMaterialPrices = async () => {
+    if (!accessToken) return
+    if (!rawMaterialPriceUploadFile) {
+      setRawMaterialPriceUploadError('Select an Excel or CSV file first.')
+      setRawMaterialPriceUploadMessage('')
+      return
+    }
+    if (rawMaterialPriceUploading) return
+
+    setRawMaterialPriceUploading(true)
+    setRawMaterialPriceUploadError('')
+    setRawMaterialPriceUploadMessage('Updating prices...')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', rawMaterialPriceUploadFile)
+      const result = await apiFetch<RawMaterialPriceUploadResult>(
+        '/raw-materials/prices/upload',
+        {
+          method: 'POST',
+          body: formData,
+        },
+        accessToken,
+      )
+      const costSyncResult = await apiFetch<IngredientCostBackfillResult>(
+        '/recipes/ingredient-costs/backfill',
+        { method: 'PATCH' },
+        accessToken,
+      )
+      const notFoundText = result.notFoundCount
+        ? ` ${result.notFoundCount} product codes were not found${
+            result.notFoundProductCodes.length
+              ? `: ${result.notFoundProductCodes.join(', ')}`
+              : '.'
+          }`
+        : ''
+      setRawMaterialPriceUploadMessage(
+        `Updated ${result.modifiedCount} prices from ${result.matchedCount} matched raw materials. Synced ${costSyncResult.updatedIngredients} approved recipe ingredient costs.${notFoundText}`,
+      )
+      setRawMaterialPriceUploadFile(null)
+      fetchRawMaterials(
+        rawMaterialMeta.page,
+        rawMaterialMeta.limit,
+        rawMaterialSearch,
+      ).catch(() => null)
+    } catch (error) {
+      setRawMaterialPriceUploadError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update raw material prices.',
+      )
+      setRawMaterialPriceUploadMessage('')
+    } finally {
+      setRawMaterialPriceUploading(false)
+    }
   }
 
   const handleRawMaterialImportFileChange = (
@@ -1515,6 +2939,81 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        {rawMaterialPriceUploadOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Update Raw Material Prices
+                  </h3>
+                  <p className="mt-1 text-xs text-muted">
+                    Upload .xlsx or .csv with product code and price columns.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRawMaterialPriceUploadModal}
+                  disabled={rawMaterialPriceUploading}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    File
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,.csv"
+                    onChange={handleRawMaterialPriceUploadFileChange}
+                    disabled={rawMaterialPriceUploading}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                  />
+                  {rawMaterialPriceUploadFile ? (
+                    <p className="mt-2 text-xs text-muted">
+                      Selected file: {rawMaterialPriceUploadFile.name}
+                    </p>
+                  ) : null}
+                  {rawMaterialPriceUploadError ? (
+                    <p className="mt-2 text-xs font-medium text-danger">
+                      {rawMaterialPriceUploadError}
+                    </p>
+                  ) : null}
+                  {rawMaterialPriceUploading ? (
+                    <div className="mt-3" aria-label="Price update in progress">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-primary-soft">
+                        <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+                      </div>
+                      <span className="sr-only">Price update in progress</span>
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUploadRawMaterialPrices}
+                  disabled={rawMaterialPriceUploading}
+                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Update prices
+                </button>
+                {rawMaterialPriceUploadMessage ? (
+                  <p className="text-xs font-medium text-primary">
+                    {rawMaterialPriceUploadMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {rawMaterialImportResult ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
@@ -1596,6 +3095,24 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        {activeTab === 'menu-production' ? (
+          <ChefMenuCycle
+            embedded
+            title="Menu Production"
+            description="Create production menus for any site before they move into the approval and store request flow."
+            requireProductionSite
+            requireProductionActors
+            productionSiteOptions={siteOptions}
+            submitLabel="Submit production"
+            emptySiteMessage="Select a production site first."
+            showEstimatedCostColumns
+            showIngredientCostColumns
+            showIngredientVendorColumn
+          />
+        ) : null}
+
+        {activeTab === 'recipe-calculator' ? <RecipeCalculator /> : null}
+
         {activeTab === 'recipes' ? (
           <>
         <section className="rounded-md border border-border bg-surface shadow-sm">
@@ -1607,6 +3124,15 @@ const SuperadminMenuManagementPage = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={syncRecipeCosts}
+                disabled={!accessToken || recipeCostSyncing}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
+                <span>{recipeCostSyncing ? 'Syncing...' : 'Sync costs'}</span>
+              </button>
               <button
                 type="button"
                 onClick={openRecipeImportModal}
@@ -1992,6 +3518,14 @@ const SuperadminMenuManagementPage = () => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={openRawMaterialPriceUploadModal}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
+              >
+                <i className="bi bi-cash-coin text-base" aria-hidden="true" />
+                <span>Update prices</span>
+              </button>
+              <button
+                type="button"
                 onClick={openRawMaterialImportModal}
                 className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
               >
@@ -2061,62 +3595,126 @@ const SuperadminMenuManagementPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Product Code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Vendor</th>
                   <th className="px-5 py-4 font-semibold">Unit of Measures</th>
+                  <th className="px-5 py-4 font-semibold">Price</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {rawMaterialMeta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       Loading raw materials...
                     </td>
                   </tr>
                 ) : rawMaterials.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {rawMaterialMeta.error
                         ? rawMaterialMeta.error
                         : 'No raw materials yet.'}
                     </td>
                   </tr>
                 ) : (
-                  rawMaterials.map((rawMaterial, index) => (
-                    <tr key={rawMaterial.id} className="border-t border-border">
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {(rawMaterialMeta.page - 1) * rawMaterialMeta.limit +
-                          index +
-                          1}
-                      </td>
-                      <td className="px-5 py-4">{rawMaterial.productCode}</td>
-                      <td className="px-5 py-4">{rawMaterial.name}</td>
-                      <td className="px-5 py-4">
-                        {formatUnitLabel(rawMaterial.unitOfMeasures)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditRawMaterial(rawMaterial)}
-                            className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
-                            aria-label="Edit raw material"
-                            title="Edit raw material"
-                          >
-                            <i className="bi bi-pencil-square text-base" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteRawMaterial(rawMaterial)}
-                            className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
-                            aria-label="Delete raw material"
-                            title="Delete raw material"
-                          >
-                            <i className="bi bi-trash text-base" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  rawMaterials.map((rawMaterial, index) => {
+                    const productKey = getRawMaterialVendorProductKey(
+                      rawMaterial.productCode,
+                    )
+                    const vendorOptions =
+                      rawMaterialVendorOptionsByCode[productKey] ?? []
+                    const vendorLoading =
+                      rawMaterialVendorLoadingByCode[productKey] ?? false
+                    const vendorError =
+                      rawMaterialVendorErrorByCode[productKey] ?? ''
+                    const selectedVendorKey =
+                      selectedRawMaterialVendorByCode[productKey] ??
+                      pickDefaultVendorOption(rawMaterial, vendorOptions)?.key ??
+                      ''
+                    const selectedVendorOption = vendorOptions.find(
+                      (option) => option.key === selectedVendorKey,
+                    )
+                    const displayPrice = selectedVendorOption
+                      ? selectedVendorOption.price
+                      : rawMaterial.price
+
+                    return (
+                      <tr
+                        key={rawMaterial.id}
+                        className="border-t border-border"
+                      >
+                        <td className="px-5 py-4 text-sm text-muted">
+                          {(rawMaterialMeta.page - 1) * rawMaterialMeta.limit +
+                            index +
+                            1}
+                        </td>
+                        <td className="px-5 py-4">
+                          {rawMaterial.productCode}
+                        </td>
+                        <td className="px-5 py-4">{rawMaterial.name}</td>
+                        <td className="px-5 py-4 align-top">
+                          {vendorOptions.length > 0 ? (
+                            <select
+                              value={selectedVendorKey}
+                              onChange={(event) =>
+                                setSelectedRawMaterialVendorByCode((prev) => ({
+                                  ...prev,
+                                  [productKey]: event.target.value,
+                                }))
+                              }
+                              className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            >
+                              {vendorOptions.length > 1 ? (
+                                <option value="">Select vendor</option>
+                              ) : null}
+                              {vendorOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {formatVendorOptionLabel(option)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span
+                              title={vendorError || undefined}
+                              className="block w-56 whitespace-normal break-words"
+                            >
+                              {vendorLoading
+                                ? 'Loading vendors...'
+                                : rawMaterial.vendor || '-'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          {formatUnitLabel(rawMaterial.unitOfMeasures)}
+                        </td>
+                        <td className="px-5 py-4 font-medium">
+                          {formatPrice(displayPrice)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditRawMaterial(rawMaterial)}
+                              className="rounded-md border border-border bg-background p-2 text-muted transition hover:bg-primary-soft hover:text-primary"
+                              aria-label="Edit raw material"
+                              title="Edit raw material"
+                            >
+                              <i className="bi bi-pencil-square text-base" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteRawMaterial(rawMaterial)}
+                              className="rounded-md border border-danger bg-background p-2 text-danger transition hover:bg-danger/10"
+                              aria-label="Delete raw material"
+                              title="Delete raw material"
+                            >
+                              <i className="bi bi-trash text-base" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>

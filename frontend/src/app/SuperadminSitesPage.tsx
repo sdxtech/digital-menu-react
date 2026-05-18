@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -36,6 +36,20 @@ type SiteForm = {
   code: string
   description: string
   isActive: boolean
+}
+
+type SiteImportError = {
+  row: number
+  name?: string
+  reason: string
+}
+
+type SiteImportResult = {
+  processedCount: number
+  createdCount: number
+  skippedCount: number
+  failedCount: number
+  errors: SiteImportError[]
 }
 
 type StatusFilter = 'all' | 'active' | 'disabled'
@@ -79,6 +93,14 @@ const SuperadminSitesPage = () => {
   const [editForm, setEditForm] = useState<SiteForm>(emptyForm)
   const [editError, setEditError] = useState('')
   const [message, setMessage] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importMessage, setImportMessage] = useState('')
+  const [importResult, setImportResult] = useState<SiteImportResult | null>(
+    null,
+  )
 
   const fetchSites = useCallback(
     async (page = 1, limit = DEFAULT_LIMIT, searchValue = search) => {
@@ -151,6 +173,83 @@ const SuperadminSitesPage = () => {
 
   const closeCreateModal = () => {
     setCreateOpen(false)
+  }
+
+  const openImportModal = () => {
+    setImportFile(null)
+    setImportError('')
+    setImportMessage('')
+    setImportResult(null)
+    setMessage('')
+    setImportOpen(true)
+  }
+
+  const closeImportModal = () => {
+    if (importing) return
+    setImportOpen(false)
+  }
+
+  const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null
+    setImportMessage('')
+    setImportResult(null)
+
+    if (!nextFile) {
+      setImportFile(null)
+      setImportError('')
+      return
+    }
+
+    if (!/\.xlsx$/i.test(nextFile.name)) {
+      setImportFile(null)
+      setImportError('File must be .xlsx')
+      return
+    }
+
+    setImportFile(nextFile)
+    setImportError('')
+  }
+
+  const uploadSitesImport = async () => {
+    if (!accessToken) return
+    if (!importFile) {
+      setImportError('Select an Excel file first.')
+      setImportMessage('')
+      return
+    }
+    if (importing) return
+
+    setImporting(true)
+    setImportError('')
+    setImportMessage('Importing sites...')
+    setImportResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', importFile)
+      const result = await apiFetch<SiteImportResult>(
+        '/superadmin/sites/import',
+        {
+          method: 'POST',
+          body: formData,
+        },
+        accessToken,
+      )
+      setImportResult(result)
+      setImportMessage(
+        `Created ${result.createdCount} sites. Skipped ${result.skippedCount}, failed ${result.failedCount}.`,
+      )
+      setImportFile(null)
+      setMessage('Site import completed.')
+      fetchSites(1, meta.limit, search).catch(() => null)
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Failed to import sites.'
+      setImportError(messageText)
+      setImportMessage('')
+    } finally {
+      setImporting(false)
+    }
   }
 
   const updateCreateForm = (field: keyof SiteForm, value: string | boolean) => {
@@ -270,6 +369,30 @@ const SuperadminSitesPage = () => {
     }
   }
 
+  const deleteSite = async (site: Site) => {
+    if (!accessToken) return
+    const confirmed = window.confirm(
+      `Delete ${site.name} permanently? This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    try {
+      await apiFetch(
+        `/superadmin/sites/${site.id}`,
+        { method: 'DELETE' },
+        accessToken,
+      )
+      const nextPage = sites.length === 1 && meta.page > 1 ? meta.page - 1 : meta.page
+      setMessage('Site deleted permanently.')
+      setEditError('')
+      fetchSites(nextPage, meta.limit, search).catch(() => null)
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : 'Failed to delete site.'
+      setEditError(messageText)
+    }
+  }
+
   return (
     <div className="w-full py-2">
       <div className="space-y-6">
@@ -325,7 +448,7 @@ const SuperadminSitesPage = () => {
                     onChange={(event) =>
                       updateCreateForm('code', event.target.value)
                     }
-                    placeholder="e.g. A1"
+                    placeholder="e.g. SITE-001"
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                   />
                 </div>
@@ -379,6 +502,101 @@ const SuperadminSitesPage = () => {
           </div>
         ) : null}
 
+        {importOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Import sites
+                  </h3>
+                  <p className="mt-1 text-xs text-muted">
+                    Excel column: sites
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeImportModal}
+                  disabled={importing}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Excel file
+                  </label>
+                  <input
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={handleImportFileChange}
+                    disabled={importing}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+
+                {importError ? (
+                  <p className="text-xs font-medium text-red-600">
+                    {importError}
+                  </p>
+                ) : null}
+                {importMessage ? (
+                  <p className="text-xs font-medium text-primary">
+                    {importMessage}
+                  </p>
+                ) : null}
+                {importResult ? (
+                  <div className="space-y-2 text-xs text-muted">
+                    <p>
+                      Processed {importResult.processedCount} rows. Created{' '}
+                      {importResult.createdCount}, skipped{' '}
+                      {importResult.skippedCount}, failed{' '}
+                      {importResult.failedCount}.
+                    </p>
+                    {importResult.errors.length > 0 ? (
+                      <ul className="space-y-1">
+                        {importResult.errors.slice(0, 5).map((item) => (
+                          <li key={`${item.row}-${item.reason}`}>
+                            Row {item.row}
+                            {item.name ? ` (${item.name})` : ''}:{' '}
+                            {item.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={uploadSitesImport}
+                    disabled={importing}
+                    className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {importing ? 'Importing...' : 'Import sites'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    disabled={importing}
+                    className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -409,6 +627,19 @@ const SuperadminSitesPage = () => {
               </select>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={openImportModal}
+                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+              >
+                <span className="flex items-center gap-2">
+                  <i
+                    className="bi bi-file-earmark-spreadsheet text-base"
+                    aria-hidden="true"
+                  />
+                  <span>Import sites</span>
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={openCreateModal}
@@ -571,6 +802,15 @@ const SuperadminSitesPage = () => {
                               className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
                             >
                               {site.isActive ? 'Disable' : 'Activate'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSite(site)}
+                              className="rounded-md border border-border bg-background p-2 text-red-600 transition hover:bg-red-50"
+                              aria-label="Delete site permanently"
+                              title="Delete site permanently"
+                            >
+                              <i className="bi bi-trash text-base" aria-hidden="true" />
                             </button>
                           </div>
                         )}

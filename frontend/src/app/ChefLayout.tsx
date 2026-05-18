@@ -19,6 +19,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Calculator Recipe',
+    to: '/chef/recipe-calculator',
+    icon: (className: string) => (
+      <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Recipe Data',
     to: '/chef/menu-bank',
     icon: (className: string) => (
@@ -92,8 +99,12 @@ const ChefLayout = () => {
         <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
           <div className="flex w-full items-center justify-between gap-4 px-4 py-2">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
-                DM
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white p-1.5 ring-1 ring-white/30">
+                <img
+                  src="/Logo.png"
+                  alt="Food Recipe System logo"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <div>
                 <p className="text-sm font-semibold leading-tight text-white">
@@ -176,7 +187,7 @@ const ChefLayout = () => {
           </aside>
 
           <main className="min-w-0 flex-1 pr-4 pt-4">
-            <Outlet />
+            <Outlet /> {/* Tempat untuk merender komponen halaman yang sesuai dengan rute yang dipilih. */ }
           </main>
         </div>
       </div>

@@ -22,6 +22,8 @@ export type RecipeIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  priceUom?: number
+  foodCost?: number
 }
 
 export type Recipe = {
@@ -49,6 +51,8 @@ export type Recipe = {
   reviewedByEmail?: string
   reviewedAt?: string
   rejectionReason?: string
+  site?: string
+  siteName?: string
 }
 
 export type MenuProduction = {
@@ -58,10 +62,14 @@ export type MenuProduction = {
   recipeCode?: string
   menuName: string
   category: string
+  site?: string
+  unitManagerId?: string
+  assistedBy?: string
   portion: number
   cost?: number
   productionDate: string
   approvalStatus: ApprovalStatus
+  rejectionReason?: string
   storeRequestStatus: StoreRequestStatus
   createdAt: string
 }
@@ -71,6 +79,7 @@ export type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  vendor?: string
   createdAt: string
 }
 
@@ -108,6 +117,9 @@ type AddMenuProductionInput = {
   recipeId: string
   menuName: string
   category: string
+  site?: string
+  chefId?: string
+  unitManagerId?: string
   portion: number
   cost: number
   productionDate: string
@@ -151,6 +163,10 @@ type RawMaterialsMeta = {
   error: string
 }
 
+type SiteScopedFetchOptions = {
+  site?: string
+}
+
 type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<void>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
@@ -161,7 +177,7 @@ type ChefDataContextValue = ChefDataState & {
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
   addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
-  rejectMenuProduction: (id: string) => Promise<void>
+  rejectMenuProduction: (id: string, reason: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
   searchRawMaterials: (search: string, limit?: number) => Promise<RawMaterial[]>
@@ -175,8 +191,10 @@ type ChefDataContextValue = ChefDataState & {
   cancelPendingMenuProductionBatch: (
     input: CancelPendingMenuProductionBatchInput,
   ) => Promise<void>
-  fetchRecipes: () => Promise<void>
-  fetchMenuProductions: () => Promise<void>
+  fetchRecipes: (options?: SiteScopedFetchOptions) => Promise<Recipe[]>
+  fetchMenuProductions: (
+    options?: SiteScopedFetchOptions,
+  ) => Promise<MenuProduction[]>
 }
 
 const initialState: ChefDataState = {
@@ -222,6 +240,12 @@ const mapRecipe = (item: RecipeApi): Recipe => {
           qty: Number.isFinite(Number(ingredient.qty))
             ? Number(ingredient.qty)
             : 0,
+          priceUom: Number.isFinite(Number(ingredient.priceUom))
+            ? Number(ingredient.priceUom)
+            : undefined,
+          foodCost: Number.isFinite(Number(ingredient.foodCost))
+            ? Number(ingredient.foodCost)
+            : undefined,
         }))
       : [],
     createdAt: item.createdAt ?? new Date().toISOString(),
@@ -237,6 +261,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     reviewedByEmail: item.reviewedByEmail ?? '',
     reviewedAt: item.reviewedAt ?? '',
     rejectionReason: item.rejectionReason ?? '',
+    site: item.site ?? undefined,
+    siteName: item.siteName ?? undefined,
   }
 }
 
@@ -247,10 +273,14 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   recipeCode: item.recipeCode ?? undefined,
   menuName: item.menuName ?? '',
   category: item.category ?? '',
+  site: item.site ?? undefined,
+  unitManagerId: item.unitManagerId ?? undefined,
+  assistedBy: item.assistedBy ?? undefined,
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
   cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined,
   productionDate: item.productionDate ?? '',
   approvalStatus: item.approvalStatus ?? 'pending',
+  rejectionReason: item.rejectionReason ?? undefined,
   storeRequestStatus: item.storeRequestStatus ?? 'not-requested',
   createdAt: item.createdAt ?? new Date().toISOString(),
 })
@@ -260,6 +290,7 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   productCode: item.productCode,
   name: item.name,
   unitOfMeasures: item.unitOfMeasures,
+  vendor: item.vendor,
   createdAt: item.createdAt,
 })
 
@@ -272,7 +303,7 @@ const upsertById = <T extends { id: string }>(items: T[], next: T) => {
 }
 
 export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [state, setState] = useState<ChefDataState>(initialState)
   const [rawMaterialsMeta, setRawMaterialsMeta] = useState<RawMaterialsMeta>({
     page: 1,
@@ -283,34 +314,44 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     error: '',
   })
 
-  const fetchRecipes = useCallback(async () => {
-    if (!accessToken) return
+  const fetchRecipes = useCallback(async (options?: SiteScopedFetchOptions) => {
+    if (!accessToken) return []
 
+    const params = new URLSearchParams()
+    if (options?.site?.trim()) params.set('site', options.site.trim())
+    const query = params.toString()
     const data = await apiFetch<{ items: RecipeApi[] } | RecipeApi[]>(
-      '/recipes',
+      query ? `/recipes?${query}` : '/recipes',
       undefined,
       accessToken,
     )
     const items = Array.isArray(data) ? data : data.items ?? []
+    const mapped = items.map(mapRecipe)
     setState((prev) => ({
       ...prev,
-      recipes: items.map(mapRecipe),
+      recipes: mapped,
     }))
+    return mapped
   }, [accessToken])
 
-  const fetchMenuProductions = useCallback(async () => {
-    if (!accessToken) return
+  const fetchMenuProductions = useCallback(async (options?: SiteScopedFetchOptions) => {
+    if (!accessToken) return []
 
+    const params = new URLSearchParams()
+    if (options?.site?.trim()) params.set('site', options.site.trim())
+    const query = params.toString()
     const data = await apiFetch<{ items: MenuProductionApi[] } | MenuProductionApi[]>(
-      '/menu-productions',
+      query ? `/menu-productions?${query}` : '/menu-productions',
       undefined,
       accessToken,
     )
     const items = Array.isArray(data) ? data : data.items ?? []
+    const mapped = items.map(mapMenuProduction)
     setState((prev) => ({
       ...prev,
-      menuProductions: items.map(mapMenuProduction),
+      menuProductions: mapped,
     }))
+    return mapped
   }, [accessToken])
 
   useEffect(() => {
@@ -318,9 +359,13 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
       return
     }
+    if (user?.role === 'superadmin') {
+      setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
+      return
+    }
     fetchRecipes().catch(() => null)
     fetchMenuProductions().catch(() => null)
-  }, [accessToken, fetchMenuProductions, fetchRecipes])
+  }, [accessToken, fetchMenuProductions, fetchRecipes, user?.role])
 
   const createRecipe = async (input: CreateRecipeInput) => {
     if (!accessToken) {
@@ -499,13 +544,16 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
-  const rejectMenuProduction = async (id: string) => {
+  const rejectMenuProduction = async (id: string, reason: string) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<MenuProductionApi>(
       `/menu-productions/${id}/reject`,
-      { method: 'PATCH' },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      },
       accessToken,
     )
     const mapped = mapMenuProduction(updated)

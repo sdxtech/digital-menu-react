@@ -61,7 +61,13 @@ export class RecipesController {
   @Get()
   @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query, getUserSiteScope(req.user));
+    return this.recipes.findAll(query, this.resolveQuerySite(req, query.site));
+  }
+
+  @Patch('ingredient-costs/backfill')
+  @Roles(AppRole.Superadmin)
+  backfillIngredientCosts(@Req() req: AuthenticatedRequest) {
+    return this.recipes.backfillApprovedIngredientCosts(this.buildActor(req));
   }
 
   @Patch(':id')
@@ -185,5 +191,11 @@ export class RecipesController {
       roles: req.user.roles,
       site: getUserSiteScope(req.user),
     };
+  }
+
+  private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    const siteScope = getUserSiteScope(req.user);
+    if (siteScope) return siteScope;
+    return requestedSite?.trim() || undefined;
   }
 }

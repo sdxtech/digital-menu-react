@@ -7,6 +7,10 @@ export class ListMenuProductionsQueryDto {
   search?: string;
 
   @IsOptional()
+  @IsString()
+  site?: string;
+
+  @IsOptional()
   @IsIn(['pending', 'approved', 'rejected'])
   approvalStatus?: 'pending' | 'approved' | 'rejected';
 

@@ -4,8 +4,6 @@ import { Model } from 'mongoose';
 import type { Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 
-const DEFAULT_SITE = 'A1';
-
 export type CreateProductInput = {
   name: string;
   price: number;
@@ -169,16 +167,9 @@ export class ProductsService {
 
   private buildSiteFilter(site?: string) {
     if (!site) return {};
-    if (site === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
-    return { site };
+    return {
+      $or: [{ site }, { site: { $exists: false } }, { site: '' }],
+    };
   }
 
   private withSiteFilter(filter: Record<string, unknown>, site?: string) {

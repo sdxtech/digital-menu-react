@@ -4,27 +4,27 @@ import AppShell from '../components/AppShell'
 import { rolePathFor, useAuth } from '../lib/auth'
 
 const LoginPage = () => {
-  const { user, login } = useAuth()
+  const { user, login } = useAuth() /* Menyimpan form login */
   const navigate = useNavigate()
   const [formState, setFormState] = useState({
     email: '',
     password: '',
   })
   const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [showPassword, setShowPassword] = useState(false) /* Menyimpan status tampilan password */
 
   useEffect(() => {
     if (user) {
       navigate(rolePathFor(user.role), { replace: true })
     }
-  }, [user, navigate])
+  }, [user, navigate]) /* Jika sudah login, langsung arahkan ke dashboard sesuai peran */
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const email = formState.email.trim()
     const password = formState.password.trim()
     if (!email || !password) {
-      setError('Email and password are required.')
+      setError('Email and password are required.')  
       return
     }
     try {
@@ -38,20 +38,24 @@ const LoginPage = () => {
           : 'Login failed. Check your email and password.'
       setError(message)
     }
-  }
+  } /* Menangani submit form login, memanggil fungsi login dari context auth, dan menangani error jika login gagal */
 
   return (
     <AppShell>
       <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-14 lg:px-10">
         <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-12">
           <section className="lg:col-span-7 flex items-center justify-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-white shadow-[0_12px_30px_rgba(11,41,87,0.25)]">
-                DM
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_12px_30px_rgba(11,41,87,0.25)] ring-1 ring-border">
+                <img
+                  src="/Logo.png"
+                  alt="Food Recipe System logo"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Digital Menu Engineering
+                  Food Recipe System
                 </h1>
               </div>
             </div>
@@ -74,7 +78,8 @@ const LoginPage = () => {
                 </p>
               </div>
 
-              <form className="relative mt-8 space-y-5" onSubmit={handleSubmit}>
+              {/* Form login dengan input email, password, dan tombol submit. Juga menampilkan error jika login gagal dan opsi untuk menampilkan/menyembunyikan password. */ }
+              <form className="relative mt-8 space-y-5" onSubmit={handleSubmit}> 
                 <div>
                   <label className="text-sm font-medium text-foreground">
                     Email
@@ -91,7 +96,7 @@ const LoginPage = () => {
                       }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                  />
+                  /> {/* Input email dengan state formState.email dan onChange untuk memperbarui state saat pengguna mengetik. */ }
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground">
@@ -108,9 +113,9 @@ const LoginPage = () => {
                           ...prev,
                           password: event.target.value,
                         }))
-                      }
+                      } 
                       className="w-full rounded-2xl border border-border bg-white px-4 py-3 pr-12 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-indigo focus:ring-4 focus:ring-accent-indigo/20"
-                    />
+                    />{/* Input password dengan tipe yang berubah berdasarkan state showPassword, dan onChange untuk memperbarui state saat pengguna mengetik. */ }
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
@@ -126,7 +131,7 @@ const LoginPage = () => {
                       ) : (
                         <i className="bi bi-eye text-lg" aria-hidden="true" />
                       )}
-                    </button>
+                    </button> {/* Tombol untuk menampilkan atau menyembunyikan password, dengan ikon mata yang berubah sesuai status showPassword. */ }
                   </div>
                 </div>
                 {error ? (

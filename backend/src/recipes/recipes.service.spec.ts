@@ -13,12 +13,16 @@ describe('RecipesService site visibility', () => {
     const users = {
       findNamesByIds: jest.fn().mockResolvedValue(new Map()),
     };
+    const sites = {
+      findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
       {} as never,
       {} as never,
       users as never,
+      sites as never,
     );
     jest
       .spyOn(
@@ -50,15 +54,12 @@ describe('RecipesService site visibility', () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel);
 
-    await service.findAll({ approvalStatus: 'pending' }, 'A1');
+    await service.findAll({ approvalStatus: 'pending' }, 'SITE-001');
 
     expect(recipeModel.find).toHaveBeenCalledWith({
-      $and: [
-        {
-          $or: [{ site: 'A1' }, { site: { $exists: false } }, { site: '' }],
-        },
-      ],
+      $and: [{ site: 'SITE-001' }],
       approvalStatus: 'pending',
+      deletedAt: { $exists: false },
     });
   });
 
@@ -66,10 +67,11 @@ describe('RecipesService site visibility', () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel);
 
-    await service.findAll({ approvalStatus: 'approved' }, 'B1');
+    await service.findAll({ approvalStatus: 'approved' }, 'SITE-002');
 
     expect(recipeModel.find).toHaveBeenCalledWith({
       approvalStatus: 'approved',
+      deletedAt: { $exists: false },
     });
   });
 
@@ -77,14 +79,15 @@ describe('RecipesService site visibility', () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel);
 
-    await service.findAll({}, 'B1');
+    await service.findAll({}, 'SITE-002');
 
     expect(recipeModel.find).toHaveBeenCalledWith({
       $and: [
         {
-          $or: [{ approvalStatus: 'approved' }, { site: 'B1' }],
+          $or: [{ approvalStatus: 'approved' }, { site: 'SITE-002' }],
         },
       ],
+      deletedAt: { $exists: false },
     });
   });
 
@@ -93,10 +96,12 @@ describe('RecipesService site visibility', () => {
     const lean = jest.fn().mockResolvedValue({ _id: 'recipe-a' });
     recipeModel.findOneAndUpdate.mockReturnValue({ lean });
 
-    await service.setApprovalStatus('recipe-a', 'approved', { site: 'B1' });
+    await service.setApprovalStatus('recipe-a', 'approved', {
+      site: 'SITE-002',
+    });
 
     expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: 'recipe-a', approvalStatus: 'pending', site: 'B1' },
+      { _id: 'recipe-a', approvalStatus: 'pending', site: 'SITE-002' },
       expect.objectContaining({
         $set: expect.objectContaining({
           approvalStatus: 'approved',

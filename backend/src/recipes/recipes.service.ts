@@ -23,8 +23,11 @@ import {
   RawMaterialsService,
   type RawMaterialLookup,
 } from '../raw-materials/raw-materials.service';
+import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
+
+const QUANTITY_DECIMAL_PLACES = 6;
 
 type RecipeActor = {
   id?: string;
@@ -155,7 +158,6 @@ const UOM_ALIASES: Record<string, string> = {
 const RECIPE_CODE_PREFIX = 'RCP';
 const RECIPE_CODE_MIN_DIGITS = 4;
 const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
-const DEFAULT_SITE = 'A1';
 
 @Injectable()
 export class RecipesService {
@@ -166,10 +168,15 @@ export class RecipesService {
     private readonly recipeCodeCounterModel: Model<RecipeCodeCounterDocument>,
     private readonly rawMaterials: RawMaterialsService,
     private readonly users: UsersService,
+    private readonly sites: SitesService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
     const ingredients = this.normalizeIngredients(input.ingredients);
+    const costFields = await this.buildIngredientCostUpdate(ingredients);
+    const inputFoodCostRecipe = this.normalizeOptionalNumber(
+      input.foodCostRecipe,
+    );
     const imageUrl = input.imageUrl?.trim();
     const recipeCode = await this.nextRecipeCode();
 
@@ -189,11 +196,15 @@ export class RecipesService {
       imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
-      foodCostRecipe: this.normalizeOptionalNumber(input.foodCostRecipe),
+      ...(inputFoodCostRecipe !== undefined
+        ? { foodCostRecipe: inputFoodCostRecipe }
+        : 'foodCostRecipe' in costFields
+          ? { foodCostRecipe: costFields.foodCostRecipe }
+          : {}),
       status: isSuperadminActor ? 'active' : (input.status ?? 'draft'),
       approvalStatus: isSuperadminActor ? 'approved' : 'pending',
       ...(isSuperadminActor ? { reviewedAt: new Date() } : {}),
-      ingredients,
+      ingredients: costFields.ingredients,
       ...createdFields,
       ...updatedFields,
       ...reviewedFields,
@@ -206,10 +217,10 @@ export class RecipesService {
       deletedAt: { $exists: false },
     };
     const andFilters: Record<string, unknown>[] = [];
-    const visibilityFilter = this.buildVisibilityFilter(
-      site,
-      query.approvalStatus,
-    );
+    const visibilityFilter =
+      query.strictSite === 'true'
+        ? this.buildSiteFilter(site)
+        : this.buildVisibilityFilter(site, query.approvalStatus);
     if (Object.keys(visibilityFilter).length) {
       andFilters.push(visibilityFilter);
     }
@@ -280,6 +291,7 @@ export class RecipesService {
     }
 
     await this.attachActorNames(items);
+    await this.attachSiteNames(items);
 
     return {
       items,
@@ -347,16 +359,36 @@ export class RecipesService {
     }
 
     const filter = this.withSiteFilter(
-      { _id: id, approvalStatus: 'pending' },
+      {
+        _id: id,
+        ...(this.isSuperadminActor(actor)
+          ? {}
+          : { approvalStatus: 'pending' }),
+      },
       actor?.site,
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
     const reviewedFields = this.buildActorFields(actor, 'reviewed');
+    const existing =
+      status === 'approved'
+        ? await this.recipeModel
+            .findOne(filter)
+            .select({ ingredients: 1 })
+            .lean()
+        : null;
+    if (status === 'approved' && !existing) {
+      throw new NotFoundException('Recipe not found');
+    }
+    const costFields =
+      status === 'approved' && existing
+        ? await this.buildIngredientCostUpdate(existing.ingredients ?? [])
+        : {};
     const updatePayload: Record<string, unknown> = {
       $set: {
         approvalStatus: status,
         status: nextStatus,
         reviewedAt: new Date(),
+        ...costFields,
         ...updatedFields,
         ...reviewedFields,
         ...(status === 'rejected' ? { rejectionReason: reason } : {}),
@@ -370,6 +402,98 @@ export class RecipesService {
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
     return updated;
+  }
+
+  async backfillApprovedIngredientCosts(actor?: RecipeActor) {
+    const recipes = await this.recipeModel
+      .find({
+        deletedAt: { $exists: false },
+        approvalStatus: 'approved',
+        'ingredients.0': { $exists: true },
+      })
+      .select({ ingredients: 1, foodCostRecipe: 1 })
+      .lean();
+
+    const productCodes = recipes.flatMap((recipe) =>
+      (recipe.ingredients ?? [])
+        .map((ingredient) => ingredient.productCode?.trim() ?? '')
+        .filter(Boolean),
+    );
+    const rawMaterialLookups =
+      await this.rawMaterials.findLookupsByNormalizedCodes(productCodes);
+    const rawMaterialByCode = new Map(
+      rawMaterialLookups.map((item) => [
+        item.productCodeNormalized,
+        item,
+      ]),
+    );
+    const updatedFields = this.buildActorFields(actor, 'updated');
+
+    let updatedRecipes = 0;
+    let updatedIngredients = 0;
+    let skippedNoRawMaterial = 0;
+    let skippedMissingPrice = 0;
+
+    for (const recipe of recipes) {
+      let changed = false;
+      const ingredients = (recipe.ingredients ?? []).map((ingredient) => {
+        const result = this.applyIngredientCostFromLookup(
+          ingredient,
+          rawMaterialByCode,
+        );
+        if (result.status === 'missing_raw_material') {
+          skippedNoRawMaterial += 1;
+          return ingredient;
+        }
+        if (result.status === 'missing_price') {
+          skippedMissingPrice += 1;
+          return ingredient;
+        }
+        if (result.changed) {
+          changed = true;
+          updatedIngredients += 1;
+        }
+        return result.ingredient;
+      });
+
+      const foodCostRecipe = this.calculateFoodCostRecipe(ingredients);
+      const nextFoodCostRecipe =
+        foodCostRecipe > 0 ? this.roundQuantity(foodCostRecipe) : undefined;
+      const currentFoodCostRecipe = this.normalizeOptionalNumber(
+        recipe.foodCostRecipe,
+      );
+
+      if (!changed && currentFoodCostRecipe === nextFoodCostRecipe) continue;
+
+      const updatePayload: Record<string, unknown> = {
+        $set: {
+          ingredients,
+          ...updatedFields,
+        },
+      };
+      if (nextFoodCostRecipe !== undefined) {
+        updatePayload.$set = {
+          ...(updatePayload.$set as Record<string, unknown>),
+          foodCostRecipe: nextFoodCostRecipe,
+        };
+      } else {
+        updatePayload.$unset = { foodCostRecipe: '' };
+      }
+
+      await this.recipeModel.updateOne(
+        { _id: recipe._id },
+        updatePayload,
+      );
+      updatedRecipes += 1;
+    }
+
+    return {
+      scannedRecipes: recipes.length,
+      updatedRecipes,
+      updatedIngredients,
+      skippedNoRawMaterial,
+      skippedMissingPrice,
+    };
   }
 
   async resubmitRejectedRecipe(id: string, actor?: RecipeActor) {
@@ -453,12 +577,25 @@ export class RecipesService {
       $set.portionSize = input.portionSize;
     }
 
-    if (input.foodCostRecipe !== undefined) {
-      $set.foodCostRecipe = input.foodCostRecipe;
+    const inputFoodCostRecipe =
+      input.foodCostRecipe !== undefined
+        ? this.normalizeOptionalNumber(input.foodCostRecipe)
+        : undefined;
+    if (inputFoodCostRecipe !== undefined) {
+      $set.foodCostRecipe = inputFoodCostRecipe;
     }
 
     if (input.ingredients !== undefined) {
-      $set.ingredients = this.normalizeIngredients(input.ingredients);
+      const ingredients = this.normalizeIngredients(input.ingredients);
+      const costFields = await this.buildIngredientCostUpdate(ingredients);
+      $set.ingredients = costFields.ingredients;
+      if (inputFoodCostRecipe === undefined) {
+        if ('foodCostRecipe' in costFields) {
+          $set.foodCostRecipe = costFields.foodCostRecipe;
+        } else {
+          $unset.foodCostRecipe = '';
+        }
+      }
     }
 
     if (Object.keys($set).length === 0 && Object.keys($unset).length === 0) {
@@ -1219,6 +1356,11 @@ export class RecipesService {
     return tokenized;
   }
 
+  private roundQuantity(value: number) {
+    if (!Number.isFinite(value)) return undefined;
+    return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
+  }
+
   private convertQty(
     qty: number,
     from?: string,
@@ -1228,10 +1370,10 @@ export class RecipesService {
     if (!from || !to) return undefined;
     if (from === to) return qty;
 
-    if (from === 'gram' && to === 'kg') return Number((qty / 1000).toFixed(6));
-    if (from === 'kg' && to === 'gram') return Number((qty * 1000).toFixed(6));
-    if (from === 'ml' && to === 'liter') return Number((qty / 1000).toFixed(6));
-    if (from === 'liter' && to === 'ml') return Number((qty * 1000).toFixed(6));
+    if (from === 'gram' && to === 'kg') return this.roundQuantity(qty / 1000);
+    if (from === 'kg' && to === 'gram') return this.roundQuantity(qty * 1000);
+    if (from === 'ml' && to === 'liter') return this.roundQuantity(qty / 1000);
+    if (from === 'liter' && to === 'ml') return this.roundQuantity(qty * 1000);
 
     return undefined;
   }
@@ -1296,6 +1438,82 @@ export class RecipesService {
         ...(foodCost !== undefined ? { foodCost } : {}),
       };
     });
+  }
+
+  private async buildIngredientCostUpdate(ingredients: RecipeIngredient[]) {
+    const rawMaterialLookups =
+      await this.rawMaterials.findLookupsByNormalizedCodes(
+        ingredients
+          .map((ingredient) => ingredient.productCode?.trim() ?? '')
+          .filter(Boolean),
+      );
+    const rawMaterialByCode = new Map(
+      rawMaterialLookups.map((item) => [
+        item.productCodeNormalized,
+        item,
+      ]),
+    );
+    const nextIngredients = ingredients.map((ingredient) => {
+      const result = this.applyIngredientCostFromLookup(
+        ingredient,
+        rawMaterialByCode,
+      );
+      return 'ingredient' in result ? result.ingredient : ingredient;
+    });
+    const foodCostRecipe = this.calculateFoodCostRecipe(nextIngredients);
+
+    return {
+      ingredients: nextIngredients,
+      ...(foodCostRecipe > 0
+        ? { foodCostRecipe: this.roundQuantity(foodCostRecipe) }
+        : {}),
+    };
+  }
+
+  private applyIngredientCostFromLookup(
+    ingredient: RecipeIngredient,
+    rawMaterialByCode: Map<string, RawMaterialLookup>,
+  ):
+    | {
+        status: 'matched';
+        changed: boolean;
+        ingredient: RecipeIngredient;
+      }
+    | { status: 'missing_raw_material' }
+    | { status: 'missing_price' } {
+    const productCode = ingredient.productCode?.trim() ?? '';
+    if (!productCode) return { status: 'missing_raw_material' };
+
+    const rawMaterial = rawMaterialByCode.get(productCode.toLowerCase());
+    if (!rawMaterial) return { status: 'missing_raw_material' };
+
+    const unitPrice = this.normalizeOptionalNumber(rawMaterial.price);
+    if (unitPrice === undefined) return { status: 'missing_price' };
+
+    const qty = Number(ingredient.qty);
+    const foodCost = Number.isFinite(qty)
+      ? this.roundQuantity(qty * unitPrice)
+      : undefined;
+    const currentPrice = this.normalizeOptionalNumber(ingredient.priceUom);
+    const currentFoodCost = this.normalizeOptionalNumber(ingredient.foodCost);
+    const nextIngredient: RecipeIngredient = {
+      ...ingredient,
+      priceUom: unitPrice,
+      ...(foodCost !== undefined ? { foodCost } : {}),
+    };
+
+    return {
+      status: 'matched',
+      changed: currentPrice !== unitPrice || currentFoodCost !== foodCost,
+      ingredient: nextIngredient,
+    };
+  }
+
+  private calculateFoodCostRecipe(ingredients: RecipeIngredient[]) {
+    return ingredients.reduce((sum, ingredient) => {
+      const foodCost = this.normalizeOptionalNumber(ingredient.foodCost);
+      return sum + (foodCost ?? 0);
+    }, 0);
   }
 
   private normalizeOptionalNumber(value?: number): number | undefined {
@@ -1476,6 +1694,26 @@ export class RecipesService {
     });
   }
 
+  private async attachSiteNames(
+    items: Array<{ site?: string; siteName?: string }>,
+  ): Promise<void> {
+    const siteCodes = Array.from(
+      new Set(
+        items
+          .map((item) => this.normalizeSite(item.site))
+          .filter((site): site is string => Boolean(site)),
+      ),
+    );
+    if (siteCodes.length === 0) return;
+
+    const siteByCode = await this.sites.findSummariesByCodes(siteCodes);
+    items.forEach((item) => {
+      const siteCode = this.normalizeSite(item.site);
+      if (!siteCode) return;
+      item.siteName = siteByCode.get(siteCode)?.name ?? siteCode;
+    });
+  }
+
   private normalizeSite(site?: string): string | undefined {
     const trimmed = site?.trim();
     return trimmed ? trimmed : undefined;
@@ -1484,15 +1722,6 @@ export class RecipesService {
   private buildSiteFilter(site?: string) {
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
-    if (normalizedSite === DEFAULT_SITE) {
-      return {
-        $or: [
-          { site: DEFAULT_SITE },
-          { site: { $exists: false } },
-          { site: '' },
-        ],
-      };
-    }
     return { site: normalizedSite };
   }
 

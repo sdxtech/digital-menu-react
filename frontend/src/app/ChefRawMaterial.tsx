@@ -63,19 +63,20 @@ const ChefRawMaterial = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Product Code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Vendor</th>
                   <th className="px-5 py-4 font-semibold">Unit of Measures</th>
                 </tr>
               </thead>
               <tbody>
                 {rawMaterialsMeta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
                       Loading raw materials...
                     </td>
                   </tr>
                 ) : rawMaterials.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={4} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
                       {rawMaterialsMeta.error
                         ? rawMaterialsMeta.error
                         : 'No raw materials yet.'}
@@ -91,6 +92,7 @@ const ChefRawMaterial = () => {
                       </td>
                       <td className="px-5 py-4">{item.productCode}</td>
                       <td className="px-5 py-4">{item.name}</td>
+                      <td className="px-5 py-4">{item.vendor || '-'}</td>
                       <td className="px-5 py-4">
                         {formatUnitLabel(item.unitOfMeasures)}
                       </td>

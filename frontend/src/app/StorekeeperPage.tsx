@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
+import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
@@ -154,19 +155,6 @@ const downloadExcel = (
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-const formatQuantity = (value: number) => {
-  if (!Number.isFinite(value)) return '0'
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(3).replace(/\.?0+$/, '')
-}
-
-const formatSignedQuantity = (value: number) => {
-  const formatted = formatQuantity(Math.abs(value))
-  if (value > 0) return `+${formatted}`
-  if (value < 0) return `-${formatted}`
-  return '0'
-}
-
 const parseDotDecimal = (value: string) => {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -239,6 +227,8 @@ const StorekeeperPage = () => {
   const [reconciliationError, setReconciliationError] = useState('')
   const [cancellationGroup, setCancellationGroup] =
     useState<StoreRequestGroup | null>(null)
+  const [cancellationMenu, setCancellationMenu] =
+    useState<StoreRequestMenu | null>(null)
   const [cancellationReason, setCancellationReason] = useState('')
   const [cancellationError, setCancellationError] = useState('')
 
@@ -388,10 +378,14 @@ const StorekeeperPage = () => {
     setReconciliationError('')
   }
 
-  const openCancellationModal = (group: StoreRequestGroup) => {
+  const openCancellationModal = (
+    group: StoreRequestGroup,
+    menu: StoreRequestMenu,
+  ) => {
     setActionMessage('')
     setLoadError('')
     setCancellationGroup(group)
+    setCancellationMenu(menu)
     setCancellationReason('')
     setCancellationError('')
   }
@@ -407,6 +401,7 @@ const StorekeeperPage = () => {
   const closeCancellationModal = () => {
     if (processingGroupKey) return
     setCancellationGroup(null)
+    setCancellationMenu(null)
     setCancellationReason('')
     setCancellationError('')
   }
@@ -518,9 +513,8 @@ const StorekeeperPage = () => {
         )
         return
       }
-      const varianceQty = actualQty - row.plannedQty
       const reason = row.reason.trim()
-      if (Math.abs(varianceQty) > 0.000001 && !reason) {
+      if (quantitiesDiffer(actualQty, row.plannedQty) && !reason) {
         setReconciliationError(
           `Reason is required when actual qty differs for ${fieldLabel}.`,
         )
@@ -560,13 +554,21 @@ const StorekeeperPage = () => {
           ? error.message
           : 'Failed to complete ingredient issuance.'
       setReconciliationError(message)
+      if (
+        message.toLowerCase().includes('already completed') ||
+        message.toLowerCase().includes('already processed') ||
+        message.toLowerCase().includes('already completed or cancelled')
+      ) {
+        await fetchStoreRequests()
+        setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
+      }
     } finally {
       setProcessingGroupKey(null)
     }
   }
 
   const handleSubmitCancellation = async () => {
-    if (!cancellationGroup) return
+    if (!cancellationGroup || !cancellationMenu) return
 
     const reason = cancellationReason.trim()
     if (!reason) {
@@ -575,12 +577,10 @@ const StorekeeperPage = () => {
     }
 
     const groupKey = getGroupKey(cancellationGroup)
-    const menuProductionIds = cancellationGroup.items
-      .map((item) => item.id)
-      .filter(Boolean)
+    const menuProductionIds = cancellationMenu.id ? [cancellationMenu.id] : []
 
     if (menuProductionIds.length === 0) {
-      setCancellationError('Menu production data is missing for this batch.')
+      setCancellationError('Menu production data is missing for this menu.')
       return
     }
 
@@ -592,13 +592,11 @@ const StorekeeperPage = () => {
         menuProductionIds,
         reason,
       })
-      const label = cancellationGroup.productionCode
-        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
-        : cancellationGroup.date
-      setActionMessage(`Store request for ${label} cancelled.`)
+      setActionMessage(`Store request for ${cancellationMenu.menuName} cancelled.`)
       await fetchStoreRequests()
       setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))
       setCancellationGroup(null)
+      setCancellationMenu(null)
       setCancellationReason('')
     } catch (error) {
       const message =
@@ -751,19 +749,6 @@ const StorekeeperPage = () => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => openCancellationModal(group)}
-                                    disabled={
-                                      processingGroupKey === groupKey ||
-                                      group.items.length === 0
-                                    }
-                                    className="rounded-md border border-danger bg-white px-4 py-2 text-xs font-semibold text-danger shadow-sm hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {processingGroupKey === groupKey
-                                      ? 'Cancelling...'
-                                      : 'Cancel request'}
-                                  </button>
-                                  <button
-                                    type="button"
                                     onClick={() => openReconciliationModal(group)}
                                     disabled={
                                       processingGroupKey === groupKey ||
@@ -803,6 +788,9 @@ const StorekeeperPage = () => {
                                           <th className="px-3 py-1.5 font-semibold">
                                             Portion
                                           </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Action
+                                          </th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -825,6 +813,26 @@ const StorekeeperPage = () => {
                                             </td>
                                             <td className="px-3 py-1.5">
                                               {menu.portion}
+                                            </td>
+                                            <td className="px-3 py-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  openCancellationModal(
+                                                    group,
+                                                    menu,
+                                                  )
+                                                }
+                                                disabled={
+                                                  processingGroupKey ===
+                                                  groupKey
+                                                }
+                                                className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                {processingGroupKey === groupKey
+                                                  ? 'Cancelling...'
+                                                  : 'Cancel request'}
+                                              </button>
                                             </td>
                                           </tr>
                                         ))}
@@ -931,13 +939,11 @@ const StorekeeperPage = () => {
                   <div>
                     <p className="text-xs text-muted">Cancel Store Request</p>
                     <h3 className="mt-1 text-lg font-semibold text-foreground">
-                      {cancellationGroup.productionCode
-                        ? `${cancellationGroup.date} (${cancellationGroup.productionCode})`
-                        : cancellationGroup.date}
+                      {cancellationMenu?.menuName ?? 'Selected menu'}
                     </h3>
                     <p className="mt-2 text-sm text-muted">
                       Use this when the warehouse cannot fulfill the request.
-                      A reason is required before the batch can be cancelled.
+                      A reason is required before this menu can be cancelled.
                     </p>
                   </div>
                   <button
@@ -968,6 +974,18 @@ const StorekeeperPage = () => {
                       <p className="text-xs text-muted">Menus in batch</p>
                       <p className="mt-2 text-sm font-medium text-foreground">
                         {cancellationGroup.items.length}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menu</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationMenu?.menuName ?? '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border bg-white p-4">
+                      <p className="text-xs text-muted">Menu ID</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {cancellationMenu?.recipeCode ?? '-'}
                       </p>
                     </div>
                   </div>
@@ -1144,7 +1162,7 @@ const StorekeeperPage = () => {
                         const varianceClass =
                           varianceQty === null
                             ? 'text-muted'
-                            : Math.abs(varianceQty) <= 0.000001
+                            : !quantitiesDiffer(varianceQty, 0)
                               ? 'text-muted'
                               : varianceQty > 0
                                 ? 'text-primary'

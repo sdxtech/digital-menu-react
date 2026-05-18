@@ -15,7 +15,7 @@ export const getApprovalStatusLabel = (status: ApprovalStatusLabelValue) => {
 export const getStoreRequestStatusLabel = (
   status: StoreRequestStatusLabelValue,
 ) => {
-  if (status === 'fulfilled') return 'Delivered'
+  if (status === 'fulfilled') return 'Completed'
   if (status === 'cancelled') return 'Cancelled'
   if (status === 'requested') return 'Requested'
   return 'Pending approval'

@@ -58,7 +58,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(),
       refreshTokenHash,
     });
@@ -97,7 +97,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(),
       refreshTokenHash: await bcrypt.hash('another-token', 10),
     });
@@ -128,7 +128,7 @@ describe('AuthService', () => {
       email: 'chef@corp.test',
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
       lastActivityAt: new Date(Date.now() - 31 * 60 * 1000),
       refreshTokenHash: await bcrypt.hash(refreshToken, 10),
     });
@@ -159,7 +159,7 @@ describe('AuthService', () => {
       passwordHash: await bcrypt.hash('secret-pass', 10),
       isActive: true,
       roles: [AppRole.Chef],
-      sites: ['A1'],
+      sites: ['SITE-001'],
     });
     jwt.signAsync
       .mockResolvedValueOnce('access-token')
@@ -175,6 +175,35 @@ describe('AuthService', () => {
       'user-1',
       'refresh-token',
     );
+  });
+
+  it('rejects login when user has no assigned role', async () => {
+    const users = makeUsers();
+    const sites = makeSites();
+    const jwt = makeJwt();
+    const config = makeConfig();
+    const service = new AuthService(
+      users as never,
+      sites as never,
+      jwt as never,
+      config as never,
+    );
+
+    users.findByEmail.mockResolvedValue({
+      id: 'user-1',
+      name: 'No Role User',
+      email: 'norole@corp.test',
+      passwordHash: await bcrypt.hash('secret-pass', 10),
+      isActive: true,
+      roles: [],
+      sites: ['SITE-001'],
+    });
+
+    await expect(
+      service.login('norole@corp.test', 'secret-pass'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+    expect(users.setRefreshToken).not.toHaveBeenCalled();
   });
 
   it('rejects non-superadmin login when no site is assigned', async () => {

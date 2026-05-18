@@ -7,7 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { AppRole, DEFAULT_ROLE } from '../auth/roles.constants';
+import { ALL_APP_ROLES, AppRole } from '../auth/roles.constants';
 import { SiteSummary, SitesService } from '../sites/sites.service';
 import { User, UserDocument } from './schemas/user.schema';
 
@@ -18,6 +18,7 @@ type CreateUserInput = {
   roles?: AppRole[];
   sites?: string[];
   siteId?: string | null;
+  createMissingSites?: boolean;
 };
 
 type UpdateUserInput = {
@@ -106,11 +107,12 @@ export class UsersService {
     const siteAssignment = await this.resolveSiteAssignment(
       input.siteId,
       input.sites,
+      input.createMissingSites,
     );
     const created = await this.userModel.create({
       ...input,
       email: input.email.toLowerCase().trim(),
-      roles: input.roles?.length ? input.roles : [DEFAULT_ROLE],
+      roles: this.normalizeRoles(input.roles),
       sites: siteAssignment.sites,
       siteId: siteAssignment.siteId,
     });
@@ -182,7 +184,7 @@ export class UsersService {
   async listSites() {
     const [rawSites, activeSites] = await Promise.all([
       this.userModel.distinct('sites'),
-      this.sites.findAll({ page: 1, limit: 100, isActive: true }),
+      this.sites.findAll({ page: 1, limit: 200, isActive: true }),
     ]);
     const values = [
       ...activeSites.items.map((site) => site.code),
@@ -298,6 +300,7 @@ export class UsersService {
   private async resolveSiteAssignment(
     siteId?: string | null,
     sites?: string[],
+    createMissingSites = false,
   ) {
     const normalizedSiteId = siteId?.trim();
     if (normalizedSiteId) {
@@ -309,9 +312,46 @@ export class UsersService {
       };
     }
 
+    return this.resolveSiteCodes(sites, createMissingSites);
+  }
+
+  private async resolveSiteCodes(sites?: string[], createMissingSites = false) {
+    const normalizedSites = this.normalizeSites(sites);
+    if (normalizedSites.length === 0) {
+      return { siteId: undefined, sites: [] as string[] };
+    }
+
+    const requestedSite = normalizedSites[0];
+    const siteCodes = normalizedSites.map((site) =>
+      this.normalizeSiteCode(site),
+    );
+    const siteByCode = await this.sites.findSummariesByCodes(siteCodes);
+    const primarySiteCode = siteCodes[0];
+    let site = siteByCode.get(primarySiteCode);
+    if (!site) {
+      const siteByName = await this.sites.findAll({
+        page: 1,
+        limit: 1,
+        search: requestedSite,
+        isActive: true,
+      });
+      site = siteByName.items.find(
+        (item) =>
+          item.name.trim().toLowerCase() === requestedSite.trim().toLowerCase(),
+      );
+    }
+    if (!site && createMissingSites) {
+      const created =
+        await this.sites.createWithNextSequentialCode(requestedSite);
+      site = this.sites.toSummary(created);
+    }
+    if (!site) {
+      throw new BadRequestException(`Site not found: ${primarySiteCode}`);
+    }
+
     return {
-      siteId: undefined,
-      sites: this.normalizeSites(sites),
+      siteId: new Types.ObjectId(site.id),
+      sites: [site.code],
     };
   }
 
@@ -377,5 +417,20 @@ export class UsersService {
       .map((site) => site.trim())
       .filter(Boolean)
       .slice(0, 1);
+  }
+
+  private normalizeSiteCode(site: string) {
+    return site.trim().replace(/\s+/g, '-').toUpperCase();
+  }
+
+  private normalizeRoles(roles?: AppRole[]) {
+    const allowedRoles = new Set<AppRole>(ALL_APP_ROLES);
+    const normalized = Array.from(
+      new Set((roles ?? []).filter((role) => allowedRoles.has(role))),
+    );
+    if (normalized.length === 0) {
+      throw new BadRequestException('User role is required');
+    }
+    return normalized;
   }
 }
