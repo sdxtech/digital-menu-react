@@ -41,6 +41,10 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 type StoreRequestMenu = {
@@ -53,6 +57,7 @@ type StoreRequestMenu = {
   category: string
   portion: number
   cost?: number
+  estimatedCost?: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
@@ -82,6 +87,17 @@ const approvalCenterSections: Array<{
     icon: 'bi-clipboard2-check',
   },
 ]
+
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return '-'
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
 
 const UnitManagerPage = () => {
   const { accessToken } = useAuth()
@@ -791,6 +807,9 @@ const UnitManagerPage = () => {
                       const submittedByLabel = submittedByNames.length
                         ? submittedByNames.join(', ')
                         : '-'
+                      const pendingMenuCount = group.items.filter(
+                        (item) => item.approvalStatus === 'pending',
+                      ).length
 
                       return (
                         <Fragment key={groupKey}>
@@ -811,7 +830,8 @@ const UnitManagerPage = () => {
                                   {getApprovalStatusLabel('pending')}
                                 </span>
                                 <span className="text-muted">
-                                  {group.items.length} menus
+                                  {pendingMenuCount} of {group.items.length} menus
+                                  pending
                                 </span>
                               </div>
                             </td>
@@ -853,6 +873,15 @@ const UnitManagerPage = () => {
                                               Portion
                                             </th>
                                             <th className="px-4 py-3 font-semibold">
+                                              Estimated Cost
+                                            </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Cost/Pax
+                                            </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Approval Status
+                                            </th>
+                                            <th className="px-4 py-3 font-semibold">
                                               Action
                                             </th>
                                           </tr>
@@ -861,57 +890,106 @@ const UnitManagerPage = () => {
                                           {group.items.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={6}
+                                                colSpan={9}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No menus pending in this group.
                                               </td>
                                             </tr>
                                           ) : (
-                                            group.items.map((item, itemIndex) => (
-                                              <tr
-                                                key={item.id}
-                                                className="border-t border-border"
-                                              >
-                                                <td className="px-4 py-3 text-sm text-muted">
-                                                  {itemIndex + 1}
-                                                </td>
-                                                <td className="px-4 py-3 font-medium">
-                                                  {item.recipeCode ?? '-'}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                  {item.menuName}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                  {item.category}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                  {item.portion}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                  <div className="flex flex-wrap gap-2">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() =>
-                                                        handleMenuApproval(item)
-                                                      }
-                                                      className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                            group.items.map((item, itemIndex) => {
+                                              const estimatedCost = Number.isFinite(
+                                                Number(item.estimatedCost),
+                                              )
+                                                ? Number(item.estimatedCost)
+                                                : undefined
+                                              const estimatedCostPerPax =
+                                                estimatedCost !== undefined &&
+                                                item.portion > 0
+                                                  ? estimatedCost / item.portion
+                                                  : undefined
+
+                                              return (
+                                                <tr
+                                                  key={item.id}
+                                                  className="border-t border-border"
+                                                >
+                                                  <td className="px-4 py-3 text-sm text-muted">
+                                                    {itemIndex + 1}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {item.recipeCode ?? '-'}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.menuName}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.category}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.portion}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(estimatedCost)}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(
+                                                      estimatedCostPerPax,
+                                                    )}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    <span
+                                                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                                                        item.approvalStatus ===
+                                                        'approved'
+                                                          ? 'bg-primary-soft text-primary'
+                                                          : item.approvalStatus ===
+                                                              'rejected'
+                                                            ? 'bg-danger/10 text-danger'
+                                                            : 'bg-background text-muted'
+                                                      }`}
                                                     >
-                                                      Approve
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() =>
-                                                        openMenuRejectModal(item)
-                                                      }
-                                                      className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
-                                                    >
-                                                      Reject
-                                                    </button>
-                                                  </div>
-                                                </td>
-                                              </tr>
-                                            ))
+                                                      {getApprovalStatusLabel(
+                                                        item.approvalStatus,
+                                                      )}
+                                                    </span>
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {item.approvalStatus ===
+                                                    'pending' ? (
+                                                      <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            handleMenuApproval(
+                                                              item,
+                                                            )
+                                                          }
+                                                          className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                                        >
+                                                          Approve
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            openMenuRejectModal(
+                                                              item,
+                                                            )
+                                                          }
+                                                          className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
+                                                        >
+                                                          Reject
+                                                        </button>
+                                                      </div>
+                                                    ) : (
+                                                      <span className="text-xs text-muted">
+                                                        Reviewed
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              )
+                                            })
                                           )}
                                         </tbody>
                                       </table>
@@ -947,13 +1025,22 @@ const UnitManagerPage = () => {
                                             <th className="px-4 py-3 font-semibold">
                                               Unit
                                             </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Vendor
+                                            </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Price
+                                            </th>
+                                            <th className="px-4 py-3 font-semibold">
+                                              Ingredient Cost
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {summaryItems.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={5}
+                                                colSpan={8}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No ingredients available to
@@ -981,6 +1068,17 @@ const UnitManagerPage = () => {
                                                 <td className="px-4 py-3">
                                                   {formatUnitLabel(
                                                     item.unitOfMeasures,
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                  {item.vendor ?? '-'}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium">
+                                                  {formatPrice(item.price)}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium">
+                                                  {formatPrice(
+                                                    item.ingredientCost,
                                                   )}
                                                 </td>
                                               </tr>

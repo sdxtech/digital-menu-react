@@ -60,6 +60,18 @@ type MenuInputRow = {
   portion: number | ''
 }/* Tipe data untuk menyimpan informasi setiap baris input menu, termasuk id unik, id resep yang dipilih, query teks untuk pencarian resep, dan jumlah porsi */
 
+type MenuProductionIngredientVendorInput = {
+  ingredientIndex: number
+  productCode?: string
+  name?: string
+  unitOfMeasures?: string
+  vendor?: string
+  site?: string
+  currency?: string
+  minimumQuantity?: number
+  price?: number
+}
+
 const createMenuInputRow = (): MenuInputRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   recipeId: '',
@@ -840,6 +852,7 @@ const ChefMenuCycle = ({
       unitManagerId?: string
       portion: number
       cost: number
+      ingredientVendors?: MenuProductionIngredientVendorInput[]
       productionDate: string
     }> = []
 
@@ -865,6 +878,57 @@ const ChefMenuCycle = ({
         setInputMessage('')
         return
       }
+      const ingredientVendors: MenuProductionIngredientVendorInput[] =
+        showIngredientVendorColumn
+          ? recipe.ingredients
+              .map<MenuProductionIngredientVendorInput | null>(
+                (ingredient, ingredientIndex) => {
+                  const productKey = getVendorPricesProductKey(
+                    ingredient.productCode,
+                  )
+                  const vendorSelectionKey = getIngredientVendorSelectionKey(
+                    row.id,
+                    ingredientIndex,
+                    ingredient.productCode,
+                  )
+                  const useOtherSiteVendor =
+                    useOtherSiteVendorByIngredientKey[vendorSelectionKey] ??
+                    false
+                  const vendorOptions = useOtherSiteVendor
+                    ? otherSiteVendorPricesByProductKey[productKey] ?? []
+                    : vendorPricesByProductKey[productKey] ?? []
+                  const selectedVendorKey = useOtherSiteVendor
+                    ? getSelectedOtherSiteVendorPriceKey(
+                        vendorSelectionKey,
+                        vendorOptions,
+                      )
+                    : getSelectedVendorPriceKey(
+                        vendorSelectionKey,
+                        vendorOptions,
+                      )
+                  const selectedVendor = vendorOptions.find(
+                    (option) => option.key === selectedVendorKey,
+                  )
+                  if (!selectedVendor) return null
+
+                  return {
+                    ingredientIndex,
+                    productCode: ingredient.productCode,
+                    name: ingredient.name,
+                    unitOfMeasures: ingredient.unitOfMeasures,
+                    vendor: selectedVendor.vendor,
+                    site: selectedVendor.site,
+                    currency: selectedVendor.currency,
+                    minimumQuantity: selectedVendor.minimumQuantity,
+                    price: selectedVendor.price,
+                  }
+                },
+              )
+              .filter(
+                (item): item is MenuProductionIngredientVendorInput =>
+                  item !== null,
+              )
+          : []
 
       payload.push({
         recipeId: recipe.id,
@@ -879,6 +943,7 @@ const ChefMenuCycle = ({
           : {}),
         portion: portionValue,
         cost: 0,
+        ...(ingredientVendors.length > 0 ? { ingredientVendors } : {}),
         productionDate,
       })
     }

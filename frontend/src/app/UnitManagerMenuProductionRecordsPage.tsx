@@ -17,6 +17,10 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 type StoreFulfillmentIngredient = {
@@ -26,6 +30,13 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
+  plannedPrice?: number
+  actualPrice?: number
+  variancePrice?: number
   reason?: string
 }
 
@@ -46,6 +57,7 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  estimatedCost?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
@@ -100,6 +112,17 @@ const getRecordStatusLabel = (status: RecordStatus) => {
   if (status === 'requested') return 'Waiting for Storekeeper'
   if (status === 'rejected') return getApprovalStatusLabel('rejected')
   return getStoreRequestStatusLabel(status)
+}
+
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return '-'
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 const UnitManagerMenuProductionRecordsPage = () => {
@@ -374,32 +397,68 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="px-4 py-3 font-semibold">Menu</th>
                                           <th className="px-4 py-3 font-semibold">Category</th>
                                           <th className="px-4 py-3 font-semibold">Portion</th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Estimated Cost
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Cost/Pax
+                                          </th>
                                           <th className="px-4 py-3 font-semibold">Approval status</th>
                                           <th className="px-4 py-3 font-semibold">Store status</th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((item, itemIndex) => (
-                                          <tr key={item.id} className="border-t border-border">
-                                            <td className="px-4 py-3 text-sm text-muted">
-                                              {itemIndex + 1}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium">
-                                              {item.recipeCode ?? '-'}
-                                            </td>
-                                            <td className="px-4 py-3">{item.menuName}</td>
-                                            <td className="px-4 py-3">{item.category}</td>
-                                            <td className="px-4 py-3">{item.portion}</td>
-                                            <td className="px-4 py-3">
-                                              {getApprovalStatusLabel(item.approvalStatus)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {getStoreRequestStatusLabel(
-                                                item.storeRequestStatus,
-                                              )}
-                                            </td>
-                                          </tr>
-                                        ))}
+                                        {group.items.map((item, itemIndex) => {
+                                          const estimatedCost = Number.isFinite(
+                                            Number(item.estimatedCost),
+                                          )
+                                            ? Number(item.estimatedCost)
+                                            : undefined
+                                          const estimatedCostPerPax =
+                                            estimatedCost !== undefined &&
+                                            item.portion > 0
+                                              ? estimatedCost / item.portion
+                                              : undefined
+
+                                          return (
+                                            <tr
+                                              key={item.id}
+                                              className="border-t border-border"
+                                            >
+                                              <td className="px-4 py-3 text-sm text-muted">
+                                                {itemIndex + 1}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {item.recipeCode ?? '-'}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {item.menuName}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {item.category}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {item.portion}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(estimatedCost)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(estimatedCostPerPax)}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {getApprovalStatusLabel(
+                                                  item.approvalStatus,
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {getStoreRequestStatusLabel(
+                                                  item.storeRequestStatus,
+                                                )}
+                                              </td>
+                                            </tr>
+                                          )
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
@@ -422,9 +481,15 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="w-12 px-4 py-3 font-semibold">No</th>
                                           <th className="px-4 py-3 font-semibold">Product code</th>
                                           <th className="px-4 py-3 font-semibold">Ingredient name</th>
+                                          <th className="px-4 py-3 font-semibold">Vendor</th>
+                                          <th className="px-4 py-3 font-semibold">Price</th>
+                                          <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                                           <th className="px-4 py-3 font-semibold">Planned</th>
                                           <th className="px-4 py-3 font-semibold">Actual</th>
                                           <th className="px-4 py-3 font-semibold">Variance</th>
+                                          <th className="px-4 py-3 font-semibold">Planned Price</th>
+                                          <th className="px-4 py-3 font-semibold">Actual Price</th>
+                                          <th className="px-4 py-3 font-semibold">Price Variance</th>
                                           <th className="px-4 py-3 font-semibold">Unit</th>
                                           <th className="px-4 py-3 font-semibold">Reason</th>
                                         </tr>
@@ -443,6 +508,15 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               <td className="px-4 py-3">{item.productCode}</td>
                                               <td className="px-4 py-3">{item.name}</td>
                                               <td className="px-4 py-3">
+                                                {item.vendor ?? '-'}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.price)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.ingredientCost)}
+                                              </td>
+                                              <td className="px-4 py-3">
                                                 {formatQuantity(item.plannedQty)}
                                               </td>
                                               <td className="px-4 py-3">
@@ -450,6 +524,15 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               </td>
                                               <td className="px-4 py-3">
                                                 {formatQuantity(item.varianceQty)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.plannedPrice)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.actualPrice)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.variancePrice)}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {formatUnitLabel(item.unitOfMeasures)}
@@ -460,7 +543,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                         ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={8}
+                                              colSpan={14}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to display.
@@ -478,8 +561,21 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               <td className="px-4 py-3">{item.productCode}</td>
                                               <td className="px-4 py-3">{item.name}</td>
                                               <td className="px-4 py-3">
+                                                {item.vendor ?? '-'}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.price)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(item.ingredientCost)}
+                                              </td>
+                                              <td className="px-4 py-3">
                                                 {formatQuantity(item.qty)}
                                               </td>
+                                              <td className="px-4 py-3">-</td>
+                                              <td className="px-4 py-3">-</td>
+                                              <td className="px-4 py-3">-</td>
+                                              <td className="px-4 py-3">-</td>
                                               <td className="px-4 py-3">-</td>
                                               <td className="px-4 py-3">-</td>
                                               <td className="px-4 py-3">
