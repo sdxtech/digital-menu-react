@@ -24,6 +24,7 @@ import {
   ApprovalStatus,
   MenuProduction,
   MenuProductionDocument,
+  MenuProductionIngredientVendor,
   StoreRequestStatus,
 } from './schemas/menu-production.schema';
 import { UsersService } from '../users/users.service';
@@ -33,6 +34,10 @@ type StoreRequestIngredient = {
   name: string;
   unitOfMeasures: string;
   qty: number;
+  vendor?: string;
+  vendorSite?: string;
+  price?: number;
+  ingredientCost?: number;
 };
 
 type StoreFulfillmentIngredient = {
@@ -42,6 +47,13 @@ type StoreFulfillmentIngredient = {
   plannedQty: number;
   actualQty: number;
   varianceQty: number;
+  vendor?: string;
+  vendorSite?: string;
+  price?: number;
+  ingredientCost?: number;
+  plannedPrice?: number;
+  actualPrice?: number;
+  variancePrice?: number;
   reason?: string;
 };
 
@@ -65,6 +77,7 @@ type StoreRequestMenu = {
   category: string;
   portion: number;
   cost?: number;
+  estimatedCost?: number;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   rejectionReason?: string;
@@ -188,6 +201,9 @@ export class MenuProductionsService implements OnModuleInit {
       category: menuSnapshot.category,
       portion: input.portion,
       cost: input.cost,
+      ingredientVendors: this.normalizeIngredientVendors(
+        input.ingredientVendors,
+      ),
       productionDate: input.productionDate,
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
@@ -241,6 +257,9 @@ export class MenuProductionsService implements OnModuleInit {
         category: menuSnapshot.category,
         portion: input.portion,
         cost: input.cost,
+        ingredientVendors: this.normalizeIngredientVendors(
+          input.ingredientVendors,
+        ),
         productionDate: input.productionDate,
         approvalStatus: 'pending',
         storeRequestStatus: 'not-requested',
@@ -543,8 +562,23 @@ export class MenuProductionsService implements OnModuleInit {
         const plannedQty = this.roundQuantity(Number(plannedItem.qty));
         const actualQty = this.roundQuantity(Number(actualItem.actualQty));
         const varianceQty = this.roundQuantity(actualQty - plannedQty);
+        const plannedPrice = Number.isFinite(Number(plannedItem.price))
+          ? Number(plannedItem.price)
+          : undefined;
+        const submittedActualPrice = Number(actualItem.actualPrice);
+        const actualPrice = Number.isFinite(submittedActualPrice)
+          ? submittedActualPrice
+          : plannedPrice;
+        const variancePrice =
+          actualPrice !== undefined && plannedPrice !== undefined
+            ? this.roundQuantity(actualPrice - plannedPrice)
+            : undefined;
         const normalizedReason = actualItem.reason?.trim();
-        if (varianceQty !== 0 && !normalizedReason) {
+        if (
+          (varianceQty !== 0 ||
+            (variancePrice !== undefined && variancePrice !== 0)) &&
+          !normalizedReason
+        ) {
           throw new BadRequestException(
             `Variance reason is required for ${plannedItem.productCode || plannedItem.name}.`,
           );
@@ -558,6 +592,13 @@ export class MenuProductionsService implements OnModuleInit {
           plannedQty,
           actualQty,
           varianceQty,
+          vendor: plannedItem.vendor,
+          vendorSite: plannedItem.vendorSite,
+          price: plannedItem.price,
+          ingredientCost: plannedItem.ingredientCost,
+          plannedPrice,
+          actualPrice,
+          variancePrice,
           reason: normalizedReason || undefined,
         };
       },
@@ -565,6 +606,9 @@ export class MenuProductionsService implements OnModuleInit {
 
     actualItems.forEach((actualItem) => {
       const actualQty = this.roundQuantity(Number(actualItem.actualQty));
+      const actualPrice = Number.isFinite(Number(actualItem.actualPrice))
+        ? Number(actualItem.actualPrice)
+        : undefined;
       const normalizedReason = actualItem.reason?.trim();
       if (!Number.isFinite(actualQty) || actualQty <= 0) {
         throw new BadRequestException(
@@ -584,6 +628,9 @@ export class MenuProductionsService implements OnModuleInit {
         plannedQty: 0,
         actualQty,
         varianceQty: actualQty,
+        plannedPrice: 0,
+        actualPrice,
+        variancePrice: actualPrice,
         reason: normalizedReason,
       });
     });
@@ -964,7 +1011,7 @@ export class MenuProductionsService implements OnModuleInit {
     if (andFilters.length) {
       filter.$and = andFilters;
     }
-    if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
+    const requestedApprovalStatus = query.approvalStatus;
     if (query.storeRequestStatus)
       filter.storeRequestStatus = query.storeRequestStatus;
     const productionDateFilter = this.buildProductionDateFilter(query);
@@ -986,7 +1033,15 @@ export class MenuProductionsService implements OnModuleInit {
       requestedSite,
     );
 
-    return { items: grouped };
+    const filteredGroups = requestedApprovalStatus
+      ? grouped.filter((group) =>
+          group.items.some(
+            (item) => item.approvalStatus === requestedApprovalStatus,
+          ),
+        )
+      : grouped;
+
+    return { items: filteredGroups };
   }
 
   async listStoreRequestSites() {
@@ -1153,6 +1208,62 @@ export class MenuProductionsService implements OnModuleInit {
     return `${identity}__${unit}`;
   }
 
+  private normalizeIngredientVendors(
+    vendors?: MenuProductionIngredientVendor[],
+  ): MenuProductionIngredientVendor[] {
+    if (!Array.isArray(vendors)) return [];
+    return vendors
+      .map((vendor) => {
+        const ingredientIndex = Number(vendor.ingredientIndex);
+        const price = Number(vendor.price);
+        const minimumQuantity = Number(vendor.minimumQuantity);
+        return {
+          ...(Number.isInteger(ingredientIndex) && ingredientIndex >= 0
+            ? { ingredientIndex }
+            : {}),
+          productCode: vendor.productCode?.trim() || undefined,
+          name: vendor.name?.trim() || undefined,
+          unitOfMeasures: vendor.unitOfMeasures?.trim() || undefined,
+          vendor: vendor.vendor?.trim() || undefined,
+          site: vendor.site?.trim() || undefined,
+          currency: vendor.currency?.trim() || undefined,
+          ...(Number.isFinite(minimumQuantity) && minimumQuantity >= 0
+            ? { minimumQuantity }
+            : {}),
+          ...(Number.isFinite(price) && price >= 0 ? { price } : {}),
+        };
+      })
+      .filter(
+        (vendor) =>
+          vendor.ingredientIndex !== undefined ||
+          Boolean(vendor.productCode || vendor.name || vendor.vendor),
+      );
+  }
+
+  private findIngredientVendor(
+    vendors: MenuProductionIngredientVendor[],
+    ingredientIndex: number,
+    productCode?: string,
+    name?: string,
+    unitOfMeasures?: string,
+  ) {
+    const byIndex = vendors.find(
+      (vendor) => vendor.ingredientIndex === ingredientIndex,
+    );
+    if (byIndex) return byIndex;
+
+    const key = this.buildStoreIngredientKey(productCode, name, unitOfMeasures);
+    if (!key) return undefined;
+    return vendors.find(
+      (vendor) =>
+        this.buildStoreIngredientKey(
+          vendor.productCode,
+          vendor.name,
+          vendor.unitOfMeasures,
+        ) === key,
+    );
+  }
+
   private mapStoreFulfillmentItems(
     items: unknown,
   ): StoreFulfillmentIngredient[] {
@@ -1169,6 +1280,23 @@ export class MenuProductionsService implements OnModuleInit {
         plannedQty: Number(record.plannedQty ?? 0),
         actualQty: Number(record.actualQty ?? 0),
         varianceQty: Number(record.varianceQty ?? 0),
+        vendor: String(record.vendor ?? '').trim() || undefined,
+        vendorSite: String(record.vendorSite ?? '').trim() || undefined,
+        price: Number.isFinite(Number(record.price))
+          ? Number(record.price)
+          : undefined,
+        ingredientCost: Number.isFinite(Number(record.ingredientCost))
+          ? Number(record.ingredientCost)
+          : undefined,
+        plannedPrice: Number.isFinite(Number(record.plannedPrice))
+          ? Number(record.plannedPrice)
+          : undefined,
+        actualPrice: Number.isFinite(Number(record.actualPrice))
+          ? Number(record.actualPrice)
+          : undefined,
+        variancePrice: Number.isFinite(Number(record.variancePrice))
+          ? Number(record.variancePrice)
+          : undefined,
         reason: String(record.reason ?? '').trim() || undefined,
       };
     });
@@ -1261,6 +1389,7 @@ export class MenuProductionsService implements OnModuleInit {
       let ingredients: StoreRequestIngredient[] = [];
       let missingRecipe = false;
       let portionSize = 1;
+      let estimatedCost: number | undefined;
       const submittedById = String(menu.createdBy ?? '').trim();
       const submittedByName = submittedById
         ? creatorNameById.get(submittedById)
@@ -1283,13 +1412,43 @@ export class MenuProductionsService implements OnModuleInit {
         portionSize = Number(recipe.portionSize) || 1;
         if (portionSize <= 0) portionSize = 1;
         const multiplier = Number(menu.portion) / portionSize;
+        let estimatedCostTotal = 0;
+        let hasEstimatedCost = false;
+        const ingredientVendors = this.normalizeIngredientVendors(
+          menu.ingredientVendors,
+        );
 
-        ingredients = (recipe.ingredients ?? []).map((ingredient) => {
+        ingredients = (recipe.ingredients ?? []).map((ingredient, index) => {
           const productCode = ingredient.productCode?.trim() ?? '';
           const name = ingredient.name?.trim() ?? '';
           const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
           const baseQty = Number(ingredient.qty);
           const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+          const selectedVendor = this.findIngredientVendor(
+            ingredientVendors,
+            index,
+            productCode,
+            name,
+            unitOfMeasures,
+          );
+          const priceUom = Number(ingredient.priceUom);
+          const foodCost = Number(ingredient.foodCost);
+          const vendorPrice = Number(selectedVendor?.price);
+          const unitPrice = Number.isFinite(vendorPrice)
+            ? vendorPrice
+            : Number.isFinite(priceUom)
+              ? priceUom
+              : Number.isFinite(foodCost) &&
+                  Number.isFinite(baseQty) &&
+                  baseQty > 0
+                ? foodCost / baseQty
+                : undefined;
+          const ingredientCost =
+            unitPrice !== undefined ? qty * unitPrice : undefined;
+          if (unitPrice !== undefined) {
+            estimatedCostTotal += ingredientCost ?? 0;
+            hasEstimatedCost = true;
+          }
           const normalizedKey = this.buildStoreIngredientKey(
             productCode,
             name,
@@ -1298,12 +1457,31 @@ export class MenuProductionsService implements OnModuleInit {
           const existing = group.summaryMap.get(normalizedKey);
           if (existing) {
             existing.qty += qty;
+            if (ingredientCost !== undefined) {
+              existing.ingredientCost =
+                (existing.ingredientCost ?? 0) + ingredientCost;
+            }
+            if (existing.vendor !== selectedVendor?.vendor) {
+              existing.vendor = existing.vendor
+                ? 'Multiple'
+                : selectedVendor?.vendor;
+            }
+            if (existing.vendorSite !== selectedVendor?.site) {
+              existing.vendorSite = undefined;
+            }
+            if (existing.price !== unitPrice) {
+              existing.price = undefined;
+            }
           } else {
             group.summaryMap.set(normalizedKey, {
               productCode,
               name,
               unitOfMeasures,
               qty,
+              vendor: selectedVendor?.vendor,
+              vendorSite: selectedVendor?.site,
+              price: unitPrice,
+              ingredientCost,
             });
           }
 
@@ -1312,8 +1490,13 @@ export class MenuProductionsService implements OnModuleInit {
             name,
             unitOfMeasures,
             qty,
+            vendor: selectedVendor?.vendor,
+            vendorSite: selectedVendor?.site,
+            price: unitPrice,
+            ingredientCost,
           };
         });
+        estimatedCost = hasEstimatedCost ? estimatedCostTotal : undefined;
       }
 
       const fulfilledAtValue = menu.storeFulfillmentCompletedAt;
@@ -1383,6 +1566,7 @@ export class MenuProductionsService implements OnModuleInit {
         cost: Number.isFinite(Number(menu.cost))
           ? Number(menu.cost)
           : undefined,
+        estimatedCost,
         productionDate,
         approvalStatus: menu.approvalStatus ?? 'pending',
         rejectionReason: String(menu.rejectionReason ?? '').trim() || undefined,

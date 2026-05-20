@@ -19,6 +19,9 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  plannedPrice?: number
+  actualPrice?: number
+  variancePrice?: number
   reason?: string
 }
 
@@ -75,6 +78,17 @@ const xmlEscape = (value: unknown) => {
 const sanitizeWorksheetName = (value: string) => {
   const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
   return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return '-'
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
@@ -255,12 +269,24 @@ const StorekeeperHistoryPage = () => {
       const plannedQty = Number.isFinite(item.plannedQty) ? item.plannedQty : 0
       const actualQty = Number.isFinite(item.actualQty) ? item.actualQty : 0
       const varianceQty = Number.isFinite(item.varianceQty) ? item.varianceQty : 0
+      const plannedPrice = Number.isFinite(Number(item.plannedPrice))
+        ? Number(item.plannedPrice)
+        : undefined
+      const actualPrice = Number.isFinite(Number(item.actualPrice))
+        ? Number(item.actualPrice)
+        : undefined
+      const variancePrice = Number.isFinite(Number(item.variancePrice))
+        ? Number(item.variancePrice)
+        : undefined
       const existing = fulfillmentMap.get(key)
 
       if (existing) {
         existing.plannedQty += plannedQty
         existing.actualQty += actualQty
         existing.varianceQty += varianceQty
+        if (plannedPrice !== undefined) existing.plannedPrice = plannedPrice
+        if (actualPrice !== undefined) existing.actualPrice = actualPrice
+        if (variancePrice !== undefined) existing.variancePrice = variancePrice
         if (!existing.reason && item.reason?.trim()) existing.reason = item.reason
         if (!existing.productCode && item.productCode) {
           existing.productCode = item.productCode
@@ -279,6 +305,9 @@ const StorekeeperHistoryPage = () => {
         plannedQty,
         actualQty,
         varianceQty,
+        plannedPrice,
+        actualPrice,
+        variancePrice,
         reason: item.reason,
       })
     })
@@ -298,6 +327,9 @@ const StorekeeperHistoryPage = () => {
         'Planned Qty',
         'Actual Qty',
         'Variance',
+        'Planned Price',
+        'Actual Price',
+        'Price Variance',
         'Unit',
         'Reason',
         'Completed By',
@@ -360,6 +392,9 @@ const StorekeeperHistoryPage = () => {
             : formatQuantity(ingredient.qty),
           fulfillment ? formatQuantity(fulfillment.actualQty) : '',
           fulfillment ? formatQuantity(fulfillment.varianceQty) : '',
+          fulfillment ? formatPrice(fulfillment.plannedPrice) : '',
+          fulfillment ? formatPrice(fulfillment.actualPrice) : '',
+          fulfillment ? formatPrice(fulfillment.variancePrice) : '',
           formatUnitLabel(
             fulfillment?.unitOfMeasures ?? ingredient.unitOfMeasures,
           ),
@@ -389,6 +424,9 @@ const StorekeeperHistoryPage = () => {
         formatQuantity(item.plannedQty),
         formatQuantity(item.actualQty),
         formatQuantity(item.varianceQty),
+        formatPrice(item.plannedPrice),
+        formatPrice(item.actualPrice),
+        formatPrice(item.variancePrice),
         formatUnitLabel(item.unitOfMeasures),
         item.reason ?? '',
         completedByLabel,
@@ -666,6 +704,15 @@ const StorekeeperHistoryPage = () => {
                                             Variance
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
+                                            Planned price
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Actual price
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Price variance
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
@@ -710,6 +757,15 @@ const StorekeeperHistoryPage = () => {
                                                     item.varianceQty,
                                                   )}
                                                 </td>
+                                                <td className="px-3 py-1.5 font-medium">
+                                                  {formatPrice(item.plannedPrice)}
+                                                </td>
+                                                <td className="px-3 py-1.5 font-medium">
+                                                  {formatPrice(item.actualPrice)}
+                                                </td>
+                                                <td className="px-3 py-1.5 font-medium">
+                                                  {formatPrice(item.variancePrice)}
+                                                </td>
                                                 <td className="px-3 py-1.5">
                                                   {formatUnitLabel(
                                                     item.unitOfMeasures,
@@ -724,7 +780,7 @@ const StorekeeperHistoryPage = () => {
                                         ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={8}
+                                              colSpan={11}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to
