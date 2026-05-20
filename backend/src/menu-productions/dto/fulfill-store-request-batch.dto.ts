@@ -29,6 +29,12 @@ export class FulfillStoreRequestBatchItemDto {
   @Min(0)
   actualQty: number;
 
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  actualPrice?: number;
+
   @IsOptional()
   @IsString()
   reason?: string;

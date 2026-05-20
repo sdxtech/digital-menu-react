@@ -122,6 +122,17 @@ type AddMenuProductionInput = {
   unitManagerId?: string
   portion: number
   cost: number
+  ingredientVendors?: Array<{
+    ingredientIndex?: number
+    productCode?: string
+    name?: string
+    unitOfMeasures?: string
+    vendor?: string
+    site?: string
+    currency?: string
+    minimumQuantity?: number
+    price?: number
+  }>
   productionDate: string
 }
 
@@ -140,6 +151,7 @@ type FulfillStoreRequestBatchInput = {
     name: string
     unitOfMeasures: string
     actualQty: number
+    actualPrice?: number
     reason?: string
   }>
   note?: string
