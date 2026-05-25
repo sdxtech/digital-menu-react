@@ -29,6 +29,8 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.VERCEL === '1') return;
+
     this.worker = new Worker<ExportJob>(
       'exports',
       async (job) => this.handle(job),
