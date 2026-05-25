@@ -3,7 +3,7 @@ import type { RedisOptions } from 'ioredis';
 export const parseRedisUrl = (rawUrl?: string): RedisOptions => {
   const value = rawUrl?.trim();
   const normalized = value
-    ? value.startsWith('redis://')
+    ? value.startsWith('redis://') || value.startsWith('rediss://')
       ? value
       : `redis://${value}`
     : 'redis://localhost:6379';
@@ -21,5 +21,6 @@ export const parseRedisUrl = (rawUrl?: string): RedisOptions => {
     username: url.username || undefined,
     password: url.password || undefined,
     db: Number.isNaN(db ?? NaN) ? undefined : db,
+    tls: url.protocol === 'rediss:' ? {} : undefined,
   };
 };

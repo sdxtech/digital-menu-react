@@ -30,6 +30,8 @@ export class MailProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.VERCEL === '1') return;
+
     const transport = createTransport({
       host: this.config.getOrThrow<string>('SMTP_HOST'),
       port: Number(this.config.getOrThrow<string>('SMTP_PORT')),
