@@ -9,7 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
 import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
+import { getUploadDir } from '../common/upload-dir';
 import { ImportDto } from './dto/import.dto';
 import { ImportsService } from './imports.service';
 
@@ -69,7 +70,7 @@ export class ImportsController {
   @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: join(process.cwd(), 'uploads'),
+      dest: getUploadDir(),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },
