@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import ExcelJS from 'exceljs';
@@ -23,6 +23,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUploadDir } from '../common/upload-dir';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ListUsersQueryDto } from '../users/dto/list-users.query.dto';
@@ -97,7 +98,7 @@ export class SuperadminUsersController {
   @Roles(AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: join(process.cwd(), 'uploads'),
+      dest: getUploadDir(),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },
