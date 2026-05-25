@@ -14,11 +14,12 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AppRole } from '../auth/roles.constants';
+import { getUploadDir } from '../common/upload-dir';
 import { CreateSiteDto } from '../sites/dto/create-site.dto';
 import { ListSitesQueryDto } from '../sites/dto/list-sites.query.dto';
 import { SiteIdParamDto } from '../sites/dto/site-id.param.dto';
@@ -65,7 +66,7 @@ export class SuperadminSitesController {
   @Roles(AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: join(process.cwd(), 'uploads'),
+      dest: getUploadDir(),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },

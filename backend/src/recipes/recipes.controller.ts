@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -23,6 +23,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
 import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
+import { getUploadDir } from '../common/upload-dir';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
@@ -143,7 +144,7 @@ export class RecipesController {
   @Roles(AppRole.Chef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: join(process.cwd(), 'uploads'),
+      dest: getUploadDir(),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },

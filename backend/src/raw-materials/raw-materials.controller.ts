@@ -15,13 +15,14 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUploadDir } from '../common/upload-dir';
 import { CreateRawMaterialDto } from './dto/create-raw-material.dto';
 import { ListRawMaterialsQueryDto } from './dto/list-raw-materials.query.dto';
 import { UpdateRawMaterialDto } from './dto/update-raw-material.dto';
@@ -95,7 +96,7 @@ export class RawMaterialsController {
   @Roles(AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: join(process.cwd(), 'uploads'),
+      dest: getUploadDir(),
       fileFilter: (
         _req: Request,
         file: { originalname: string; mimetype: string },
