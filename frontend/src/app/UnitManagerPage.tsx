@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
@@ -78,15 +79,18 @@ type StoreRequestGroup = {
 const approvalCenterSections: Array<{
   id: ApprovalCenterSection
   label: string
-  icon: string
 }> = [
-  { id: 'recipes', label: 'Recipe Approval', icon: 'bi-journal-check' },
+  { id: 'recipes', label: 'Recipe Approval' },
   {
     id: 'menu-productions',
     label: 'Menu Production Approval',
-    icon: 'bi-clipboard2-check',
   },
 ]
+
+const isApprovalCenterSection = (
+  value: string | null,
+): value is ApprovalCenterSection =>
+  approvalCenterSections.some((section) => section.id === value)
 
 const formatPrice = (value?: number) => {
   if (value === undefined || value === null || !Number.isFinite(value)) {
@@ -101,6 +105,8 @@ const formatPrice = (value?: number) => {
 
 const UnitManagerPage = () => {
   const { accessToken } = useAuth()
+  const [searchParams] = useSearchParams()
+  const sectionParam = searchParams.get('section')
   const {
     approveRecipe,
     rejectRecipe,
@@ -128,8 +134,9 @@ const UnitManagerPage = () => {
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
   const [menuGroupPage, setMenuGroupPage] = useState(1)
-  const [activeSection, setActiveSection] =
-    useState<ApprovalCenterSection>('recipes')
+  const [activeSection, setActiveSection] = useState<ApprovalCenterSection>(() =>
+    isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
+  )
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
@@ -164,6 +171,15 @@ const UnitManagerPage = () => {
     setActionMessage('')
     fetchPending().catch(() => null)
   }, [fetchPending])
+
+  useEffect(() => {
+    const nextSection = isApprovalCenterSection(sectionParam)
+      ? sectionParam
+      : 'recipes'
+    setActiveSection((current) =>
+      current === nextSection ? current : nextSection,
+    )
+  }, [sectionParam])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -508,41 +524,6 @@ const UnitManagerPage = () => {
             </div>
           </div>
         ) : null}
-
-        <div className="flex flex-wrap gap-2 border-b border-border">
-          {approvalCenterSections.map((section) => {
-            const active = activeSection === section.id
-            const count =
-              section.id === 'recipes'
-                ? pendingRecipes.length
-                : menuProductionGroups.length
-
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => setActiveSection(section.id)}
-                className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${
-                  active
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted hover:text-primary'
-                }`}
-              >
-                <i className={`bi ${section.icon} text-base`} aria-hidden="true" />
-                <span>{section.label}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    active
-                      ? 'bg-primary-soft text-primary'
-                      : 'bg-background text-muted'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
 
         {activeSection === 'recipes' ? (
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
