@@ -25,17 +25,70 @@ const navItems = [
   },
   {
     label: 'Menu Management',
-    to: '/superadmin/menu-management',
+    to: '/superadmin/menu-management?tab=recipes',
     icon: (className: string) => (
       <i className={`bi bi-journal-text ${className}`} aria-hidden="true" />
     ),
+    children: [
+      {
+        label: 'Menu Production',
+        to: '/superadmin/menu-management?tab=menu-production',
+        icon: (className: string) => (
+          <i className={`bi bi-calendar2-week ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Calculator Recipe',
+        to: '/superadmin/menu-management?tab=recipe-calculator',
+        icon: (className: string) => (
+          <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Recipe Data',
+        to: '/superadmin/menu-management?tab=recipes',
+        icon: (className: string) => (
+          <i className={`bi bi-journal-text ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Raw Material Data',
+        to: '/superadmin/menu-management?tab=raw-materials',
+        icon: (className: string) => (
+          <i className={`bi bi-box-seam ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Categories',
+        to: '/superadmin/menu-management?tab=categories',
+        icon: (className: string) => (
+          <i className={`bi bi-tags ${className}`} aria-hidden="true" />
+        ),
+      },
+    ],
   },
   {
     label: 'Approval Centers',
-    to: '/superadmin/approval-centers',
+    to: '/superadmin/approval-centers?section=recipes',
     icon: (className: string) => (
       <i className={`bi bi-shield-check ${className}`} aria-hidden="true" />
     ),
+    children: [
+      {
+        label: 'Recipe Approval',
+        to: '/superadmin/approval-centers?section=recipes',
+        icon: (className: string) => (
+          <i className={`bi bi-journal-check ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Menu Production Approval',
+        to: '/superadmin/approval-centers?section=menu-productions',
+        icon: (className: string) => (
+          <i className={`bi bi-clipboard2-check ${className}`} aria-hidden="true" />
+        ),
+      },
+    ],
   },
   {
     label: 'Store Request',
