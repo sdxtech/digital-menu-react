@@ -24,6 +24,13 @@ const navItems = [
     ),
   },
   {
+    label: 'UOM Management',
+    to: '/superadmin/unit-of-measures',
+    icon: (className: string) => (
+      <i className={`bi bi-rulers ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Menu Management',
     to: '/superadmin/menu-management?tab=recipes',
     icon: (className: string) => (

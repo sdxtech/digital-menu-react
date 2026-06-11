@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { SuperadminModule } from './superadmin/superadmin.module';
+import { UnitOfMeasuresModule } from './unit-of-measures/unit-of-measures.module';
 import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -53,6 +54,7 @@ import { SitesModule } from './sites/sites.module';
     MailModule,
     DashboardModule,
     SuperadminModule,
+    UnitOfMeasuresModule,
     HealthModule,
   ],
   controllers: [AppController],
