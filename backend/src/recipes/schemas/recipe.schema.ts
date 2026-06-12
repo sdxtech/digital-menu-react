@@ -11,6 +11,12 @@ export type RecipeIngredient = {
   name?: string;
   unitOfMeasures?: string;
   qty?: number;
+  prodQty?: number;
+  prodUomCode?: string;
+  srQty?: number;
+  srUomCode?: string;
+  conversionId?: string;
+  conversionMultiplier?: number;
   priceUom?: number;
   foodCost?: number;
 };
@@ -88,6 +94,12 @@ export class Recipe {
         name: { type: String, trim: true },
         unitOfMeasures: { type: String, trim: true },
         qty: { type: Number },
+        prodQty: { type: Number },
+        prodUomCode: { type: String, trim: true },
+        srQty: { type: Number },
+        srUomCode: { type: String, trim: true },
+        conversionId: { type: String, trim: true },
+        conversionMultiplier: { type: Number },
         priceUom: { type: Number },
         foodCost: { type: Number },
       },

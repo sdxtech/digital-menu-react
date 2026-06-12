@@ -33,6 +33,36 @@ export class RecipeIngredientDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  prodQty?: number;
+
+  @IsOptional()
+  @IsString()
+  prodUomCode?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  srQty?: number;
+
+  @IsOptional()
+  @IsString()
+  srUomCode?: string;
+
+  @IsOptional()
+  @IsString()
+  conversionId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  conversionMultiplier?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   priceUom?: number;
 
   @IsOptional()
