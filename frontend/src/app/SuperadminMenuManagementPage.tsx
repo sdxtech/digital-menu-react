@@ -9,6 +9,7 @@ import {
 import TablePagination from '../components/TablePagination'
 import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
@@ -195,6 +196,9 @@ const menuManagementTabs: Array<{
   { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
   { id: 'categories', label: 'Categories', icon: 'bi-tags' },
 ]
+
+const isMenuManagementTab = (value: string | null): value is MenuManagementTab =>
+  menuManagementTabs.some((tab) => tab.id === value)
 
 const emptyMeta: TableMeta = {
   page: 1,
@@ -1385,7 +1389,11 @@ export const RecipeCalculator = () => {
 
 const SuperadminMenuManagementPage = () => {
   const { accessToken } = useAuth()
-  const [activeTab, setActiveTab] = useState<MenuManagementTab>('recipes')
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState<MenuManagementTab>(() =>
+    isMenuManagementTab(tabParam) ? tabParam : 'recipes',
+  )
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [recipeCategories, setRecipeCategories] = useState<string[]>([])
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
@@ -1461,6 +1469,11 @@ const SuperadminMenuManagementPage = () => {
     useState<Record<string, string>>({})
   const [selectedRawMaterialVendorByCode, setSelectedRawMaterialVendorByCode] =
     useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const nextTab = isMenuManagementTab(tabParam) ? tabParam : 'recipes'
+    setActiveTab((current) => (current === nextTab ? current : nextTab))
+  }, [tabParam])
 
   const selectedRecipe = useMemo(
     () =>
@@ -2585,27 +2598,6 @@ const SuperadminMenuManagementPage = () => {
           <p className="mt-1 text-sm text-muted">
             Manage recipe, raw material, and category data from one workspace.
           </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2 border-b border-border">
-          {menuManagementTabs.map((tab) => {
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${
-                  active
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted hover:text-primary'
-                }`}
-              >
-                <i className={`bi ${tab.icon} text-base`} aria-hidden="true" />
-                <span>{tab.label}</span>
-              </button>
-            )
-          })}
         </div>
 
         {categoryModalOpen ? (

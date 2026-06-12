@@ -12,6 +12,10 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 type StoreFulfillmentIngredient = {
@@ -21,6 +25,9 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  plannedPrice?: number
+  actualPrice?: number
+  variancePrice?: number
   reason?: string
 }
 
@@ -40,6 +47,7 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  estimatedCost?: number
   productionDate?: string
   storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   portionSize?: number
@@ -69,11 +77,24 @@ type ReconciliationRow = {
   unitOfMeasures: string
   plannedQty: number
   actualQty: string
+  plannedPrice: number
+  actualPrice: string
   reason: string
   isAdditional: boolean
 }
 
 const ITEMS_PER_PAGE = 10
+
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return '-'
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
 
 const xmlEscape = (value: unknown) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -189,6 +210,8 @@ const createAdditionalReconciliationRow = (): ReconciliationRow => ({
   unitOfMeasures: '',
   plannedQty: 0,
   actualQty: '',
+  plannedPrice: 0,
+  actualPrice: '',
   reason: '',
   isAdditional: true,
 })
@@ -280,6 +303,10 @@ const StorekeeperPage = () => {
       unitOfMeasures: item.unitOfMeasures,
       plannedQty: item.qty,
       actualQty: formatQuantity(item.qty),
+      plannedPrice: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+      actualPrice: Number.isFinite(Number(item.price))
+        ? String(Number(item.price))
+        : '0',
       reason: '',
       isAdditional: false,
     }))
@@ -434,6 +461,12 @@ const StorekeeperPage = () => {
     return parsed.value - plannedQty
   }
 
+  const getVariancePrice = (plannedPrice: number, actualPriceText: string) => {
+    const parsed = parseDotDecimal(actualPriceText)
+    if (!parsed.valid) return null
+    return parsed.value - plannedPrice
+  }
+
   const handleSubmitReconciliation = async () => {
     if (!reconciliationGroup) return
 
@@ -513,10 +546,37 @@ const StorekeeperPage = () => {
         )
         return
       }
-      const reason = row.reason.trim()
-      if (quantitiesDiffer(actualQty, row.plannedQty) && !reason) {
+      const actualPriceText = row.actualPrice.trim()
+      if (!actualPriceText) {
         setReconciliationError(
-          `Reason is required when actual qty differs for ${fieldLabel}.`,
+          `Actual price is required for ${fieldLabel || 'an ingredient'}.`,
+        )
+        return
+      }
+
+      const parsedActualPrice = parseDotDecimal(actualPriceText)
+      if (!parsedActualPrice.valid) {
+        if (parsedActualPrice.reason === 'comma') {
+          setReconciliationError(
+            `Use dot decimal format for actual price of ${fieldLabel}, for example 12500.5.`,
+          )
+          return
+        }
+        setReconciliationError(
+          `Actual price for ${fieldLabel} must be a valid number using dot decimals, for example 12500.5.`,
+        )
+        return
+      }
+
+      const actualPrice = parsedActualPrice.value
+      const reason = row.reason.trim()
+      if (
+        (quantitiesDiffer(actualQty, row.plannedQty) ||
+          quantitiesDiffer(actualPrice, row.plannedPrice)) &&
+        !reason
+      ) {
+        setReconciliationError(
+          `Reason is required when actual qty or actual price differs for ${fieldLabel}.`,
         )
         return
       }
@@ -526,6 +586,7 @@ const StorekeeperPage = () => {
         name,
         unitOfMeasures,
         actualQty,
+        actualPrice,
         reason: reason || undefined,
       })
     }
@@ -789,53 +850,80 @@ const StorekeeperPage = () => {
                                             Portion
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
+                                            Estimated Cost
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Cost/Pax
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
                                             Action
                                           </th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((menu, idx) => (
-                                          <tr
-                                            key={menu.id}
-                                            className="border-t border-border"
-                                          >
-                                            <td className="px-3 py-1.5 text-sm text-muted">
-                                              {idx + 1}
-                                            </td>
-                                            <td className="px-3 py-1.5 font-medium">
-                                              {menu.recipeCode ?? '-'}
-                                            </td>
-                                            <td className="px-3 py-1.5">
-                                              {menu.menuName}
-                                            </td>
-                                            <td className="px-3 py-1.5">
-                                              {menu.category}
-                                            </td>
-                                            <td className="px-3 py-1.5">
-                                              {menu.portion}
-                                            </td>
-                                            <td className="px-3 py-1.5">
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  openCancellationModal(
-                                                    group,
-                                                    menu,
-                                                  )
-                                                }
-                                                disabled={
-                                                  processingGroupKey ===
-                                                  groupKey
-                                                }
-                                                className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                              >
-                                                {processingGroupKey === groupKey
-                                                  ? 'Cancelling...'
-                                                  : 'Cancel request'}
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        ))}
+                                        {group.items.map((menu, idx) => {
+                                          const estimatedCost = Number.isFinite(
+                                            Number(menu.estimatedCost),
+                                          )
+                                            ? Number(menu.estimatedCost)
+                                            : undefined
+                                          const estimatedCostPerPax =
+                                            estimatedCost !== undefined &&
+                                            menu.portion > 0
+                                              ? estimatedCost / menu.portion
+                                              : undefined
+
+                                          return (
+                                            <tr
+                                              key={menu.id}
+                                              className="border-t border-border"
+                                            >
+                                              <td className="px-3 py-1.5 text-sm text-muted">
+                                                {idx + 1}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-medium">
+                                                {menu.recipeCode ?? '-'}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {menu.menuName}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {menu.category}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {menu.portion}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-medium">
+                                                {formatPrice(estimatedCost)}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-medium">
+                                                {formatPrice(
+                                                  estimatedCostPerPax,
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    openCancellationModal(
+                                                      group,
+                                                      menu,
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    processingGroupKey ===
+                                                    groupKey
+                                                  }
+                                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                                >
+                                                  {processingGroupKey === groupKey
+                                                    ? 'Cancelling...'
+                                                    : 'Cancel request'}
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          )
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
@@ -870,13 +958,22 @@ const StorekeeperPage = () => {
                                           <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Vendor
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Price
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            Ingredient Cost
+                                          </th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={5}
+                                              colSpan={8}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to
@@ -904,6 +1001,17 @@ const StorekeeperPage = () => {
                                               <td className="px-3 py-1.5">
                                                 {formatUnitLabel(
                                                   item.unitOfMeasures,
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {item.vendor ?? '-'}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-medium">
+                                                {formatPrice(item.price)}
+                                              </td>
+                                              <td className="px-3 py-1.5 font-medium">
+                                                {formatPrice(
+                                                  item.ingredientCost,
                                                 )}
                                               </td>
                                             </tr>
@@ -1146,6 +1254,15 @@ const StorekeeperPage = () => {
                         <th className="px-3 py-1.5 font-semibold">Planned qty</th>
                         <th className="px-3 py-1.5 font-semibold">Actual qty</th>
                         <th className="px-3 py-1.5 font-semibold">Variance</th>
+                        <th className="px-3 py-1.5 font-semibold">
+                          Planned price
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold">
+                          Actual price
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold">
+                          Price variance
+                        </th>
                         <th className="px-3 py-1.5 font-semibold">Unit</th>
                         <th className="min-w-[220px] px-3 py-1.5 font-semibold">
                           Reason
@@ -1159,12 +1276,24 @@ const StorekeeperPage = () => {
                           row.plannedQty,
                           row.actualQty,
                         )
+                        const variancePrice = getVariancePrice(
+                          row.plannedPrice,
+                          row.actualPrice,
+                        )
                         const varianceClass =
                           varianceQty === null
                             ? 'text-muted'
                             : !quantitiesDiffer(varianceQty, 0)
                               ? 'text-muted'
                               : varianceQty > 0
+                                ? 'text-primary'
+                                : 'text-danger'
+                        const variancePriceClass =
+                          variancePrice === null
+                            ? 'text-muted'
+                            : !quantitiesDiffer(variancePrice, 0)
+                              ? 'text-muted'
+                              : variancePrice > 0
                                 ? 'text-primary'
                                 : 'text-danger'
 
@@ -1238,6 +1367,32 @@ const StorekeeperPage = () => {
                                 ? '-'
                                 : formatSignedQuantity(varianceQty)}
                             </td>
+                            <td className="px-3 py-1.5 font-medium">
+                              {formatPrice(row.plannedPrice)}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={row.actualPrice}
+                                onChange={(event) =>
+                                  updateReconciliationRow(
+                                    row.id,
+                                    'actualPrice',
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder="0"
+                                className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              />
+                            </td>
+                            <td
+                              className={`px-3 py-1.5 font-medium ${variancePriceClass}`}
+                            >
+                              {variancePrice === null
+                                ? '-'
+                                : formatPrice(variancePrice)}
+                            </td>
                             <td className="px-3 py-1.5">
                               {row.isAdditional ? (
                                 <input
@@ -1294,7 +1449,7 @@ const StorekeeperPage = () => {
                         )
                       })}
                       <tr className="border-t border-border">
-                        <td colSpan={9} className="px-3 py-3">
+                        <td colSpan={12} className="px-3 py-3">
                           <div className="flex justify-center">
                             <button
                               type="button"

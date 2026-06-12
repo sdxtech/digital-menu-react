@@ -109,6 +109,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (process.env.VERCEL === '1') return;
+
     this.worker = new Worker<ImportJob>(
       'imports',
       async (job) => this.handle(job),

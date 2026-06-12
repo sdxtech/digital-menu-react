@@ -16,7 +16,16 @@ import { parseRedisUrl } from './redis.utils';
     {
       provide: REDIS_CLIENT,
       inject: [REDIS_OPTIONS],
-      useFactory: (options: RedisOptions) => new IORedis(options),
+      useFactory: (options: RedisOptions) => {
+        const client = new IORedis({
+          ...options,
+          connectTimeout: 3000,
+          maxRetriesPerRequest: 1,
+          retryStrategy: () => null,
+        });
+        client.on('error', () => undefined);
+        return client;
+      },
     },
   ],
   exports: [REDIS_CLIENT, REDIS_OPTIONS],

@@ -98,6 +98,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Site Management',
   },
   {
+    path: '/superadmin/unit-of-measures',
+    getPageTitle: () => 'UOM Management',
+  },
+  {
     path: '/superadmin/menu-management',
     getPageTitle: () => 'Menu Management',
   },

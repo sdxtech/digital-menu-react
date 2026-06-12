@@ -3,6 +3,10 @@ export type StoreRequestSummaryIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 export const aggregateStoreRequestSummary = (
@@ -21,6 +25,19 @@ export const aggregateStoreRequestSummary = (
     const existing = summaryMap.get(key)
     if (existing) {
       existing.qty += qty
+      if (Number.isFinite(Number(item.ingredientCost))) {
+        existing.ingredientCost =
+          (existing.ingredientCost ?? 0) + Number(item.ingredientCost)
+      }
+      if (existing.vendor !== item.vendor) {
+        existing.vendor = existing.vendor ? 'Multiple' : item.vendor
+      }
+      if (existing.vendorSite !== item.vendorSite) {
+        existing.vendorSite = undefined
+      }
+      if (existing.price !== item.price) {
+        existing.price = undefined
+      }
       if (!existing.productCode && productCode) existing.productCode = productCode
       if (!existing.name && name) existing.name = name
       if (!existing.unitOfMeasures && unitOfMeasures) {
@@ -34,6 +51,12 @@ export const aggregateStoreRequestSummary = (
       name,
       unitOfMeasures,
       qty,
+      vendor: item.vendor,
+      vendorSite: item.vendorSite,
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
+      ingredientCost: Number.isFinite(Number(item.ingredientCost))
+        ? Number(item.ingredientCost)
+        : undefined,
     })
   })
 

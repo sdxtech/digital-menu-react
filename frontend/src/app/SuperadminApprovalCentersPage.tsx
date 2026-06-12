@@ -1,5 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
@@ -96,6 +97,9 @@ const sections: Array<{ id: ApprovalSection; label: string; icon: string }> = [
   },
 ]
 
+const isApprovalSection = (value: string | null): value is ApprovalSection =>
+  sections.some((section) => section.id === value)
+
 const mapSite = (item: SiteApi): SiteOption => ({
   code: item.code ?? '',
   name: item.name ?? '',
@@ -145,9 +149,13 @@ const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
 
 const SuperadminApprovalCentersPage = () => {
   const { accessToken } = useAuth()
+  const [searchParams] = useSearchParams()
+  const sectionParam = searchParams.get('section')
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
   const [selectedSite, setSelectedSite] = useState('')
-  const [activeSection, setActiveSection] = useState<ApprovalSection>('recipes')
+  const [activeSection, setActiveSection] = useState<ApprovalSection>(() =>
+    isApprovalSection(sectionParam) ? sectionParam : 'recipes',
+  )
   const [approvalFilter, setApprovalFilter] = useState<'' | ApprovalStatus>('')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
@@ -252,6 +260,13 @@ const SuperadminApprovalCentersPage = () => {
   }, [fetchApprovals])
 
   useEffect(() => {
+    const nextSection = isApprovalSection(sectionParam) ? sectionParam : 'recipes'
+    setActiveSection((current) =>
+      current === nextSection ? current : nextSection,
+    )
+  }, [sectionParam])
+
+  useEffect(() => {
     setRecipePage(1)
     setMenuPage(1)
     setExpandedRecipes([])
@@ -272,14 +287,6 @@ const SuperadminApprovalCentersPage = () => {
   const paginatedMenuGroups = menuGroups.slice(
     (menuPage - 1) * ITEMS_PER_PAGE,
     menuPage * ITEMS_PER_PAGE,
-  )
-
-  const sectionCounts = useMemo(
-    () => ({
-      recipes: recipes.length,
-      'menu-productions': menuGroups.length,
-    }),
-    [menuGroups.length, recipes.length],
   )
 
   const toggleRecipe = (recipeKey: string) => {
@@ -499,34 +506,6 @@ const SuperadminApprovalCentersPage = () => {
         {message ? (
           <p className="text-xs font-medium text-primary">{message}</p>
         ) : null}
-      </div>
-
-      <div className="flex flex-wrap gap-2 border-b border-border">
-        {sections.map((section) => {
-          const active = activeSection === section.id
-          return (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => setActiveSection(section.id)}
-              className={`inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${
-                active
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-primary'
-              }`}
-            >
-              <i className={`bi ${section.icon} text-base`} aria-hidden="true" />
-              <span>{section.label}</span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  active ? 'bg-primary-soft text-primary' : 'bg-background text-muted'
-                }`}
-              >
-                {sectionCounts[section.id]}
-              </span>
-            </button>
-          )
-        })}
       </div>
 
       {activeSection === 'recipes' ? (
