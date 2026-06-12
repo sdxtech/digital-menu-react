@@ -3059,6 +3059,7 @@ const SuperadminMenuManagementPage = () => {
             >
               <ChefCreateMenu
                 embedded
+                enableIngredientUomConversion
                 onClose={() => setCreateRecipeOpen(false)}
                 onSaved={() => {
                   handleRecipeSaved('Recipe created.')

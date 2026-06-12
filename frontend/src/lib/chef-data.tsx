@@ -22,6 +22,12 @@ export type RecipeIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  prodQty?: number
+  prodUomCode?: string
+  srQty?: number
+  srUomCode?: string
+  conversionId?: string
+  conversionMultiplier?: number
   priceUom?: number
   foodCost?: number
 }

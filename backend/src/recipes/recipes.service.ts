@@ -26,6 +26,7 @@ import {
 import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
+import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -169,10 +170,13 @@ export class RecipesService {
     private readonly rawMaterials: RawMaterialsService,
     private readonly users: UsersService,
     private readonly sites: SitesService,
+    private readonly unitOfMeasures: UnitOfMeasuresService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
-    const ingredients = this.normalizeIngredients(input.ingredients);
+    const ingredients = await this.applyIngredientUomConversions(
+      this.normalizeIngredients(input.ingredients),
+    );
     const costFields = await this.buildIngredientCostUpdate(ingredients);
     const inputFoodCostRecipe = this.normalizeOptionalNumber(
       input.foodCostRecipe,
@@ -586,7 +590,9 @@ export class RecipesService {
     }
 
     if (input.ingredients !== undefined) {
-      const ingredients = this.normalizeIngredients(input.ingredients);
+      const ingredients = await this.applyIngredientUomConversions(
+        this.normalizeIngredients(input.ingredients),
+      );
       const costFields = await this.buildIngredientCostUpdate(ingredients);
       $set.ingredients = costFields.ingredients;
       if (inputFoodCostRecipe === undefined) {
@@ -1422,6 +1428,12 @@ export class RecipesService {
       name: string;
       unitOfMeasures: string;
       qty: number;
+      prodQty?: number;
+      prodUomCode?: string;
+      srQty?: number;
+      srUomCode?: string;
+      conversionId?: string;
+      conversionMultiplier?: number;
       priceUom?: number;
       foodCost?: number;
     }>,
@@ -1429,15 +1441,72 @@ export class RecipesService {
     return (input ?? []).map((item) => {
       const priceUom = this.normalizeOptionalNumber(item.priceUom);
       const foodCost = this.normalizeOptionalNumber(item.foodCost);
+      const prodQty = this.normalizeOptionalNumber(item.prodQty);
+      const srQty = this.normalizeOptionalNumber(item.srQty);
+      const conversionMultiplier = this.normalizeOptionalNumber(
+        item.conversionMultiplier,
+      );
+      const prodUomCode = item.prodUomCode?.trim();
+      const srUomCode = item.srUomCode?.trim();
+      const conversionId = item.conversionId?.trim();
       return {
         productCode: item.productCode.trim(),
         name: item.name.trim(),
         unitOfMeasures: item.unitOfMeasures.trim(),
         qty: item.qty,
+        ...(prodQty !== undefined ? { prodQty } : {}),
+        ...(prodUomCode ? { prodUomCode } : {}),
+        ...(srQty !== undefined ? { srQty } : {}),
+        ...(srUomCode ? { srUomCode } : {}),
+        ...(conversionId ? { conversionId } : {}),
+        ...(conversionMultiplier !== undefined ? { conversionMultiplier } : {}),
         ...(priceUom !== undefined ? { priceUom } : {}),
         ...(foodCost !== undefined ? { foodCost } : {}),
       };
     });
+  }
+
+  private async applyIngredientUomConversions(
+    ingredients: RecipeIngredient[],
+  ): Promise<RecipeIngredient[]> {
+    const nextIngredients: RecipeIngredient[] = [];
+
+    for (const ingredient of ingredients) {
+      const prodQty = this.normalizeOptionalNumber(ingredient.prodQty);
+      const prodUomCode = ingredient.prodUomCode?.trim();
+      const srUomCode =
+        ingredient.srUomCode?.trim() || ingredient.unitOfMeasures?.trim();
+
+      if (prodQty === undefined || !prodUomCode || !srUomCode) {
+        nextIngredients.push(ingredient);
+        continue;
+      }
+
+      const conversion = await this.unitOfMeasures.findActiveConversion(
+        prodUomCode,
+        srUomCode,
+      );
+      if (!conversion) {
+        throw new BadRequestException(
+          `Conversion ${prodUomCode} To ${srUomCode} is not configured.`,
+        );
+      }
+
+      const srQty = this.roundQuantity(prodQty * conversion.multiplier);
+      nextIngredients.push({
+        ...ingredient,
+        unitOfMeasures: srUomCode,
+        qty: srQty,
+        prodQty,
+        prodUomCode: conversion.prodUomCode,
+        srQty,
+        srUomCode: conversion.srUomCode,
+        conversionId: conversion.conversionId,
+        conversionMultiplier: conversion.multiplier,
+      });
+    }
+
+    return nextIngredients;
   }
 
   private async buildIngredientCostUpdate(ingredients: RecipeIngredient[]) {
