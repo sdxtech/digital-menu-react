@@ -16,6 +16,9 @@ describe('RecipesService site visibility', () => {
     const sites = {
       findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
     };
+    const unitOfMeasures = {
+      findActiveConversion: jest.fn().mockResolvedValue(null),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
@@ -23,6 +26,7 @@ describe('RecipesService site visibility', () => {
       {} as never,
       users as never,
       sites as never,
+      unitOfMeasures as never,
     );
     jest
       .spyOn(
