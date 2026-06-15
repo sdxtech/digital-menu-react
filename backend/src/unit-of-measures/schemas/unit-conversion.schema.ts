@@ -34,10 +34,6 @@ UnitConversionSchema.index(
   {
     prodUomCode: 1,
     srUomCode: 1,
-    conversionId: 1,
-    multiplier: 1,
-    ext: 1,
-    weight: 1,
   },
   { unique: true },
 );

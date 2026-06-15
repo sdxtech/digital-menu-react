@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
 import { SitesModule } from '../sites/sites.module';
+import { UnitOfMeasuresModule } from '../unit-of-measures/unit-of-measures.module';
 import { UsersModule } from '../users/users.module';
 import {
   RecipeCodeCounter,
@@ -22,6 +23,7 @@ import { RecipesService } from './recipes.service';
     UsersModule,
     RawMaterialsModule,
     SitesModule,
+    UnitOfMeasuresModule,
   ],
   controllers: [RecipesController],
   providers: [RecipesService],

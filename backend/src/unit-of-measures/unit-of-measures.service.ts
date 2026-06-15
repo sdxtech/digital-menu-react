@@ -236,6 +236,19 @@ export class UnitOfMeasuresService {
     };
   }
 
+  async findActiveConversion(prodUomCode: string, srUomCode: string) {
+    const prod = this.normalizeCode(prodUomCode);
+    const sr = this.normalizeCode(srUomCode);
+    if (!prod || !sr) return null;
+    return this.conversionModel
+      .findOne({
+        prodUomCode: prod,
+        srUomCode: sr,
+        isActive: true,
+      })
+      .lean();
+  }
+
   private async buildConversionPayload(input: CreateConversionInput) {
     const prodUomCode = this.normalizeCode(input.prodUomCode);
     const srUomCode = this.normalizeCode(input.srUomCode);
@@ -301,7 +314,7 @@ export class UnitOfMeasuresService {
   }
 
   private normalizeCode(code?: string) {
-    return code?.trim().toUpperCase().replace(/\s+/g, '_') ?? '';
+    return code?.trim().toUpperCase() ?? '';
   }
 
   private normalizePositiveNumber(value?: number) {
