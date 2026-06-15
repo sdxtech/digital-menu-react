@@ -1,7 +1,10 @@
 import {
+  BadRequestException, // 🌟 Added for wrong current password check
   Body,
   Controller,
   Get,
+  NotFoundException,   // 🌟 Added for missing account validation check
+  Patch,
   Post,
   Req,
   Res,
@@ -18,6 +21,7 @@ import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import type { AuthenticatedRequest } from './types/authenticated-request.type';
 import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
+import * as bcrypt from 'bcrypt'; // 🌟 Ensure bcrypt library is available for secure evaluation
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 
@@ -94,8 +98,43 @@ export class AuthController {
   me(@Req() req: AuthenticatedRequest) {
     const { sub, name, email, roles, appRole, site, siteId, siteName } =
       req.user;
-    // BACKEND LOGIC: appRole is derived in auth service and returned here.
     return { id: sub, name, email, roles, appRole, site, siteId, siteName };
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: { name: string },
+  ) {
+    const userId = req.user.sub;
+    return this.users.updateById(userId, { name: dto.name });
+  }
+
+  // 🌟 NEW ENDPOINT: Secure password updates for any logged-in user session
+  @Patch('password')
+  @UseGuards(JwtAuthGuard)
+  async updatePassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: { currentPassword?: string; newPassword?: string },
+  ) {
+    const userId = req.user.sub;
+    
+    // Explicitly fetch the user record including their hidden password hash to check it
+    const user = await this.users.findByEmail(req.user.email, true);
+    if (!user) throw new NotFoundException('User account missing.');
+
+    // Validate that their typed current password matches what is stored in the database
+    const isCurrentMatch = await bcrypt.compare(
+      dto.currentPassword || '',
+      user.passwordHash,
+    );
+    if (!isCurrentMatch) {
+      throw new BadRequestException('Your current password entry is incorrect.');
+    }
+
+    // Update the password securely using your existing hashed save sequence
+    return this.users.updatePassword(userId, dto.newPassword || '');
   }
 
   private setRefreshCookie(res: Response, refreshToken: string) {
