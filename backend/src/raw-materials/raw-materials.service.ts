@@ -20,6 +20,8 @@ export type RawMaterialUpsertInput = {
   productCode: string;
   name: string;
   unitOfMeasures: string;
+  baseUnitOfMeasures?: string;
+  conversionFactor?: number;
   vendor?: string;
   currency?: string;
   minimumQuantity?: number;
@@ -49,10 +51,19 @@ type ListRawMaterialVendorPricesQuery = {
   vendor?: string;
 };
 
+type BulkUpdateSpecificConversionsInput = {
+  search: string;
+  unitOfMeasures: string;
+  baseUnitOfMeasures: string;
+  conversionFactor: number;
+};
+
 export type RawMaterialLookup = {
   productCode: string;
   productCodeNormalized: string;
   unitOfMeasures: string;
+  baseUnitOfMeasures?: string;
+  conversionFactor?: number;
   name: string;
   price?: number;
 };
@@ -73,6 +84,12 @@ export class RawMaterialsService {
     const normalizedCode = this.normalizeProductCode(input.productCode);
     const vendor = this.normalizeOptionalText(input.vendor);
     const currency = this.normalizeOptionalText(input.currency);
+    const baseUnitOfMeasures = this.normalizeOptionalText(
+      input.baseUnitOfMeasures,
+    );
+    const conversionFactor = this.normalizePositiveOptionalNumber(
+      input.conversionFactor,
+    );
     const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
     const price = this.normalizeOptionalNumber(input.price);
     const extraFields = input.extraFields;
@@ -82,6 +99,12 @@ export class RawMaterialsService {
       name: input.name.trim(),
       unitOfMeasures: input.unitOfMeasures.trim(),
     };
+    if (baseUnitOfMeasures !== undefined) {
+      updateFields.baseUnitOfMeasures = baseUnitOfMeasures;
+    }
+    if (conversionFactor !== undefined) {
+      updateFields.conversionFactor = conversionFactor;
+    }
     if (vendor !== undefined) updateFields.vendor = vendor;
     if (currency !== undefined) updateFields.currency = currency;
     if (minimumQuantity !== undefined) {
@@ -105,6 +128,8 @@ export class RawMaterialsService {
       productCodeNormalized: normalizedCode,
       name: input.name.trim(),
       unitOfMeasures: input.unitOfMeasures.trim(),
+      ...(baseUnitOfMeasures !== undefined ? { baseUnitOfMeasures } : {}),
+      ...(conversionFactor !== undefined ? { conversionFactor } : {}),
       ...(vendor !== undefined ? { vendor } : {}),
       ...(currency !== undefined ? { currency } : {}),
       ...(minimumQuantity !== undefined ? { minimumQuantity } : {}),
@@ -127,6 +152,8 @@ export class RawMaterialsService {
         productCode: 1,
         productCodeNormalized: 1,
         unitOfMeasures: 1,
+        baseUnitOfMeasures: 1,
+        conversionFactor: 1,
         name: 1,
         price: 1,
       })
@@ -150,6 +177,8 @@ export class RawMaterialsService {
         productCode: 1,
         productCodeNormalized: 1,
         unitOfMeasures: 1,
+        baseUnitOfMeasures: 1,
+        conversionFactor: 1,
         name: 1,
         price: 1,
       })
@@ -164,6 +193,20 @@ export class RawMaterialsService {
     const name = input.name.trim();
     const unitOfMeasures = input.unitOfMeasures.trim();
     const normalizedCode = this.normalizeProductCode(productCode);
+    const hasBaseUnitOfMeasures = Object.prototype.hasOwnProperty.call(
+      input,
+      'baseUnitOfMeasures',
+    );
+    const hasConversionFactor = Object.prototype.hasOwnProperty.call(
+      input,
+      'conversionFactor',
+    );
+    const baseUnitOfMeasures = this.normalizeOptionalText(
+      input.baseUnitOfMeasures,
+    );
+    const conversionFactor = this.normalizePositiveOptionalNumber(
+      input.conversionFactor,
+    );
     const vendor = this.normalizeOptionalText(input.vendor);
     const currency = this.normalizeOptionalText(input.currency);
     const minimumQuantity = this.normalizeOptionalNumber(input.minimumQuantity);
@@ -183,6 +226,8 @@ export class RawMaterialsService {
     item.productCodeNormalized = normalizedCode;
     item.name = name;
     item.unitOfMeasures = unitOfMeasures;
+    if (hasBaseUnitOfMeasures) item.baseUnitOfMeasures = baseUnitOfMeasures;
+    if (hasConversionFactor) item.conversionFactor = conversionFactor;
     if (vendor !== undefined) item.vendor = vendor;
     if (currency !== undefined) item.currency = currency;
     if (minimumQuantity !== undefined) item.minimumQuantity = minimumQuantity;
@@ -256,6 +301,16 @@ export class RawMaterialsService {
     };
   }
 
+  async findUnitOfMeasuresOptions() {
+    const values = await this.rawMaterialModel.distinct('unitOfMeasures', {
+      unitOfMeasures: { $type: 'string', $ne: '' },
+    });
+    return values
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   async findVendorPrices(query: ListRawMaterialVendorPricesQuery) {
     const productCodeNormalized = this.normalizeProductCode(query.productCode);
     if (!productCodeNormalized) return [];
@@ -305,6 +360,18 @@ export class RawMaterialsService {
           name,
           unitOfMeasures,
         };
+        const baseUnitOfMeasures = this.normalizeOptionalText(
+          row.baseUnitOfMeasures,
+        );
+        const conversionFactor = this.normalizePositiveOptionalNumber(
+          row.conversionFactor,
+        );
+        if (baseUnitOfMeasures !== undefined) {
+          updateFields.baseUnitOfMeasures = baseUnitOfMeasures;
+        }
+        if (conversionFactor !== undefined) {
+          updateFields.conversionFactor = conversionFactor;
+        }
         const vendor = this.normalizeOptionalText(row.vendor);
         const currency = this.normalizeOptionalText(row.currency);
         if (vendor !== undefined) updateFields.vendor = vendor;
@@ -490,6 +557,57 @@ export class RawMaterialsService {
     };
   }
 
+  async bulkUpdateSpecificConversions(
+    input: BulkUpdateSpecificConversionsInput,
+  ) {
+    const search = input.search.trim();
+    if (!search) {
+      throw new BadRequestException(
+        'Search is required for bulk specific conversion updates.',
+      );
+    }
+
+    const baseUnitOfMeasures = this.normalizeOptionalText(
+      input.baseUnitOfMeasures,
+    );
+    const conversionFactor = this.normalizePositiveOptionalNumber(
+      input.conversionFactor,
+    );
+    if (!baseUnitOfMeasures || conversionFactor === undefined) {
+      throw new BadRequestException(
+        'Base unit and conversion factor greater than 0 are required.',
+      );
+    }
+
+    const unitOfMeasures = this.normalizeOptionalText(input.unitOfMeasures);
+    if (!unitOfMeasures) {
+      throw new BadRequestException('SR unit is required.');
+    }
+    if (unitOfMeasures && unitOfMeasures === baseUnitOfMeasures) {
+      throw new BadRequestException('Base unit must be different from SR unit.');
+    }
+
+    const filter: Record<string, unknown> = {
+      $or: [
+        { name: new RegExp(this.escapeRegExp(search), 'i') },
+        { productCode: new RegExp(this.escapeRegExp(search), 'i') },
+      ],
+    };
+    filter.unitOfMeasures = unitOfMeasures;
+
+    const result = await this.rawMaterialModel.updateMany(filter, {
+      $set: {
+        baseUnitOfMeasures,
+        conversionFactor,
+      },
+    });
+
+    return {
+      matchedCount: result.matchedCount ?? 0,
+      modifiedCount: result.modifiedCount ?? 0,
+    };
+  }
+
   private normalizeProductCode(productCode: string) {
     return productCode.trim().toLowerCase();
   }
@@ -576,6 +694,12 @@ export class RawMaterialsService {
 
   private normalizeOptionalNumber(value?: number) {
     return typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
+  }
+
+  private normalizePositiveOptionalNumber(value?: number) {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : undefined;
   }

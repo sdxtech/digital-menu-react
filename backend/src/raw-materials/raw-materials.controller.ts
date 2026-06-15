@@ -24,6 +24,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
 import { getUploadDir } from '../common/upload-dir';
 import { CreateRawMaterialDto } from './dto/create-raw-material.dto';
+import { BulkUpdateSpecificConversionsDto } from './dto/bulk-update-specific-conversions.dto';
 import { ListRawMaterialsQueryDto } from './dto/list-raw-materials.query.dto';
 import { UpdateRawMaterialDto } from './dto/update-raw-material.dto';
 import { RawMaterialsService } from './raw-materials.service';
@@ -55,6 +56,8 @@ export class RawMaterialsController {
       productCode: dto.productCode,
       name: dto.name,
       unitOfMeasures: dto.unitOfMeasures,
+      baseUnitOfMeasures: dto.baseUnitOfMeasures,
+      conversionFactor: dto.conversionFactor,
       vendor: dto.vendor,
       currency: dto.currency,
       minimumQuantity: dto.minimumQuantity,
@@ -75,6 +78,12 @@ export class RawMaterialsController {
       limit: query.limit ?? 20,
       search: query.search,
     });
+  }
+
+  @Get('unit-options')
+  @Roles(AppRole.Superadmin)
+  listRawMaterialUnitOptions() {
+    return this.rawMaterials.findUnitOfMeasuresOptions();
   }
 
   @Get(':productCode/vendor-prices')
@@ -144,6 +153,19 @@ export class RawMaterialsController {
     }
   }
 
+  @Patch('specific-conversions/bulk')
+  @Roles(AppRole.Superadmin)
+  bulkUpdateSpecificConversions(
+    @Body() dto: BulkUpdateSpecificConversionsDto,
+  ) {
+    return this.rawMaterials.bulkUpdateSpecificConversions({
+      search: dto.search,
+      unitOfMeasures: dto.unitOfMeasures,
+      baseUnitOfMeasures: dto.baseUnitOfMeasures,
+      conversionFactor: dto.conversionFactor,
+    });
+  }
+
   @Patch(':id')
   @Roles(AppRole.Chef, AppRole.Superadmin)
   update(@Param('id') id: string, @Body() dto: UpdateRawMaterialDto) {
@@ -151,6 +173,8 @@ export class RawMaterialsController {
       productCode: dto.productCode,
       name: dto.name,
       unitOfMeasures: dto.unitOfMeasures,
+      baseUnitOfMeasures: dto.baseUnitOfMeasures,
+      conversionFactor: dto.conversionFactor,
       vendor: dto.vendor,
       currency: dto.currency,
       minimumQuantity: dto.minimumQuantity,
