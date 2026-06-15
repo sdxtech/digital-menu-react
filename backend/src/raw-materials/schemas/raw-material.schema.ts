@@ -24,6 +24,12 @@ export class RawMaterial {
   unitOfMeasures: string;
 
   @Prop({ trim: true })
+  baseUnitOfMeasures?: string;
+
+  @Prop({ type: Number })
+  conversionFactor?: number;
+
+  @Prop({ trim: true })
   vendor?: string;
 
   @Prop({ trim: true })

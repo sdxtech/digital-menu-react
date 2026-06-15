@@ -27,6 +27,8 @@ type IngredientRow = {
   unitOfMeasures: string
   qty: string
   prodUomCode: string
+  baseUnitOfMeasures?: string
+  conversionFactor?: number
 }
 
 type UnitOfMeasureApi = {
@@ -91,6 +93,8 @@ const createIngredientRow = (
   unitOfMeasures: values.unitOfMeasures ?? '',
   qty: values.qty ?? '',
   prodUomCode: values.prodUomCode ?? '',
+  baseUnitOfMeasures: values.baseUnitOfMeasures,
+  conversionFactor: values.conversionFactor,
 })
 
 const initialRecipeForm: RecipeForm = {
@@ -365,6 +369,34 @@ const ChefCreateMenu = ({
         normalizeUomCode(item.srUomCode) === sr,
     )
   }
+  const calculateSpecificSrQty = (row: IngredientRow, prodQty: number) => {
+    const prodUomCode = normalizeUomCode(row.prodUomCode)
+    const srUomCode = normalizeUomCode(row.unitOfMeasures)
+    const baseUomCode = normalizeUomCode(row.baseUnitOfMeasures ?? '')
+    const conversionFactor = Number(row.conversionFactor)
+
+    if (
+      !prodUomCode ||
+      !srUomCode ||
+      !baseUomCode ||
+      prodUomCode !== baseUomCode ||
+      !Number.isFinite(conversionFactor) ||
+      conversionFactor <= 0
+    ) {
+      return null
+    }
+
+    return {
+      conversion: {
+        id: `specific-${row.productCode}`,
+        prodUomCode,
+        srUomCode,
+        conversionId: `${prodUomCode} To ${srUomCode}`,
+        multiplier: 1 / conversionFactor,
+      },
+      srQty: roundQuantity(prodQty / conversionFactor),
+    }
+  }
   const calculateSrQty = (row: IngredientRow) => {
     const prodQty = Number(row.qty)
     const srUomCode = row.unitOfMeasures.trim()
@@ -377,6 +409,9 @@ const ChefCreateMenu = ({
     ) {
       return null
     }
+    const specificConversion = calculateSpecificSrQty(row, prodQty)
+    if (specificConversion) return specificConversion
+
     const conversion = findUnitConversion(row.prodUomCode, srUomCode)
     if (!conversion) return null
     return {
@@ -396,6 +431,17 @@ const ChefCreateMenu = ({
       (item) => normalizeValue(item.name) === normalized,
     )
   }
+  const applyRawMaterialToRow = (
+    row: IngredientRow,
+    matched: RawMaterial,
+  ): IngredientRow => ({
+    ...row,
+    productCode: matched.productCode,
+    name: matched.name,
+    unitOfMeasures: matched.unitOfMeasures,
+    baseUnitOfMeasures: matched.baseUnitOfMeasures,
+    conversionFactor: matched.conversionFactor,
+  })
 
   const updateRecipeForm = <K extends keyof RecipeForm>(
     field: K,
@@ -417,21 +463,21 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'unitOfMeasures') {
+          next.baseUnitOfMeasures = undefined
+          next.conversionFactor = undefined
+        }
         if (field === 'productCode' && typeof value === 'string') {
           const matched = findRawMaterialByCode(value)
           if (matched) {
-            next.productCode = matched.productCode
-            next.name = matched.name
-            next.unitOfMeasures = matched.unitOfMeasures
+            return applyRawMaterialToRow(next, matched)
           }
         }
 
         if (field === 'name' && typeof value === 'string') {
           const matched = findRawMaterialByName(value)
           if (matched) {
-            next.productCode = matched.productCode
-            next.name = matched.name
-            next.unitOfMeasures = matched.unitOfMeasures
+            return applyRawMaterialToRow(next, matched)
           }
         }
 
@@ -505,12 +551,7 @@ const ChefCreateMenu = ({
                         normalizeValue(item.name) === normalizeValue(row.name),
                     )
               if (!matched) return row
-              return {
-                ...row,
-                productCode: matched.productCode,
-                name: matched.name,
-                unitOfMeasures: matched.unitOfMeasures,
-              }
+              return applyRawMaterialToRow(row, matched)
             }),
           )
         }
@@ -1158,18 +1199,34 @@ const ChefCreateMenu = ({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={
-                              row.unitOfMeasures
-                                ? formatUnitLabel(row.unitOfMeasures)
-                                : ''
+                          <select
+                            value={row.unitOfMeasures}
+                            onChange={(event) =>
+                              updateIngredientRow(
+                                row.id,
+                                'unitOfMeasures',
+                                event.target.value,
+                              )
                             }
-                            readOnly
-                            aria-readonly="true"
-                            placeholder="Auto-filled"
-                            className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
-                          />
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          >
+                            <option value="">Select</option>
+                            {row.unitOfMeasures &&
+                            !uomOptions.some(
+                              (unit) =>
+                                normalizeUomCode(unit.code) ===
+                                normalizeUomCode(row.unitOfMeasures),
+                            ) ? (
+                              <option value={row.unitOfMeasures}>
+                                {formatUnitLabel(row.unitOfMeasures)}
+                              </option>
+                            ) : null}
+                            {uomOptions.map((unit) => (
+                              <option key={unit.id} value={unit.code}>
+                                {formatUnitLabel(unit.code)}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                       </>
                     ) : (
