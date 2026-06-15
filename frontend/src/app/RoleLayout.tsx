@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../lib/auth'
@@ -18,21 +18,6 @@ type RoleLayoutProps = {
   showSite?: boolean
 }
 
-const roleLabels: Record<string, string> = {
-  chef: 'Chef',
-  'unit-manager': 'Unit Manager',
-  storekeeper: 'Storekeeper',
-  superadmin: 'Superadmin',
-}
-
-const formatRoles = (roles?: string[]) => {
-  const labels = (roles ?? [])
-    .map((role) => roleLabels[role] ?? role)
-    .filter(Boolean)
-
-  return labels.length ? labels.join(', ') : undefined
-}
-
 const RoleLayout = ({
   workspaceLabel,
   defaultEmail,
@@ -42,21 +27,40 @@ const RoleLayout = ({
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  
   const [sidebarOpen, setSidebarOpen] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
   )
   const [expandedMenus, setExpandedMenus] = useState<string[]>([])
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
+  
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setProfileDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleLogout = () => {
+    setProfileDropdownOpen(false)
     logout()
     navigate('/login', { replace: true })
   }
+
   const displayName = user?.name?.trim() || user?.email || defaultEmail
-  const roleLabel = formatRoles(user?.roles) ?? (user ? roleLabels[user.role] : undefined)
-  const identityLabel = roleLabel ? `${displayName} - ${roleLabel}` : workspaceLabel
+  
+  // Normalize role matching arrays for conditional guards
+  const userRolesArray = user?.roles || (user?.role ? [user.role] : [])
+  const isAuthorizedToSwitch = userRolesArray.includes('unit-manager') || userRolesArray.includes('superadmin')
+
   const siteLabel = showSite
-    ? user?.siteName ?? user?.site ?? 'No site assigned'
-    : user?.siteName ?? user?.site ?? workspaceLabel
+    ? user?.siteName || user?.site || 'No site assigned'
+    : user?.siteName || user?.site || workspaceLabel
 
   const getTarget = (to: string) => {
     const [pathname, search = ''] = to.split('?')
@@ -172,8 +176,11 @@ const RoleLayout = ({
   return (
     <AppShell>
       <div className="min-h-screen">
+        {/* NAVBAR */}
         <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
           <div className="flex w-full items-center justify-between gap-3 px-3 py-2 sm:px-4">
+            
+            {/* LEFT SIDE: BRAND LOGO & LOCATION ONLY */}
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white p-1.5 ring-1 ring-white/30">
                 <img
@@ -183,30 +190,92 @@ const RoleLayout = ({
                 />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-tight text-white">
-                  {identityLabel}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-white/70">
+                <p className="flex items-center gap-1.5 font-semibold text-sm tracking-wide text-white">
+                  <i className="bi bi-geo-alt-fill text-amber-300 text-xs" />
                   {siteLabel}
                 </p>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <div className="hidden rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white md:block">
-                {user?.email ?? defaultEmail}
-              </div>
+
+            {/* RIGHT SIDE: PROFILE AREA */}
+            <div className="relative flex shrink-0 items-center" ref={dropdownRef}>
               <button
                 type="button"
-                onClick={handleLogout}
-                className="inline-flex items-center gap-2 rounded-md border border-white/30 bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
+                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                className="flex items-center gap-3 rounded-md border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
               >
-                <i className="bi bi-box-arrow-right text-sm leading-none" aria-hidden="true" />
-                Logout
+                <div className="flex items-center gap-2">
+                  <i className="bi bi-person-circle text-base text-white/80" />
+                  <span className="font-semibold leading-none">
+                    {displayName}
+                  </span>
+                </div>
+                <i className={`bi bi-chevron-down text-[10px] text-white/60 transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
+
+              {profileDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-md border border-border bg-surface p-1 shadow-xl ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-100">
+                  
+                  {/* Account Header context */}
+                  <div className="px-3 py-1.5 border-b border-border bg-muted/30 rounded-t-sm mb-1">
+                    <p className="text-[10px] uppercase tracking-wider text-muted font-bold">Authenticated As</p>
+                    <p className="text-xs font-medium text-foreground truncate mt-0.5">{user?.email ?? defaultEmail}</p>
+                  </div>
+
+                  {/* GROUP 1: PERSONAL WORKSPACE OPTIONS */}
+                  <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        const rawRole = userRolesArray[0] || '';
+                        const cleanRole = rawRole.startsWith('/') ? rawRole : `/${rawRole}`;
+                        navigate(`${cleanRole}/profile`);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-xs text-foreground transition hover:bg-primary-soft hover:text-primary focus:outline-none group"
+                    >
+                      <i className="bi bi-person text-sm text-muted group-hover:text-primary" />
+                      My Profile
+                    </button>
+                    
+                    {/* 🌟 FIXED: Programmed the handler link to dynamically route into the active security space config */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        const rawRole = userRolesArray[0] || '';
+                        const cleanRole = rawRole.startsWith('/') ? rawRole : `/${rawRole}`;
+                        navigate(`${cleanRole}/security`);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-xs text-foreground transition hover:bg-primary-soft hover:text-primary focus:outline-none group"
+                    >
+                      <i className="bi bi-shield-lock text-sm text-muted group-hover:text-primary" />
+                      Security & Password
+                    </button>
+                  </div>
+
+                  <div className="my-1 border-t border-border" />
+
+                  {/* GROUP 2: SESSION TERMINATION */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs font-bold text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 focus:outline-none"
+                    >
+                      <i className="bi bi-box-arrow-right text-sm" />
+                      Sign Out
+                    </button>
+                  </div>
+
+                </div>
+              )}
             </div>
+
           </div>
         </header>
 
+        {/* WORKSPACE SIDEBAR & CONTENTS */}
         <div className="flex w-full items-stretch">
           <aside
             className={`flex min-h-[calc(100vh-56px)] shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all ${
@@ -217,7 +286,7 @@ const RoleLayout = ({
               {sidebarOpen ? (
                 <div className="flex h-9 w-full items-center gap-2 px-2 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-xs font-semibold text-primary">
-                    Menu
+                    Navigation Menu
                   </span>
                   <button
                     type="button"
