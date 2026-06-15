@@ -22,6 +22,12 @@ export type RecipeIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  prodQty?: number
+  prodUomCode?: string
+  srQty?: number
+  srUomCode?: string
+  conversionId?: string
+  conversionMultiplier?: number
   priceUom?: number
   foodCost?: number
 }
@@ -79,6 +85,8 @@ export type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  baseUnitOfMeasures?: string
+  conversionFactor?: number
   vendor?: string
   createdAt: string
 }
@@ -302,6 +310,10 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   productCode: item.productCode,
   name: item.name,
   unitOfMeasures: item.unitOfMeasures,
+  baseUnitOfMeasures: item.baseUnitOfMeasures,
+  conversionFactor: Number.isFinite(Number(item.conversionFactor))
+    ? Number(item.conversionFactor)
+    : undefined,
   vendor: item.vendor,
   createdAt: item.createdAt,
 })

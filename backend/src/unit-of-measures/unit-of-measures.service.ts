@@ -14,6 +14,10 @@ import {
   UnitOfMeasure,
   UnitOfMeasureDocument,
 } from './schemas/unit-of-measure.schema';
+import {
+  RawMaterial,
+  RawMaterialDocument,
+} from '../raw-materials/schemas/raw-material.schema';
 
 type ListUnitsQuery = {
   page: number;
@@ -50,6 +54,8 @@ export class UnitOfMeasuresService {
     private readonly unitModel: Model<UnitOfMeasureDocument>,
     @InjectModel(UnitConversion.name)
     private readonly conversionModel: Model<UnitConversionDocument>,
+    @InjectModel(RawMaterial.name)
+    private readonly rawMaterialModel: Model<RawMaterialDocument>,
   ) {}
 
   async createUnit(input: CreateUnitInput) {
@@ -236,6 +242,19 @@ export class UnitOfMeasuresService {
     };
   }
 
+  async findActiveConversion(prodUomCode: string, srUomCode: string) {
+    const prod = this.normalizeCode(prodUomCode);
+    const sr = this.normalizeCode(srUomCode);
+    if (!prod || !sr) return null;
+    return this.conversionModel
+      .findOne({
+        prodUomCode: prod,
+        srUomCode: sr,
+        isActive: true,
+      })
+      .lean();
+  }
+
   private async buildConversionPayload(input: CreateConversionInput) {
     const prodUomCode = this.normalizeCode(input.prodUomCode);
     const srUomCode = this.normalizeCode(input.srUomCode);
@@ -258,7 +277,8 @@ export class UnitOfMeasuresService {
       throw new BadRequestException('Conversion units must be different.');
     }
 
-    await this.assertUnitsExist([prodUomCode, srUomCode]);
+    await this.assertProdUnitExists(prodUomCode);
+    await this.assertSrUnitUsedByRawMaterials(srUomCode);
     const calculatedMultiplier = this.calculateMultiplier(ext, weight);
     const conversionId = `${prodUomCode} To ${srUomCode}`;
 
@@ -273,14 +293,22 @@ export class UnitOfMeasuresService {
     };
   }
 
-  private async assertUnitsExist(codes: string[]) {
-    const uniqueCodes = Array.from(new Set(codes));
-    const count = await this.unitModel.countDocuments({
-      code: { $in: uniqueCodes },
-    });
-    if (count !== uniqueCodes.length) {
+  private async assertProdUnitExists(code: string) {
+    const exists = await this.unitModel.exists({ code });
+    if (!exists) {
       throw new BadRequestException(
-        'Conversion units must exist before they can be used.',
+        'Prod UOM must exist in Unit Master before it can be used.',
+      );
+    }
+  }
+
+  private async assertSrUnitUsedByRawMaterials(code: string) {
+    const exists = await this.rawMaterialModel.exists({
+      unitOfMeasures: new RegExp(`^${this.escapeRegExp(code)}$`, 'i'),
+    });
+    if (!exists) {
+      throw new BadRequestException(
+        'SR UOM must exist in raw material data before it can be used.',
       );
     }
   }
@@ -301,7 +329,7 @@ export class UnitOfMeasuresService {
   }
 
   private normalizeCode(code?: string) {
-    return code?.trim().toUpperCase().replace(/\s+/g, '_') ?? '';
+    return code?.trim().toUpperCase() ?? '';
   }
 
   private normalizePositiveNumber(value?: number) {

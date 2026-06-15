@@ -8,6 +8,7 @@ import {
 } from '../lib/chef-data'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatQuantity, roundQuantity } from '../lib/quantity'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INGREDIENT_ROWS_PER_PAGE = 8
@@ -25,6 +26,41 @@ type IngredientRow = {
   name: string
   unitOfMeasures: string
   qty: string
+  prodUomCode: string
+  baseUnitOfMeasures?: string
+  conversionFactor?: number
+}
+
+type UnitOfMeasureApi = {
+  id?: string
+  _id?: string
+  code?: string
+  name?: string
+  isActive?: boolean
+}
+
+type UnitConversionApi = {
+  id?: string
+  _id?: string
+  prodUomCode?: string
+  srUomCode?: string
+  conversionId?: string
+  multiplier?: number
+  isActive?: boolean
+}
+
+type UnitOfMeasureOption = {
+  id: string
+  code: string
+  name: string
+}
+
+type UnitConversion = {
+  id: string
+  prodUomCode: string
+  srUomCode: string
+  conversionId: string
+  multiplier: number
 }
 
 type CategoryApi = {
@@ -56,6 +92,9 @@ const createIngredientRow = (
   name: values.name ?? '',
   unitOfMeasures: values.unitOfMeasures ?? '',
   qty: values.qty ?? '',
+  prodUomCode: values.prodUomCode ?? '',
+  baseUnitOfMeasures: values.baseUnitOfMeasures,
+  conversionFactor: values.conversionFactor,
 })
 
 const initialRecipeForm: RecipeForm = {
@@ -68,6 +107,7 @@ const initialRecipeForm: RecipeForm = {
 type ChefCreateMenuProps = {
   embedded?: boolean
   baseRecipe?: BaseRecipe
+  enableIngredientUomConversion?: boolean
   onClose?: () => void
   onSaved?: () => void
 }
@@ -75,6 +115,7 @@ type ChefCreateMenuProps = {
 const ChefCreateMenu = ({
   embedded = false,
   baseRecipe: baseRecipeProp,
+  enableIngredientUomConversion = false,
   onClose,
   onSaved,
 }: ChefCreateMenuProps) => {
@@ -103,6 +144,8 @@ const ChefCreateMenu = ({
   ])
 
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
+  const [uomOptions, setUomOptions] = useState<UnitOfMeasureOption[]>([])
+  const [unitConversions, setUnitConversions] = useState<UnitConversion[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
   const [categoryOptions, setCategoryOptions] = useState<string[]>([])
@@ -156,7 +199,14 @@ const ChefCreateMenu = ({
               productCode: ingredient.productCode ?? '',
               name: ingredient.name ?? '',
               unitOfMeasures: ingredient.unitOfMeasures ?? '',
-              qty: Number.isFinite(ingredient.qty) ? String(ingredient.qty) : '',
+              qty:
+                enableIngredientUomConversion &&
+                Number.isFinite(ingredient.prodQty)
+                  ? String(ingredient.prodQty)
+                  : Number.isFinite(ingredient.qty)
+                    ? String(ingredient.qty)
+                    : '',
+              prodUomCode: ingredient.prodUomCode ?? '',
             }),
           )
         : [createIngredientRow()],
@@ -164,7 +214,7 @@ const ChefCreateMenu = ({
     setIngredientPage(1)
     setSubmitError('')
     setSubmitMessage('')
-  }, [baseRecipe])
+  }, [baseRecipe, enableIngredientUomConversion])
 
   useEffect(() => {
     if (!accessToken) return
@@ -220,6 +270,70 @@ const ChefCreateMenu = ({
   }, [accessToken])
 
   useEffect(() => {
+    if (!enableIngredientUomConversion || !accessToken) {
+      setUomOptions([])
+      setUnitConversions([])
+      return
+    }
+
+    let cancelled = false
+    const fetchUomData = async () => {
+      try {
+        const [unitsData, conversionsData] = await Promise.all([
+          apiFetch<{ items?: UnitOfMeasureApi[] }>(
+            '/unit-of-measures?page=1&limit=100&isActive=true',
+            undefined,
+            accessToken,
+          ),
+          apiFetch<{ items?: UnitConversionApi[] }>(
+            '/unit-of-measures/conversions?page=1&limit=100&isActive=true',
+            undefined,
+            accessToken,
+          ),
+        ])
+        if (cancelled) return
+        setUomOptions(
+          (unitsData.items ?? [])
+            .map((item) => ({
+              id: item.id ?? item._id ?? item.code ?? '',
+              code: item.code ?? '',
+              name: item.name ?? '',
+            }))
+            .filter((item) => item.id && item.code),
+        )
+        setUnitConversions(
+          (conversionsData.items ?? [])
+            .map((item) => ({
+              id: item.id ?? item._id ?? item.conversionId ?? '',
+              prodUomCode: item.prodUomCode ?? '',
+              srUomCode: item.srUomCode ?? '',
+              conversionId: item.conversionId ?? '',
+              multiplier: item.multiplier ?? 0,
+            }))
+            .filter(
+              (item) =>
+                item.id &&
+                item.prodUomCode &&
+                item.srUomCode &&
+                item.conversionId &&
+                item.multiplier > 0,
+            ),
+        )
+      } catch {
+        if (cancelled) return
+        setUomOptions([])
+        setUnitConversions([])
+      }
+    }
+
+    fetchUomData().catch(() => null)
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, enableIngredientUomConversion])
+
+  useEffect(() => {
     const requestId = ++searchRequestRef.current
     searchRawMaterials('', 5)
       .then((results) => {
@@ -245,6 +359,66 @@ const ChefCreateMenu = ({
   }, [ingredientRows.length])
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
+  const normalizeUomCode = (value: string) => value.trim().toUpperCase()
+  const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
+    const prod = normalizeUomCode(prodUomCode)
+    const sr = normalizeUomCode(srUomCode)
+    return unitConversions.find(
+      (item) =>
+        normalizeUomCode(item.prodUomCode) === prod &&
+        normalizeUomCode(item.srUomCode) === sr,
+    )
+  }
+  const calculateSpecificSrQty = (row: IngredientRow, prodQty: number) => {
+    const prodUomCode = normalizeUomCode(row.prodUomCode)
+    const srUomCode = normalizeUomCode(row.unitOfMeasures)
+    const baseUomCode = normalizeUomCode(row.baseUnitOfMeasures ?? '')
+    const conversionFactor = Number(row.conversionFactor)
+
+    if (
+      !prodUomCode ||
+      !srUomCode ||
+      !baseUomCode ||
+      prodUomCode !== baseUomCode ||
+      !Number.isFinite(conversionFactor) ||
+      conversionFactor <= 0
+    ) {
+      return null
+    }
+
+    return {
+      conversion: {
+        id: `specific-${row.productCode}`,
+        prodUomCode,
+        srUomCode,
+        conversionId: `${prodUomCode} To ${srUomCode}`,
+        multiplier: 1 / conversionFactor,
+      },
+      srQty: roundQuantity(prodQty / conversionFactor),
+    }
+  }
+  const calculateSrQty = (row: IngredientRow) => {
+    const prodQty = Number(row.qty)
+    const srUomCode = row.unitOfMeasures.trim()
+    if (
+      !enableIngredientUomConversion ||
+      !Number.isFinite(prodQty) ||
+      prodQty <= 0 ||
+      !row.prodUomCode ||
+      !srUomCode
+    ) {
+      return null
+    }
+    const specificConversion = calculateSpecificSrQty(row, prodQty)
+    if (specificConversion) return specificConversion
+
+    const conversion = findUnitConversion(row.prodUomCode, srUomCode)
+    if (!conversion) return null
+    return {
+      conversion,
+      srQty: roundQuantity(prodQty * conversion.multiplier),
+    }
+  }
   const findRawMaterialByCode = (value: string) => {
     const normalized = normalizeValue(value)
     return rawMaterialOptions.find(
@@ -257,6 +431,17 @@ const ChefCreateMenu = ({
       (item) => normalizeValue(item.name) === normalized,
     )
   }
+  const applyRawMaterialToRow = (
+    row: IngredientRow,
+    matched: RawMaterial,
+  ): IngredientRow => ({
+    ...row,
+    productCode: matched.productCode,
+    name: matched.name,
+    unitOfMeasures: matched.unitOfMeasures,
+    baseUnitOfMeasures: matched.baseUnitOfMeasures,
+    conversionFactor: matched.conversionFactor,
+  })
 
   const updateRecipeForm = <K extends keyof RecipeForm>(
     field: K,
@@ -278,21 +463,21 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'unitOfMeasures') {
+          next.baseUnitOfMeasures = undefined
+          next.conversionFactor = undefined
+        }
         if (field === 'productCode' && typeof value === 'string') {
           const matched = findRawMaterialByCode(value)
           if (matched) {
-            next.productCode = matched.productCode
-            next.name = matched.name
-            next.unitOfMeasures = matched.unitOfMeasures
+            return applyRawMaterialToRow(next, matched)
           }
         }
 
         if (field === 'name' && typeof value === 'string') {
           const matched = findRawMaterialByName(value)
           if (matched) {
-            next.productCode = matched.productCode
-            next.name = matched.name
-            next.unitOfMeasures = matched.unitOfMeasures
+            return applyRawMaterialToRow(next, matched)
           }
         }
 
@@ -366,12 +551,7 @@ const ChefCreateMenu = ({
                         normalizeValue(item.name) === normalizeValue(row.name),
                     )
               if (!matched) return row
-              return {
-                ...row,
-                productCode: matched.productCode,
-                name: matched.name,
-                unitOfMeasures: matched.unitOfMeasures,
-              }
+              return applyRawMaterialToRow(row, matched)
             }),
           )
         }
@@ -510,6 +690,7 @@ const ChefCreateMenu = ({
         row.productCode.trim() ||
         row.name.trim() ||
         row.unitOfMeasures.trim() ||
+        row.prodUomCode.trim() ||
         row.qty.trim()
       )
     })
@@ -525,9 +706,16 @@ const ChefCreateMenu = ({
       const productCode = row.productCode.trim()
       const name = row.name.trim()
       const unitOfMeasures = row.unitOfMeasures.trim()
+      const prodUomCode = row.prodUomCode.trim()
       const qtyRaw = row.qty.trim()
 
-      if (!productCode || !name || !unitOfMeasures || !qtyRaw) {
+      if (
+        !productCode ||
+        !name ||
+        !unitOfMeasures ||
+        !qtyRaw ||
+        (enableIngredientUomConversion && !prodUomCode)
+      ) {
         setSubmitError('Make sure each ingredient row is complete.')
         setSubmitMessage('')
         return
@@ -540,12 +728,36 @@ const ChefCreateMenu = ({
         return
       }
 
-      parsedIngredients.push({
-        productCode,
-        name,
-        unitOfMeasures,
-        qty,
-      })
+      if (enableIngredientUomConversion) {
+        const conversionResult = calculateSrQty(row)
+        if (!conversionResult) {
+          setSubmitError(
+            `Conversion ${prodUomCode} To ${unitOfMeasures} is not configured for ${name}.`,
+          )
+          setSubmitMessage('')
+          return
+        }
+        const srQty = conversionResult.srQty
+        parsedIngredients.push({
+          productCode,
+          name,
+          unitOfMeasures,
+          qty: srQty,
+          prodQty: qty,
+          prodUomCode,
+          srQty,
+          srUomCode: unitOfMeasures,
+          conversionId: conversionResult.conversion.conversionId,
+          conversionMultiplier: conversionResult.conversion.multiplier,
+        })
+      } else {
+        parsedIngredients.push({
+          productCode,
+          name,
+          unitOfMeasures,
+          qty,
+        })
+      }
     }
 
     try {
@@ -849,14 +1061,32 @@ const ChefCreateMenu = ({
                   <th className="px-4 py-3 font-semibold min-w-[260px]">
                     Name
                   </th>
-                  <th className="px-4 py-3 font-semibold w-[120px]">Qty</th>
-                  <th className="px-4 py-3 font-semibold w-[180px]">
-                    Unit of Measures
+                  <th className="px-4 py-3 font-semibold w-[120px]">
+                    {enableIngredientUomConversion ? 'Prod Qty' : 'Qty'}
                   </th>
+                  {enableIngredientUomConversion ? (
+                    <>
+                      <th className="px-4 py-3 font-semibold w-[160px]">
+                        Prod UOM
+                      </th>
+                      <th className="px-4 py-3 font-semibold w-[140px]">
+                        SR Qty
+                      </th>
+                      <th className="px-4 py-3 font-semibold w-[160px]">
+                        SR UOM
+                      </th>
+                    </>
+                  ) : (
+                    <th className="px-4 py-3 font-semibold w-[180px]">
+                      Unit of Measures
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {paginatedIngredientRows.map((row, index) => (
+                {paginatedIngredientRows.map((row, index) => {
+                  const conversionResult = calculateSrQty(row)
+                  return (
                   <tr key={row.id} className="border-t border-border">
                     <td className="px-2 py-3">
                       <div className="flex justify-center">
@@ -928,28 +1158,100 @@ const ChefCreateMenu = ({
                           updateIngredientRow(row.id, 'qty', event.target.value)
                         }
                         onWheel={(event) => event.currentTarget.blur()}
-                        placeholder="2"
+                        placeholder={enableIngredientUomConversion ? '700' : '2'}
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={
-                          row.unitOfMeasures
-                            ? formatUnitLabel(row.unitOfMeasures)
-                            : ''
-                        }
-                        readOnly
-                        aria-readonly="true"
-                        placeholder="Auto-filled from raw material"
-                        className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      />
-                    </td>
+                    {enableIngredientUomConversion ? (
+                      <>
+                        <td className="px-4 py-3">
+                          <select
+                            value={row.prodUomCode}
+                            onChange={(event) =>
+                              updateIngredientRow(
+                                row.id,
+                                'prodUomCode',
+                                event.target.value,
+                              )
+                            }
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          >
+                            <option value="">Select</option>
+                            {uomOptions.map((unit) => (
+                              <option key={unit.id} value={unit.code}>
+                                {formatUnitLabel(unit.code)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={
+                              conversionResult
+                                ? formatQuantity(conversionResult.srQty)
+                                : ''
+                            }
+                            readOnly
+                            aria-readonly="true"
+                            placeholder="Auto"
+                            className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={row.unitOfMeasures}
+                            onChange={(event) =>
+                              updateIngredientRow(
+                                row.id,
+                                'unitOfMeasures',
+                                event.target.value,
+                              )
+                            }
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          >
+                            <option value="">Select</option>
+                            {row.unitOfMeasures &&
+                            !uomOptions.some(
+                              (unit) =>
+                                normalizeUomCode(unit.code) ===
+                                normalizeUomCode(row.unitOfMeasures),
+                            ) ? (
+                              <option value={row.unitOfMeasures}>
+                                {formatUnitLabel(row.unitOfMeasures)}
+                              </option>
+                            ) : null}
+                            {uomOptions.map((unit) => (
+                              <option key={unit.id} value={unit.code}>
+                                {formatUnitLabel(unit.code)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-4 py-3">
+                        <input
+                          type="text"
+                          value={
+                            row.unitOfMeasures
+                              ? formatUnitLabel(row.unitOfMeasures)
+                              : ''
+                          }
+                          readOnly
+                          aria-readonly="true"
+                          placeholder="Auto-filled from raw material"
+                          className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        />
+                      </td>
+                    )}
                   </tr>
-                ))}
+                )})}
                 <tr className="border-t border-border">
-                  <td colSpan={6} className="px-4 py-3">
+                  <td
+                    colSpan={enableIngredientUomConversion ? 8 : 6}
+                    className="px-4 py-3"
+                  >
                     <div className="flex justify-center">
                       <button
                         type="button"
