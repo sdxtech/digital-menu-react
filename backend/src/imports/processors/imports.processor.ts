@@ -39,6 +39,8 @@ type RawMaterialHeaderMap = {
   productCode: number;
   name: number;
   unitOfMeasures: number;
+  baseUnitOfMeasures: number;
+  conversionFactor: number;
   site: number;
   vendor: number;
   currency: number;
@@ -66,6 +68,28 @@ const RAW_MATERIAL_HEADER_ALIASES = {
     'unit_of_measures',
     'satuan',
   ],
+  baseUnitOfMeasures: [
+    'base unit of measures',
+    'base unit of measure',
+    'base unit',
+    'base uom',
+    'recipe unit',
+    'recipe uom',
+    'inventory unit',
+    'inventory uom',
+    'base_unit_of_measures',
+    'base_uom',
+  ],
+  conversionFactor: [
+    'conversion factor',
+    'conversion',
+    'conversion_factor',
+    'item conversion',
+    'item_conversion',
+    'isi',
+    'pack size',
+    'pack_size',
+  ],
   site: ['site', 'location', 'lokasi', 'cabang'],
   vendor: ['vendor', 'supplier', 'supplier name', 'vendor name', 'pemasok'],
   currency: ['currency', 'curr', 'mata uang', 'mata_uang'],
@@ -87,6 +111,8 @@ const RAW_MATERIAL_RESERVED_HEADERS = new Set([
   ...RAW_MATERIAL_HEADER_ALIASES.productCode,
   ...RAW_MATERIAL_HEADER_ALIASES.name,
   ...RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
+  ...RAW_MATERIAL_HEADER_ALIASES.baseUnitOfMeasures,
+  ...RAW_MATERIAL_HEADER_ALIASES.conversionFactor,
   ...RAW_MATERIAL_HEADER_ALIASES.site,
   ...RAW_MATERIAL_HEADER_ALIASES.vendor,
   ...RAW_MATERIAL_HEADER_ALIASES.currency,
@@ -266,6 +292,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode: string;
         name: string;
         unitOfMeasures: string;
+        baseUnitOfMeasures?: string;
+        conversionFactor?: number;
         site?: string;
         vendor?: string;
         currency?: string;
@@ -283,6 +311,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               productCode,
               name,
               unitOfMeasures,
+              baseUnitOfMeasures,
+              conversionFactor,
               site,
               vendor,
               currency,
@@ -293,6 +323,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               productCode,
               name,
               unitOfMeasures,
+              baseUnitOfMeasures,
+              conversionFactor,
               site,
               vendor,
               currency,
@@ -365,6 +397,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode: string;
         name: string;
         unitOfMeasures: string;
+        baseUnitOfMeasures?: string;
+        conversionFactor?: number;
         site?: string;
         vendor?: string;
         currency?: string;
@@ -381,6 +415,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const name = record.name.trim();
         const unitOfMeasures = record.unitOfMeasures.trim();
         const site = record.site;
+        const baseUnitOfMeasures = this.normalizeOptionalText(
+          record.baseUnitOfMeasures,
+        );
+        const conversionFactor = record.conversionFactor;
         const vendor = record.vendor;
         const currency = record.currency;
         const minimumQuantity = record.minimumQuantity;
@@ -400,6 +438,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode,
           name,
           unitOfMeasures,
+          baseUnitOfMeasures,
+          conversionFactor,
           site,
           vendor,
           currency,
@@ -471,6 +511,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures,
       );
       const site = this.pickValue(normalized, RAW_MATERIAL_HEADER_ALIASES.site);
+      const baseUnitOfMeasures = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.baseUnitOfMeasures,
+      );
+      const conversionFactorRaw = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.conversionFactor,
+      );
       const vendor = this.pickValue(
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.vendor,
@@ -489,6 +537,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       );
       const minimumQuantity = this.parseNumber(minimumQuantityRaw);
       const price = this.parseNumber(priceRaw);
+      const conversionFactor = this.parseNumber(conversionFactorRaw);
       const extraFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(normalized)) {
         if (!key || RAW_MATERIAL_RESERVED_HEADERS.has(key)) continue;
@@ -500,6 +549,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         productCode,
         name,
         unitOfMeasures,
+        baseUnitOfMeasures: this.normalizeOptionalText(baseUnitOfMeasures),
+        conversionFactor,
         site: this.normalizeOptionalText(site),
         vendor: this.normalizeOptionalText(vendor),
         currency: this.normalizeOptionalText(currency),
@@ -536,6 +587,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           headerMap.unitOfMeasures,
         );
         const site = this.getCellValue(values, headerMap.site);
+        const baseUnitOfMeasures = this.getCellValue(
+          values,
+          headerMap.baseUnitOfMeasures,
+        );
+        const conversionFactorRaw = this.getCellValue(
+          values,
+          headerMap.conversionFactor,
+        );
         const vendor = this.getCellValue(values, headerMap.vendor);
         const currency = this.getCellValue(values, headerMap.currency);
         const minimumQuantityRaw = this.getCellValue(
@@ -545,6 +604,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const priceRaw = this.getCellValue(values, headerMap.price);
         const minimumQuantity = this.parseNumber(minimumQuantityRaw);
         const price = this.parseNumber(priceRaw);
+        const conversionFactor = this.parseNumber(conversionFactorRaw);
         const extraFields: Record<string, string> = {};
         for (const [key, index] of Object.entries(headerMap.extraFields)) {
           extraFields[key] = this.getCellValue(values, index);
@@ -555,6 +615,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           productCode,
           name,
           unitOfMeasures,
+          baseUnitOfMeasures: this.normalizeOptionalText(baseUnitOfMeasures),
+          conversionFactor,
           site: this.normalizeOptionalText(site),
           vendor: this.normalizeOptionalText(vendor),
           currency: this.normalizeOptionalText(currency),
@@ -594,6 +656,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       productCode: 0,
       name: 0,
       unitOfMeasures: 0,
+      baseUnitOfMeasures: 0,
+      conversionFactor: 0,
       site: 0,
       vendor: 0,
       currency: 0,
@@ -615,6 +679,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       }
       if (RAW_MATERIAL_HEADER_ALIASES.unitOfMeasures.includes(header)) {
         map.unitOfMeasures = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.baseUnitOfMeasures.includes(header)) {
+        map.baseUnitOfMeasures = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.conversionFactor.includes(header)) {
+        map.conversionFactor = idx;
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.site.includes(header)) {
@@ -691,8 +763,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     return '';
   }
 
-  private normalizeOptionalText(value: string) {
-    const trimmed = value.trim();
+  private normalizeOptionalText(value?: string) {
+    const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
   }
 
