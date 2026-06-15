@@ -369,16 +369,32 @@ const ChefCreateMenu = ({
         normalizeUomCode(item.srUomCode) === sr,
     )
   }
+  const findRawMaterialForRow = (row: IngredientRow) => {
+    const byCode = row.productCode.trim()
+      ? findRawMaterialByCode(row.productCode)
+      : undefined
+    if (byCode) return byCode
+    return row.name.trim() ? findRawMaterialByName(row.name) : undefined
+  }
   const calculateSpecificSrQty = (row: IngredientRow, prodQty: number) => {
+    const matchedRawMaterial = findRawMaterialForRow(row)
     const prodUomCode = normalizeUomCode(row.prodUomCode)
     const srUomCode = normalizeUomCode(row.unitOfMeasures)
-    const baseUomCode = normalizeUomCode(row.baseUnitOfMeasures ?? '')
-    const conversionFactor = Number(row.conversionFactor)
+    const rawMaterialSrUomCode = normalizeUomCode(
+      matchedRawMaterial?.unitOfMeasures ?? '',
+    )
+    const baseUomCode = normalizeUomCode(
+      row.baseUnitOfMeasures ?? matchedRawMaterial?.baseUnitOfMeasures ?? '',
+    )
+    const conversionFactor = Number(
+      row.conversionFactor ?? matchedRawMaterial?.conversionFactor,
+    )
 
     if (
       !prodUomCode ||
       !srUomCode ||
       !baseUomCode ||
+      (rawMaterialSrUomCode && srUomCode !== rawMaterialSrUomCode) ||
       prodUomCode !== baseUomCode ||
       !Number.isFinite(conversionFactor) ||
       conversionFactor <= 0
@@ -463,7 +479,11 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
-        if (field === 'unitOfMeasures') {
+        if (
+          field === 'unitOfMeasures' &&
+          typeof value === 'string' &&
+          normalizeUomCode(value) !== normalizeUomCode(row.unitOfMeasures)
+        ) {
           next.baseUnitOfMeasures = undefined
           next.conversionFactor = undefined
         }
