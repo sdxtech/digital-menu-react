@@ -22,6 +22,16 @@ export class CreateRawMaterialDto {
 
   @IsOptional()
   @IsString()
+  baseUnitOfMeasures?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(0)
+  conversionFactor?: number;
+
+  @IsOptional()
+  @IsString()
   vendor?: string;
 
   @IsOptional()
