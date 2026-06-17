@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Param,
   Post,
   Req,
   UploadedFile,
@@ -110,5 +111,14 @@ export class ImportsController {
       file.mimetype,
       file.path,
     );
+  }
+
+  @Post('jobs/:jobId/cancel')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  async cancelImportJob(
+    @Req() req: AuthenticatedRequest,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.importsService.cancelImportJob(req.user.sub, jobId);
   }
 }

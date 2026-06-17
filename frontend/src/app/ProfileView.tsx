@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ActionButton from '../components/ActionButton'
 import { useAuth } from '../lib/auth'
 import { apiFetch } from '../lib/api'
 
@@ -108,14 +109,13 @@ const ProfileView = () => {
                 placeholder="Enter profile name..."
               />
               {isEditing ? (
-                <button
-                  type="button"
+                <ActionButton
+                  action="save"
                   disabled={isLoading}
                   onClick={handleSave}
-                  className="h-9 px-4 rounded-md bg-primary text-white text-xs font-semibold shadow-sm hover:bg-primary/90 transition shrink-0 disabled:opacity-50"
-                >
-                  {isLoading ? 'Saving...' : 'Save'}
-                </button>
+                  size="sm"
+                  className="h-9 shrink-0"
+                />
               ) : (
                 <button
                   type="button"

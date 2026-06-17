@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -1295,27 +1296,41 @@ const SuperadminUnitOfMeasuresPage = () => {
               ) : null}
 
               <div className="mt-5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={
-                    activeTab === 'units'
-                      ? saveUnit
-                      : activeTab === 'conversions'
-                        ? saveConversion
-                        : saveSpecificConversion
-                  }
-                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
-                >
-                  {activeTab === 'units'
-                    ? editingUnitId
-                      ? 'Update unit'
-                      : 'Create unit'
-                    : activeTab === 'conversions'
-                      ? editingConversionId
-                        ? 'Update conversion'
-                        : 'Create conversion'
-                      : 'Save specific conversion'}
-                </button>
+                {activeTab === 'units' ? (
+                  editingUnitId ? (
+                    <ActionButton action="update" onClick={saveUnit} size="sm" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={saveUnit}
+                      className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+                    >
+                      Create unit
+                    </button>
+                  )
+                ) : activeTab === 'conversions' ? (
+                  editingConversionId ? (
+                    <ActionButton
+                      action="update"
+                      onClick={saveConversion}
+                      size="sm"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={saveConversion}
+                      className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+                    >
+                      Create conversion
+                    </button>
+                  )
+                ) : (
+                  <ActionButton
+                    action="save"
+                    onClick={saveSpecificConversion}
+                    size="sm"
+                  />
+                )}
                 <button
                   type="button"
                   onClick={resetForms}

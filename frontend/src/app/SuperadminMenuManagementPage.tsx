@@ -7,6 +7,7 @@ import {
   type ChangeEvent,
 } from 'react'
 import TablePagination from '../components/TablePagination'
+import ActionButton from '../components/ActionButton'
 import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { useSearchParams } from 'react-router-dom'
@@ -160,7 +161,7 @@ type NotificationItem = {
 }
 
 type ImportResult = {
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'cancelled'
   title: string
   message: string
 }
@@ -1449,6 +1450,10 @@ const SuperadminMenuManagementPage = () => {
   const [rawMaterialImporting, setRawMaterialImporting] = useState(false)
   const [rawMaterialImportStartedAt, setRawMaterialImportStartedAt] =
     useState<number | null>(null)
+  const [rawMaterialImportJobId, setRawMaterialImportJobId] =
+    useState<string | null>(null)
+  const [rawMaterialImportCancelling, setRawMaterialImportCancelling] =
+    useState(false)
   const [rawMaterialImportResult, setRawMaterialImportResult] =
     useState<ImportResult | null>(null)
   const [rawMaterialPriceUploadOpen, setRawMaterialPriceUploadOpen] =
@@ -2323,6 +2328,8 @@ const SuperadminMenuManagementPage = () => {
   const openRawMaterialImportModal = () => {
     setRawMaterialImportError('')
     setRawMaterialImportMessage('')
+    setRawMaterialImportJobId(null)
+    setRawMaterialImportCancelling(false)
     setRawMaterialImportResult(null)
     setRawMaterialImportOpen(true)
   }
@@ -2465,11 +2472,13 @@ const SuperadminMenuManagementPage = () => {
     setRawMaterialImportError('')
     setRawMaterialImportMessage('Starting import...')
     setRawMaterialImportResult(null)
+    setRawMaterialImportJobId(null)
+    setRawMaterialImportCancelling(false)
 
     try {
       const formData = new FormData()
       formData.append('file', rawMaterialImportFile)
-      await apiFetch<{ jobId: string }>(
+      const job = await apiFetch<{ jobId: string }>(
         '/imports/raw-materials/upload',
         {
           method: 'POST',
@@ -2477,6 +2486,7 @@ const SuperadminMenuManagementPage = () => {
         },
         accessToken,
       )
+      setRawMaterialImportJobId(job.jobId)
       setRawMaterialImportStartedAt(Date.now())
       setRawMaterialImportMessage('Import started. Waiting for completion...')
     } catch (error) {
@@ -2488,6 +2498,68 @@ const SuperadminMenuManagementPage = () => {
       setRawMaterialImportMessage('')
       setRawMaterialImporting(false)
       setRawMaterialImportStartedAt(null)
+      setRawMaterialImportJobId(null)
+      setRawMaterialImportCancelling(false)
+    }
+  }
+
+  const handleCancelRawMaterialImport = async () => {
+    if (!accessToken || !rawMaterialImportJobId || rawMaterialImportCancelling) {
+      return
+    }
+
+    setRawMaterialImportCancelling(true)
+    setRawMaterialImportError('')
+    setRawMaterialImportMessage('Cancelling import...')
+
+    try {
+      const result = await apiFetch<{ status: string }>(
+        `/imports/jobs/${encodeURIComponent(rawMaterialImportJobId)}/cancel`,
+        { method: 'POST' },
+        accessToken,
+      )
+      if (result.status === 'completed' || result.status === 'failed') {
+        setRawMaterialImportResult({
+          status: result.status === 'completed' ? 'success' : 'error',
+          title:
+            result.status === 'completed'
+              ? 'Import already completed'
+              : 'Import already failed',
+          message:
+            result.status === 'completed'
+              ? 'The import finished before the cancellation request was applied.'
+              : 'The import failed before the cancellation request was applied.',
+        })
+        setRawMaterialImporting(false)
+        setRawMaterialImportOpen(false)
+        setRawMaterialImportMessage('')
+        setRawMaterialImportFile(null)
+        setRawMaterialImportStartedAt(null)
+        setRawMaterialImportJobId(null)
+        return
+      }
+
+      const isRequested = result.status === 'cancel_requested'
+      setRawMaterialImportResult({
+        status: 'cancelled',
+        title: isRequested ? 'Import cancellation requested' : 'Import cancelled',
+        message: isRequested
+          ? 'The import is active and will stop at the next safe checkpoint.'
+          : 'The import job was cancelled before it completed.',
+      })
+      setRawMaterialImporting(false)
+      setRawMaterialImportOpen(false)
+      setRawMaterialImportMessage('')
+      setRawMaterialImportFile(null)
+      setRawMaterialImportStartedAt(null)
+      setRawMaterialImportJobId(null)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to cancel import.'
+      setRawMaterialImportError(message)
+      setRawMaterialImportMessage('')
+    } finally {
+      setRawMaterialImportCancelling(false)
     }
   }
 
@@ -2512,7 +2584,8 @@ const SuperadminMenuManagementPage = () => {
           if (!item?.title || !item.createdAt) return false
           if (
             item.title !== 'Raw material import completed' &&
-            item.title !== 'Raw material import failed'
+            item.title !== 'Raw material import failed' &&
+            item.title !== 'Raw material import cancelled'
           ) {
             return false
           }
@@ -2525,8 +2598,9 @@ const SuperadminMenuManagementPage = () => {
 
         if (match) {
           const isSuccess = match.title === 'Raw material import completed'
+          const isCancelled = match.title === 'Raw material import cancelled'
           let message = match.message ?? ''
-          if (!isSuccess) {
+          if (!isSuccess && !isCancelled) {
             const reason =
               match.meta && typeof match.meta.reason === 'string'
                 ? match.meta.reason
@@ -2535,7 +2609,7 @@ const SuperadminMenuManagementPage = () => {
           }
 
           setRawMaterialImportResult({
-            status: isSuccess ? 'success' : 'error',
+            status: isSuccess ? 'success' : isCancelled ? 'cancelled' : 'error',
             title: match.title ?? 'Import finished',
             message: message || 'Import finished.',
           })
@@ -2545,6 +2619,8 @@ const SuperadminMenuManagementPage = () => {
           setRawMaterialImportMessage('')
           setRawMaterialImportFile(null)
           setRawMaterialImportStartedAt(null)
+          setRawMaterialImportJobId(null)
+          setRawMaterialImportCancelling(false)
           if (isSuccess) {
             fetchRawMaterials(1, rawMaterialMeta.limit, rawMaterialSearch).catch(
               () => null,
@@ -2567,6 +2643,8 @@ const SuperadminMenuManagementPage = () => {
         setRawMaterialImportOpen(false)
         setRawMaterialImportMessage('')
         setRawMaterialImportStartedAt(null)
+        setRawMaterialImportJobId(null)
+        setRawMaterialImportCancelling(false)
         return
       }
 
@@ -2654,20 +2732,22 @@ const SuperadminMenuManagementPage = () => {
                   </p>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={saveCategory}
-                    className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    {editingCategoryId ? 'Save category' : 'Create category'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeCategoryModal}
-                    className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
-                  >
-                    Cancel
-                  </button>
+                  {editingCategoryId ? (
+                    <ActionButton
+                      action="save"
+                      onClick={saveCategory}
+                      className="flex-1"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={saveCategory}
+                      className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
+                    >
+                      Create category
+                    </button>
+                  )}
+                  <ActionButton action="cancel" onClick={closeCategoryModal} />
                 </div>
               </div>
             </div>
@@ -2732,14 +2812,12 @@ const SuperadminMenuManagementPage = () => {
                   ) : null}
                 </div>
 
-                <button
-                  type="button"
+                <ActionButton
+                  action="import"
                   onClick={handleImportRecipes}
                   disabled={recipeImporting}
-                  className="h-fit self-end rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {recipeImporting ? 'Importing...' : 'Import recipes'}
-                </button>
+                  className="h-fit self-end"
+                />
               </div>
             </div>
           </div>
@@ -2832,22 +2910,22 @@ const SuperadminMenuManagementPage = () => {
               ) : null}
 
               <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-5">
-                <button
-                  type="button"
-                  onClick={saveRawMaterial}
-                  className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {editingRawMaterialId
-                    ? 'Save raw material'
-                    : 'Create raw material'}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeRawMaterialModal}
-                  className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
-                >
-                  Cancel
-                </button>
+                {editingRawMaterialId ? (
+                  <ActionButton
+                    action="save"
+                    onClick={saveRawMaterial}
+                    className="flex-1"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={saveRawMaterial}
+                    className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white"
+                  >
+                    Create raw material
+                  </button>
+                )}
+                <ActionButton action="cancel" onClick={closeRawMaterialModal} />
               </div>
             </div>
           </div>
@@ -2875,7 +2953,7 @@ const SuperadminMenuManagementPage = () => {
                 <button
                   type="button"
                   onClick={closeRawMaterialImportModal}
-                  disabled={rawMaterialImporting}
+                  disabled={rawMaterialImporting || rawMaterialImportCancelling}
                   className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Close
@@ -2891,7 +2969,7 @@ const SuperadminMenuManagementPage = () => {
                     type="file"
                     accept=".xlsx,.xls,.csv"
                     onChange={handleRawMaterialImportFileChange}
-                    disabled={rawMaterialImporting}
+                    disabled={rawMaterialImporting || rawMaterialImportCancelling}
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                   />
                   {rawMaterialImportFile ? (
@@ -2913,14 +2991,21 @@ const SuperadminMenuManagementPage = () => {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleImportRawMaterials}
-                  disabled={rawMaterialImporting}
-                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Import raw materials
-                </button>
+                {rawMaterialImporting ? (
+                  <ActionButton
+                    action="cancel"
+                    onClick={handleCancelRawMaterialImport}
+                    disabled={!rawMaterialImportJobId || rawMaterialImportCancelling}
+                    fullWidth
+                  />
+                ) : (
+                  <ActionButton
+                    action="import"
+                    onClick={handleImportRawMaterials}
+                    disabled={rawMaterialImporting}
+                    fullWidth
+                  />
+                )}
                 {rawMaterialImportMessage ? (
                   <p className="text-xs font-medium text-primary">
                     {rawMaterialImportMessage}
@@ -2988,14 +3073,12 @@ const SuperadminMenuManagementPage = () => {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
+                <ActionButton
+                  action="update"
                   onClick={handleUploadRawMaterialPrices}
                   disabled={rawMaterialPriceUploading}
-                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Update prices
-                </button>
+                  fullWidth
+                />
                 {rawMaterialPriceUploadMessage ? (
                   <p className="text-xs font-medium text-primary">
                     {rawMaterialPriceUploadMessage}
@@ -3020,6 +3103,8 @@ const SuperadminMenuManagementPage = () => {
                     className={`mt-2 text-lg font-semibold ${
                       rawMaterialImportResult.status === 'success'
                         ? 'text-primary'
+                        : rawMaterialImportResult.status === 'cancelled'
+                          ? 'text-amber-700'
                         : 'text-red-600'
                     }`}
                   >
@@ -3029,13 +3114,6 @@ const SuperadminMenuManagementPage = () => {
                     {rawMaterialImportResult.message}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closeRawMaterialImportResult}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                >
-                  Close
-                </button>
               </div>
               <div className="mt-6 flex justify-end">
                 <button
@@ -3096,7 +3174,7 @@ const SuperadminMenuManagementPage = () => {
             requireProductionSite
             requireProductionActors
             productionSiteOptions={siteOptions}
-            submitLabel="Submit production"
+            submitLabel="Submit"
             emptySiteMessage="Select a production site first."
             showEstimatedCostColumns
             showIngredientCostColumns
@@ -3126,14 +3204,12 @@ const SuperadminMenuManagementPage = () => {
                 <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
                 <span>{recipeCostSyncing ? 'Syncing...' : 'Sync costs'}</span>
               </button>
-              <button
-                type="button"
+              <ActionButton
+                action="import"
                 onClick={openRecipeImportModal}
-                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
-              >
-                <i className="bi bi-upload text-base" aria-hidden="true" />
-                <span>Import recipes</span>
-              </button>
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
               <button
                 type="button"
                 onClick={() => setCreateRecipeOpen(true)}
@@ -3509,22 +3585,18 @@ const SuperadminMenuManagementPage = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
+              <ActionButton
+                action="update"
                 onClick={openRawMaterialPriceUploadModal}
-                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
-              >
-                <i className="bi bi-cash-coin text-base" aria-hidden="true" />
-                <span>Update prices</span>
-              </button>
-              <button
-                type="button"
+                iconClassName="bi bi-cash-coin text-base"
+                size="sm"
+              />
+              <ActionButton
+                action="import"
                 onClick={openRawMaterialImportModal}
-                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
-              >
-                <i className="bi bi-upload text-base" aria-hidden="true" />
-                <span>Import materials</span>
-              </button>
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
               <button
                 type="button"
                 onClick={openCreateRawMaterial}
