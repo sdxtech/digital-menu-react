@@ -230,11 +230,8 @@ export class UsersService {
     }
 
     await user.save();
-    const site = await this.sites.findSummaryById(user.siteId);
-    return this.withSiteSummary(
-      user.toObject() as unknown as UserRecord,
-      this.siteLookupFrom(site),
-    );
+    const record = user.toObject() as unknown as UserRecord;
+    return this.withSiteSummary(record, await this.buildSiteLookup([record]));
   }
 
   async updatePassword(id: string, password: string) {
@@ -408,16 +405,6 @@ export class UsersService {
       sites: primarySiteCode ? [primarySiteCode] : [],
       site,
     };
-  }
-
-  private siteLookupFrom(site: SiteSummary | null): SiteLookup {
-    const byId = new Map<string, SiteSummary>();
-    const byCode = new Map<string, SiteSummary>();
-    if (site) {
-      byId.set(site.id, site);
-      byCode.set(site.code, site);
-    }
-    return { byId, byCode };
   }
 
   private normalizeSiteId(siteId?: Types.ObjectId | string | null) {
