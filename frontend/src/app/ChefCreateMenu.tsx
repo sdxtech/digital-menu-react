@@ -144,6 +144,7 @@ const ChefCreateMenu = ({
   ])
 
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
+  const rawMaterialCacheRef = useRef<Map<string, RawMaterial>>(new Map())
   const [uomOptions, setUomOptions] = useState<UnitOfMeasureOption[]>([])
   const [unitConversions, setUnitConversions] = useState<UnitConversion[]>([])
   const [submitError, setSubmitError] = useState('')
@@ -340,6 +341,7 @@ const ChefCreateMenu = ({
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
+        cacheRawMaterials(results)
         setRawMaterialOptions(results.slice(0, 5))
       })
       .catch(() => {
@@ -360,6 +362,18 @@ const ChefCreateMenu = ({
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
   const normalizeUomCode = (value: string) => value.trim().toUpperCase()
+  const getRawMaterialCacheKeys = (item: RawMaterial) =>
+    [
+      item.productCode ? `code:${normalizeValue(item.productCode)}` : '',
+      item.name ? `name:${normalizeValue(item.name)}` : '',
+    ].filter(Boolean)
+  const cacheRawMaterials = (items: RawMaterial[]) => {
+    items.forEach((item) => {
+      getRawMaterialCacheKeys(item).forEach((key) => {
+        rawMaterialCacheRef.current.set(key, item)
+      })
+    })
+  }
   const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
     const prod = normalizeUomCode(prodUomCode)
     const sr = normalizeUomCode(srUomCode)
@@ -369,16 +383,39 @@ const ChefCreateMenu = ({
         normalizeUomCode(item.srUomCode) === sr,
     )
   }
+  const findRawMaterialForRow = (row: IngredientRow) => {
+    const codeKey = row.productCode.trim()
+      ? `code:${normalizeValue(row.productCode)}`
+      : ''
+    const nameKey = row.name.trim() ? `name:${normalizeValue(row.name)}` : ''
+    const byCode = codeKey
+      ? rawMaterialCacheRef.current.get(codeKey) ??
+        findRawMaterialByCode(row.productCode)
+      : undefined
+    if (byCode) return byCode
+    return nameKey
+      ? rawMaterialCacheRef.current.get(nameKey) ?? findRawMaterialByName(row.name)
+      : undefined
+  }
   const calculateSpecificSrQty = (row: IngredientRow, prodQty: number) => {
+    const matchedRawMaterial = findRawMaterialForRow(row)
     const prodUomCode = normalizeUomCode(row.prodUomCode)
     const srUomCode = normalizeUomCode(row.unitOfMeasures)
-    const baseUomCode = normalizeUomCode(row.baseUnitOfMeasures ?? '')
-    const conversionFactor = Number(row.conversionFactor)
+    const rawMaterialSrUomCode = normalizeUomCode(
+      matchedRawMaterial?.unitOfMeasures ?? '',
+    )
+    const baseUomCode = normalizeUomCode(
+      row.baseUnitOfMeasures ?? matchedRawMaterial?.baseUnitOfMeasures ?? '',
+    )
+    const conversionFactor = Number(
+      row.conversionFactor ?? matchedRawMaterial?.conversionFactor,
+    )
 
     if (
       !prodUomCode ||
       !srUomCode ||
       !baseUomCode ||
+      (rawMaterialSrUomCode && srUomCode !== rawMaterialSrUomCode) ||
       prodUomCode !== baseUomCode ||
       !Number.isFinite(conversionFactor) ||
       conversionFactor <= 0
@@ -463,7 +500,11 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
-        if (field === 'unitOfMeasures') {
+        if (
+          field === 'unitOfMeasures' &&
+          typeof value === 'string' &&
+          normalizeUomCode(value) !== normalizeUomCode(row.unitOfMeasures)
+        ) {
           next.baseUnitOfMeasures = undefined
           next.conversionFactor = undefined
         }
@@ -532,6 +573,7 @@ const ChefCreateMenu = ({
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
+        cacheRawMaterials(results)
         const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
         setRawMaterialOptions(ranked.slice(0, 5))
 
