@@ -99,7 +99,10 @@ function App() {
             />
             <Route path="recipe-calculator" element={<RecipeCalculator />} />
             <Route path="menu-bank" element={<ChefMenuBank />} />
-            <Route path="menu-create" element={<ChefCreateMenu />} />
+            <Route
+              path="menu-create"
+              element={<ChefCreateMenu enableIngredientUomConversion />}
+            />
             <Route
               path="raw-material"
               element={<Navigate to="/chef/raw-material/data" replace />}

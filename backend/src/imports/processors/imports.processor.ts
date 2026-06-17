@@ -4,13 +4,14 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { Worker, type Job } from 'bullmq';
+import { Queue, Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { parse } from 'csv-parse';
 import ExcelJS from 'exceljs';
 import { Readable } from 'stream';
 import { createReadStream, promises as fs } from 'fs';
 import { Inject } from '@nestjs/common';
+import { IMPORTS_QUEUE } from '../../queue/queue.constants';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
 import { FilesService } from '../../files/files.service';
 import { ProductsService } from '../../products/products.service';
@@ -20,11 +21,13 @@ import { RawMaterialsService } from '../../raw-materials/raw-materials.service';
 
 type ImportJob = {
   userId: string;
-  fileKey: string;
+  fileKey?: string;
   fileName?: string;
   contentType?: string;
   filePath?: string;
   site?: string;
+  cancelRequested?: boolean;
+  cancelRequestedAt?: string;
 };
 
 type ImportError = {
@@ -120,6 +123,9 @@ const RAW_MATERIAL_RESERVED_HEADERS = new Set([
   ...RAW_MATERIAL_HEADER_ALIASES.price,
 ]);
 
+const RAW_MATERIAL_IMPORT_CANCELLED_REASON =
+  'Raw material import cancelled by user.';
+
 @Injectable()
 export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportsProcessor.name);
@@ -127,6 +133,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(REDIS_OPTIONS) private readonly redisOptions: RedisOptions,
+    @Inject(IMPORTS_QUEUE) private readonly importsQueue: Queue<ImportJob>,
     private readonly files: FilesService,
     private readonly products: ProductsService,
     private readonly categories: CategoriesService,
@@ -173,6 +180,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         successCount,
         failCount,
       });
+      if (!fileKey) {
+        throw new Error('File not found for product import.');
+      }
+
       const stream = await this.files.getObjectStream(fileKey);
       const parser = parse({
         columns: true,
@@ -387,7 +398,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
       const stream = filePath
         ? createReadStream(filePath)
-        : await this.files.getObjectStream(fileKey);
+        : await this.files.getObjectStream(fileKey!);
       const useExcel = this.isExcelFile(fileName ?? filePath, contentType);
       const rows = useExcel
         ? this.rawMaterialRowsFromExcel(stream)
@@ -409,7 +420,19 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       }> = [];
       const batchSize = 1000;
 
+      const throwIfCancelled = async () => {
+        if (await this.isCancellationRequested(job)) {
+          throw new Error(RAW_MATERIAL_IMPORT_CANCELLED_REASON);
+        }
+      };
+
+      await throwIfCancelled();
+
       for await (const record of rows) {
+        if (processed > 0 && processed % batchSize === 0) {
+          await throwIfCancelled();
+        }
+
         processed += 1;
         const productCode = record.productCode.trim();
         const name = record.name.trim();
@@ -450,8 +473,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         });
 
         if (batch.length >= batchSize) {
+          await throwIfCancelled();
           await flushBatch(batch);
           batch.length = 0;
+          await throwIfCancelled();
         }
 
         if (processed % 1000 === 0) {
@@ -464,6 +489,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      await throwIfCancelled();
       await flushBatch(batch);
 
       const summary = { successCount, failCount, errors };
@@ -476,6 +502,18 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
     } catch (error) {
       const reason = (error as Error).message;
+      if (reason === RAW_MATERIAL_IMPORT_CANCELLED_REASON) {
+        const summary = { successCount, failCount, errors, reason };
+        await this.notifications.create(
+          userId,
+          'Raw material import cancelled',
+          `Raw material import was cancelled. Success before cancellation: ${successCount}, failed: ${failCount}.`,
+          summary,
+        );
+        this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
+        return;
+      }
+
       await this.notifications.create(
         userId,
         'Raw material import failed',
@@ -489,6 +527,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         fs.unlink(filePath).catch(() => null);
       }
     }
+  }
+
+  private async isCancellationRequested(job: Job<ImportJob>) {
+    if (job.data.cancelRequested) return true;
+    if (!job.id) return false;
+
+    const latestJob = await this.importsQueue.getJob(job.id);
+    return Boolean(latestJob?.data.cancelRequested);
   }
 
   private async *rawMaterialRowsFromCsv(stream: Readable) {
