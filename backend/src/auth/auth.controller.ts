@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Req,
   Res,
@@ -13,6 +14,8 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { UpdatePasswordDto } from './dto/update-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import type { AuthenticatedRequest } from './types/authenticated-request.type';
@@ -96,6 +99,41 @@ export class AuthController {
       req.user;
     // BACKEND LOGIC: appRole is derived in auth service and returned here.
     return { id: sub, name, email, roles, appRole, site, siteId, siteName };
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const user = await this.users.updateById(req.user.sub, {
+      name: dto.name,
+    });
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roles: user.roles,
+      appRole: req.user.appRole,
+      site: user.siteCode,
+      siteId: user.siteId,
+      siteName: user.siteName,
+    };
+  }
+
+  @Patch('password')
+  @UseGuards(JwtAuthGuard)
+  async updatePassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdatePasswordDto,
+  ) {
+    await this.users.updateOwnPassword(
+      req.user.sub,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+    return { ok: true };
   }
 
   private setRefreshCookie(res: Response, refreshToken: string) {

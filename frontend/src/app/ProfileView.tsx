@@ -10,7 +10,7 @@ const roleLabels: Record<string, string> = {
 }
 
 const ProfileView = () => {
-  const { user, accessToken } = useAuth()
+  const { user, accessToken, updateUser } = useAuth()
 
   // State management to allow real-time name input modifications
   const [nameInput, setNameInput] = useState(user?.name?.trim() || 'User Name')
@@ -36,7 +36,16 @@ const ProfileView = () => {
 
     try {
       // 🌟 FIXED: Everyone now uses the official shared /auth/profile endpoint
-      await apiFetch(
+      const updatedProfile = await apiFetch<{
+        id?: string
+        name?: string
+        email?: string
+        roles?: string[]
+        appRole?: string
+        site?: string
+        siteId?: string
+        siteName?: string
+      }>(
         '/auth/profile',
         {
           method: 'PATCH',
@@ -47,19 +56,15 @@ const ProfileView = () => {
         accessToken,
       )
 
-      // Live state sync (Runs for ALL roles: Chef, Storekeeper, Superadmin, etc.)
-      if (user) {
-        user.name = nameInput.trim()
-      }
-
-      // Persist within the local browser storage cache session instance
-      const cacheKey = 'dm-auth-user'
-      const activeSessionData = sessionStorage.getItem(cacheKey)
-      if (activeSessionData) {
-        const parsedData = JSON.parse(activeSessionData)
-        parsedData.name = nameInput.trim()
-        sessionStorage.setItem(cacheKey, JSON.stringify(parsedData))
-      }
+      updateUser({
+        id: updatedProfile.id,
+        name: updatedProfile.name ?? nameInput.trim(),
+        email: updatedProfile.email,
+        roles: updatedProfile.roles,
+        site: updatedProfile.site,
+        siteId: updatedProfile.siteId,
+        siteName: updatedProfile.siteName,
+      })
 
       setMessage({ text: 'Profile name updated successfully!', isError: false })
       setIsEditing(false)
