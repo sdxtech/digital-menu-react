@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
@@ -1690,22 +1691,18 @@ const ChefStoreRequest = ({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
-                  <button
-                    type="button"
+                  <ActionButton
+                    action="cancel"
                     onClick={closeCompletionModal}
                     disabled={Boolean(cancellingGroupKey)}
-                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
+                    size="sm"
+                  />
+                  <ActionButton
+                    action="save"
                     onClick={handleSubmitCompletion}
                     disabled={Boolean(cancellingGroupKey)}
-                    className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {cancellingGroupKey ? 'Saving...' : 'Save actual qty'}
-                  </button>
+                    size="sm"
+                  />
                 </div>
               </div>
             </div>,

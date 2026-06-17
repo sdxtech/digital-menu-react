@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ActionButton from '../components/ActionButton'
 import { useAuth } from '../lib/auth'
 import { apiFetch } from '../lib/api'
 
@@ -128,15 +129,13 @@ const SecurityView = () => {
             />
           </div>
 
-          {/* SUBMIT BUTTON */}
           <div className="pt-2">
-            <button
+            <ActionButton
+              action="update"
               type="submit"
               disabled={isLoading}
-              className="h-9 px-4 rounded-md bg-primary text-white text-xs font-semibold shadow-sm hover:bg-primary/90 transition shrink-0 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isLoading ? 'Updating Signatures...' : 'Update Password'}
-            </button>
+              size="sm"
+            />
           </div>
 
         </form>

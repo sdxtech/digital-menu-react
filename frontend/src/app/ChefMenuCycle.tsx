@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useChefData, type MenuProduction, type Recipe } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
@@ -108,7 +109,7 @@ const ChefMenuCycle = ({
   requireProductionSite = false,
   productionSiteOptions = [],
   requireProductionActors = false,
-  submitLabel = 'Submit to Unit Manager',
+  submitLabel = 'Submit',
   emptySiteMessage = 'Select a production site first.',
   showEstimatedCostColumns = false,
   showIngredientCostColumns = false,
@@ -963,7 +964,7 @@ const ChefMenuCycle = ({
       setInputError(message)
       setInputMessage('')
     }
-  }/* Fungsi untuk menangani submit input menu ke Unit Manager. Fungsi ini melakukan validasi pada tanggal produksi, memastikan ada setidaknya satu baris menu yang diisi, dan memeriksa setiap baris untuk memastikan menu dan porsi valid. Jika semua validasi lolos, fungsi ini akan memanggil addMenuProductionsBulk dengan payload yang berisi data produksi menu yang akan disimpan. Setelah berhasil, fungsi ini juga mereset input menu dan menampilkan pesan keberhasilan. Jika terjadi error saat menyimpan, fungsi ini akan menampilkan pesan error yang sesuai. Digunakan sebagai onClick handler untuk tombol "Submit to Unit Manager". */
+  }
 
   const handleBackfillIngredientCosts = async () => {
     if (!accessToken || costSyncLoading) return
@@ -1748,13 +1749,13 @@ const ChefMenuCycle = ({
               <p className="text-xs font-medium text-primary">{inputMessage}</p>
             ) : null}
           </div>
-          <button
-            type="button"
+          <ActionButton
+            action="submit"
             onClick={handleSubmitToTimeline}
-            className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-          >
-            {submitLabel}
-          </button>
+            size="sm"
+            aria-label={submitLabel}
+            title={submitLabel}
+          />
         </div>
       </div>
     </div>

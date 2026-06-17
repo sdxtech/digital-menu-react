@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
+import ActionButton from '../components/ActionButton'
 import {
   useChefData,
   type RawMaterial,
@@ -207,7 +208,11 @@ const ChefCreateMenu = ({
                   : Number.isFinite(ingredient.qty)
                     ? String(ingredient.qty)
                     : '',
-              prodUomCode: ingredient.prodUomCode ?? '',
+              prodUomCode:
+                ingredient.prodUomCode ??
+                ingredient.srUomCode ??
+                ingredient.unitOfMeasures ??
+                '',
             }),
           )
         : [createIngredientRow()],
@@ -446,6 +451,20 @@ const ChefCreateMenu = ({
     ) {
       return null
     }
+
+    if (normalizeUomCode(row.prodUomCode) === normalizeUomCode(srUomCode)) {
+      return {
+        conversion: {
+          id: `identity-${normalizeUomCode(row.prodUomCode)}`,
+          prodUomCode: normalizeUomCode(row.prodUomCode),
+          srUomCode: normalizeUomCode(srUomCode),
+          conversionId: `${normalizeUomCode(row.prodUomCode)} To ${normalizeUomCode(srUomCode)}`,
+          multiplier: 1,
+        },
+        srQty: roundQuantity(prodQty),
+      }
+    }
+
     const specificConversion = calculateSpecificSrQty(row, prodQty)
     if (specificConversion) return specificConversion
 
@@ -875,14 +894,12 @@ const ChefCreateMenu = ({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
+            <ActionButton
+              action="import"
               onClick={openImportModal}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-            >
-              <i className="bi bi-upload text-base" aria-hidden="true" />
-              <span>Import recipes</span>
-            </button>
+              iconClassName="bi bi-upload text-base"
+              size="sm"
+            />
             {embedded && onClose ? (
               <button
                 type="button"
@@ -965,13 +982,11 @@ const ChefCreateMenu = ({
                   ) : null}
                 </div>
 
-                <button
-                  type="button"
+                <ActionButton
+                  action="import"
                   onClick={handleImportRecipes}
-                  className="h-fit self-end rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
-                >
-                  Import recipes
-                </button>
+                  className="h-fit self-end"
+                />
               </div>
             </div>
           </div>
@@ -1322,25 +1337,15 @@ const ChefCreateMenu = ({
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             {isRejectedRecipe ? (
-              <button
-                type="button"
+              <ActionButton
+                action="save"
                 onClick={() => handleSaveRecipe()}
-                className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary"
-              >
-                Save draft
-              </button>
+              />
             ) : null}
-            <button
-              type="button"
+            <ActionButton
+              action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
               onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
-              className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)]"
-            >
-              {isRejectedRecipe
-                ? 'Resubmit to Unit Manager'
-                : isEditMode
-                  ? 'Update recipe'
-                  : 'Save & submit to Unit Manager'}
-            </button>
+            />
           </div>
         </div>
       </div>

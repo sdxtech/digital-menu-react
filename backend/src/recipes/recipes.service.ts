@@ -1483,6 +1483,26 @@ export class RecipesService {
         continue;
       }
 
+      const normalizedProdUomCode = this.normalizeUomCode(prodUomCode);
+      const normalizedSrUomCode = this.normalizeUomCode(srUomCode);
+      if (
+        normalizedProdUomCode &&
+        normalizedProdUomCode === normalizedSrUomCode
+      ) {
+        nextIngredients.push({
+          ...ingredient,
+          unitOfMeasures: normalizedSrUomCode,
+          qty: prodQty,
+          prodQty,
+          prodUomCode: normalizedProdUomCode,
+          srQty: prodQty,
+          srUomCode: normalizedSrUomCode,
+          conversionId: `${normalizedProdUomCode} To ${normalizedSrUomCode}`,
+          conversionMultiplier: 1,
+        });
+        continue;
+      }
+
       const rawMaterial = await this.resolveRawMaterial(
         ingredient.productCode?.trim() ?? '',
         rawMaterialCache,
