@@ -4,7 +4,7 @@ import { apiFetch } from '../lib/api'
 
 const SecurityView = () => {
   // 🌟 Added accessToken here to authorize our password network request securely
-  const { user, accessToken } = useAuth()
+  const { accessToken } = useAuth()
 
   // Local states for the interactive input fields
   const [currentPassword, setCurrentPassword] = useState('')

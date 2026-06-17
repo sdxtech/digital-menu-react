@@ -41,7 +41,13 @@ const navItems = [
 ]
 
 const UnitManagerLayout = () => {
-  return <RoleLayout navItems={navItems} />
+  return (
+    <RoleLayout
+      workspaceLabel="Unit Manager Workspace"
+      defaultEmail="unit.manager@example.com"
+      navItems={navItems}
+    />
+  )
 }
 
 export default UnitManagerLayout
