@@ -44,7 +44,7 @@ const UnitManagerLayout = () => {
   return (
     <RoleLayout
       workspaceLabel="Unit Manager Workspace"
-      defaultEmail="unit.manager@brand.com"
+      defaultEmail="unit.manager@example.com"
       navItems={navItems}
     />
   )

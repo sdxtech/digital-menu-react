@@ -28,6 +28,13 @@ const titleMatchers: TitleMatcher[] = [
     path: '/chef/dashboard',
     getPageTitle: () => 'Dashboard',
   },
+  
+  // ➕ Added Profile Tab Title configuration mapping for Chef Workspace
+  {
+    path: '/chef/profile',
+    getPageTitle: () => 'My Profile',
+  },
+
   {
     path: '/chef/menu-cycle',
     getPageTitle: () => 'Menu Production',
@@ -69,6 +76,13 @@ const titleMatchers: TitleMatcher[] = [
     path: '/unit-manager',
     getPageTitle: () => 'Approval Center',
   },
+
+  // ➕ Added Profile Tab Title configuration mapping for Unit Manager Workspace
+  {
+    path: '/unit-manager/profile',
+    getPageTitle: () => 'My Profile',
+  },
+
   {
     path: '/unit-manager/menu-production-records',
     getPageTitle: () => 'Menu Production Records',
@@ -81,6 +95,13 @@ const titleMatchers: TitleMatcher[] = [
     path: '/storekeeper',
     getPageTitle: () => 'Storekeeper Dashboard',
   },
+
+  // ➕ Added Profile Tab Title configuration mapping for Storekeeper Workspace
+  {
+    path: '/storekeeper/profile',
+    getPageTitle: () => 'My Profile',
+  },
+
   {
     path: '/storekeeper/history',
     getPageTitle: () => 'Issuance History',
@@ -89,6 +110,13 @@ const titleMatchers: TitleMatcher[] = [
     path: '/superadmin',
     getPageTitle: () => 'Dashboard',
   },
+
+  // ➕ Added Profile Tab Title configuration mapping for Global Superadmin Workspace
+  {
+    path: '/superadmin/profile',
+    getPageTitle: () => 'My Profile',
+  },
+
   {
     path: '/superadmin/users',
     getPageTitle: () => 'User Management',
@@ -116,6 +144,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/superadmin/store-request-export',
     getPageTitle: () => 'Store Request Export',
+  },
+  {
+    path: '/superadmin/sites',
+    getPageTitle: () => 'Site Management',
   },
 ]
 
