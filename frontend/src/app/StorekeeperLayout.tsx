@@ -22,7 +22,7 @@ const StorekeeperLayout = () => {
   return (
     <RoleLayout
       workspaceLabel="Storekeeper Workspace"
-      defaultEmail="storekeeper@brand.com"
+      defaultEmail="storekeeper@example.com"
       navItems={navItems}
     />
   )
