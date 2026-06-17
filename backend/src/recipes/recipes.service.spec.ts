@@ -16,6 +16,10 @@ describe('RecipesService site visibility', () => {
     const sites = {
       findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
     };
+    const rawMaterials = {
+      findLookupByNormalizedCode: jest.fn().mockResolvedValue(null),
+      findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
+    };
     const unitOfMeasures = {
       findActiveConversion: jest.fn().mockResolvedValue(null),
     };
@@ -23,7 +27,7 @@ describe('RecipesService site visibility', () => {
     const service = new RecipesService(
       recipeModel as never,
       {} as never,
-      {} as never,
+      rawMaterials as never,
       users as never,
       sites as never,
       unitOfMeasures as never,
@@ -37,7 +41,7 @@ describe('RecipesService site visibility', () => {
       )
       .mockResolvedValue(undefined);
 
-    return { recipeModel, service };
+    return { rawMaterials, recipeModel, service, unitOfMeasures };
   };
 
   const mockRecipeList = (
@@ -97,6 +101,11 @@ describe('RecipesService site visibility', () => {
 
   it('limits approval updates to pending recipes in the actor site', async () => {
     const { recipeModel, service } = makeService();
+    recipeModel.findOne.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ ingredients: [] }),
+      }),
+    });
     const lean = jest.fn().mockResolvedValue({ _id: 'recipe-a' });
     recipeModel.findOneAndUpdate.mockReturnValue({ lean });
 
@@ -114,5 +123,113 @@ describe('RecipesService site visibility', () => {
       }),
       { new: true },
     );
+  });
+
+  it('uses raw material specific conversion when no global conversion exists', async () => {
+    const { rawMaterials, recipeModel, service, unitOfMeasures } =
+      makeService();
+    const rawMaterial = {
+      productCode: 'RM-001',
+      productCodeNormalized: 'rm-001',
+      name: 'Saus Tiram',
+      unitOfMeasures: 'GAL',
+      baseUnitOfMeasures: 'ML',
+      conversionFactor: 2200,
+      price: 10,
+    };
+    const lean = jest.fn().mockResolvedValue({ _id: 'recipe-a' });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+    unitOfMeasures.findActiveConversion.mockResolvedValue(null);
+    rawMaterials.findLookupByNormalizedCode.mockResolvedValue(rawMaterial);
+    rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([rawMaterial]);
+
+    await service.updateById('recipe-a', {
+      ingredients: [
+        {
+          productCode: 'RM-001',
+          name: 'Saus Tiram',
+          unitOfMeasures: 'gal',
+          qty: 2,
+          prodQty: 4400,
+          prodUomCode: 'ml',
+          srUomCode: 'gal',
+        },
+      ],
+    });
+
+    const updatePayload = recipeModel.findOneAndUpdate.mock.calls[0][1];
+    const ingredient = updatePayload.$set.ingredients[0];
+
+    expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
+    expect(rawMaterials.findLookupByNormalizedCode).toHaveBeenCalledWith(
+      'rm-001',
+    );
+    expect(ingredient).toEqual(
+      expect.objectContaining({
+        productCode: 'RM-001',
+        name: 'Saus Tiram',
+        unitOfMeasures: 'GAL',
+        qty: 2,
+        prodQty: 4400,
+        prodUomCode: 'ML',
+        srQty: 2,
+        srUomCode: 'GAL',
+        conversionId: 'ML To GAL',
+        priceUom: 10,
+        foodCost: 20,
+      }),
+    );
+    expect(ingredient.conversionMultiplier).toBeCloseTo(1 / 2200);
+  });
+
+  it('prioritizes raw material specific conversion over global conversion', async () => {
+    const { rawMaterials, recipeModel, service, unitOfMeasures } =
+      makeService();
+    const rawMaterial = {
+      productCode: 'RM-002',
+      productCodeNormalized: 'rm-002',
+      name: 'Saus Tiram Premium',
+      unitOfMeasures: 'GAL',
+      baseUnitOfMeasures: 'ML',
+      conversionFactor: 450,
+      price: 10,
+    };
+    const lean = jest.fn().mockResolvedValue({ _id: 'recipe-b' });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+    unitOfMeasures.findActiveConversion.mockResolvedValue({
+      prodUomCode: 'ML',
+      srUomCode: 'GAL',
+      conversionId: 'ML To GAL',
+      multiplier: 1 / 1000,
+    });
+    rawMaterials.findLookupByNormalizedCode.mockResolvedValue(rawMaterial);
+    rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([rawMaterial]);
+
+    await service.updateById('recipe-b', {
+      ingredients: [
+        {
+          productCode: 'RM-002',
+          name: 'Saus Tiram Premium',
+          unitOfMeasures: 'GAL',
+          qty: 1,
+          prodQty: 900,
+          prodUomCode: 'ML',
+          srUomCode: 'GAL',
+        },
+      ],
+    });
+
+    const updatePayload = recipeModel.findOneAndUpdate.mock.calls[0][1];
+    const ingredient = updatePayload.$set.ingredients[0];
+
+    expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
+    expect(ingredient).toEqual(
+      expect.objectContaining({
+        qty: 2,
+        srQty: 2,
+        conversionId: 'ML To GAL',
+      }),
+    );
+    expect(ingredient.conversionMultiplier).toBeCloseTo(1 / 450);
   });
 });

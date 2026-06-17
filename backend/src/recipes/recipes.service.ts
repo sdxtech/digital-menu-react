@@ -1470,6 +1470,7 @@ export class RecipesService {
     ingredients: RecipeIngredient[],
   ): Promise<RecipeIngredient[]> {
     const nextIngredients: RecipeIngredient[] = [];
+    const rawMaterialCache = new Map<string, RawMaterialLookup | null>();
 
     for (const ingredient of ingredients) {
       const prodQty = this.normalizeOptionalNumber(ingredient.prodQty);
@@ -1482,10 +1483,27 @@ export class RecipesService {
         continue;
       }
 
+      const rawMaterial = await this.resolveRawMaterial(
+        ingredient.productCode?.trim() ?? '',
+        rawMaterialCache,
+      );
+      const specificIngredient = this.applySpecificIngredientConversion(
+        ingredient,
+        rawMaterial,
+        prodQty,
+        prodUomCode,
+        srUomCode,
+      );
+      if (specificIngredient) {
+        nextIngredients.push(specificIngredient);
+        continue;
+      }
+
       const conversion = await this.unitOfMeasures.findActiveConversion(
         prodUomCode,
         srUomCode,
       );
+
       if (!conversion) {
         throw new BadRequestException(
           `Conversion ${prodUomCode} To ${srUomCode} is not configured.`,
@@ -1507,6 +1525,52 @@ export class RecipesService {
     }
 
     return nextIngredients;
+  }
+
+  private applySpecificIngredientConversion(
+    ingredient: RecipeIngredient,
+    rawMaterial: RawMaterialLookup | null,
+    prodQty: number,
+    prodUomCode: string,
+    srUomCode: string,
+  ): RecipeIngredient | null {
+    if (!rawMaterial) return null;
+
+    const prod = this.normalizeUomCode(prodUomCode);
+    const sr = this.normalizeUomCode(srUomCode);
+    const rawMaterialSr = this.normalizeUomCode(rawMaterial.unitOfMeasures);
+    const rawMaterialBase = this.normalizeUomCode(
+      rawMaterial.baseUnitOfMeasures,
+    );
+    const conversionFactor = this.normalizeOptionalNumber(
+      rawMaterial.conversionFactor,
+    );
+
+    if (
+      !prod ||
+      !sr ||
+      !rawMaterialBase ||
+      rawMaterialBase !== prod ||
+      rawMaterialSr !== sr ||
+      conversionFactor === undefined ||
+      conversionFactor <= 0
+    ) {
+      return null;
+    }
+
+    const multiplier = 1 / conversionFactor;
+    const srQty = this.roundQuantity(prodQty * multiplier);
+    return {
+      ...ingredient,
+      unitOfMeasures: sr,
+      qty: srQty,
+      prodQty,
+      prodUomCode: prod,
+      srQty,
+      srUomCode: sr,
+      conversionId: `${prod} To ${sr}`,
+      conversionMultiplier: multiplier,
+    };
   }
 
   private async buildIngredientCostUpdate(ingredients: RecipeIngredient[]) {
@@ -1589,6 +1653,10 @@ export class RecipesService {
     return typeof value === 'number' && Number.isFinite(value)
       ? value
       : undefined;
+  }
+
+  private normalizeUomCode(value?: string): string {
+    return value?.trim().toUpperCase() ?? '';
   }
 
   private escapeRegExp(value: string): string {
