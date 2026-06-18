@@ -1,6 +1,8 @@
+import React, { useState, useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { rolePathFor, type Role, useAuth } from './lib/auth'
 import LoginPage from './app/LoginPage'
+import MaintenancePage from './app/MaintenancePage' // 🌟 Clean import of your new flat view
 import ChefLayout from './app/ChefLayout'
 import ChefCreateMenu from './app/ChefCreateMenu'
 import ChefAddRawMaterial from './app/ChefAddRawMaterial'
@@ -68,6 +70,25 @@ const NotFound = () => (
 
 function App() {
   useRouteDocumentTitle()
+  const [isMaintenance, setIsMaintenance] = useState(false) // 🌟 Maintenance state anchor
+
+  useEffect(() => {
+    const handleMaintenanceActive = () => {
+      setIsMaintenance(true)
+    }
+
+    // Bind event listener to intercept structural 503 broadcast flags
+    window.addEventListener('maintenance-mode-active', handleMaintenanceActive)
+
+    return () => {
+      window.removeEventListener('maintenance-mode-active', handleMaintenanceActive)
+    }
+  }, [])
+
+  // 🚧 OVERRIDE THE VIEWPORT: If the system drops a maintenance flag, show ONLY the splash page
+  if (isMaintenance) {
+    return <MaintenancePage />
+  }
 
   return (
     <Routes>

@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -33,6 +34,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @SetMetadata('isPublic', true)
   @UseGuards(AuthThrottleGuard)
   async register(
     @Body() dto: RegisterDto,
@@ -47,6 +49,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @SetMetadata('isPublic', true)
   @UseGuards(AuthThrottleGuard)
   async login(
     @Body() dto: LoginDto,
