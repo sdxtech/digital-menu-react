@@ -25,6 +25,10 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
   plannedPrice?: number
   actualPrice?: number
   variancePrice?: number
@@ -323,10 +327,32 @@ const StorekeeperPage = () => {
         'Portion',
         'IT Code',
         'Ingredient Name',
+        'Vendor',
         'QTY',
         'Unit',
       ],
     ]
+
+    const vendorByIngredientKey = new Map<string, string>()
+    const addVendorFallback = (item: {
+      productCode: string
+      name: string
+      unitOfMeasures: string
+      vendor?: string
+    }) => {
+      const vendor = item.vendor?.trim()
+      if (!vendor) return
+      const key = buildReconciliationItemKey(
+        item.productCode,
+        item.name,
+        item.unitOfMeasures,
+      )
+      if (key && !vendorByIngredientKey.has(key)) {
+        vendorByIngredientKey.set(key, vendor)
+      }
+    }
+    aggregateStoreRequestSummary(group.summary ?? []).forEach(addVendorFallback)
+    ;(group.fulfillment?.items ?? []).forEach(addVendorFallback)
 
     let rowNumber = 1
     group.items.forEach((menu) => {
@@ -344,12 +370,23 @@ const StorekeeperPage = () => {
           '',
           '',
           '',
+          '',
         ])
         rowNumber += 1
         return
       }
 
       ingredients.forEach((ingredient) => {
+        const ingredientKey = buildReconciliationItemKey(
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.unitOfMeasures,
+        )
+        const vendor =
+          ingredient.vendor?.trim() ||
+          (ingredientKey ? vendorByIngredientKey.get(ingredientKey) : '') ||
+          ''
+
         rows.push([
           rowNumber,
           menu.productionDate ?? group.date,
@@ -360,6 +397,7 @@ const StorekeeperPage = () => {
           menu.portion,
           ingredient.productCode,
           ingredient.name,
+          vendor,
           formatQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
@@ -368,10 +406,11 @@ const StorekeeperPage = () => {
     })
 
     const summaryRows: Array<Array<unknown>> = [
-      ['IT Code', 'Ingredient Name', 'QTY', 'Unit'],
+      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
       ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
         item.productCode,
         item.name,
+        item.vendor ?? '',
         formatQuantity(item.qty),
         formatUnitLabel(item.unitOfMeasures),
       ]),
@@ -1455,7 +1494,7 @@ const StorekeeperPage = () => {
                               type="button"
                               onClick={handleAddReconciliationRow}
                               disabled={Boolean(processingGroupKey)}
-                              className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               + Add ingredient
                             </button>
