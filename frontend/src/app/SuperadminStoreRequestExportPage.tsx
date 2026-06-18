@@ -13,6 +13,10 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 type StoreFulfillmentIngredient = {
@@ -22,6 +26,10 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
   reason?: string
 }
 
@@ -383,6 +391,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Portion',
           'IT Code',
           'Ingredient Name',
+          'Vendor',
           'QTY Planned',
           'QTY Actual',
           'Variance',
@@ -438,6 +447,7 @@ const SuperadminStoreRequestExportPage = () => {
               '',
               '',
               '',
+              '',
               approvedBy,
               approvalStatus,
               completedBy,
@@ -468,6 +478,7 @@ const SuperadminStoreRequestExportPage = () => {
               menu.portion,
               ingredient.productCode,
               ingredient.name,
+              ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
               formatQuantity(ingredient.qty),
               fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
               fulfillmentItem

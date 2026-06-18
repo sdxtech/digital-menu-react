@@ -1314,7 +1314,7 @@ const ChefCreateMenu = ({
                       <button
                         type="button"
                         onClick={handleAddIngredientRow}
-                        className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                        className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover"
                       >
                         <span>+</span>
                         <span>Add ingredient</span>

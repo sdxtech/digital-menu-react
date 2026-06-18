@@ -108,9 +108,11 @@ const RoleLayout = ({
     const target = getTarget(item.to)
     const hasChildren = Boolean(item.children?.length)
     const active = isItemActive(item)
+    const childActive = Boolean(item.children?.some((child) => isItemActive(child)))
     const pathActive = location.pathname === target.pathname
     const expanded = hasChildren && expandedMenus.includes(item.to)
-    const parentActive = active || pathActive
+    const parentActive = active || childActive || pathActive
+    const highlightActive = active || (level === 0 && childActive)
     const showChildren = sidebarOpen && expanded
 
     return (
@@ -131,7 +133,7 @@ const RoleLayout = ({
                   ? 'min-h-7 px-2 py-1.5 text-[11px]'
                   : 'px-2 py-1.5'
                 : 'mx-auto h-9 w-9 justify-center px-0 py-0',
-              active
+              highlightActive
                 ? 'bg-primary text-white shadow-sm'
                 : level === 0 && parentActive
                   ? 'bg-primary-soft text-primary'

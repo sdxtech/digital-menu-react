@@ -103,6 +103,81 @@ const formatPrice = (value?: number) => {
   }).format(value)
 }
 
+const xmlEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value)
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+const sanitizeWorksheetName = (name: string) => {
+  const cleaned = name.replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet'
+  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
+  const safeName = sanitizeWorksheetName(sheetName)
+  const rowXml = rows
+    .map((row, index) => {
+      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
+      const cells = row
+        .map((cell) => {
+          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
+          const type = isNumber ? 'Number' : 'String'
+          const value = isNumber ? String(cell) : xmlEscape(cell)
+          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
+        })
+        .join('')
+      return `<Row${rowStyle}>${cells}</Row>`
+    })
+    .join('')
+
+  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>`
+}
+
+const buildWorkbookXml = (
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const worksheetsXml = sheets
+    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
+    .join('')
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header"><Font ss:Bold="1"/></Style>
+ </Styles>
+ ${worksheetsXml}
+</Workbook>`
+}
+
+const downloadExcel = (
+  filename: string,
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const xml = buildWorkbookXml(sheets)
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 const UnitManagerPage = () => {
   const { accessToken } = useAuth()
   const [searchParams] = useSearchParams()
@@ -217,6 +292,87 @@ const UnitManagerPage = () => {
         ? prev.filter((item) => item !== groupKey)
         : [...prev, groupKey],
     )
+  }
+
+  const handleExportMenuProductionGroup = (group: StoreRequestGroup) => {
+    const rows: Array<Array<unknown>> = [
+      [
+        'No',
+        'Production Date',
+        'Production Code',
+        'Menu Name',
+        'Recipe Code',
+        'Category',
+        'Portion',
+        'IT Code',
+        'Ingredient Name',
+        'Vendor',
+        'QTY',
+        'Unit',
+      ],
+    ]
+
+    let rowNumber = 1
+    group.items.forEach((menu) => {
+      const ingredients = menu.ingredients ?? []
+      if (ingredients.length === 0) {
+        rows.push([
+          rowNumber,
+          group.date,
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
+          '',
+          '',
+          '',
+          '',
+          '',
+        ])
+        rowNumber += 1
+        return
+      }
+
+      ingredients.forEach((ingredient) => {
+        rows.push([
+          rowNumber,
+          menu.productionDate ?? group.date,
+          menu.productionCode ?? group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.vendor ?? '',
+          formatQuantity(ingredient.qty),
+          formatUnitLabel(ingredient.unitOfMeasures),
+        ])
+        rowNumber += 1
+      })
+    })
+
+    const summaryRows: Array<Array<unknown>> = [
+      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        formatQuantity(item.qty),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ]
+
+    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
+    downloadExcel(`menu-production-${safeDate}-${safeProductionCode}.xls`, [
+      { name: 'Menu Production', rows },
+      { name: 'Ingredient Summary', rows: summaryRows },
+    ])
   }
 
   const openRecipeRejectModal = (recipe: Recipe) => {
@@ -824,6 +980,21 @@ const UnitManagerPage = () => {
                                   className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                                 >
                                   {isExpanded ? 'Hide details' : 'View details'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleExportMenuProductionGroup(group)
+                                  }
+                                  className="rounded-md border border-success bg-white px-3 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <i
+                                      className="bi bi-download text-sm"
+                                      aria-hidden="true"
+                                    />
+                                    <span>Export</span>
+                                  </span>
                                 </button>
                               </div>
                             </td>

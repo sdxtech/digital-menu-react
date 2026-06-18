@@ -1376,12 +1376,10 @@ export const RecipeCalculator = () => {
         <button
           type="button"
           onClick={handleAddRow}
-          className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+          className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover"
         >
-          <span className="flex items-center gap-2">
-            <i className="bi bi-plus-circle text-base" aria-hidden="true" />
-            <span>Add row</span>
-          </span>
+          <i className="bi bi-plus-circle text-base" aria-hidden="true" />
+          <span>Add row</span>
         </button>
       </div>
     </section>

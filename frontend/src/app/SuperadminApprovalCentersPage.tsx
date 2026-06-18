@@ -577,7 +577,7 @@ const SuperadminApprovalCentersPage = () => {
                               <button
                                 type="button"
                                 onClick={() => toggleRecipe(recipeKey)}
-                                className="rounded-md border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground hover:bg-white"
+                                className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                               >
                                 {isExpanded ? 'Hide details' : 'View details'}
                               </button>
@@ -822,7 +822,7 @@ const SuperadminApprovalCentersPage = () => {
                               <button
                                 type="button"
                                 onClick={() => toggleGroup(groupKey)}
-                                className="rounded-md border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground hover:bg-white"
+                                className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                               >
                                 {isExpanded ? 'Hide details' : 'View details'}
                               </button>
