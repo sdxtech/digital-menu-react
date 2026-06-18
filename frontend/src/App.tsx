@@ -26,14 +26,18 @@ import SuperadminSitesPage from './app/SuperadminSitesPage'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 import SuperadminStoreRequestPage from './app/SuperadminStoreRequestPage'
-import SuperadminUnitOfMeasuresPage from './app/SuperadminUnitOfMeasuresPage'
 import { useRouteDocumentTitle } from './lib/document-title'
+import ProfileView from './app/ProfileView'
+
+// ➕ Safely import your new Security & Password View component
+import SecurityView from './app/SecurityView'
+import SuperadminUnitOfMeasuresPage from './app/SuperadminUnitOfMeasuresPage'
 
 const RequireAuth = () => {
   const { user } = useAuth()
   if (!user) return <Navigate to="/login" replace />
   return <Outlet />
-}
+} 
 
 const RequireRole = ({ role }: { role: Role }) => {
   const { user } = useAuth()
@@ -44,7 +48,7 @@ const RequireRole = ({ role }: { role: Role }) => {
 
 const RoleLanding = () => {
   const { user } = useAuth()
-  if (!user) return <Navigate to="/login" replace /> /* Jika belum login, arahkan ke halaman login. */
+  if (!user) return <Navigate to="/login" replace />
   return <Navigate to={rolePathFor(user.role)} replace />
 }
 
@@ -69,11 +73,20 @@ function App() {
     <Routes>
       <Route path="/" element={<RoleLanding />} />
       <Route path="/login" element={<LoginPage />} />
+      
+      {/* AUTHENTICATED CONTAINER BOUNDARY */}
       <Route element={<RequireAuth />}>
+
+        {/* CHEF SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="chef" />}>
           <Route path="/chef" element={<ChefLayout />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ChefDashboard />} />
+            <Route path="profile" element={<ProfileView />} />
+            
+            {/* ➕ Added security tracking sub-path route */}
+            <Route path="security" element={<SecurityView />} />
+            
             <Route
               path="menu-cycle"
               element={
@@ -86,7 +99,10 @@ function App() {
             />
             <Route path="recipe-calculator" element={<RecipeCalculator />} />
             <Route path="menu-bank" element={<ChefMenuBank />} />
-            <Route path="menu-create" element={<ChefCreateMenu />} />
+            <Route
+              path="menu-create"
+              element={<ChefCreateMenu enableIngredientUomConversion />}
+            />
             <Route
               path="raw-material"
               element={<Navigate to="/chef/raw-material/data" replace />}
@@ -96,9 +112,16 @@ function App() {
             <Route path="store-request" element={<ChefStoreRequest />} />
           </Route>
         </Route>
+
+        {/* UNIT MANAGER SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="unit-manager" />}>
           <Route path="/unit-manager" element={<UnitManagerLayout />}>
             <Route index element={<UnitManagerPage />} />
+            <Route path="profile" element={<ProfileView />} />
+            
+            {/* ➕ Added security tracking sub-path route */}
+            <Route path="security" element={<SecurityView />} />
+            
             <Route
               path="menu-production-records"
               element={<UnitManagerMenuProductionRecordsPage />}
@@ -106,21 +129,32 @@ function App() {
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
           </Route>
         </Route>
+
+        {/* STOREKEEPER SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="storekeeper" />}>
           <Route path="/storekeeper" element={<StorekeeperLayout />}>
             <Route index element={<StorekeeperPage />} />
+            <Route path="profile" element={<ProfileView />} />
+            
+            {/* ➕ Added security tracking sub-path route */}
+            <Route path="security" element={<SecurityView />} />
+            
             <Route path="history" element={<StorekeeperHistoryPage />} />
           </Route>
         </Route>
+
+        {/* SUPERADMIN SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="superadmin" />}>
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route index element={<SuperadminDashboardPage />} />
+            <Route path="profile" element={<ProfileView />} />
+            
+            {/* ➕ Added security tracking sub-path route */}
+            <Route path="security" element={<SecurityView />} />
+            
             <Route path="users" element={<SuperadminUsersPage />} />
             <Route path="sites" element={<SuperadminSitesPage />} />
-            <Route
-              path="unit-of-measures"
-              element={<SuperadminUnitOfMeasuresPage />}
-            />
+            <Route path="unit-of-measures" element={<SuperadminUnitOfMeasuresPage />} />
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
             <Route
               path="approval-centers"
@@ -133,7 +167,9 @@ function App() {
             />
           </Route>
         </Route>
+
       </Route>
+      
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

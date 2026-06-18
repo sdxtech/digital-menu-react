@@ -3,6 +3,7 @@ import { apiFetch } from '../lib/api'
 import { readStoredToken } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { unitOfMeasuresOptions } from '../lib/unit-of-measures'
+import ActionButton from '../components/ActionButton'
 
 type RawMaterialForm = {
   productCode: string
@@ -20,7 +21,7 @@ type NotificationItem = {
 }
 
 type ImportResult = {
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'cancelled'
   title: string
   message: string
 }
@@ -44,6 +45,8 @@ const ChefAddRawMaterial = () => {
   const [importing, setImporting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importStartedAt, setImportStartedAt] = useState<number | null>(null)
+  const [importJobId, setImportJobId] = useState<string | null>(null)
+  const [importCancelling, setImportCancelling] = useState(false)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
   const updateRawMaterialForm = <K extends keyof RawMaterialForm>(
@@ -109,6 +112,8 @@ const ChefAddRawMaterial = () => {
   const openImportModal = () => {
     setImportError('')
     setImportMessage('')
+    setImportJobId(null)
+    setImportCancelling(false)
     setImportResult(null)
     setImportOpen(true)
   }
@@ -134,8 +139,11 @@ const ChefAddRawMaterial = () => {
     setImportError('')
     setImportMessage('Starting import...')
     setImportResult(null)
+    setImportJobId(null)
+    setImportCancelling(false)
     try {
-      await importRawMaterialsFromExcel(importFile)
+      const jobId = await importRawMaterialsFromExcel(importFile)
+      setImportJobId(jobId)
       setImportStartedAt(Date.now())
       setImportMessage('Import started. Waiting for completion...')
     } catch (error) {
@@ -147,6 +155,73 @@ const ChefAddRawMaterial = () => {
       setImportMessage('')
       setImporting(false)
       setImportStartedAt(null)
+      setImportJobId(null)
+      setImportCancelling(false)
+    }
+  }
+
+  const handleCancelImport = async () => {
+    if (!importJobId || importCancelling) return
+
+    const token = readStoredToken()
+    if (!token) {
+      setImportError('Please log in first to cancel import.')
+      setImportMessage('')
+      return
+    }
+
+    setImportCancelling(true)
+    setImportError('')
+    setImportMessage('Cancelling import...')
+
+    try {
+      const result = await apiFetch<{ status: string }>(
+        `/imports/jobs/${encodeURIComponent(importJobId)}/cancel`,
+        { method: 'POST' },
+        token,
+      )
+      if (result.status === 'completed' || result.status === 'failed') {
+        setImportResult({
+          status: result.status === 'completed' ? 'success' : 'error',
+          title:
+            result.status === 'completed'
+              ? 'Import already completed'
+              : 'Import already failed',
+          message:
+            result.status === 'completed'
+              ? 'The import finished before the cancellation request was applied.'
+              : 'The import failed before the cancellation request was applied.',
+        })
+        setImporting(false)
+        setImportOpen(false)
+        setImportMessage('')
+        setImportFile(null)
+        setImportStartedAt(null)
+        setImportJobId(null)
+        return
+      }
+
+      const isRequested = result.status === 'cancel_requested'
+      setImportResult({
+        status: 'cancelled',
+        title: isRequested ? 'Import cancellation requested' : 'Import cancelled',
+        message: isRequested
+          ? 'The import is active and will stop at the next safe checkpoint.'
+          : 'The import job was cancelled before it completed.',
+      })
+      setImporting(false)
+      setImportOpen(false)
+      setImportMessage('')
+      setImportFile(null)
+      setImportStartedAt(null)
+      setImportJobId(null)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to cancel import.'
+      setImportError(message)
+      setImportMessage('')
+    } finally {
+      setImportCancelling(false)
     }
   }
 
@@ -177,7 +252,8 @@ const ChefAddRawMaterial = () => {
           if (!item?.title || !item.createdAt) return false
           if (
             item.title !== 'Raw material import completed' &&
-            item.title !== 'Raw material import failed'
+            item.title !== 'Raw material import failed' &&
+            item.title !== 'Raw material import cancelled'
           ) {
             return false
           }
@@ -187,8 +263,9 @@ const ChefAddRawMaterial = () => {
 
         if (match) {
           const isSuccess = match.title === 'Raw material import completed'
+          const isCancelled = match.title === 'Raw material import cancelled'
           let message = match.message ?? ''
-          if (!isSuccess) {
+          if (!isSuccess && !isCancelled) {
             const reason =
               match.meta && typeof match.meta.reason === 'string'
                 ? match.meta.reason
@@ -199,7 +276,7 @@ const ChefAddRawMaterial = () => {
           }
 
           setImportResult({
-            status: isSuccess ? 'success' : 'error',
+            status: isSuccess ? 'success' : isCancelled ? 'cancelled' : 'error',
             title: match.title ?? 'Import finished',
             message: message || 'Import finished.',
           })
@@ -209,6 +286,8 @@ const ChefAddRawMaterial = () => {
           setImportMessage('')
           setImportFile(null)
           setImportStartedAt(null)
+          setImportJobId(null)
+          setImportCancelling(false)
           if (isSuccess) {
             fetchRawMaterials(1, rawMaterialsMeta.limit).catch(() => null)
           }
@@ -227,6 +306,8 @@ const ChefAddRawMaterial = () => {
         setImportOpen(false)
         setImportMessage('')
         setImportStartedAt(null)
+        setImportJobId(null)
+        setImportCancelling(false)
         return
       }
 
@@ -252,14 +333,12 @@ const ChefAddRawMaterial = () => {
           <div>
             <h1 className="text-2xl font-semibold">Add Raw Material</h1>
           </div>
-          <button
-            type="button"
+          <ActionButton
+            action="import"
             onClick={openImportModal}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-          >
-            <i className="bi bi-upload text-base" aria-hidden="true" />
-            <span>Import raw materials</span>
-          </button>
+            iconClassName="bi bi-upload text-base"
+            size="sm"
+          />
         </div>
 
         {importOpen ? (
@@ -284,7 +363,8 @@ const ChefAddRawMaterial = () => {
                 <button
                   type="button"
                   onClick={closeImportModal}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  disabled={importing || importCancelling}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Close
                 </button>
@@ -299,7 +379,7 @@ const ChefAddRawMaterial = () => {
                     type="file"
                     accept=".xlsx,.xls"
                     onChange={handleImportFileChange}
-                    disabled={importing}
+                    disabled={importing || importCancelling}
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                   />
                   {importFile ? (
@@ -321,14 +401,21 @@ const ChefAddRawMaterial = () => {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleImportRawMaterials}
-                  disabled={importing}
-                  className="w-full rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Import raw materials
-                </button>
+                {importing ? (
+                  <ActionButton
+                    action="cancel"
+                    onClick={handleCancelImport}
+                    disabled={!importJobId || importCancelling}
+                    fullWidth
+                  />
+                ) : (
+                  <ActionButton
+                    action="import"
+                    onClick={handleImportRawMaterials}
+                    disabled={importing}
+                    fullWidth
+                  />
+                )}
                 {importMessage ? (
                   <p className="text-xs font-medium text-primary">
                     {importMessage}
@@ -355,6 +442,8 @@ const ChefAddRawMaterial = () => {
                     className={`mt-2 text-lg font-semibold ${
                       importResult.status === 'success'
                         ? 'text-primary'
+                        : importResult.status === 'cancelled'
+                          ? 'text-amber-700'
                         : 'text-red-600'
                     }`}
                   >
@@ -364,13 +453,6 @@ const ChefAddRawMaterial = () => {
                     {importResult.message}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closeImportResult}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                >
-                  Close
-                </button>
               </div>
               <div className="mt-6 flex justify-end">
                 <button
@@ -438,13 +520,12 @@ const ChefAddRawMaterial = () => {
               </div>
             </div>
             <div className="mt-6 border-t border-border pt-5">
-              <button
-                type="button"
+              <ActionButton
+                action="save"
                 onClick={handleSaveRawMaterial}
-                className="w-full rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_35px_rgba(11,41,87,0.35)] sm:w-auto"
-              >
-                Save material
-              </button>
+                className="sm:w-auto"
+                fullWidth
+              />
               <p className="mt-3 text-xs text-muted">
                 After saving, the material will appear in Raw Material Data.
               </p>

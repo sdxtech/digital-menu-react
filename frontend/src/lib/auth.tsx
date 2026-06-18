@@ -26,6 +26,7 @@ type AuthContextValue = {
   accessToken: string | null
   login: (email: string, password: string) => Promise<User>
   logout: () => void
+  updateUser: (updates: Partial<User>) => void
 }/* Tipe data untuk nilai yang disediakan oleh konteks autentikasi, termasuk informasi pengguna, token akses, dan fungsi login/logout. */
 
 const USER_KEY = 'dm-auth-user'/* Kunci untuk menyimpan informasi pengguna dalam storage. */
@@ -209,14 +210,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     removeStoredItem(REFRESH_TOKEN_KEY)/* Hapus token refresh dari storage. */
   }, [accessToken])/* Fungsi untuk melakukan logout, yang mengirimkan permintaan ke endpoint /auth/logout, membersihkan state pengguna dan token, serta menghapus data terkait dari storage. */
 
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setUser((current) => {
+      if (!current) return current
+      const nextUser = { ...current, ...updates }
+      writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
+      return nextUser
+    })
+  }, [])
+
   const value = useMemo(
     () => ({
       user,
       login,
       logout,
       accessToken,
+      updateUser,
     }),/* Nilai yang disediakan oleh konteks autentikasi, yang mencakup informasi pengguna, token akses, dan fungsi login/logout. Nilai ini di-memoize untuk menghindari re-render yang tidak perlu pada komponen yang menggunakan konteks ini. */
-    [user, accessToken, logout],/* Nilai akan di-update jika terjadi perubahan pada informasi pengguna, token akses, atau fungsi logout. */
+    [user, accessToken, logout, updateUser],/* Nilai akan di-update jika terjadi perubahan pada informasi pengguna, token akses, atau fungsi logout. */
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>/* Komponen provider untuk konteks autentikasi, yang membungkus anak-anaknya dengan AuthContext.Provider dan menyediakan nilai autentikasi. */

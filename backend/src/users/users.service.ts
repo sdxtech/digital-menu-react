@@ -230,11 +230,8 @@ export class UsersService {
     }
 
     await user.save();
-    const site = await this.sites.findSummaryById(user.siteId);
-    return this.withSiteSummary(
-      user.toObject() as unknown as UserRecord,
-      this.siteLookupFrom(site),
-    );
+    const record = user.toObject() as unknown as UserRecord;
+    return this.withSiteSummary(record, await this.buildSiteLookup([record]));
   }
 
   async updatePassword(id: string, password: string) {
@@ -247,6 +244,31 @@ export class UsersService {
     }
 
     user.passwordHash = await bcrypt.hash(trimmed, 12);
+    await user.save();
+
+    return { id: user.id, email: user.email, name: user.name };
+  }
+
+  async updateOwnPassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.userModel.findById(id).select('+passwordHash');
+    if (!user) throw new NotFoundException('User not found');
+
+    const current = currentPassword.trim();
+    const next = newPassword.trim();
+    if (!current || !next) {
+      throw new BadRequestException('Current and new password are required');
+    }
+
+    const matches = await bcrypt.compare(current, user.passwordHash);
+    if (!matches) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    user.passwordHash = await bcrypt.hash(next, 12);
     await user.save();
 
     return { id: user.id, email: user.email, name: user.name };
@@ -383,16 +405,6 @@ export class UsersService {
       sites: primarySiteCode ? [primarySiteCode] : [],
       site,
     };
-  }
-
-  private siteLookupFrom(site: SiteSummary | null): SiteLookup {
-    const byId = new Map<string, SiteSummary>();
-    const byCode = new Map<string, SiteSummary>();
-    if (site) {
-      byId.set(site.id, site);
-      byCode.set(site.code, site);
-    }
-    return { byId, byCode };
   }
 
   private normalizeSiteId(siteId?: Types.ObjectId | string | null) {
