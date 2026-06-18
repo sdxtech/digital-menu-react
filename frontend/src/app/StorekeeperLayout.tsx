@@ -19,7 +19,13 @@ const navItems = [
 ]
 
 const StorekeeperLayout = () => {
-  return <RoleLayout navItems={navItems} />
+  return (
+    <RoleLayout
+      workspaceLabel="Storekeeper Workspace"
+      defaultEmail="storekeeper@example.com"
+      navItems={navItems}
+    />
+  )
 }
 
 export default StorekeeperLayout

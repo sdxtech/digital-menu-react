@@ -53,10 +53,7 @@ const RoleLayout = ({
   }
 
   const displayName = user?.name?.trim() || user?.email || defaultEmail
-  
-  // Normalize role matching arrays for conditional guards
   const userRolesArray = user?.roles || (user?.role ? [user.role] : [])
-  const isAuthorizedToSwitch = userRolesArray.includes('unit-manager') || userRolesArray.includes('superadmin')
 
   const siteLabel = showSite
     ? user?.siteName || user?.site || 'No site assigned'

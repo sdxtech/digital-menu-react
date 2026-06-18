@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import TablePagination from '../components/TablePagination'
+import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -575,22 +576,17 @@ const SuperadminSitesPage = () => {
                 ) : null}
 
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
+                  <ActionButton
+                    action="import"
                     onClick={uploadSitesImport}
                     disabled={importing}
-                    className="flex-1 rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {importing ? 'Importing...' : 'Import sites'}
-                  </button>
-                  <button
-                    type="button"
+                    className="flex-1"
+                  />
+                  <ActionButton
+                    action="cancel"
                     onClick={closeImportModal}
                     disabled={importing}
-                    className="rounded-md border border-border bg-background px-4 py-3 text-sm font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
+                  />
                 </div>
               </div>
             </div>
@@ -627,19 +623,12 @@ const SuperadminSitesPage = () => {
               </select>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
+              <ActionButton
+                action="import"
                 onClick={openImportModal}
-                className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
-              >
-                <span className="flex items-center gap-2">
-                  <i
-                    className="bi bi-file-earmark-spreadsheet text-base"
-                    aria-hidden="true"
-                  />
-                  <span>Import sites</span>
-                </span>
-              </button>
+                iconClassName="bi bi-file-earmark-spreadsheet text-base"
+                size="sm"
+              />
               <button
                 type="button"
                 onClick={openCreateModal}
@@ -770,20 +759,16 @@ const SuperadminSitesPage = () => {
                       <td className="px-5 py-4">
                         {editingId === site.id ? (
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
+                            <ActionButton
+                              action="save"
                               onClick={saveEdit}
-                              className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
+                              size="sm"
+                            />
+                            <ActionButton
+                              action="cancel"
                               onClick={cancelEdit}
-                              className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                            >
-                              Cancel
-                            </button>
+                              size="sm"
+                            />
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">

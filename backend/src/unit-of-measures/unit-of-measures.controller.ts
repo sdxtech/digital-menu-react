@@ -17,6 +17,7 @@ export class UnitOfMeasuresController {
   constructor(private readonly unitOfMeasures: UnitOfMeasuresService) {}
 
   @Get()
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   listUnits(@Query() query: ListUnitOfMeasuresQueryDto) {
     return this.unitOfMeasures.listUnits({
       page: query.page ?? 1,
@@ -43,6 +44,7 @@ export class UnitOfMeasuresController {
   }
 
   @Get('conversions')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   listConversions(@Query() query: ListUnitOfMeasuresQueryDto) {
     return this.unitOfMeasures.listConversions({
       page: query.page ?? 1,

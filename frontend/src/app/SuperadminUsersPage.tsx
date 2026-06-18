@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
@@ -839,16 +840,12 @@ const SuperadminUsersPage = () => {
                   <span>Create user</span>
                 </span>
               </button>
-              <button
-                type="button"
+              <ActionButton
+                action="import"
                 onClick={openImportModal}
-                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-              >
-                <span className="flex items-center gap-2">
-                  <i className="bi bi-upload text-base" aria-hidden="true" />
-                  <span>Import accounts</span>
-                </span>
-              </button>
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
               <button
                 type="button"
                 onClick={() => fetchUsers(meta.page, meta.limit, search)}
@@ -990,20 +987,16 @@ const SuperadminUsersPage = () => {
                       <td className="px-5 py-4">
                         {editingId === item.id ? (
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
+                            <ActionButton
+                              action="save"
                               onClick={saveEdit}
-                              className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
+                              size="sm"
+                            />
+                            <ActionButton
+                              action="cancel"
                               onClick={cancelEdit}
-                              className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                            >
-                              Cancel
-                            </button>
+                              size="sm"
+                            />
                           </div>
                         ) : (
                           <div className="flex flex-wrap items-center gap-2">
@@ -1031,20 +1024,16 @@ const SuperadminUsersPage = () => {
                                   className="w-40 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                                 />
                                 <div className="flex gap-2">
-                                  <button
-                                    type="button"
+                                  <ActionButton
+                                    action="update"
                                     onClick={savePassword}
-                                    className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
-                                  >
-                                    Update
-                                  </button>
-                                  <button
-                                    type="button"
+                                    size="sm"
+                                  />
+                                  <ActionButton
+                                    action="cancel"
                                     onClick={cancelPassword}
-                                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                                  >
-                                    Cancel
-                                  </button>
+                                    size="sm"
+                                  />
                                 </div>
                               </div>
                             ) : (
