@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import { rolePathFor, useAuth } from '../lib/auth'
+import { rolePathFor, type Role, useAuth } from '../lib/auth'
 
 const LoginPage = () => {
   const { user, login } = useAuth() /* Menyimpan form login */
@@ -78,7 +78,7 @@ const LoginPage = () => {
                 </p>
               </div>
 
-              {/* Form login dengan input email, password, dan tombol submit. Juga menampilkan error jika login gagal dan opsi untuk menampilkan/menyembunyikan password. */ }
+              {/* Form login dengan input email, password, dan tombol submit. Juga menampilkan error jika login gagal dan opsi untuk menampilkan/menyembunyikan password. */}
               <form className="relative mt-8 space-y-5" onSubmit={handleSubmit}> 
                 <div>
                   <label className="text-sm font-medium text-foreground">
@@ -96,7 +96,7 @@ const LoginPage = () => {
                       }))
                     }
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                  /> {/* Input email dengan state formState.email dan onChange untuk memperbarui state saat pengguna mengetik. */ }
+                  /> {/* Input email dengan state formState.email dan onChange untuk memperbarui state saat pengguna mengetik. */}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground">
@@ -115,7 +115,7 @@ const LoginPage = () => {
                         }))
                       } 
                       className="w-full rounded-2xl border border-border bg-white px-4 py-3 pr-12 text-sm text-foreground shadow-sm outline-none transition focus:border-accent-indigo focus:ring-4 focus:ring-accent-indigo/20"
-                    />{/* Input password dengan tipe yang berubah berdasarkan state showPassword, dan onChange untuk memperbarui state saat pengguna mengetik. */ }
+                    />{/* Input password dengan tipe yang berubah berdasarkan state showPassword, dan onChange untuk memperbarui state saat pengguna mengetik. */}
                     <button
                       type="button"
                       onClick={() => setShowPassword((prev) => !prev)}
@@ -124,14 +124,19 @@ const LoginPage = () => {
                       title={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? (
-                        <i
-                          className="bi bi-eye-slash text-lg"
-                          aria-hidden="true"
+                        <img 
+                          src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-eye-slash' viewBox='0 0 16 16'%3E%3Cpath d='M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7 7 0 0 0-2.79.588l.77.771A6 6 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755q-.247.248-.517.486z'/%3E%3Cpath d='M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z'/%3E%3Cpath d='M3.35 5.47q-.27.24-.518.487A13 13 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7 7 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884-12-12 .708-.708 12 12z'/%3E%3Csvg%3E"
+                          alt="Hide password"
+                          className="h-5 w-5 opacity-60"
                         />
                       ) : (
-                        <i className="bi bi-eye text-lg" aria-hidden="true" />
+                        <img 
+                          src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-eye' viewBox='0 0 16 16'%3E%3Cpath d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z'/%3E%3Cpath d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0'/%3E%3C/svg%3E" 
+                          alt="Show password"
+                          className="h-5 w-5 opacity-60"
+                        />
                       )}
-                    </button> {/* Tombol untuk menampilkan atau menyembunyikan password, dengan ikon mata yang berubah sesuai status showPassword. */ }
+                    </button> {/* Tombol untuk menampilkan atau menyembunyikan password, dengan ikon mata yang berubah sesuai status showPassword. */}
                   </div>
                 </div>
                 {error ? (
@@ -145,7 +150,13 @@ const LoginPage = () => {
                     />
                     Remember me
                   </label>
-                  <button type="button" className="font-medium text-primary">
+                  
+                  {/* 🌟 FIXED ACTION EVENT TRIGER LINK */}
+                  <button 
+                    type="button" 
+                    onClick={() => navigate('/forgot-password')}
+                    className="font-medium text-primary hover:underline bg-transparent border-none p-0 cursor-pointer"
+                  >
                     Forgot password?
                   </button>
                 </div>
