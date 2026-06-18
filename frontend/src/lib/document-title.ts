@@ -40,6 +40,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Menu Production',
   },
   {
+    path: '/chef/recipe-calculator',
+    getPageTitle: () => 'Calculator Recipe',
+  },
+  {
     path: '/chef/menu-bank',
     getPageTitle: () => 'Recipe Data',
   },

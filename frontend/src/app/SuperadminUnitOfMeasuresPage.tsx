@@ -1035,6 +1035,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                             ext: event.target.value,
                           }))
                         }
+                        onWheel={(event) => event.currentTarget.blur()}
                         placeholder="1.5"
                         className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
@@ -1054,6 +1055,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                             weight: event.target.value,
                           }))
                         }
+                        onWheel={(event) => event.currentTarget.blur()}
                         placeholder="1"
                         className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
@@ -1071,6 +1073,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                           conversionForm.weight,
                         )}
                         readOnly
+                        onWheel={(event) => event.currentTarget.blur()}
                         placeholder="Auto"
                         className="mt-2 w-full rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted outline-none"
                       />
@@ -1125,6 +1128,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                                 conversionFactor: event.target.value,
                               }))
                             }
+                            onWheel={(event) => event.currentTarget.blur()}
                             placeholder="200"
                             className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           />
@@ -1233,6 +1237,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                                 conversionFactor: event.target.value,
                               }))
                             }
+                            onWheel={(event) => event.currentTarget.blur()}
                             placeholder="200"
                             className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           />
