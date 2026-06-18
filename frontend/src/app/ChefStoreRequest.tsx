@@ -14,6 +14,10 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
 }
 
 type StoreRequestFulfillment = {
@@ -331,6 +335,7 @@ const ChefStoreRequest = ({
         'Portion',
         'IT Code',
         'Ingredient Name',
+        'Vendor',
         'QTY',
         'Unit',
       ],
@@ -352,6 +357,7 @@ const ChefStoreRequest = ({
           '',
           '',
           '',
+          '',
         ])
         rowNumber += 1
         return
@@ -368,6 +374,7 @@ const ChefStoreRequest = ({
           menu.portion,
           ingredient.productCode,
           ingredient.name,
+          ingredient.vendor ?? '',
           formatQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
@@ -376,10 +383,11 @@ const ChefStoreRequest = ({
     })
 
     const summaryRows: Array<Array<unknown>> = [
-      ['IT Code', 'Ingredient Name', 'QTY', 'Unit'],
+      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
       ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
         item.productCode,
         item.name,
+        item.vendor ?? '',
         formatQuantity(item.qty),
         formatUnitLabel(item.unitOfMeasures),
       ]),
@@ -1008,7 +1016,7 @@ const ChefStoreRequest = ({
                               event.stopPropagation()
                               toggleExpanded(groupKey)
                             }}
-                            className="rounded-md border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground hover:bg-white"
+                            className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
                           </button>
@@ -1658,7 +1666,7 @@ const ChefStoreRequest = ({
                                   type="button"
                                   onClick={handleAddCompletionRow}
                                   disabled={Boolean(cancellingGroupKey)}
-                                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   + Add ingredient
                                 </button>

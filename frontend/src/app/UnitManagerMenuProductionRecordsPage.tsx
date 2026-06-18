@@ -60,6 +60,7 @@ type StoreRequestMenu = {
   estimatedCost?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
+  ingredients?: StoreRequestIngredient[]
   fulfilledBy?: string
   cancelledBy?: string
 }
@@ -125,6 +126,90 @@ const formatPrice = (value?: number) => {
   }).format(value)
 }
 
+const xmlEscape = (value: unknown) => {
+  const text = value === null || value === undefined ? '' : String(value)
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+const sanitizeWorksheetName = (name: string) => {
+  const cleaned = name.replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet'
+  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
+}
+
+const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
+  const safeName = sanitizeWorksheetName(sheetName)
+  const rowXml = rows
+    .map((row, index) => {
+      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
+      const cells = row
+        .map((cell) => {
+          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
+          const type = isNumber ? 'Number' : 'String'
+          const value = isNumber ? String(cell) : xmlEscape(cell)
+          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
+        })
+        .join('')
+      return `<Row${rowStyle}>${cells}</Row>`
+    })
+    .join('')
+
+  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
+  <Table>${rowXml}</Table>
+ </Worksheet>`
+}
+
+const buildWorkbookXml = (
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const worksheetsXml = sheets
+    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
+    .join('')
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Header"><Font ss:Bold="1"/></Style>
+ </Styles>
+ ${worksheetsXml}
+</Workbook>`
+}
+
+const downloadExcel = (
+  filename: string,
+  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
+) => {
+  const xml = buildWorkbookXml(sheets)
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const buildIngredientKey = (
+  productCode?: string,
+  name?: string,
+  unitOfMeasures?: string,
+) =>
+  `${String(productCode ?? '').trim()}__${String(name ?? '').trim()}__${String(
+    unitOfMeasures ?? '',
+  ).trim()}`
+
 const UnitManagerMenuProductionRecordsPage = () => {
   const { accessToken } = useAuth()
   const [records, setRecords] = useState<StoreRequestGroup[]>([])
@@ -187,6 +272,138 @@ const UnitManagerMenuProductionRecordsPage = () => {
       prev.includes(groupKey)
         ? prev.filter((item) => item !== groupKey)
         : [...prev, groupKey],
+    )
+  }
+
+  const handleExportRecordGroup = (group: StoreRequestGroup) => {
+    const rows: Array<Array<unknown>> = [
+      [
+        'No',
+        'Production Date',
+        'Production Code',
+        'Menu Name',
+        'Category',
+        'Recipe Code',
+        'Portion',
+        'IT Code',
+        'Ingredient Name',
+        'Vendor',
+        'QTY Planned',
+        'QTY Actual',
+        'Variance',
+        'Unit Of Measures',
+        'Reviewed By',
+        'Approval Status',
+        'Store Request Status',
+        'Completed By',
+        'Completed At',
+        'Reason',
+      ],
+    ]
+
+    const fulfillmentByKey = new Map(
+      (group.fulfillment?.items ?? []).map((item) => [
+        buildIngredientKey(item.productCode, item.name, item.unitOfMeasures),
+        item,
+      ]),
+    )
+    const completedAt = group.fulfillment?.completedAt
+      ? new Date(group.fulfillment.completedAt).toLocaleString()
+      : ''
+    const completedBy = group.fulfillment?.completedBy ?? ''
+
+    let rowNumber = 1
+    group.items.forEach((menu) => {
+      const menuIngredients = menu.ingredients ?? []
+      const approvedBy = menu.reviewedBy ?? ''
+      const approvalStatus = getApprovalStatusLabel(menu.approvalStatus)
+      const storeRequestStatus = getStoreRequestStatusLabel(
+        menu.storeRequestStatus,
+      )
+
+      if (menuIngredients.length === 0) {
+        rows.push([
+          rowNumber,
+          group.date,
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.category,
+          menu.recipeCode ?? '',
+          menu.portion,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          approvedBy,
+          approvalStatus,
+          storeRequestStatus,
+          completedBy,
+          completedAt,
+          '',
+        ])
+        rowNumber += 1
+        return
+      }
+
+      menuIngredients.forEach((ingredient) => {
+        const fulfillmentItem = fulfillmentByKey.get(
+          buildIngredientKey(
+            ingredient.productCode,
+            ingredient.name,
+            ingredient.unitOfMeasures,
+          ),
+        )
+        rows.push([
+          rowNumber,
+          group.date,
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.category,
+          menu.recipeCode ?? '',
+          menu.portion,
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
+          formatQuantity(ingredient.qty),
+          fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
+          fulfillmentItem ? formatQuantity(fulfillmentItem.varianceQty) : '',
+          formatUnitLabel(ingredient.unitOfMeasures),
+          approvedBy,
+          approvalStatus,
+          storeRequestStatus,
+          completedBy,
+          completedAt,
+          fulfillmentItem?.reason ?? '',
+        ])
+        rowNumber += 1
+      })
+    })
+
+    const summaryRows: Array<Array<unknown>> = [
+      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        formatQuantity(item.qty),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ]
+
+    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
+    downloadExcel(
+      `menu-production-record-${safeDate}-${safeProductionCode}.xls`,
+      [
+        { name: 'Menu Production Record', rows },
+        { name: 'Ingredient Summary', rows: summaryRows },
+      ],
     )
   }
 
@@ -370,23 +587,41 @@ const UnitManagerMenuProductionRecordsPage = () => {
                             </div>
                           </td>
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleExpandedGroup(groupKey)
-                              }}
-                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                            >
-                              {isExpanded ? 'Hide details' : 'View details'}
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleExpandedGroup(groupKey)
+                                }}
+                                className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                              >
+                                {isExpanded ? 'Hide details' : 'View details'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleExportRecordGroup(group)
+                                }}
+                                className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <i
+                                    className="bi bi-download text-sm"
+                                    aria-hidden="true"
+                                  />
+                                  <span>Export</span>
+                                </span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
                             <td colSpan={9} className="px-5 py-5">
-                              <div className="grid gap-4 lg:grid-cols-12">
-                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
+                              <div className="space-y-4">
+                                <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">Menu list</p>
                                   <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                     <table className="dm-table min-w-full text-sm">
@@ -464,7 +699,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                   </div>
                                 </div>
 
-                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
+                                <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">
                                     {recordStatus === 'rejected'
                                       ? 'Rejected production summary'
