@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import { rolePathFor, type Role, useAuth } from '../lib/auth'
+import { rolePathFor, useAuth } from '../lib/auth'
 
 const LoginPage = () => {
   const { user, login } = useAuth() /* Menyimpan form login */
