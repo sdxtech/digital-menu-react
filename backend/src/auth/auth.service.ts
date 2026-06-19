@@ -134,7 +134,6 @@ export class AuthService {
     return Date.now() - lastActivityAt.getTime() > this.idleTimeoutMs;
   }
 
-  // BACKEND LOGIC: derive appRole for UI routing from DB roles.
   private resolveAppRole(roles: AppRole[] = []) {
     if (roles.includes(AppRole.Superadmin)) return 'superadmin';
     if (roles.includes(AppRole.UnitManager)) return 'unit-manager';
@@ -144,6 +143,10 @@ export class AuthService {
   }
 
   private async resolveUserSite(user: UserSiteInput): Promise<AuthSiteContext> {
+    if (user.roles?.includes(AppRole.Superadmin)) {
+      return {};
+    }
+
     const siteId = user.siteId ? String(user.siteId) : undefined;
     if (siteId) {
       const site = await this.sites.findSummaryById(siteId);
@@ -175,10 +178,6 @@ export class AuthService {
         site: legacySite,
         siteName: legacySite,
       };
-    }
-
-    if (user.roles?.includes(AppRole.Superadmin)) {
-      return {};
     }
 
     throw new UnauthorizedException('User site is required');

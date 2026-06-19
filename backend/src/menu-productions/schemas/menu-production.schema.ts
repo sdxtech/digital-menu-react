@@ -20,6 +20,8 @@ export type StoreFulfillmentIngredient = {
   vendorSite?: string;
   price?: number;
   ingredientCost?: number;
+  plannedIngredientCost?: number;
+  actualIngredientCost?: number;
   plannedPrice?: number;
   actualPrice?: number;
   variancePrice?: number;
@@ -36,6 +38,7 @@ export type MenuProductionIngredientVendor = {
   currency?: string;
   minimumQuantity?: number;
   price?: number;
+  ingredientCost?: number;
 };
 
 @Schema({ timestamps: true })
@@ -69,6 +72,12 @@ export class MenuProduction {
   @Prop({ type: Number, required: true, min: 0 })
   cost: number;
 
+  @Prop({ type: Number, min: 0 })
+  estimatedTotalCost?: number;
+
+  @Prop({ type: Number, min: 0 })
+  estimatedCostPerPax?: number;
+
   @Prop({
     type: [
       {
@@ -81,6 +90,7 @@ export class MenuProduction {
         currency: { type: String, trim: true },
         minimumQuantity: { type: Number },
         price: { type: Number },
+        ingredientCost: { type: Number },
       },
     ],
     default: [],
@@ -135,6 +145,8 @@ export class MenuProduction {
         vendorSite: { type: String, trim: true },
         price: { type: Number },
         ingredientCost: { type: Number },
+        plannedIngredientCost: { type: Number },
+        actualIngredientCost: { type: Number },
         plannedPrice: { type: Number },
         actualPrice: { type: Number },
         variancePrice: { type: Number },

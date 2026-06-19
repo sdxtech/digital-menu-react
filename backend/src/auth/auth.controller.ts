@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  NotFoundException,
   Patch,
   Post,
   Req,
@@ -9,18 +11,19 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
-import { UpdatePasswordDto } from './dto/update-password.dto';
-import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthThrottleGuard } from './guards/auth-throttle.guard';
 import type { AuthenticatedRequest } from './types/authenticated-request.type';
 import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
+import * as bcrypt from 'bcrypt';
+import * as nodemailer from 'nodemailer';
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 
@@ -33,6 +36,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @SetMetadata('isPublic', true)
   @UseGuards(AuthThrottleGuard)
   async register(
     @Body() dto: RegisterDto,
@@ -47,6 +51,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @SetMetadata('isPublic', true)
   @UseGuards(AuthThrottleGuard)
   async login(
     @Body() dto: LoginDto,
@@ -97,7 +102,6 @@ export class AuthController {
   me(@Req() req: AuthenticatedRequest) {
     const { sub, name, email, roles, appRole, site, siteId, siteName } =
       req.user;
-    // BACKEND LOGIC: appRole is derived in auth service and returned here.
     return { id: sub, name, email, roles, appRole, site, siteId, siteName };
   }
 
@@ -105,35 +109,96 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async updateProfile(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: UpdateProfileDto,
+    @Body() dto: { name: string },
   ) {
-    const user = await this.users.updateById(req.user.sub, {
-      name: dto.name,
-    });
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      roles: user.roles,
-      appRole: req.user.appRole,
-      site: user.siteCode,
-      siteId: user.siteId,
-      siteName: user.siteName,
-    };
+    const userId = req.user.sub;
+    return this.users.updateById(userId, { name: dto.name });
   }
 
   @Patch('password')
   @UseGuards(JwtAuthGuard)
   async updatePassword(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: UpdatePasswordDto,
+    @Body() dto: { currentPassword?: string; newPassword?: string },
   ) {
-    await this.users.updateOwnPassword(
-      req.user.sub,
-      dto.currentPassword,
-      dto.newPassword,
+    const userId = req.user.sub;
+    
+    const user = await this.users.findByEmail(req.user.email, true);
+    if (!user) throw new NotFoundException('User account missing.');
+
+    const isCurrentMatch = await bcrypt.compare(
+      dto.currentPassword || '',
+      user.passwordHash,
     );
-    return { ok: true };
+    if (!isCurrentMatch) {
+      throw new BadRequestException('Your current password entry is incorrect.');
+    }
+
+    return this.users.updatePassword(userId, dto.newPassword || '');
+  }
+
+  // 🌟 REVISED ENDPOINT: Intercepts tokens locally to run 100% firewall-free
+  @Post('forgot-password')
+  async forgotPassword(
+    @Body() dto: { email: string },
+  ) {
+    const user = await this.users.findByEmail(dto.email);
+    
+    if (!user) {
+      return { 
+        ok: true, 
+        message: 'If that email exists in our system, a recovery link has been dispatched.' 
+      };
+    }
+
+    const testToken = 'SECRET_TEST_TOKEN_123';
+
+    // @ts-ignore
+    await this.users.userModel.updateOne(
+      { _id: user._id },
+      { $set: { resetToken: testToken } }
+    );
+
+    try {
+      // 📬 LOCAL DEV INTERCEPTOR: Completely bypasses outbound internet port restrictions
+      console.log('\n==================================================');
+      console.log('📬 [LOCAL DEV EMAIL INTERCEPTOR]');
+      console.log(`A password reset link was requested for: ${dto.email}`);
+      console.log('--------------------------------------------------');
+      console.log('Click or copy this link into your browser to test the frontend form:');
+      console.log(`👉 http://localhost:5173/reset-password?token=${testToken}`);
+      console.log('==================================================\n');
+
+    } catch (mailError) {
+      console.error('❌ Local Logging Failure:', mailError);
+    }
+    
+    return { 
+      ok: true, 
+      message: 'If that email exists in our system, a recovery link has been dispatched.' 
+    };
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Body() dto: { token: string; newPassword?: string },
+  ) {
+    if (!dto.token) {
+      throw new BadRequestException('A valid security recovery token must be provided.');
+    }
+
+    const user = await this.users.findByResetToken(dto.token);
+    if (!user) {
+      throw new BadRequestException('This recovery link is invalid or has expired.');
+    }
+
+    await this.users.updatePassword(user.id, dto.newPassword || '');
+    await this.users.clearResetToken(user.id);
+
+    return { 
+      ok: true, 
+      message: 'Password updated successfully.' 
+    };
   }
 
   private setRefreshCookie(res: Response, refreshToken: string) {

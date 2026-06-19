@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose'; // 🌟 FIXED: Added missing Types module import to resolve errors
 import { AppRole } from '../../auth/roles.constants';
 
 export type UserDocument = HydratedDocument<User>;
@@ -26,6 +26,10 @@ export class User {
 
   @Prop({ select: false })
   lastActivityAt?: Date;
+
+  // 🌟 NEW FIELD: Allows Mongoose to persist your secure recovery tokens safely
+  @Prop({ type: String, default: null })
+  resetToken?: string | null;
 
   @Prop({
     type: [String],

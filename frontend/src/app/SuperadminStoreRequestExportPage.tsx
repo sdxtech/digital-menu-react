@@ -30,6 +30,11 @@ type StoreFulfillmentIngredient = {
   vendorSite?: string
   price?: number
   ingredientCost?: number
+  plannedIngredientCost?: number
+  actualIngredientCost?: number
+  plannedPrice?: number
+  actualPrice?: number
+  variancePrice?: number
   reason?: string
 }
 
@@ -210,6 +215,29 @@ const buildIngredientKey = (
 
 const formatQuantity = (value: number) => {
   return formatRawQuantity(value, '')
+}
+
+const formatPrice = (value?: number) => {
+  return value === undefined || value === null || !Number.isFinite(value)
+    ? ''
+    : formatRawQuantity(value, '')
+}
+
+const getActualIngredientCost = (item?: StoreFulfillmentIngredient) => {
+  if (Number.isFinite(Number(item?.actualIngredientCost))) {
+    return Number(item?.actualIngredientCost)
+  }
+  const actualPrice = item?.actualPrice
+  const actualQty = item?.actualQty
+  if (
+    actualPrice === undefined ||
+    actualQty === undefined ||
+    !Number.isFinite(actualPrice) ||
+    !Number.isFinite(actualQty)
+  ) {
+    return undefined
+  }
+  return actualPrice * actualQty
 }
 
 const SuperadminStoreRequestExportPage = () => {
@@ -395,6 +423,10 @@ const SuperadminStoreRequestExportPage = () => {
           'QTY Planned',
           'QTY Actual',
           'Variance',
+          'Planned Price',
+          'Actual Price',
+          'Price Variance',
+          'Ingredient Cost',
           'Unit Of Measures',
           'Approved By',
           'Approval Status',
@@ -448,6 +480,10 @@ const SuperadminStoreRequestExportPage = () => {
               '',
               '',
               '',
+              '',
+              '',
+              '',
+              '',
               approvedBy,
               approvalStatus,
               completedBy,
@@ -484,6 +520,10 @@ const SuperadminStoreRequestExportPage = () => {
               fulfillmentItem
                 ? formatQuantity(fulfillmentItem.varianceQty)
                 : '',
+              formatPrice(fulfillmentItem?.plannedPrice ?? ingredient.price),
+              formatPrice(fulfillmentItem?.actualPrice),
+              formatPrice(fulfillmentItem?.variancePrice),
+              formatPrice(getActualIngredientCost(fulfillmentItem)),
               formatUnitLabel(ingredient.unitOfMeasures),
               approvedBy,
               approvalStatus,

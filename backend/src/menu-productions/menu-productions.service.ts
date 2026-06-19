@@ -38,6 +38,7 @@ type StoreRequestIngredient = {
   vendorSite?: string;
   price?: number;
   ingredientCost?: number;
+  plannedIngredientCost?: number;
 };
 
 type StoreFulfillmentIngredient = {
@@ -51,6 +52,8 @@ type StoreFulfillmentIngredient = {
   vendorSite?: string;
   price?: number;
   ingredientCost?: number;
+  plannedIngredientCost?: number;
+  actualIngredientCost?: number;
   plannedPrice?: number;
   actualPrice?: number;
   variancePrice?: number;
@@ -78,6 +81,7 @@ type StoreRequestMenu = {
   portion: number;
   cost?: number;
   estimatedCost?: number;
+  estimatedCostPerPax?: number;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   rejectionReason?: string;
@@ -131,6 +135,15 @@ type EligibleRecipe = {
   recipeCode?: string;
   name: string;
   category: string;
+  portionSize?: number;
+  ingredients?: Array<{
+    productCode?: string;
+    name?: string;
+    unitOfMeasures?: string;
+    qty?: number;
+    priceUom?: number;
+    foodCost?: number;
+  }>;
 };
 
 const MENU_PRODUCTION_CODE_PREFIX = 'MPR';
@@ -167,6 +180,92 @@ export class MenuProductionsService implements OnModuleInit {
     };
   }
 
+  private calculateMenuProductionCostSnapshot(
+    input: CreateMenuProductionDto,
+    recipe: EligibleRecipe,
+  ) {
+    const selectedVendors = this.normalizeIngredientVendors(
+      input.ingredientVendors,
+    );
+    const portionSize =
+      Number.isFinite(Number(recipe.portionSize)) &&
+      Number(recipe.portionSize) > 0
+        ? Number(recipe.portionSize)
+        : 1;
+    const portion =
+      Number.isFinite(Number(input.portion)) && Number(input.portion) > 0
+        ? Number(input.portion)
+        : 0;
+    const multiplier = portionSize > 0 ? portion / portionSize : 0;
+    let estimatedTotalCost = 0;
+    let hasCost = false;
+
+    const ingredientVendors = (recipe.ingredients ?? []).map(
+      (ingredient, ingredientIndex) => {
+        const productCode = ingredient.productCode?.trim() ?? '';
+        const name = ingredient.name?.trim() ?? '';
+        const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
+        const baseQty = Number(ingredient.qty);
+        const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+        const selectedVendor = this.findIngredientVendor(
+          selectedVendors,
+          ingredientIndex,
+          productCode,
+          name,
+          unitOfMeasures,
+        );
+        const vendorPrice = Number(selectedVendor?.price);
+        const priceUom = Number(ingredient.priceUom);
+        const foodCost = Number(ingredient.foodCost);
+        const unitPrice = Number.isFinite(vendorPrice)
+          ? vendorPrice
+          : Number.isFinite(priceUom)
+            ? priceUom
+            : Number.isFinite(foodCost) &&
+                Number.isFinite(baseQty) &&
+                baseQty > 0
+              ? foodCost / baseQty
+              : undefined;
+        const ingredientCost =
+          unitPrice !== undefined
+            ? this.roundQuantity(qty * unitPrice)
+            : undefined;
+
+        if (ingredientCost !== undefined) {
+          estimatedTotalCost += ingredientCost;
+          hasCost = true;
+        }
+
+        return {
+          ingredientIndex,
+          productCode,
+          name,
+          unitOfMeasures,
+          vendor: selectedVendor?.vendor,
+          site: selectedVendor?.site,
+          currency: selectedVendor?.currency,
+          minimumQuantity: selectedVendor?.minimumQuantity,
+          price: unitPrice,
+          ingredientCost,
+        };
+      },
+    );
+
+    const estimatedTotal = hasCost
+      ? this.roundQuantity(estimatedTotalCost)
+      : undefined;
+    const estimatedPerPax =
+      estimatedTotal !== undefined && portion > 0
+        ? this.roundQuantity(estimatedTotal / portion)
+        : undefined;
+
+    return {
+      ingredientVendors: this.normalizeIngredientVendors(ingredientVendors),
+      estimatedTotalCost: estimatedTotal,
+      estimatedCostPerPax: estimatedPerPax,
+    };
+  }
+
   async onModuleInit() {
     await this.ensureNonUniqueProductionCodeIndex();
   }
@@ -193,6 +292,7 @@ export class MenuProductionsService implements OnModuleInit {
       'Unit manager id',
     );
     const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
+    const costSnapshot = this.calculateMenuProductionCostSnapshot(input, recipe);
     return this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
@@ -200,10 +300,10 @@ export class MenuProductionsService implements OnModuleInit {
       menuName: menuSnapshot.menuName,
       category: menuSnapshot.category,
       portion: input.portion,
-      cost: input.cost,
-      ingredientVendors: this.normalizeIngredientVendors(
-        input.ingredientVendors,
-      ),
+      cost: costSnapshot.estimatedTotalCost ?? input.cost,
+      estimatedTotalCost: costSnapshot.estimatedTotalCost,
+      estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
+      ingredientVendors: costSnapshot.ingredientVendors,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
@@ -248,6 +348,10 @@ export class MenuProductionsService implements OnModuleInit {
         );
       }
       const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
+      const costSnapshot = this.calculateMenuProductionCostSnapshot(
+        input,
+        recipe,
+      );
 
       return {
         productionCode: productionCodeByDate.get(input.productionDate),
@@ -256,10 +360,10 @@ export class MenuProductionsService implements OnModuleInit {
         menuName: menuSnapshot.menuName,
         category: menuSnapshot.category,
         portion: input.portion,
-        cost: input.cost,
-        ingredientVendors: this.normalizeIngredientVendors(
-          input.ingredientVendors,
-        ),
+        cost: costSnapshot.estimatedTotalCost ?? input.cost,
+        estimatedTotalCost: costSnapshot.estimatedTotalCost,
+        estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
+        ingredientVendors: costSnapshot.ingredientVendors,
         productionDate: input.productionDate,
         approvalStatus: 'pending',
         storeRequestStatus: 'not-requested',
@@ -573,6 +677,15 @@ export class MenuProductionsService implements OnModuleInit {
           actualPrice !== undefined && plannedPrice !== undefined
             ? this.roundQuantity(actualPrice - plannedPrice)
             : undefined;
+        const plannedIngredientCost = Number.isFinite(
+          Number(plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost),
+        )
+          ? Number(plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost)
+          : undefined;
+        const actualIngredientCost =
+          actualPrice !== undefined
+            ? this.roundQuantity(actualPrice * actualQty)
+            : undefined;
         const normalizedReason = actualItem.reason?.trim();
         if (
           (varianceQty !== 0 ||
@@ -595,7 +708,9 @@ export class MenuProductionsService implements OnModuleInit {
           vendor: plannedItem.vendor,
           vendorSite: plannedItem.vendorSite,
           price: plannedItem.price,
-          ingredientCost: plannedItem.ingredientCost,
+          ingredientCost: plannedIngredientCost,
+          plannedIngredientCost,
+          actualIngredientCost,
           plannedPrice,
           actualPrice,
           variancePrice,
@@ -609,6 +724,10 @@ export class MenuProductionsService implements OnModuleInit {
       const actualPrice = Number.isFinite(Number(actualItem.actualPrice))
         ? Number(actualItem.actualPrice)
         : undefined;
+      const actualIngredientCost =
+        actualPrice !== undefined
+          ? this.roundQuantity(actualPrice * actualQty)
+          : undefined;
       const normalizedReason = actualItem.reason?.trim();
       if (!Number.isFinite(actualQty) || actualQty <= 0) {
         throw new BadRequestException(
@@ -628,6 +747,9 @@ export class MenuProductionsService implements OnModuleInit {
         plannedQty: 0,
         actualQty,
         varianceQty: actualQty,
+        ingredientCost: 0,
+        plannedIngredientCost: 0,
+        actualIngredientCost,
         plannedPrice: 0,
         actualPrice,
         variancePrice: actualPrice,
@@ -1076,7 +1198,13 @@ export class MenuProductionsService implements OnModuleInit {
         approvalStatus: 'approved',
         status: 'active',
       })
-      .select({ recipeCode: 1, name: 1, category: 1 })
+      .select({
+        recipeCode: 1,
+        name: 1,
+        category: 1,
+        portionSize: 1,
+        ingredients: 1,
+      })
       .lean();
 
     const byId = new Map<string, EligibleRecipe>();
@@ -1090,6 +1218,15 @@ export class MenuProductionsService implements OnModuleInit {
         recipeCode: this.normalizeOptionalRecipeCode(recipe.recipeCode),
         name: recipe.name?.trim() ?? '',
         category: recipe.category?.trim() ?? '',
+        portionSize: Number(recipe.portionSize),
+        ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
+          productCode: ingredient.productCode?.trim() ?? '',
+          name: ingredient.name?.trim() ?? '',
+          unitOfMeasures: ingredient.unitOfMeasures?.trim() ?? '',
+          qty: Number(ingredient.qty),
+          priceUom: Number(ingredient.priceUom),
+          foodCost: Number(ingredient.foodCost),
+        })),
       });
     });
 
@@ -1216,6 +1353,7 @@ export class MenuProductionsService implements OnModuleInit {
       .map((vendor) => {
         const ingredientIndex = Number(vendor.ingredientIndex);
         const price = Number(vendor.price);
+        const ingredientCost = Number(vendor.ingredientCost);
         const minimumQuantity = Number(vendor.minimumQuantity);
         return {
           ...(Number.isInteger(ingredientIndex) && ingredientIndex >= 0
@@ -1231,6 +1369,9 @@ export class MenuProductionsService implements OnModuleInit {
             ? { minimumQuantity }
             : {}),
           ...(Number.isFinite(price) && price >= 0 ? { price } : {}),
+          ...(Number.isFinite(ingredientCost) && ingredientCost >= 0
+            ? { ingredientCost }
+            : {}),
         };
       })
       .filter(
@@ -1288,6 +1429,23 @@ export class MenuProductionsService implements OnModuleInit {
         ingredientCost: Number.isFinite(Number(record.ingredientCost))
           ? Number(record.ingredientCost)
           : undefined,
+        plannedIngredientCost: Number.isFinite(
+          Number(record.plannedIngredientCost),
+        )
+          ? Number(record.plannedIngredientCost)
+          : Number.isFinite(Number(record.ingredientCost))
+            ? Number(record.ingredientCost)
+            : undefined,
+        actualIngredientCost: Number.isFinite(
+          Number(record.actualIngredientCost),
+        )
+          ? Number(record.actualIngredientCost)
+          : Number.isFinite(Number(record.actualPrice)) &&
+              Number.isFinite(Number(record.actualQty))
+            ? this.roundQuantity(
+                Number(record.actualPrice) * Number(record.actualQty),
+              )
+            : undefined,
         plannedPrice: Number.isFinite(Number(record.plannedPrice))
           ? Number(record.plannedPrice)
           : undefined,
@@ -1389,7 +1547,17 @@ export class MenuProductionsService implements OnModuleInit {
       let ingredients: StoreRequestIngredient[] = [];
       let missingRecipe = false;
       let portionSize = 1;
-      let estimatedCost: number | undefined;
+      const storedEstimatedCost = Number(menu.estimatedTotalCost);
+      const storedEstimatedCostPerPax = Number(menu.estimatedCostPerPax);
+      let estimatedCost: number | undefined =
+        Number.isFinite(storedEstimatedCost) && storedEstimatedCost >= 0
+          ? storedEstimatedCost
+          : undefined;
+      let estimatedCostPerPax: number | undefined =
+        Number.isFinite(storedEstimatedCostPerPax) &&
+        storedEstimatedCostPerPax >= 0
+          ? storedEstimatedCostPerPax
+          : undefined;
       const submittedById = String(menu.createdBy ?? '').trim();
       const submittedByName = submittedById
         ? creatorNameById.get(submittedById)
@@ -1443,9 +1611,14 @@ export class MenuProductionsService implements OnModuleInit {
                   baseQty > 0
                 ? foodCost / baseQty
                 : undefined;
+          const storedIngredientCost = Number(selectedVendor?.ingredientCost);
           const ingredientCost =
-            unitPrice !== undefined ? qty * unitPrice : undefined;
-          if (unitPrice !== undefined) {
+            Number.isFinite(storedIngredientCost) && storedIngredientCost >= 0
+              ? storedIngredientCost
+              : unitPrice !== undefined
+                ? qty * unitPrice
+                : undefined;
+          if (ingredientCost !== undefined) {
             estimatedCostTotal += ingredientCost ?? 0;
             hasEstimatedCost = true;
           }
@@ -1460,6 +1633,8 @@ export class MenuProductionsService implements OnModuleInit {
             if (ingredientCost !== undefined) {
               existing.ingredientCost =
                 (existing.ingredientCost ?? 0) + ingredientCost;
+              existing.plannedIngredientCost =
+                (existing.plannedIngredientCost ?? 0) + ingredientCost;
             }
             if (existing.vendor !== selectedVendor?.vendor) {
               existing.vendor = existing.vendor
@@ -1482,6 +1657,7 @@ export class MenuProductionsService implements OnModuleInit {
               vendorSite: selectedVendor?.site,
               price: unitPrice,
               ingredientCost,
+              plannedIngredientCost: ingredientCost,
             });
           }
 
@@ -1494,9 +1670,22 @@ export class MenuProductionsService implements OnModuleInit {
             vendorSite: selectedVendor?.site,
             price: unitPrice,
             ingredientCost,
+            plannedIngredientCost: ingredientCost,
           };
         });
-        estimatedCost = hasEstimatedCost ? estimatedCostTotal : undefined;
+        estimatedCost =
+          Number.isFinite(storedEstimatedCost) && storedEstimatedCost >= 0
+            ? storedEstimatedCost
+            : hasEstimatedCost
+              ? estimatedCostTotal
+              : undefined;
+        estimatedCostPerPax =
+          Number.isFinite(storedEstimatedCostPerPax) &&
+          storedEstimatedCostPerPax >= 0
+            ? storedEstimatedCostPerPax
+            : estimatedCost !== undefined && Number(menu.portion) > 0
+              ? estimatedCost / Number(menu.portion)
+              : undefined;
       }
 
       const fulfilledAtValue = menu.storeFulfillmentCompletedAt;
@@ -1567,6 +1756,7 @@ export class MenuProductionsService implements OnModuleInit {
           ? Number(menu.cost)
           : undefined,
         estimatedCost,
+        estimatedCostPerPax,
         productionDate,
         approvalStatus: menu.approvalStatus ?? 'pending',
         rejectionReason: String(menu.rejectionReason ?? '').trim() || undefined,

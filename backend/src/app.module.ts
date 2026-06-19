@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { MaintenanceGuard } from './auth/guards/maintenance.guard';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
@@ -23,6 +25,7 @@ import { MenuProductionsModule } from './menu-productions/menu-productions.modul
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { SitesModule } from './sites/sites.module';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
@@ -58,6 +61,13 @@ import { SitesModule } from './sites/sites.module';
     HealthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // 🌟 THIS REGISTERS THE MAINTENANCE GUARD GLOBALLY ACROSS ALL API ROUTES
+    {
+      provide: APP_GUARD,
+      useClass: MaintenanceGuard,
+    },
+  ],
 })
 export class AppModule {}
