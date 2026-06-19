@@ -58,6 +58,7 @@ type StoreRequestMenu = {
   category: string
   portion: number
   estimatedCost?: number
+  estimatedCostPerPax?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   ingredients?: StoreRequestIngredient[]
@@ -650,10 +651,14 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                             ? Number(item.estimatedCost)
                                             : undefined
                                           const estimatedCostPerPax =
-                                            estimatedCost !== undefined &&
-                                            item.portion > 0
-                                              ? estimatedCost / item.portion
-                                              : undefined
+                                            Number.isFinite(
+                                              Number(item.estimatedCostPerPax),
+                                            )
+                                              ? Number(item.estimatedCostPerPax)
+                                              : estimatedCost !== undefined &&
+                                                  item.portion > 0
+                                                ? estimatedCost / item.portion
+                                                : undefined
 
                                           return (
                                             <tr

@@ -59,6 +59,7 @@ type StoreRequestMenu = {
   portion: number
   cost?: number
   estimatedCost?: number
+  estimatedCostPerPax?: number
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
@@ -1056,10 +1057,16 @@ const UnitManagerPage = () => {
                                                 ? Number(item.estimatedCost)
                                                 : undefined
                                               const estimatedCostPerPax =
-                                                estimatedCost !== undefined &&
-                                                item.portion > 0
-                                                  ? estimatedCost / item.portion
-                                                  : undefined
+                                                Number.isFinite(
+                                                  Number(item.estimatedCostPerPax),
+                                                )
+                                                  ? Number(
+                                                      item.estimatedCostPerPax,
+                                                    )
+                                                  : estimatedCost !== undefined &&
+                                                      item.portion > 0
+                                                    ? estimatedCost / item.portion
+                                                    : undefined
 
                                               return (
                                                 <tr

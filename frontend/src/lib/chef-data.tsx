@@ -73,6 +73,8 @@ export type MenuProduction = {
   assistedBy?: string
   portion: number
   cost?: number
+  estimatedTotalCost?: number
+  estimatedCostPerPax?: number
   productionDate: string
   approvalStatus: ApprovalStatus
   rejectionReason?: string

@@ -52,6 +52,7 @@ type StoreRequestMenu = {
   category: string
   portion: number
   estimatedCost?: number
+  estimatedCostPerPax?: number
   productionDate?: string
   storeRequestStatus?: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   portionSize?: number
@@ -907,10 +908,14 @@ const StorekeeperPage = () => {
                                             ? Number(menu.estimatedCost)
                                             : undefined
                                           const estimatedCostPerPax =
-                                            estimatedCost !== undefined &&
-                                            menu.portion > 0
-                                              ? estimatedCost / menu.portion
-                                              : undefined
+                                            Number.isFinite(
+                                              Number(menu.estimatedCostPerPax),
+                                            )
+                                              ? Number(menu.estimatedCostPerPax)
+                                              : estimatedCost !== undefined &&
+                                                  menu.portion > 0
+                                                ? estimatedCost / menu.portion
+                                                : undefined
 
                                           return (
                                             <tr
