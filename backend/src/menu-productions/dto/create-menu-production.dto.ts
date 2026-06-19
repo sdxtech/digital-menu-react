@@ -54,6 +54,12 @@ export class CreateMenuProductionIngredientVendorDto {
   @Min(0)
   @IsOptional()
   price?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  ingredientCost?: number;
 }
 
 export class CreateMenuProductionDto {

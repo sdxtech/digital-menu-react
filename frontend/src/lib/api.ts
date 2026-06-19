@@ -125,6 +125,11 @@ export const apiFetch = async <T>(
   })
 
   if (!response.ok) {
+    // 🌟 INTERCEPT 503 SERVICE UNAVAILABLE (MAINTENANCE MODE)
+    if (response.status === 503 && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('maintenance-mode-active'))
+    }
+
     if (response.status === 401 && accessToken && allowRefresh) {
       const refreshedToken = await tryRefreshAccessToken()
       if (refreshedToken) {

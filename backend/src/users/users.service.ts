@@ -70,6 +70,19 @@ export class UsersService {
     return this.userModel.findById(id);
   }
 
+  // 🌟 NEW METHOD: Finds a user by their active password recovery token
+  async findByResetToken(token: string) {
+    return this.userModel.findOne({ resetToken: token });
+  }
+
+  // 🌟 NEW METHOD: Clears the recovery token from the database after a successful reset
+  async clearResetToken(userId: string) {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $set: { resetToken: null } }
+    );
+  }
+
   async findByIdWithRefreshToken(id: string) {
     return this.userModel
       .findById(id)

@@ -7,6 +7,7 @@ export type StoreRequestSummaryIngredient = {
   vendorSite?: string
   price?: number
   ingredientCost?: number
+  plannedIngredientCost?: number
 }
 
 export const aggregateStoreRequestSummary = (
@@ -28,6 +29,11 @@ export const aggregateStoreRequestSummary = (
       if (Number.isFinite(Number(item.ingredientCost))) {
         existing.ingredientCost =
           (existing.ingredientCost ?? 0) + Number(item.ingredientCost)
+      }
+      if (Number.isFinite(Number(item.plannedIngredientCost))) {
+        existing.plannedIngredientCost =
+          (existing.plannedIngredientCost ?? 0) +
+          Number(item.plannedIngredientCost)
       }
       if (existing.vendor !== item.vendor) {
         existing.vendor = existing.vendor ? 'Multiple' : item.vendor
@@ -57,6 +63,11 @@ export const aggregateStoreRequestSummary = (
       ingredientCost: Number.isFinite(Number(item.ingredientCost))
         ? Number(item.ingredientCost)
         : undefined,
+      plannedIngredientCost: Number.isFinite(Number(item.plannedIngredientCost))
+        ? Number(item.plannedIngredientCost)
+        : Number.isFinite(Number(item.ingredientCost))
+          ? Number(item.ingredientCost)
+          : undefined,
     })
   })
 
