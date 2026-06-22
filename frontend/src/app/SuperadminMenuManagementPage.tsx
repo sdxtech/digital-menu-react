@@ -700,9 +700,8 @@ export const RecipeCalculator = () => {
   }, [fetchCalculatorRecipes])
 
   useEffect(() => {
-    expandedRows.forEach((rowId) => {
-      const row = calculatorRows.find((item) => item.id === rowId)
-      const recipe = row ? recipeById.get(row.recipeId) : undefined
+    calculatorRows.forEach((row) => {
+      const recipe = recipeById.get(row.recipeId)
       const site = recipe ? getRecipeSiteText(recipe) : ''
       ;(recipe?.ingredients ?? []).forEach((ingredient) => {
         loadRecipeSiteVendorPrices(ingredient.productCode, site).catch(
@@ -710,7 +709,7 @@ export const RecipeCalculator = () => {
         )
       })
     })
-  }, [calculatorRows, expandedRows, loadRecipeSiteVendorPrices, recipeById])
+  }, [calculatorRows, loadRecipeSiteVendorPrices, recipeById])
 
   useEffect(() => {
     expandedRows.forEach((rowId) => {
@@ -868,6 +867,25 @@ export const RecipeCalculator = () => {
     return vendorOptions.find((option) => option.key === selectedVendorKey)
   }
 
+  const hasLoadedSiteVendorPrices = (productKey: string) =>
+    Object.prototype.hasOwnProperty.call(vendorPricesByProductKey, productKey)
+
+  const isSiteVendorPricePending = (productKey: string) =>
+    !hasLoadedSiteVendorPrices(productKey) &&
+    !vendorPriceErrorByProductKey[productKey]
+
+  const hasPendingRecipeSiteVendorPrices = (recipe: Recipe) => {
+    const site = getRecipeSiteText(recipe)
+    return (recipe.ingredients ?? []).some((ingredient) => {
+      const productCode = ingredient.productCode?.trim()
+      if (!productCode || !site.trim()) return false
+
+      return isSiteVendorPricePending(
+        getRecipeCalculatorVendorProductKey(productCode, site),
+      )
+    })
+  }
+
   const getCalculatorEstimatedCost = (
     rowId: string,
     recipe: Recipe,
@@ -875,6 +893,7 @@ export const RecipeCalculator = () => {
   ) => {
     const ingredients = recipe.ingredients ?? []
     if (!ingredients.length) return undefined
+    if (hasPendingRecipeSiteVendorPrices(recipe)) return undefined
 
     const basePax = getRecipeBasePax(recipe)
     const targetPortion = getRecipeTargetPortion(recipe, portion)
@@ -1149,6 +1168,11 @@ export const RecipeCalculator = () => {
                                       const siteVendorOptions =
                                         vendorPricesByProductKey[productKey] ??
                                         []
+                                      const siteVendorPending =
+                                        !hasLoadedSiteVendorPrices(productKey) &&
+                                        !vendorPriceErrorByProductKey[
+                                          productKey
+                                        ]
                                       const vendorLoading =
                                         vendorPriceLoadingByProductKey[
                                           productKey
@@ -1197,11 +1221,12 @@ export const RecipeCalculator = () => {
                                           (option) =>
                                             option.key === selectedVendorKey,
                                         )
-                                      const unitPrice =
-                                        getIngredientUnitPrice(
-                                          ingredient,
-                                          selectedVendorPrice,
-                                        )
+                                      const unitPrice = siteVendorPending
+                                        ? undefined
+                                        : getIngredientUnitPrice(
+                                            ingredient,
+                                            selectedVendorPrice,
+                                          )
                                       const totalCost =
                                         unitPrice === undefined
                                           ? undefined
