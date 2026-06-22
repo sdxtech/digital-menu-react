@@ -96,6 +96,7 @@ function App() {
     <Routes>
       <Route path="/" element={<RoleLanding />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/maintenance" element={<MaintenancePage />} />
       
       {/* 🌟 OPEN PATHWAY ROUTE VIEWS (Unauthenticated access maps) */}
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
