@@ -454,6 +454,7 @@ const SuperadminStoreRequestExportPage = () => {
           ? new Date(group.fulfillment.completedAt).toLocaleString()
           : ''
         const completedBy = group.fulfillment?.completedBy ?? ''
+        const consumedFulfillmentKeys = new Set<string>()
 
         group.items.forEach((menu) => {
           const ingredients = menu.ingredients ?? []
@@ -495,13 +496,13 @@ const SuperadminStoreRequestExportPage = () => {
           }
 
           ingredients.forEach((ingredient) => {
-            const fulfillmentItem = fulfillmentByKey.get(
-              buildIngredientKey(
-                ingredient.productCode,
-                ingredient.name,
-                ingredient.unitOfMeasures,
-              ),
+            const ingredientKey = buildIngredientKey(
+              ingredient.productCode,
+              ingredient.name,
+              ingredient.unitOfMeasures,
             )
+            consumedFulfillmentKeys.add(ingredientKey)
+            const fulfillmentItem = fulfillmentByKey.get(ingredientKey)
 
             rows.push([
               rowNumber,
@@ -533,6 +534,40 @@ const SuperadminStoreRequestExportPage = () => {
             ])
             rowNumber += 1
           })
+        })
+
+        fulfillmentByKey.forEach((item, key) => {
+          if (consumedFulfillmentKeys.has(key)) return
+
+          rows.push([
+            rowNumber,
+            group.date,
+            siteName,
+            group.productionCode ?? '',
+            '',
+            '',
+            '',
+            '',
+            item.productCode,
+            item.name,
+            item.vendor ?? '',
+            formatQuantity(item.plannedQty),
+            formatQuantity(item.actualQty),
+            formatQuantity(item.varianceQty),
+            formatPrice(item.plannedPrice),
+            formatPrice(item.actualPrice),
+            formatPrice(item.variancePrice),
+            formatPrice(getActualIngredientCost(item)),
+            formatUnitLabel(item.unitOfMeasures),
+            '',
+            '',
+            completedBy,
+            getStoreRequestStatusLabel(
+              group.fulfillment?.status ?? 'fulfilled',
+            ),
+            completedAt,
+          ])
+          rowNumber += 1
         })
       })
 
