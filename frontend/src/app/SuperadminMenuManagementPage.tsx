@@ -23,6 +23,7 @@ type CategoryStatusFilter = 'active' | 'disabled'
 type MenuManagementTab =
   | 'menu-production'
   | 'recipe-calculator'
+  | 'create-recipe'
   | 'recipes'
   | 'raw-materials'
   | 'categories'
@@ -193,6 +194,7 @@ const menuManagementTabs: Array<{
 }> = [
   { id: 'menu-production', label: 'Menu Production', icon: 'bi-calendar2-week' },
   { id: 'recipe-calculator', label: 'Calculator Recipe', icon: 'bi-calculator' },
+  { id: 'create-recipe', label: 'Create New Recipe', icon: 'bi-plus-circle' },
   { id: 'recipes', label: 'Recipe Data', icon: 'bi-journal-text' },
   { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
   { id: 'categories', label: 'Categories', icon: 'bi-tags' },
@@ -1429,7 +1431,6 @@ const SuperadminMenuManagementPage = () => {
   const [recipeCategory, setRecipeCategory] = useState('')
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [recipeMessage, setRecipeMessage] = useState('')
-  const [createRecipeOpen, setCreateRecipeOpen] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState<BaseRecipe | null>(null)
   const [recipeImportOpen, setRecipeImportOpen] = useState(false)
   const [recipeImportFile, setRecipeImportFile] = useState<File | null>(null)
@@ -3151,25 +3152,6 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
-        {createRecipeOpen ? (
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
-            <div
-              className="my-6 w-full max-w-6xl rounded-md border border-border bg-surface p-6 shadow-xl"
-              role="dialog"
-              aria-modal="true"
-            >
-              <ChefCreateMenu
-                embedded
-                enableIngredientUomConversion
-                onClose={() => setCreateRecipeOpen(false)}
-                onSaved={() => {
-                  handleRecipeSaved('Recipe created.')
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-
         {editingRecipe ? (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
             <div
@@ -3207,6 +3189,16 @@ const SuperadminMenuManagementPage = () => {
 
         {activeTab === 'recipe-calculator' ? <RecipeCalculator /> : null}
 
+        {activeTab === 'create-recipe' ? (
+          <ChefCreateMenu
+            embedded
+            enableIngredientUomConversion
+            onSaved={() => {
+              handleRecipeSaved('Recipe created.')
+            }}
+          />
+        ) : null}
+
         {activeTab === 'recipes' ? (
           <>
         <section className="rounded-md border border-border bg-surface shadow-sm">
@@ -3233,16 +3225,6 @@ const SuperadminMenuManagementPage = () => {
                 iconClassName="bi bi-upload text-base"
                 size="sm"
               />
-              <button
-                type="button"
-                onClick={() => setCreateRecipeOpen(true)}
-                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-              >
-                <span className="flex items-center gap-2">
-                  <i className="bi bi-plus-circle text-base" aria-hidden="true" />
-                  <span>Input</span>
-                </span>
-              </button>
               <button
                 type="button"
                 onClick={() =>
