@@ -54,6 +54,8 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  estimatedCost?: number
+  estimatedCostPerPax?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   missingRecipe: boolean
@@ -221,6 +223,17 @@ const formatPrice = (value?: number) => {
   return value === undefined || value === null || !Number.isFinite(value)
     ? ''
     : formatRawQuantity(value, '')
+}
+
+const formatRupiah = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return ''
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 const getActualIngredientCost = (item?: StoreFulfillmentIngredient) => {
@@ -435,6 +448,16 @@ const SuperadminStoreRequestExportPage = () => {
           'Completed At',
         ],
       ]
+      const estimatedCostRows: Array<Array<unknown>> = [
+        [
+          'Production Date',
+          'Site',
+          'Menu Name',
+          'Portion',
+          'Estimated Total Cost',
+          'Cost Per Pax',
+        ],
+      ]
 
       let rowNumber = 1
       groups.forEach((group) => {
@@ -457,6 +480,26 @@ const SuperadminStoreRequestExportPage = () => {
         const consumedFulfillmentKeys = new Set<string>()
 
         group.items.forEach((menu) => {
+          const estimatedTotalCost = Number.isFinite(menu.estimatedCost)
+            ? menu.estimatedCost
+            : undefined
+          const estimatedCostPerPax = Number.isFinite(
+            menu.estimatedCostPerPax,
+          )
+            ? menu.estimatedCostPerPax
+            : estimatedTotalCost !== undefined && menu.portion > 0
+              ? estimatedTotalCost / menu.portion
+              : undefined
+
+          estimatedCostRows.push([
+            group.date,
+            siteName,
+            menu.menuName,
+            menu.portion,
+            formatRupiah(estimatedTotalCost),
+            formatRupiah(estimatedCostPerPax),
+          ])
+
           const ingredients = menu.ingredients ?? []
           const approvedBy = menu.reviewedBy ?? ''
           const approvalStatus = getApprovalStatusLabel(menu.approvalStatus)
@@ -578,7 +621,10 @@ const SuperadminStoreRequestExportPage = () => {
           ? `store-request-${siteFilenameSegment}-${startDate}_to_${endDate}.xls`
           : `store-request-${siteFilenameSegment}-all-dates.xls`
 
-      downloadExcel(filename, [{ name: 'Store Requests', rows }])
+      downloadExcel(filename, [
+        { name: 'Store Requests', rows },
+        { name: 'Estimated Costs', rows: estimatedCostRows },
+      ])
 
       setInfoMessage(
         `Export complete for ${selectedSitesLabel}. ${groups.length} production batches exported.`,
