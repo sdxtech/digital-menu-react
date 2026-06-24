@@ -2,7 +2,7 @@ import RoleLayout from './RoleLayout'
 
 const navItems = [
   {
-    label: 'Dashboard',
+    label: 'Quick View',
     to: '/superadmin',
     end: true,
     icon: (className: string) => (
@@ -49,6 +49,13 @@ const navItems = [
         to: '/superadmin/menu-management?tab=recipe-calculator',
         icon: (className: string) => (
           <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
+        label: 'Create New Recipe',
+        to: '/superadmin/menu-management?tab=create-recipe',
+        icon: (className: string) => (
+          <i className={`bi bi-plus-circle ${className}`} aria-hidden="true" />
         ),
       },
       {

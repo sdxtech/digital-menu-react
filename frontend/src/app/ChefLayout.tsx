@@ -2,7 +2,7 @@ import RoleLayout from './RoleLayout'
 
 const navItems = [
   {
-    label: 'Dashboard',
+    label: 'Quick View',
     to: '/chef/dashboard',
     icon: (className: string) => (
       <i className={`bi bi-speedometer2 ${className}`} aria-hidden="true" />

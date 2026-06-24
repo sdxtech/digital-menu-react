@@ -2,7 +2,7 @@ import RoleLayout from './RoleLayout'
 
 const navItems = [
   {
-    label: 'Storekeeper Dashboard',
+    label: 'Quick View',
     to: '/storekeeper',
     end: true,
     icon: (className: string) => (
