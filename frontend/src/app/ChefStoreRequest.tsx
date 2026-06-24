@@ -44,6 +44,8 @@ type StoreRequestMenu = {
   menuName: string
   category: string
   portion: number
+  estimatedCost?: number
+  estimatedCostPerPax?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
   reviewedBy?: string
@@ -81,6 +83,17 @@ type ReconciliationRow = {
 
 const ITEMS_PER_PAGE = 10
 
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return '-'
+  }
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
 type StoreRequestSiteOption = {
   code: string
   name: string
@@ -91,18 +104,22 @@ type ChefStoreRequestProps = {
   siteOptions?: StoreRequestSiteOption[]
   enableStoreRequestCancellation?: boolean
   enableStoreRequestCompletion?: boolean
+  enableBulkExport?: boolean
   actionMode?: 'buttons' | 'select'
 }
 
 const getStoreRequestGroupKey = (group: {
+  site?: string
   date: string
   productionCode?: string
-}) => `${group.date}__${group.productionCode ?? 'no-code'}`
+}) =>
+  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? 'no-code'}`
 
 const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
   const groupedByBatch = new Map<
     string,
     {
+      site?: string
       date: string
       productionCode?: string
       items: StoreRequestMenu[]
@@ -115,6 +132,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
   groups.forEach((group) => {
     const groupKey = getStoreRequestGroupKey(group)
     const bucket = groupedByBatch.get(groupKey) ?? {
+      site: group.site,
       date: group.date,
       productionCode: group.productionCode,
       items: [],
@@ -142,6 +160,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
 
   return Array.from(groupedByBatch.values())
     .map((group) => ({
+      site: group.site,
       date: group.date,
       productionCode: group.productionCode,
       items: group.items,
@@ -236,14 +255,162 @@ const downloadExcel = (
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
+  const rows: Array<Array<unknown>> = [
+    [
+      'No',
+      'Production Date',
+      'Site',
+      'Production Code',
+      'Menu Name',
+      'Recipe Code',
+      'Category',
+      'Portion',
+      'IT Code',
+      'Ingredient Name',
+      'Vendor',
+      'Planned QTY',
+      'Unit',
+      'Price',
+      'Ingredient Cost',
+    ],
+  ]
+
+  let rowNumber = 1
+  groups.forEach((group) => {
+    group.items.forEach((menu) => {
+      const ingredients = menu.ingredients ?? []
+      if (ingredients.length === 0) {
+        rows.push([
+          rowNumber,
+          group.date,
+          group.site ?? '',
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+        ])
+        rowNumber += 1
+        return
+      }
+
+      ingredients.forEach((ingredient) => {
+        rows.push([
+          rowNumber,
+          group.date,
+          group.site ?? '',
+          group.productionCode ?? '',
+          menu.menuName,
+          menu.recipeCode ?? menu.recipeId ?? '',
+          menu.category,
+          menu.portion,
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.vendor ?? '',
+          formatQuantity(ingredient.qty),
+          formatUnitLabel(ingredient.unitOfMeasures),
+          formatPrice(ingredient.price),
+          formatPrice(ingredient.ingredientCost),
+        ])
+        rowNumber += 1
+      })
+    })
+  })
+
+  return rows
+}
+
+const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
+  const rows: Array<Array<unknown>> = [
+    [
+      'Production Date',
+      'Site',
+      'IT Code',
+      'Ingredient Name',
+      'Vendor',
+      'QTY',
+      'Unit',
+    ],
+  ]
+
+  groups.forEach((group) => {
+    aggregateStoreRequestSummary(group.summary ?? []).forEach((item) => {
+      rows.push([
+        group.date,
+        group.site ?? '',
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        formatQuantity(item.qty),
+        formatUnitLabel(item.unitOfMeasures),
+      ])
+    })
+  })
+
+  return rows
+}
+
+const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
+  const rows: Array<Array<unknown>> = [
+    [
+      'Production Date',
+      'Site',
+      'Menu Name',
+      'Portion',
+      'Estimated Total Cost',
+      'Cost Per Pax',
+    ],
+  ]
+
+  groups.forEach((group) => {
+    group.items.forEach((menu) => {
+      const estimatedTotalCost = Number.isFinite(menu.estimatedCost)
+        ? menu.estimatedCost
+        : undefined
+      const estimatedCostPerPax = Number.isFinite(menu.estimatedCostPerPax)
+        ? menu.estimatedCostPerPax
+        : estimatedTotalCost !== undefined && menu.portion > 0
+          ? estimatedTotalCost / menu.portion
+          : undefined
+
+      rows.push([
+        group.date,
+        group.site ?? '',
+        menu.menuName,
+        menu.portion,
+        formatPrice(estimatedTotalCost),
+        formatPrice(estimatedCostPerPax),
+      ])
+    })
+  })
+
+  return rows
+}
+
+const toInputDate = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const ChefStoreRequest = ({
   requireSiteSelection = false,
   siteOptions = [],
   enableStoreRequestCancellation = false,
   enableStoreRequestCompletion = false,
+  enableBulkExport = true,
   actionMode = 'buttons',
 }: ChefStoreRequestProps = {}) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const {
     cancelPendingMenuProductionBatch,
     cancelStoreRequestBatch,
@@ -272,6 +439,16 @@ const ChefStoreRequest = ({
   const [completionRows, setCompletionRows] = useState<ReconciliationRow[]>([])
   const [completionNote, setCompletionNote] = useState('')
   const [completionError, setCompletionError] = useState('')
+  const [bulkExportOpen, setBulkExportOpen] = useState(false)
+  const [bulkExportStartDate, setBulkExportStartDate] = useState(() => {
+    const today = new Date()
+    return toInputDate(new Date(today.getFullYear(), today.getMonth(), 1))
+  })
+  const [bulkExportEndDate, setBulkExportEndDate] = useState(() =>
+    toInputDate(new Date()),
+  )
+  const [bulkExportError, setBulkExportError] = useState('')
+  const [bulkExporting, setBulkExporting] = useState(false)
 
   const parseDotDecimal = (value: string) => {
     const trimmed = value.trim()
@@ -323,75 +500,32 @@ const ChefStoreRequest = ({
     return `${identity}__${unit}`
   }
 
+  const getSiteDisplayName = (site?: string) => {
+    const siteCode = site?.trim() ?? ''
+    const optionName = siteOptions
+      .find((option) => option.code.trim() === siteCode)
+      ?.name.trim()
+    if (optionName) return optionName
+
+    const userSiteName = user?.siteName?.trim()
+    if (
+      userSiteName &&
+      (!siteCode || siteCode === user?.site?.trim() || !requireSiteSelection)
+    ) {
+      return userSiteName
+    }
+
+    return siteCode || userSiteName || ''
+  }
+
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
-    const rows: Array<Array<unknown>> = [
-      [
-        'No',
-        'Production Date',
-        'Production Code',
-        'Menu Name',
-        'Recipe Code',
-        'Category',
-        'Portion',
-        'IT Code',
-        'Ingredient Name',
-        'Vendor',
-        'QTY',
-        'Unit',
-      ],
-    ]
-
-    let rowNumber = 1
-    group.items.forEach((menu) => {
-      const ingredients = menu.ingredients ?? []
-      if (ingredients.length === 0) {
-        rows.push([
-          rowNumber,
-          group.date,
-          group.productionCode ?? '',
-          menu.menuName,
-          menu.recipeCode ?? menu.recipeId ?? '',
-          menu.category,
-          menu.portion,
-          '',
-          '',
-          '',
-          '',
-          '',
-        ])
-        rowNumber += 1
-        return
-      }
-
-      ingredients.forEach((ingredient) => {
-        rows.push([
-          rowNumber,
-          group.date,
-          group.productionCode ?? '',
-          menu.menuName,
-          menu.recipeCode ?? menu.recipeId ?? '',
-          menu.category,
-          menu.portion,
-          ingredient.productCode,
-          ingredient.name,
-          ingredient.vendor ?? '',
-          formatQuantity(ingredient.qty),
-          formatUnitLabel(ingredient.unitOfMeasures),
-        ])
-        rowNumber += 1
-      })
-    })
-
-    const summaryRows: Array<Array<unknown>> = [
-      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        formatQuantity(item.qty),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ]
+    const exportGroup = {
+      ...group,
+      site: getSiteDisplayName(group.site),
+    }
+    const rows = buildStoreRequestExportRows([exportGroup])
+    const summaryRows = buildIngredientSummaryExportRows([exportGroup])
+    const estimatedCostRows = buildEstimatedCostExportRows([exportGroup])
 
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
     const safeProductionCode = (group.productionCode ?? 'no-code').replace(
@@ -401,7 +535,95 @@ const ChefStoreRequest = ({
     downloadExcel(`store-request-${safeDate}-${safeProductionCode}.xls`, [
       { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
+      { name: 'Estimated Costs', rows: estimatedCostRows },
     ])
+  }
+
+  const openBulkExportModal = () => {
+    setBulkExportError('')
+    setActionMessage('')
+    setBulkExportOpen(true)
+  }
+
+  const closeBulkExportModal = () => {
+    if (bulkExporting) return
+    setBulkExportOpen(false)
+    setBulkExportError('')
+  }
+
+  const handleBulkExport = async () => {
+    if (!accessToken) {
+      setBulkExportError('Please log in first to export data.')
+      return
+    }
+    if (requireSiteSelection && !selectedSite) {
+      setBulkExportError('Please select a site first.')
+      return
+    }
+    if (!bulkExportStartDate || !bulkExportEndDate) {
+      setBulkExportError('Please complete start and end date.')
+      return
+    }
+    if (bulkExportStartDate > bulkExportEndDate) {
+      setBulkExportError('Start date cannot be later than end date.')
+      return
+    }
+
+    setBulkExporting(true)
+    setBulkExportError('')
+    try {
+      const params = new URLSearchParams({
+        startDate: bulkExportStartDate,
+        endDate: bulkExportEndDate,
+      })
+      if (requireSiteSelection && selectedSite) {
+        params.set('site', selectedSite)
+      }
+
+      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+        `/menu-productions/store-requests?${params.toString()}`,
+        undefined,
+        accessToken,
+      )
+      const exportGroups = mergeStoreRequestGroups(data.items ?? [])
+      if (exportGroups.length === 0) {
+        setBulkExportError('No store request data found for selected date range.')
+        return
+      }
+      const namedExportGroups = exportGroups.map((group) => ({
+        ...group,
+        site: getSiteDisplayName(group.site),
+      }))
+
+      downloadExcel(
+        `store-request-bulk-${bulkExportStartDate}_to_${bulkExportEndDate}.xls`,
+        [
+          {
+            name: 'Store Requests',
+            rows: buildStoreRequestExportRows(namedExportGroups),
+          },
+          {
+            name: 'Ingredient Summary',
+            rows: buildIngredientSummaryExportRows(namedExportGroups),
+          },
+          {
+            name: 'Estimated Costs',
+            rows: buildEstimatedCostExportRows(namedExportGroups),
+          },
+        ],
+      )
+
+      setActionMessage(
+        `Bulk export complete. ${exportGroups.length} production batches exported.`,
+      )
+      setBulkExportOpen(false)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to export data.'
+      setBulkExportError(message)
+    } finally {
+      setBulkExporting(false)
+    }
   }
 
   // FRONTEND VIEW: backend returns grouped store requests with multiplied ingredients.
@@ -802,6 +1024,8 @@ const ChefStoreRequest = ({
     setCompletionRows([])
     setCompletionNote('')
     setCompletionError('')
+    setBulkExportOpen(false)
+    setBulkExportError('')
   }, [selectedSite])
 
   useEffect(() => {
@@ -821,7 +1045,22 @@ const ChefStoreRequest = ({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Store Request</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">Store Request</h1>
+          {enableBulkExport ? (
+            <button
+              type="button"
+              onClick={openBulkExportModal}
+              disabled={loading || (requireSiteSelection && !selectedSite)}
+              className="rounded-md border border-success bg-white px-4 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="flex items-center gap-2">
+                <i className="bi bi-download text-sm" aria-hidden="true" />
+                <span>Bulk Export</span>
+              </span>
+            </button>
+          ) : null}
+        </div>
         {requireSiteSelection ? (
           <div className="max-w-xs">
             <label className="text-xs font-medium text-muted">
@@ -1099,6 +1338,18 @@ const ChefStoreRequest = ({
 
                             {items.map((menu) => {
                               const ingredients = menu.ingredients ?? []
+                              const estimatedCost = Number.isFinite(
+                                Number(menu.estimatedCost),
+                              )
+                                ? Number(menu.estimatedCost)
+                                : undefined
+                              const estimatedCostPerPax = Number.isFinite(
+                                Number(menu.estimatedCostPerPax),
+                              )
+                                ? Number(menu.estimatedCostPerPax)
+                                : estimatedCost !== undefined && menu.portion > 0
+                                  ? estimatedCost / menu.portion
+                                  : undefined
                               const canCancelPendingMenu =
                                 !enableStoreRequestCancellation &&
                                 menu.approvalStatus === 'pending'
@@ -1155,6 +1406,25 @@ const ChefStoreRequest = ({
                                           {getStoreRequestStatusLabel(
                                             menu.storeRequestStatus,
                                           )}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-4 grid grid-cols-2 gap-3">
+                                      <div className="rounded-md border border-border bg-background p-3">
+                                        <p className="text-xs text-muted">
+                                          Estimated total cost
+                                        </p>
+                                        <p className="mt-1 text-sm font-semibold text-foreground">
+                                          {formatPrice(estimatedCost)}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-md border border-border bg-background p-3">
+                                        <p className="text-xs text-muted">
+                                          Cost per pax
+                                        </p>
+                                        <p className="mt-1 text-sm font-semibold text-foreground">
+                                          {formatPrice(estimatedCostPerPax)}
                                         </p>
                                       </div>
                                     </div>
@@ -1254,6 +1524,12 @@ const ChefStoreRequest = ({
                                               <th className="px-4 py-3 font-semibold">
                                                 Unit
                                               </th>
+                                              <th className="px-4 py-3 font-semibold">
+                                                Price
+                                              </th>
+                                              <th className="px-4 py-3 font-semibold">
+                                                Ingredient cost
+                                              </th>
                                             </tr>
                                           </thead>
                                           <tbody>
@@ -1277,6 +1553,14 @@ const ChefStoreRequest = ({
                                                 <td className="px-4 py-3">
                                                   {formatUnitLabel(
                                                     ingredient.unitOfMeasures,
+                                                  )}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium">
+                                                  {formatPrice(ingredient.price)}
+                                                </td>
+                                                <td className="px-4 py-3 font-medium">
+                                                  {formatPrice(
+                                                    ingredient.ingredientCost,
                                                   )}
                                                 </td>
                                               </tr>
@@ -1390,6 +1674,119 @@ const ChefStoreRequest = ({
           </table>
         </div>
       </div>
+
+      {bulkExportOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/20 px-4 py-2 backdrop-blur-sm sm:p-4">
+              <form
+                className="flex w-full max-w-xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="bulk-export-title"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  handleBulkExport().catch(() => null)
+                }}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-6 py-5">
+                  <div>
+                    <p className="text-xs text-muted">Store Request Export</p>
+                    <h3
+                      id="bulk-export-title"
+                      className="mt-1 text-lg font-semibold text-foreground"
+                    >
+                      Bulk Export
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      Select the production date range to include in the export.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeBulkExportModal}
+                    disabled={bulkExporting}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-5 px-6 py-5">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="bulk-export-start-date"
+                        className="text-sm font-medium text-foreground"
+                      >
+                        Start date
+                      </label>
+                      <input
+                        id="bulk-export-start-date"
+                        type="date"
+                        value={bulkExportStartDate}
+                        max={bulkExportEndDate || undefined}
+                        onChange={(event) => {
+                          setBulkExportStartDate(event.target.value)
+                          setBulkExportError('')
+                        }}
+                        disabled={bulkExporting}
+                        className="mt-2 w-full rounded-xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="bulk-export-end-date"
+                        className="text-sm font-medium text-foreground"
+                      >
+                        End date
+                      </label>
+                      <input
+                        id="bulk-export-end-date"
+                        type="date"
+                        value={bulkExportEndDate}
+                        min={bulkExportStartDate || undefined}
+                        onChange={(event) => {
+                          setBulkExportEndDate(event.target.value)
+                          setBulkExportError('')
+                        }}
+                        disabled={bulkExporting}
+                        className="mt-2 w-full rounded-xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  {bulkExportError ? (
+                    <p className="text-xs font-medium text-red-600">
+                      {bulkExportError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={closeBulkExportModal}
+                    disabled={bulkExporting}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={bulkExporting}
+                    className="rounded-md border border-success bg-success px-4 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <i className="bi bi-download text-sm" aria-hidden="true" />
+                      <span>{bulkExporting ? 'Exporting...' : 'Export'}</span>
+                    </span>
+                  </button>
+                </div>
+              </form>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {completionGroup && typeof document !== 'undefined'
         ? createPortal(
