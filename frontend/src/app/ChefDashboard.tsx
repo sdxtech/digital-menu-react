@@ -33,7 +33,7 @@ const ChefDashboard = () => {
       setError('')
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to load dashboard data.'
+        err instanceof Error ? err.message : 'Failed to load Quick View data.'
       setError(message)
     }
   }, [accessToken])
@@ -53,7 +53,7 @@ const ChefDashboard = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <h1 className="text-2xl font-semibold">Quick View</h1>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}

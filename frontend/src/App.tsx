@@ -64,7 +64,7 @@ const NotFound = () => (
       </p>
       <h1 className="text-3xl font-semibold">Page not found</h1>
       <p className="text-sm text-muted">
-        Check the address or return to your dashboard.
+        Check the address or return to Quick View.
       </p>
     </div>
   </div>
