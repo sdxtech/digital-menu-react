@@ -26,7 +26,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/chef/dashboard',
-    getPageTitle: () => 'Dashboard',
+    getPageTitle: () => 'Quick View',
   },
   
   // ➕ Added Profile Tab Title configuration mapping for Chef Workspace
@@ -97,7 +97,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/storekeeper',
-    getPageTitle: () => 'Storekeeper Dashboard',
+    getPageTitle: () => 'Quick View',
   },
 
   // ➕ Added Profile Tab Title configuration mapping for Storekeeper Workspace
@@ -112,7 +112,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/superadmin',
-    getPageTitle: () => 'Dashboard',
+    getPageTitle: () => 'Quick View',
   },
 
   // ➕ Added Profile Tab Title configuration mapping for Global Superadmin Workspace

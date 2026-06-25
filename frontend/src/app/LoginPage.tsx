@@ -71,7 +71,7 @@ const LoginPage = () => {
                   Login
                 </h3>
                 <p className="mt-2 text-2xl font-semibold">
-                  Sign in to your dashboard
+                  Sign in to continue to Quick View
                 </p>
                 <p className="mt-3 text-sm text-muted">
                   Use the email and password registered by the superadmin.
