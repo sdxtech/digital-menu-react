@@ -246,7 +246,20 @@ const UnitManagerPage = () => {
     setActionError('')
     setActionMessage('')
     fetchPending().catch(() => null)
-  }, [fetchPending])
+
+    // 🌟 Clear the badge dynamically based on which sub-menu is active!
+    const currentSite = 'S079';
+    
+    fetch('/api/notifications/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteCode: currentSite,
+        targetUserRole: 'unit.manager'
+      })
+    }).catch((err) => console.error('Failed to clear manager badges automatically:', err));
+
+  }, [fetchPending, sectionParam]) // 🚀 Added sectionParam here so it fires when you switch tabs!
 
   useEffect(() => {
     const nextSection = isApprovalCenterSection(sectionParam)

@@ -11,5 +11,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    server: {
+      proxy: {
+        // 🚀 This forwards all /api requests straight to your NestJS backend
+        '/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, 'api'), // Keeps the 'api/' prefix for your controllers
+        },
+      },
+    },
   }
 })

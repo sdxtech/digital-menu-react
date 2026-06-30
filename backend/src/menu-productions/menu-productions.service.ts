@@ -28,6 +28,7 @@ import {
   StoreRequestStatus,
 } from './schemas/menu-production.schema';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type StoreRequestIngredient = {
   productCode: string;
@@ -163,6 +164,7 @@ export class MenuProductionsService implements OnModuleInit {
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
+    private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
   ) {}
 
   private roundQuantity(value: number) {
@@ -376,7 +378,27 @@ export class MenuProductionsService implements OnModuleInit {
         site: normalizedSite,
       };
     });
-    return this.menuProductionModel.insertMany(payload, { ordered: false });
+
+    // 🚀 Write the records to the database first
+    const createdDocs = await this.menuProductionModel.insertMany(payload, { ordered: false });
+
+    // 🌟 ADDED: If records were created successfully, alert the Unit Manager at this site code!
+    if (createdDocs && createdDocs.length > 0) {
+      const firstDoc = createdDocs[0];
+      const targetSite = firstDoc.site || normalizedSite || 'global';
+      
+      this.notificationsService.createHierarchicalNotification(
+        createdBy || 'system',
+        'New Menu Production Pending',
+        `A new production batch (${firstDoc.productionCode}) is awaiting your approval.`,
+        targetSite,
+        'unit.manager',
+        'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 This exact key activates the sub-menu badge!
+        { productionCode: firstDoc.productionCode }
+      ).catch(err => this.logger.error(`Unit Manager submission notification failed: ${err.message}`));
+    }
+
+    return createdDocs;
   }
 
   async findAll(
@@ -505,6 +527,48 @@ export class MenuProductionsService implements OnModuleInit {
       )
       .lean();
     if (!updated) throw new NotFoundException('Menu production not found');
+
+    // 🌟 Step 3A: If approved, instantly trigger notifications for Storekeeper and Chef
+    if (status === 'approved') {
+      this.notificationsService.createHierarchicalNotification(
+        updated.createdBy || 'system',
+        'New Store Request Dispatched',
+        `Production batch ${updated.productionCode} has been approved. Materials aggregation is ready for distribution fulfillment.`,
+        updated.site || 'global',
+        'storekeeper',
+        'STORE_REQUEST_STOREKEEPER',
+        { productionCode: updated.productionCode }
+      ).catch(err => this.logger.error(`Storekeeper notification failed: ${err.message}`));
+
+      this.notificationsService.createHierarchicalNotification(
+        'system',
+        'Menu Production Approved',
+        `Your production batch ${updated.productionCode} has been approved by the Unit Manager.`,
+        updated.site || 'global',
+        'chef',
+        'MENU_PRODUCTION_RECORDS',
+        { productionCode: updated.productionCode }
+      ).catch(err => this.logger.error(`Chef notification failed: ${err.message}`));
+    } 
+    // 🌟 ADDED: If rejected or refused, clear Manager counts and notify the Chef!
+    else if (status === 'rejected') {
+      this.notificationsService.createHierarchicalNotification(
+        'system',
+        'Menu Production Rejected',
+        `Your production batch ${updated.productionCode} was rejected/refused by the Unit Manager.`,
+        updated.site || 'global',
+        'chef',
+        'MENU_PRODUCTION_RECORDS', // 🚀 Lights up the Chef's production badge
+        { productionCode: updated.productionCode }
+      ).catch(err => this.logger.error(`Chef rejection notification failed: ${err.message}`));
+    }
+
+    // 🌟 ADDED: Automatically clear the Unit Manager's unread badges for this site context on any decision
+    this.notificationsService.markRoleNotificationsAsRead({
+      siteCode: updated.site || 'global',
+      targetUserRole: 'unit.manager'
+    }).catch(err => this.logger.error(`Failed to clear manager badges: ${err.message}`));
+
     return updated;
   }
 

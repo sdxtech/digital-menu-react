@@ -167,6 +167,9 @@ function App() {
             {/* ➕ Added security tracking sub-path route */}
             <Route path="security" element={<SecurityView />} />
             
+            {/* 🚀 ADDED: Direct the new requests link back into your StorekeeperPage component */}
+            <Route path="requests" element={<StorekeeperPage />} />
+            
             <Route path="history" element={<StorekeeperHistoryPage />} />
           </Route>
         </Route>

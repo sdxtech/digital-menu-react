@@ -287,6 +287,19 @@ const StorekeeperPage = () => {
 
   useEffect(() => {
     fetchStoreRequests().catch(() => null)
+
+    // 🌟 ADDED: Automatically wipe the Storekeeper's unread badges when they view this dashboard
+    const currentSite = 'S079'; 
+    
+    fetch('/api/notifications/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        siteCode: currentSite,
+        targetUserRole: 'storekeeper'
+      })
+    }).catch((err) => console.error('Failed to clear storekeeper badges automatically:', err));
+
   }, [fetchStoreRequests])
 
   useEffect(() => {

@@ -10,8 +10,17 @@ const navItems = [
     ),
   },
   {
+    label: 'Store Requests', // 🌟 ADDED: The destination for new material requests
+    to: '/storekeeper/requests',
+    componentKey: 'STORE_REQUEST_STOREKEEPER', // 🚀 Matches backend parameter to show the badge!
+    icon: (className: string) => (
+      <i className={`bi bi-clipboard-check ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Issuance History',
     to: '/storekeeper/history',
+    componentKey: 'STORE_ISSUANCE_HISTORY', // 🌟 ADDED: Component key tracking for history records
     icon: (className: string) => (
       <i className={`bi bi-clock-history ${className}`} aria-hidden="true" />
     ),
