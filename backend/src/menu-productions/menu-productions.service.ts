@@ -603,6 +603,20 @@ export class MenuProductionsService implements OnModuleInit {
     }
     item.storeRequestStatus = status;
     if (status === 'fulfilled') {
+      // 🚀 HARDCODED TESTING FIX: Match the 'S079' frontend scope directly
+      const targetSite = item.site || 'S079';
+
+      this.notificationsService.createHierarchicalNotification(
+        'system',
+        'Store Request Materials Ready',
+        `The materials for production batch ${item.productionCode || 'N/A'} have been fulfilled and are ready for pickup.`,
+        targetSite, // 🌟 Updated to ensure it hits your specific site filter block
+        'chef',
+        'STORE_REQUEST_RECORDS',
+        { productionCode: item.productionCode }
+      ).catch(err => this.logger.error(`Chef fulfillment notification failed: ${err.message}`));
+
+      // Your original tracking field logic remains exactly here:
       const actor = fulfilledBy?.trim();
       item.fulfilledBy = actor || 'Unknown user';
       item.storeFulfillmentCompletedAt = new Date();

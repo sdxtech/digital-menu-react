@@ -79,9 +79,20 @@ const RoleLayout = ({
       }
     }
 
+    // 🚀 Execute immediately on layout mount
     fetchActiveNotifications()
+    
+    // ⏳ Background polling loop safety backup (every 5s)
     const pollInterval = setInterval(fetchActiveNotifications, 5000)
-    return () => clearInterval(pollInterval)
+
+    // 🌟 ADDED: Listen for single-click tab changes to update badges instantly!
+    window.addEventListener('refresh-notifications', fetchActiveNotifications)
+
+    // 🧼 Clean up everything safely when switching workspaces or logging out
+    return () => {
+      clearInterval(pollInterval)
+      window.removeEventListener('refresh-notifications', fetchActiveNotifications)
+    }
   }, [targetUserRole, siteCode, accessToken])
 
   // 🌟 Persistent Sticky Notification Handler: Marks read ONLY upon navigating away from the page

@@ -298,7 +298,12 @@ const StorekeeperPage = () => {
         siteCode: currentSite,
         targetUserRole: 'storekeeper'
       })
-    }).catch((err) => console.error('Failed to clear storekeeper badges automatically:', err));
+    })
+    .then(() => {
+      // 🚀 ADDED: Broadcast the event to clear the Storekeeper badge instantly!
+      window.dispatchEvent(new CustomEvent('refresh-notifications'));
+    })
+    .catch((err) => console.error('Failed to clear storekeeper badges automatically:', err));
 
   }, [fetchStoreRequests])
 

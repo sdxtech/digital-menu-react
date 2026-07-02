@@ -257,7 +257,13 @@ const UnitManagerPage = () => {
         siteCode: currentSite,
         targetUserRole: 'unit.manager'
       })
-    }).catch((err) => console.error('Failed to clear manager badges automatically:', err));
+    })
+    .then(() => {
+      // 🚀 ADVANCED UI APPROACH: Broadcast a localized update event to the layout
+      // to instantly drop the badge visibility without waiting for the 5s loop!
+      window.dispatchEvent(new CustomEvent('refresh-notifications'));
+    })
+    .catch((err) => console.error('Failed to clear manager badges automatically:', err));
 
   }, [fetchPending, sectionParam]) // 🚀 Added sectionParam here so it fires when you switch tabs!
 
