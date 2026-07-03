@@ -12,6 +12,7 @@ import {
 import { Recipe, RecipeSchema } from './schemas/recipe.schema';
 import { RecipesController } from './recipes.controller';
 import { RecipesService } from './recipes.service';
+import { NotificationsModule } from '../notifications/notifications.module'; // 🌟 ADDED IMPORT
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RecipesService } from './recipes.service';
     RawMaterialsModule,
     SitesModule,
     UnitOfMeasuresModule,
+    NotificationsModule, // 🌟 ADDED THIS LINE to bridge the dependency gap
   ],
   controllers: [RecipesController],
   providers: [RecipesService],

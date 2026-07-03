@@ -27,6 +27,7 @@ import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -171,6 +172,7 @@ export class RecipesService {
     private readonly users: UsersService,
     private readonly sites: SitesService,
     private readonly unitOfMeasures: UnitOfMeasuresService,
+    private readonly notificationsService: NotificationsService, // 🌟 ADDED
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
@@ -536,6 +538,23 @@ export class RecipesService {
       )
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
+
+    // 🚀 INJECTED: Trigger real-time hierarchical notification for the Unit Manager dashboard
+    try {
+      await this.notificationsService.createHierarchicalNotification(
+        (actor as any)?.userId || (actor as any)?.id || 'system',
+        'Recipe Resubmitted for Review',
+        `The recipe "${updated.name}" has been modified and resubmitted by the Chef for your approval.`,
+        'S079',               // 🌟 siteCode boundary lock for local dashboard routing
+        'unit.manager',       // 🌟 targetUserRole target
+        'RECIPE_APPROVALS',   // 🌟 componentKey tab alignment
+        { recipeId: updated._id?.toString() }
+      );
+    } catch (err: any) {
+      // Catch layout errors cleanly so the core recipe submission state doesn't crash if database updates experience lag
+      console.error(`Manager recipe notification failed: ${err.message}`);
+    }
+
     return updated;
   }
 
