@@ -11,6 +11,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import ExcelJS from 'exceljs';
@@ -28,6 +29,7 @@ import { BulkUpdateSpecificConversionsDto } from './dto/bulk-update-specific-con
 import { ListRawMaterialsQueryDto } from './dto/list-raw-materials.query.dto';
 import { UpdateRawMaterialDto } from './dto/update-raw-material.dto';
 import { RawMaterialsService } from './raw-materials.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const PRICE_UPDATE_EXTENSIONS = new Set(['.xlsx', '.csv']);
 const PRICE_UPDATE_MIME_TYPES = new Set([
@@ -47,12 +49,15 @@ type PriceUpdateRow = {
 @Controller('raw-materials')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class RawMaterialsController {
-  constructor(private readonly rawMaterials: RawMaterialsService) {}
+  constructor(
+    private readonly rawMaterials: RawMaterialsService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   @Post()
   @Roles(AppRole.Chef, AppRole.Superadmin)
-  create(@Body() dto: CreateRawMaterialDto) {
-    return this.rawMaterials.create({
+  async create(@Body() dto: CreateRawMaterialDto, @Req() req: any) {
+    const newMaterial = await this.rawMaterials.create({
       productCode: dto.productCode,
       name: dto.name,
       unitOfMeasures: dto.unitOfMeasures,
@@ -63,6 +68,31 @@ export class RawMaterialsController {
       minimumQuantity: dto.minimumQuantity,
       price: dto.price,
     });
+
+    //  PASTE THIS EXACTLY IN ITS PLACE:
+    try {
+      const actorId = req.user?._id?.toString() || req.user?.id?.toString() || 'system';
+      const targetSite = req.user?.site || 'global';
+
+      await this.notificationsService.createHierarchicalNotification(
+        actorId,                                            // 1. Actor ID
+        'New Raw Material Added',                           // 2. Title
+        `New material: ${newMaterial.name} (${newMaterial.productCode})`, // 3. Message
+        targetSite,                                         // 4. Site Code (e.g., 'S079')
+        'chef',                                             // 5. Target User Role 🌟 Set to chef so your badge lights up!
+        'RAW_MATERIAL_DATA_BANK',                           // 6. Component Key
+        { 
+          productCode: newMaterial.productCode,
+          id: newMaterial._id?.toString() || newMaterial.id?.toString() 
+        }                                                   // 7. Payload Object
+      );
+      
+      console.log(`Notification successfully dispatched to site ${targetSite} for role chef!`);
+    } catch (err: any) {
+      console.error(`Raw material notification dispatch failed: ${err.message}`);
+    }
+
+    return newMaterial;
   }
 
   @Get()

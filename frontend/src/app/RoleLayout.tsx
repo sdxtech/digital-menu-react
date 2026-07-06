@@ -72,6 +72,7 @@ const RoleLayout = ({
         )
         if (response.ok) {
           const data = await response.json()
+          
           setNotifications(data)
         }
       } catch (err) {
@@ -207,7 +208,8 @@ const RoleLayout = ({
         backendKey.includes(itemLabelFallback) ||
         itemLabelFallback.includes(backendKey) ||
         backendKey.includes(itemUrlFallback) ||
-        itemUrlFallback.includes(backendKey)
+        itemUrlFallback.includes(backendKey) ||
+        (backendKey.includes('rawmaterial') && itemLabelFallback.includes('rawmaterial'))
       )
     }).length
 

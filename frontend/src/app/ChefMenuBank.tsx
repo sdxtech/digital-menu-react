@@ -154,7 +154,33 @@ const MenuPhotoFrame = ({
 }
 
 const ChefMenuBank = () => {
-  const { accessToken } = useAuth()
+  // 🚀 INJECTED STATE AND EFFECT
+  const [unreadRecipeIds, setUnreadRecipeIds] = useState<string[]>([])
+  
+  useEffect(() => {
+    const fetchActiveNotifications = async () => {
+      try {
+        const data = await apiFetch(`/notifications/role-unread?siteCode=${siteCode}&targetUserRole=${targetUserRole}`)
+        if (Array.isArray(data)) {
+          const ids = data
+            .filter((n: any) => !n.read && (n.componentKey === 'RECIPE_DATA' || n.componentKey === 'RECIPE_APPROVALS'))
+            .map((n: any) => n.payload?.recipeId || n.payload?.id)
+            .filter(Boolean)
+          setUnreadRecipeIds(ids)
+        }
+      } catch (err) {
+        console.error('Failed to load active notifications for highlights:', err)
+      }
+    }
+    fetchActiveNotifications()
+  }, [])
+  //  REPLACE WITH THIS:
+const { user, accessToken } = useAuth()
+
+const rawRole = user?.roles?.[0] || user?.role || ''
+const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole
+const targetUserRole = cleanRole === 'chef' ? 'chef' : cleanRole // Adjust if your backend expects a specific string for chef
+const siteCode = user?.site || 'global'
   const navigate = useNavigate()
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -798,11 +824,17 @@ const ChefMenuBank = () => {
                   recipes.map((recipe, index) => {
                     const recipeKey = recipe.id ?? recipe._id ?? null
                     const isSelected = selectedRecipeId === recipeKey
+                    const isNewItem = recipeKey ? unreadRecipeIds.includes(recipeKey) : false;
 
                     return (
                       <tr
                         key={recipe.id ?? recipe._id}
-                        className="border-t border-border"
+                        // 🌟 INJECTED: Added dynamic flash highlighting styling class rules
+                        className={`border-t border-border transition-all duration-700 ${
+                          isNewItem 
+                            ? 'bg-yellow-100/80 dark:bg-yellow-900/20 animate-pulse' 
+                            : 'hover:bg-slate-50/50'
+                        }`}
                       >
                         <td className="px-5 py-4 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
