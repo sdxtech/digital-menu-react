@@ -175,8 +175,7 @@ export class RecipesService {
     private readonly notificationsService: NotificationsService, // 🌟 ADDED
   ) {}
 
-  async create(input: CreateRecipeDto, actor?: RecipeActor) {
-    const ingredients = await this.applyIngredientUomConversions(
+  async create(input: CreateRecipeDto, actor?: RecipeActor) {const ingredients = await this.applyIngredientUomConversions(
       this.normalizeIngredients(input.ingredients),
     );
     const costFields = await this.buildIngredientCostUpdate(ingredients);
@@ -194,7 +193,8 @@ export class RecipesService {
       ? this.buildActorFields(actor, 'reviewed')
       : {};
 
-    return this.recipeModel.create({
+    // 1. We now save the created recipe document to a variable named 'saved'
+    const saved = await this.recipeModel.create({
       recipeCode,
       name: input.name.trim(),
       category: input.category.trim(),
@@ -216,7 +216,26 @@ export class RecipesService {
       ...reviewedFields,
       ...(normalizedSite ? { site: normalizedSite } : {}),
     });
-  }
+
+    // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
+    if (!isSuperadminActor) {
+      try {
+        await this.notificationsService.createHierarchicalNotification(
+          (actor as any)?.userId || (actor as any)?.id || 'system',
+          'New Recipe Pending Approval',
+          `A new recipe "${saved.name}" has been submitted by the Chef and requires review.`,
+          saved.site || 'global',
+          'unit.manager',
+          'RECIPE_APPROVALS', // 🌟 Make sure this matches the key in UnitManagerLayout.tsx!
+          { recipeId: saved._id?.toString() }
+        );
+      } catch (err: any) {
+        console.error(`Unit Manager recipe creation notification failed: ${err.message}`);
+      }
+    }
+
+    // 3. Return the saved document exactly as the old code did
+    return saved;}
 
   async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {
@@ -407,6 +426,24 @@ export class RecipesService {
       .findOneAndUpdate(filter, updatePayload, { new: true })
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
+
+    // 🚀 INJECTED: Trigger real-time notification to the Store Keeper ONLY upon successful approval
+    if (status === 'approved') {
+      try {
+        await this.notificationsService.createHierarchicalNotification(
+          (actor as any)?.userId || (actor as any)?.id || 'system',
+          'New Recipe Approved',
+          `The recipe "${updated.name}" has been approved by the Unit Manager and is ready for raw material staging.`,
+          updated.site || 'global',
+          'chef',         // target role is chef
+          'RECIPE_DATA',     // target component key for sub menu in chef
+          { recipeId: updated._id?.toString() }
+        );
+      } catch (err: any) {
+        console.error(`chef recipe approval notification failed: ${err.message}`);
+      }
+    }
+
     return updated;
   }
 

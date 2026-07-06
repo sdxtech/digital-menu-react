@@ -28,6 +28,7 @@ const navItems = [
   {
     label: 'Recipe Data',
     to: '/chef/menu-bank',
+    componentkey: 'RECIPE_DATA',
     icon: (className: string) => (
       <i className={`bi bi-book ${className}`} aria-hidden="true" />
     ),
