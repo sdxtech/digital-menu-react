@@ -7,6 +7,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-speedometer2 ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'CHEF_DASHBOARD', // 🌟 Explicit key stops fallback matches
   },
   {
     label: 'Menu Production',
@@ -14,6 +15,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-calendar2-week ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'MENU_PRODUCTION_RECORDS',
   },
   {
     label: 'Calculator Recipe',
@@ -21,6 +23,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'CHEF_CALCULATOR',
   },
   {
     label: 'Recipe Data',
@@ -28,6 +31,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-book ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'RECIPE_DATA_BANK',
   },
   {
     label: 'Create New Recipe',
@@ -35,6 +39,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-plus-circle ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'CREATE_RECIPE_FLOW',
   },
   {
     label: 'Add Raw Material',
@@ -42,6 +47,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-plus-square ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'ADD_RAW_MATERIAL_FLOW',
   },
   {
     label: 'Raw Material Data',
@@ -49,6 +55,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-box-seam ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'RAW_MATERIAL_DATA_BANK',
   },
   {
     label: 'Store Request',
@@ -56,6 +63,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-bag ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'STORE_REQUEST_RECORDS',
   },
 ]
 

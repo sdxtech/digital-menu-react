@@ -180,7 +180,7 @@ const downloadExcel = (
 }
 
 const UnitManagerPage = () => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [searchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const {
@@ -294,6 +294,27 @@ const UnitManagerPage = () => {
         : [...prev, groupKey],
     )
   }
+
+  const clearApprovalNotification = useCallback(
+    async (componentKey: 'RECIPE_APPROVAL_REQUESTS' | 'MENU_PRODUCTION_APPROVAL_REQUESTS') => {
+      if (!accessToken || !user?.site) return
+
+      await apiFetch(
+        '/notifications/mark-role-read',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            siteCode: user.site,
+            targetUserRole: 'unit.manager',
+            componentKey,
+          }),
+        },
+        accessToken,
+      )
+      window.dispatchEvent(new CustomEvent('refresh-notifications'))
+    },
+    [accessToken, user?.site],
+  )
 
   const handleExportMenuProductionGroup = (group: StoreRequestGroup) => {
     const rows: Array<Array<unknown>> = [
@@ -425,6 +446,7 @@ const UnitManagerPage = () => {
     setRecipeRejectError('')
     try {
       await rejectRecipe(id, reason)
+      await clearApprovalNotification('RECIPE_APPROVAL_REQUESTS')
       setActionMessage(`${recipeRejectTarget.name} rejected.`)
       setRecipeRejectTarget(null)
       setRecipeRejectReason('')
@@ -451,6 +473,7 @@ const UnitManagerPage = () => {
 
     try {
       await approveMenuProduction(id)
+      await clearApprovalNotification('MENU_PRODUCTION_APPROVAL_REQUESTS')
       setActionMessage(`${menu.menuName} approved.`)
       fetchPending().catch(() => null)
     } catch (error) {
@@ -481,6 +504,7 @@ const UnitManagerPage = () => {
     setMenuRejectError('')
     try {
       await rejectMenuProduction(id, reason)
+      await clearApprovalNotification('MENU_PRODUCTION_APPROVAL_REQUESTS')
       setActionMessage(`${menuRejectTarget.menuName} rejected.`)
       setMenuRejectTarget(null)
       setMenuRejectReason('')
@@ -761,6 +785,9 @@ const UnitManagerPage = () => {
                                     setActionError('')
                                     try {
                                       await approveRecipe(item.id ?? item._id ?? '')
+                                      await clearApprovalNotification(
+                                        'RECIPE_APPROVAL_REQUESTS',
+                                      )
                                       fetchPending().catch(() => null)
                                     } catch (error) {
                                       setActionError(

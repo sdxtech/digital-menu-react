@@ -7,6 +7,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-shield-check ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'APPROVAL_CENTER',
     children: [
       {
         label: 'Recipe Approval',
@@ -14,6 +15,7 @@ const navItems = [
         icon: (className: string) => (
           <i className={`bi bi-journal-check ${className}`} aria-hidden="true" />
         ),
+        componentKey: 'RECIPE_APPROVAL_REQUESTS', // 🚀 Only lights up for recipe reviews
       },
       {
         label: 'Menu Production Approval',
@@ -21,6 +23,7 @@ const navItems = [
         icon: (className: string) => (
           <i className={`bi bi-clipboard2-check ${className}`} aria-hidden="true" />
         ),
+        componentKey: 'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 Only lights up for batch reviews
       },
     ],
   },
@@ -30,6 +33,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-journal-check ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'MGR_PRODUCTION_RECORDS',
   },
   {
     label: 'Recipe Data',
@@ -37,6 +41,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-book ${className}`} aria-hidden="true" />
     ),
+    componentKey: 'MGR_RECIPE_DATA',
   },
 ]
 

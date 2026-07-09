@@ -13,6 +13,7 @@ import {
 } from './schemas/menu-production.schema';
 import { MenuProductionsController } from './menu-productions.controller';
 import { MenuProductionsService } from './menu-productions.service';
+import { NotificationsModule } from '../notifications/notifications.module'; // 🌟 ADDED IMPORT
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MenuProductionsService } from './menu-productions.service';
     ]),
     AuthModule,
     UsersModule,
+    NotificationsModule, // 🌟 ADDED TO IMPORTS ARRAY
   ],
   controllers: [MenuProductionsController],
   providers: [MenuProductionsService],

@@ -7,6 +7,7 @@ import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const ITEMS_PER_PAGE = 10
+const RECIPE_NOTIFICATION_COMPONENT_KEY = 'RECIPE_DATA_BANK'
 
 type RecipeIngredient = {
   productCode: string
@@ -154,7 +155,59 @@ const MenuPhotoFrame = ({
 }
 
 const ChefMenuBank = () => {
-  const { accessToken } = useAuth()
+  const { user, accessToken } = useAuth()
+  const rawRole = user?.roles?.[0] || user?.role || ''
+  const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole
+  const targetUserRole = cleanRole === 'unit-manager' ? 'unit.manager' : cleanRole
+  const siteCode = user?.site || 'global'
+  const [unreadRecipeIds, setUnreadRecipeIds] = useState<string[]>([])
+  
+  useEffect(() => {
+    const fetchActiveNotifications = async () => {
+      if (!accessToken) return
+      try {
+        const data = await apiFetch<
+          Array<{
+            read?: boolean
+            componentKey?: string
+            payload?: { recipeId?: string; id?: string }
+          }>
+        >(
+          `/notifications/role-unread?siteCode=${encodeURIComponent(siteCode)}&targetUserRole=${encodeURIComponent(targetUserRole)}&componentKey=${RECIPE_NOTIFICATION_COMPONENT_KEY}`,
+          undefined,
+          accessToken,
+        )
+        if (Array.isArray(data)) {
+          const unreadRecipeNotifications = data.filter(
+            (n) => !n.read && n.componentKey === RECIPE_NOTIFICATION_COMPONENT_KEY,
+          )
+          const ids = unreadRecipeNotifications
+            .map((n) => n.payload?.recipeId || n.payload?.id)
+            .filter((value): value is string => Boolean(value))
+          setUnreadRecipeIds(ids)
+
+          if (unreadRecipeNotifications.length > 0) {
+            await apiFetch(
+              '/notifications/mark-role-read',
+              {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  siteCode,
+                  targetUserRole,
+                  componentKey: RECIPE_NOTIFICATION_COMPONENT_KEY,
+                }),
+              },
+              accessToken,
+            )
+            window.dispatchEvent(new Event('refresh-notifications'))
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load active notifications for highlights:', err)
+      }
+    }
+    fetchActiveNotifications()
+  }, [accessToken, siteCode, targetUserRole])
   const navigate = useNavigate()
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [categories, setCategories] = useState<string[]>([])
@@ -624,7 +677,25 @@ const ChefMenuBank = () => {
               </button>
 
               {filterOpen ? (
-                <div className="absolute right-0 z-20 mt-2 w-72 rounded-md border border-border bg-white p-4 text-sm shadow-xl">
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close filter panel"
+                    className="fixed inset-0 z-30 cursor-default bg-transparent md:hidden"
+                    onClick={() => setFilterOpen(false)}
+                  />
+                  <div className="fixed left-3 right-3 top-56 z-40 mt-0 max-h-[calc(100vh-15rem)] overflow-y-auto rounded-md border border-border bg-white p-4 text-sm shadow-xl md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-72 md:max-h-none md:overflow-visible">
+                    <div className="mb-3 flex items-center justify-between border-b border-border pb-2 md:hidden">
+                      <p className="text-xs font-semibold text-primary">Filter</p>
+                      <button
+                        type="button"
+                        onClick={() => setFilterOpen(false)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-soft text-primary transition hover:bg-primary hover:text-white"
+                        aria-label="Close filter"
+                      >
+                        <i className="bi bi-x-lg text-[10px]" aria-hidden="true" />
+                      </button>
+                    </div>
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-muted">
                       Status
@@ -735,6 +806,7 @@ const ChefMenuBank = () => {
                     )}
                   </div>
                 </div>
+                </>
               ) : null}
             </div>
           </div>
@@ -798,11 +870,17 @@ const ChefMenuBank = () => {
                   recipes.map((recipe, index) => {
                     const recipeKey = recipe.id ?? recipe._id ?? null
                     const isSelected = selectedRecipeId === recipeKey
+                    const isNewItem = recipeKey ? unreadRecipeIds.includes(recipeKey) : false;
 
                     return (
                       <tr
                         key={recipe.id ?? recipe._id}
-                        className="border-t border-border"
+                        // 🌟 INJECTED: Added dynamic flash highlighting styling class rules
+                        className={`border-t border-border transition-all duration-700 ${
+                          isNewItem 
+                            ? 'bg-yellow-100/80 dark:bg-yellow-900/20 animate-pulse' 
+                            : 'hover:bg-slate-50/50'
+                        }`}
                       >
                         <td className="px-5 py-4 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}

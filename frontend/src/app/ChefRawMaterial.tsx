@@ -1,8 +1,52 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useChefData } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import { useAuth } from '../lib/auth'
+import { apiFetch } from '../lib/api'
+
+type NotificationItem = {
+  read?: boolean
+  componentKey?: string
+  payload?: {
+    productCode?: string
+  }
+}
 
 const ChefRawMaterial = () => {
+  const { user, accessToken } = useAuth();
+  const rawRole = user?.roles?.[0] || user?.role || '';
+  const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole;
+  const apiRole = cleanRole === 'chef' ? 'chef' : cleanRole;
+  const currentSiteCode = user?.site || 'global';
+
+  // 🚀 INJECTED STATE AND EFFECT FOR RAW MATERIAL NOTIFICATION HIGHLIGHTS
+  const [unreadMaterialCodes, setUnreadMaterialCodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchActiveNotifications = async () => {
+      try {
+        if (!accessToken) return;
+        const data = await apiFetch<NotificationItem[]>(
+          `/notifications/role-unread?siteCode=${encodeURIComponent(currentSiteCode)}&targetUserRole=${encodeURIComponent(apiRole)}&componentKey=RAW_MATERIAL_DATA_BANK`,
+          undefined,
+          accessToken,
+        );
+        if (Array.isArray(data)) {
+          const productCodes = data
+            .filter((n) => !n.read && n.componentKey === 'RAW_MATERIAL_DATA_BANK')
+            .map((n) => n.payload?.productCode)
+            .filter((value): value is string => Boolean(value));
+          setUnreadMaterialCodes(productCodes);
+        }
+      } catch (err) {
+        console.error('Failed to load active raw material notifications for highlights:', err);
+      }
+    };
+    
+    if (user && accessToken) {
+      fetchActiveNotifications();
+    }
+  }, [user, accessToken, apiRole, currentSiteCode]);
   const { rawMaterials, rawMaterialsMeta, fetchRawMaterials } = useChefData()
   const totalPages = rawMaterialsMeta.totalPages
 
@@ -83,8 +127,15 @@ const ChefRawMaterial = () => {
                     </td>
                   </tr>
                 ) : (
-                  rawMaterials.map((item, index) => (
-                    <tr key={item.id} className="border-t border-border">
+                  rawMaterials.map((item, index) => {
+                    const isUnread = unreadMaterialCodes.includes(item.productCode);
+                    return (
+                      <tr 
+                        key={item.id} 
+                        className={`border-t border-border transition-colors duration-500 ${
+                          isUnread ? 'bg-yellow-50 animate-pulse' : ''
+                        }`}
+                      >
                       <td className="px-5 py-4 text-sm text-muted">
                         {(rawMaterialsMeta.page - 1) * rawMaterialsMeta.limit +
                           index +
@@ -97,9 +148,10 @@ const ChefRawMaterial = () => {
                         {formatUnitLabel(item.unitOfMeasures)}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
+                  ); // 🌟 Changed from ) to );
+                })
+              )}
+            </tbody>
             </table>
           </div>
         </div>
