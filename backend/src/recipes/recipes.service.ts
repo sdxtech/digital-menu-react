@@ -27,6 +27,7 @@ import { SitesService } from '../sites/sites.service';
 import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -171,6 +172,7 @@ export class RecipesService {
     private readonly users: UsersService,
     private readonly sites: SitesService,
     private readonly unitOfMeasures: UnitOfMeasuresService,
+    private readonly notificationsService: NotificationsService, // 🌟 ADDED
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
@@ -192,7 +194,8 @@ export class RecipesService {
       ? this.buildActorFields(actor, 'reviewed')
       : {};
 
-    return this.recipeModel.create({
+    // 1. We now save the created recipe document to a variable named 'saved'
+    const saved = await this.recipeModel.create({
       recipeCode,
       name: input.name.trim(),
       category: input.category.trim(),
@@ -214,6 +217,29 @@ export class RecipesService {
       ...reviewedFields,
       ...(normalizedSite ? { site: normalizedSite } : {}),
     });
+
+    // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
+    if (!isSuperadminActor) {
+      try {
+        await this.notificationsService.createHierarchicalNotification(
+          actor?.id || 'system',
+          'New Recipe Pending Approval',
+          `A new recipe "${saved.name}" has been submitted by the Chef and requires review.`,
+          saved.site || 'global',
+          'unit.manager',
+          'RECIPE_APPROVAL_REQUESTS',
+          { recipeId: saved._id?.toString() },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `Unit Manager recipe creation notification failed: ${message}`,
+        );
+      }
+    }
+
+    // 3. Return the saved document exactly as the old code did
+    return saved;
   }
 
   async findAll(query: ListRecipesQueryDto, site?: string) {
@@ -365,9 +391,7 @@ export class RecipesService {
     const filter = this.withSiteFilter(
       {
         _id: id,
-        ...(this.isSuperadminActor(actor)
-          ? {}
-          : { approvalStatus: 'pending' }),
+        ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
       actor?.site,
     );
@@ -405,6 +429,25 @@ export class RecipesService {
       .findOneAndUpdate(filter, updatePayload, { new: true })
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
+
+    // 🚀 INJECTED: Trigger real-time notification to the Store Keeper ONLY upon successful approval
+    if (status === 'approved') {
+      try {
+        await this.notificationsService.createHierarchicalNotification(
+          actor?.id || 'system',
+          'New Recipe Approved',
+          `The recipe "${updated.name}" has been approved by the Unit Manager and is ready for raw material staging.`,
+          updated.site || 'global',
+          'chef', // target role is chef
+          'RECIPE_DATA_BANK',
+          { recipeId: updated._id?.toString() },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`chef recipe approval notification failed: ${message}`);
+      }
+    }
+
     return updated;
   }
 
@@ -426,10 +469,7 @@ export class RecipesService {
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(productCodes);
     const rawMaterialByCode = new Map(
-      rawMaterialLookups.map((item) => [
-        item.productCodeNormalized,
-        item,
-      ]),
+      rawMaterialLookups.map((item) => [item.productCodeNormalized, item]),
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
 
@@ -484,10 +524,7 @@ export class RecipesService {
         updatePayload.$unset = { foodCostRecipe: '' };
       }
 
-      await this.recipeModel.updateOne(
-        { _id: recipe._id },
-        updatePayload,
-      );
+      await this.recipeModel.updateOne({ _id: recipe._id }, updatePayload);
       updatedRecipes += 1;
     }
 
@@ -536,6 +573,24 @@ export class RecipesService {
       )
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
+
+    // 🚀 INJECTED: Trigger real-time hierarchical notification for the Unit Manager dashboard
+    try {
+      await this.notificationsService.createHierarchicalNotification(
+        actor?.id || 'system',
+        'Recipe Resubmitted for Review',
+        `The recipe "${updated.name}" has been modified and resubmitted by the Chef for your approval.`,
+        updated.site || actor?.site || 'global',
+        'unit.manager', // 🌟 targetUserRole target
+        'RECIPE_APPROVAL_REQUESTS',
+        { recipeId: updated._id?.toString() },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Catch layout errors cleanly so the core recipe submission state doesn't crash if database updates experience lag
+      console.error(`Manager recipe notification failed: ${message}`);
+    }
+
     return updated;
   }
 
@@ -1601,10 +1656,7 @@ export class RecipesService {
           .filter(Boolean),
       );
     const rawMaterialByCode = new Map(
-      rawMaterialLookups.map((item) => [
-        item.productCodeNormalized,
-        item,
-      ]),
+      rawMaterialLookups.map((item) => [item.productCodeNormalized, item]),
     );
     const nextIngredients = ingredients.map((ingredient) => {
       const result = this.applyIngredientCostFromLookup(

@@ -1,5 +1,15 @@
 import { RecipesService } from './recipes.service';
 
+type TestIngredient = Record<string, unknown> & {
+  conversionMultiplier?: number;
+};
+
+type RecipeUpdatePayload = {
+  $set: Record<string, unknown> & {
+    ingredients?: TestIngredient[];
+  };
+};
+
 describe('RecipesService site visibility', () => {
   const makeService = () => {
     const recipeModel = {
@@ -23,6 +33,9 @@ describe('RecipesService site visibility', () => {
     const unitOfMeasures = {
       findActiveConversion: jest.fn().mockResolvedValue(null),
     };
+    const notifications = {
+      createHierarchicalNotification: jest.fn().mockResolvedValue(null),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
@@ -31,6 +44,7 @@ describe('RecipesService site visibility', () => {
       users as never,
       sites as never,
       unitOfMeasures as never,
+      notifications as never,
     );
     jest
       .spyOn(
@@ -42,6 +56,25 @@ describe('RecipesService site visibility', () => {
       .mockResolvedValue(undefined);
 
     return { rawMaterials, recipeModel, service, unitOfMeasures };
+  };
+
+  const getUpdatePayload = (
+    recipeModel: ReturnType<typeof makeService>['recipeModel'],
+  ): RecipeUpdatePayload => {
+    const calls = recipeModel.findOneAndUpdate.mock.calls as unknown as Array<
+      [unknown, RecipeUpdatePayload]
+    >;
+    const payload = calls[0]?.[1];
+    if (!payload) throw new Error('findOneAndUpdate was not called.');
+    return payload;
+  };
+
+  const getUpdatedIngredient = (
+    recipeModel: ReturnType<typeof makeService>['recipeModel'],
+  ) => {
+    const ingredient = getUpdatePayload(recipeModel).$set.ingredients?.[0];
+    if (!ingredient) throw new Error('Recipe ingredient was not updated.');
+    return ingredient;
   };
 
   const mockRecipeList = (
@@ -113,15 +146,18 @@ describe('RecipesService site visibility', () => {
       site: 'SITE-002',
     });
 
+    const updatePayload = getUpdatePayload(recipeModel);
+
     expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
       { _id: 'recipe-a', approvalStatus: 'pending', site: 'SITE-002' },
-      expect.objectContaining({
-        $set: expect.objectContaining({
-          approvalStatus: 'approved',
-          status: 'active',
-        }),
-      }),
+      expect.any(Object),
       { new: true },
+    );
+    expect(updatePayload.$set).toEqual(
+      expect.objectContaining({
+        approvalStatus: 'approved',
+        status: 'active',
+      }),
     );
   });
 
@@ -157,8 +193,7 @@ describe('RecipesService site visibility', () => {
       ],
     });
 
-    const updatePayload = recipeModel.findOneAndUpdate.mock.calls[0][1];
-    const ingredient = updatePayload.$set.ingredients[0];
+    const ingredient = getUpdatedIngredient(recipeModel);
 
     expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
     expect(rawMaterials.findLookupByNormalizedCode).toHaveBeenCalledWith(
@@ -179,7 +214,7 @@ describe('RecipesService site visibility', () => {
         foodCost: 20,
       }),
     );
-    expect(ingredient.conversionMultiplier).toBeCloseTo(1 / 2200);
+    expect(Number(ingredient.conversionMultiplier)).toBeCloseTo(1 / 2200);
   });
 
   it('prioritizes raw material specific conversion over global conversion', async () => {
@@ -219,8 +254,7 @@ describe('RecipesService site visibility', () => {
       ],
     });
 
-    const updatePayload = recipeModel.findOneAndUpdate.mock.calls[0][1];
-    const ingredient = updatePayload.$set.ingredients[0];
+    const ingredient = getUpdatedIngredient(recipeModel);
 
     expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
     expect(ingredient).toEqual(
@@ -230,6 +264,6 @@ describe('RecipesService site visibility', () => {
         conversionId: 'ML To GAL',
       }),
     );
-    expect(ingredient.conversionMultiplier).toBeCloseTo(1 / 450);
+    expect(Number(ingredient.conversionMultiplier)).toBeCloseTo(1 / 450);
   });
 });

@@ -10,6 +10,7 @@ import {
 import { AuthModule } from '../auth/auth.module';
 import { Recipe, RecipeSchema } from '../recipes/schemas/recipe.schema';
 import { SitesModule } from '../sites/sites.module';
+import { NotificationsModule } from '../notifications/notifications.module'; // Adjust path if needed
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SitesModule } from '../sites/sites.module';
       },
       { name: Recipe.name, schema: RecipeSchema },
     ]),
+    NotificationsModule,
     AuthModule,
     SitesModule,
   ],
