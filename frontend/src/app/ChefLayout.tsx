@@ -15,7 +15,7 @@ const navItems = [
     icon: (className: string) => (
       <i className={`bi bi-calendar2-week ${className}`} aria-hidden="true" />
     ),
-    componentKey: 'MENU_PRODUCTION_RECORDS', // 🚀 MATCHES BACKEND NOTIFICATION payload perfectly
+    componentKey: 'MENU_PRODUCTION_RECORDS',
   },
   {
     label: 'Calculator Recipe',
@@ -28,7 +28,6 @@ const navItems = [
   {
     label: 'Recipe Data',
     to: '/chef/menu-bank',
-    componentkey: 'RECIPE_DATA',
     icon: (className: string) => (
       <i className={`bi bi-book ${className}`} aria-hidden="true" />
     ),

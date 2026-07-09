@@ -1,6 +1,14 @@
-import { useEffect, useState, type ReactNode, useRef } from 'react'
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useRef,
+} from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
+import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
 type NavItem = {
@@ -25,6 +33,23 @@ type NotificationItem = {
   message: string
   componentKey?: string
   read: boolean
+  createdAt?: string
+}
+
+type NotificationFilter = 'unread' | 'read'
+
+const formatNotificationTimestamp = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 const RoleLayout = ({
@@ -42,9 +67,13 @@ const RoleLayout = ({
   )
   const [expandedMenus, setExpandedMenus] = useState<string[]>([])
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
+  const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false)
+  const [notificationFilter, setNotificationFilter] =
+    useState<NotificationFilter>('unread')
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const notificationDropdownRef = useRef<HTMLDivElement>(null)
 
   const rawRole = user?.roles?.[0] || user?.role || ''
   const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole
@@ -60,21 +89,13 @@ const RoleLayout = ({
       try {
         const apiRole = targetUserRole === 'unit-manager' ? 'unit.manager' : targetUserRole;
 
-        // 🌟 FIXED: Routed path back to 'role-unread' query instead of intercepting 'mark-role-read' as a GET
-        const response = await fetch(
-          `/api/notifications/role-unread?siteCode=${encodeURIComponent(siteCode)}&targetUserRole=${encodeURIComponent(apiRole)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          }
+        const data = await apiFetch<NotificationItem[]>(
+          `/notifications/role?siteCode=${encodeURIComponent(siteCode)}&targetUserRole=${encodeURIComponent(apiRole)}`,
+          undefined,
+          accessToken,
         )
-        if (response.ok) {
-          const data = await response.json()
-          
-          setNotifications(data)
-        }
+
+        setNotifications(data)
       } catch (err) {
         console.error('Failed to look up unread notification metrics:', err)
       }
@@ -96,38 +117,26 @@ const RoleLayout = ({
     }
   }, [targetUserRole, siteCode, accessToken])
 
-  // 🌟 Persistent Sticky Notification Handler: Marks read ONLY upon navigating away from the page
-  useEffect(() => {
-    if (notifications.length === 0 || !accessToken) return
-
-    return () => {
-      const clearNotificationsOnLeave = async () => {
-        try {
-          // 🌟 FIXED: Appended '/api' prefix back safely so the Vite configuration forwards the request
-          await fetch('/api/notifications/mark-role-read', {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ siteCode, targetUserRole }),
-          })
-          setNotifications([])
-        } catch (err) {
-          console.error('Failed to auto-clear layout notifications on page transition:', err)
-        }
-      }
-
-      clearNotificationsOnLeave()
-    }
-  }, [location.pathname, accessToken, siteCode, targetUserRole])
-
-  const totalUnreadCount = notifications.length
+  const unreadNotifications = notifications.filter((notification) => !notification.read)
+  const readNotifications = notifications.filter((notification) => notification.read)
+  const visibleNotifications =
+    notificationFilter === 'unread' ? unreadNotifications : readNotifications
+  const emptyNotificationMessage =
+    notificationFilter === 'unread'
+      ? 'No unread notifications.'
+      : 'No read notifications.'
+  const totalUnreadCount = unreadNotifications.length
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setProfileDropdownOpen(false)
+      }
+      if (
+        notificationDropdownRef.current &&
+        !notificationDropdownRef.current.contains(event.target as Node)
+      ) {
+        setNotificationDropdownOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -138,6 +147,28 @@ const RoleLayout = ({
     setProfileDropdownOpen(false)
     logout()
     navigate('/login', { replace: true })
+  }
+
+  const toggleNotificationDropdown = () => {
+    setNotificationDropdownOpen((current) => !current)
+    setProfileDropdownOpen(false)
+  }
+
+  const handleNotificationBellPointerDown = (
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    toggleNotificationDropdown()
+  }
+
+  const handleNotificationBellKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    toggleNotificationDropdown()
   }
 
   const displayName = user?.name?.trim() || user?.email || defaultEmail
@@ -193,33 +224,82 @@ const RoleLayout = ({
   }
 
   // 🌟 Flexible Badge Processor matching string route paths and uppercase components
+  const normalizeComponentKey = (value?: string) =>
+    value?.toLowerCase().replace(/[-_.\s]/g, '') ?? ''
+
+  const findNotificationTarget = (componentKey?: string) => {
+    const key = normalizeComponentKey(componentKey)
+    if (!key) return undefined
+
+    const items = navItems.flatMap((item) => [item, ...(item.children ?? [])])
+    return items.find((item) => normalizeComponentKey(item.componentKey) === key)
+  }
+
   const getComponentBadgeCount = (item: NavItem): number => {
-    const directMatches = notifications.filter((n) => {
-      if (!n.componentKey) return false
+    const itemKey = normalizeComponentKey(item.componentKey)
+    if (!itemKey) return 0
 
-      const backendKey = n.componentKey.toLowerCase().replace(/[-_.]/g, '')
-      const itemKeyFallback = item.componentKey?.toLowerCase().replace(/[-_.]/g, '') || ''
-      const itemLabelFallback = item.label.toLowerCase().replace(/[-_.\s]/g, '')
-      const itemUrlFallback = item.to.toLowerCase().replace(/[-_./\s]/g, '')
+    return unreadNotifications.filter(
+      (notification) =>
+        normalizeComponentKey(notification.componentKey) === itemKey,
+    ).length
+  }
 
-      return (
-        backendKey === itemKeyFallback ||
-        backendKey.includes(itemKeyFallback) ||
-        backendKey.includes(itemLabelFallback) ||
-        itemLabelFallback.includes(backendKey) ||
-        backendKey.includes(itemUrlFallback) ||
-        itemUrlFallback.includes(backendKey) ||
-        (backendKey.includes('rawmaterial') && itemLabelFallback.includes('rawmaterial'))
-      )
-    }).length
+  const renderNotificationItem = (notification: NotificationItem) => {
+    const target = findNotificationTarget(notification.componentKey)
+    const timestamp = formatNotificationTimestamp(notification.createdAt)
+    const content = (
+      <div className="flex items-start gap-2">
+        <span
+          className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+            notification.read ? 'bg-border' : 'bg-amber-400'
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p
+              className={`min-w-0 truncate text-xs font-semibold ${
+                notification.read ? 'text-muted' : 'text-foreground'
+              }`}
+            >
+              {notification.title}
+            </p>
+            {timestamp ? (
+              <p className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted">
+                <i className="bi bi-clock text-[10px]" aria-hidden="true" />
+                <span>{timestamp}</span>
+              </p>
+            ) : null}
+          </div>
+          <p className="mt-1 line-clamp-2 text-[11px] text-muted">
+            {notification.message}
+          </p>
+          {target ? (
+            <p className="mt-1 text-[10px] font-semibold text-primary">
+              {target.label}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    )
 
-    if (directMatches > 0) return directMatches
-
-    if (item.children?.length) {
-      return item.children.reduce((acc, child) => acc + getComponentBadgeCount(child), 0)
-    }
-    
-    return 0
+    return target ? (
+      <button
+        key={notification.id}
+        type="button"
+        onClick={() => {
+          setNotificationDropdownOpen(false)
+          navigate(target.to)
+        }}
+        className="block w-full rounded-md px-3 py-2 text-left transition hover:bg-primary-soft"
+      >
+        {content}
+      </button>
+    ) : (
+      <div key={notification.id} className="px-3 py-2">
+        {content}
+      </div>
+    )
   }
 
   const renderPanelLink = (item: NavItem, level = 0) => {
@@ -333,13 +413,73 @@ const RoleLayout = ({
             {/* RIGHT SIDE: NOTIFICATION BELL & PROFILE AREA */}
             <div className="flex items-center gap-4 shrink-0">
               
-              {/* Navbar Total Volume Bell Badge */}
-              <div className="relative flex items-center justify-center h-8 w-8 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition cursor-pointer">
-                <i className="bi bi-bell text-base text-white" />
-                {totalUnreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-primary-dark shadow-sm ring-2 ring-primary">
-                    {totalUnreadCount}
-                  </span>
+              <div className="relative" ref={notificationDropdownRef}>
+                <button
+                  type="button"
+                  onPointerDown={handleNotificationBellPointerDown}
+                  onKeyDown={handleNotificationBellKeyDown}
+                  className="relative flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  aria-label="Notifications"
+                  aria-expanded={notificationDropdownOpen}
+                  aria-haspopup="menu"
+                >
+                  <i className="bi bi-bell text-base text-white" />
+                  {totalUnreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-primary-dark shadow-sm ring-2 ring-primary">
+                      {totalUnreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {notificationDropdownOpen && (
+                  <div
+                    className="fixed left-3 right-3 top-16 z-50 mt-0 max-h-[calc(100vh-5rem)] overflow-hidden rounded-md border border-border bg-surface p-1 text-foreground shadow-xl ring-1 ring-black/5 md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[26rem] md:max-w-[calc(100vw-1rem)] md:max-h-none md:overflow-visible"
+                    role="menu"
+                  >
+                    <div className="border-b border-border px-3 py-2">
+                      <p className="text-xs font-semibold">Notifications</p>
+                      <div className="mt-2 grid grid-cols-2 rounded-md bg-muted/30 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setNotificationFilter('unread')}
+                          className={`rounded px-2 py-1 text-[11px] font-semibold transition ${
+                            notificationFilter === 'unread'
+                              ? 'bg-surface text-primary shadow-sm'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                          aria-pressed={notificationFilter === 'unread'}
+                        >
+                          {totalUnreadCount} Unread
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNotificationFilter('read')}
+                          className={`rounded px-2 py-1 text-[11px] font-semibold transition ${
+                            notificationFilter === 'read'
+                              ? 'bg-surface text-primary shadow-sm'
+                              : 'text-muted hover:text-foreground'
+                          }`}
+                          aria-pressed={notificationFilter === 'read'}
+                        >
+                          {readNotifications.length} Read
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto py-1">
+                      {notifications.length === 0 ? (
+                        <div className="px-3 py-6 text-center text-xs text-muted">
+                          No notifications yet.
+                        </div>
+                      ) : visibleNotifications.length === 0 ? (
+                        <div className="px-3 py-6 text-center text-xs text-muted">
+                          {emptyNotificationMessage}
+                        </div>
+                      ) : (
+                        visibleNotifications.slice(0, 10).map(renderNotificationItem)
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -359,7 +499,7 @@ const RoleLayout = ({
                 </button>
 
                 {profileDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 rounded-md border border-border bg-surface p-1 shadow-xl ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-100">
+                  <div className="fixed left-3 right-3 top-16 z-50 mt-0 w-auto rounded-md border border-border bg-surface p-1 shadow-xl ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-100 md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-64">
                     
                     <div className="px-3 py-1.5 border-b border-border bg-muted/30 rounded-t-sm mb-1">
                       <p className="text-[10px] uppercase tracking-wider text-muted font-bold">Authenticated As</p>
@@ -418,9 +558,9 @@ const RoleLayout = ({
         </header>
 
         {/* WORKSPACE SIDEBAR & CONTENTS */}
-        <div className="flex w-full items-stretch">
+        <div className="relative flex w-full items-stretch">
           <aside
-            className={`flex min-h-[calc(100vh-56px)] shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all ${
+            className={`fixed left-0 top-14 z-20 flex h-[calc(100vh-56px)] shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all md:static md:h-auto md:min-h-[calc(100vh-56px)] ${
               sidebarOpen ? 'w-max min-w-40 max-w-64' : 'w-12'
             }`}
           >
@@ -456,7 +596,11 @@ const RoleLayout = ({
             </nav>
           </aside>
 
-          <main className="min-w-0 flex-1 px-3 pt-4 sm:px-4">
+          <main
+            className={`min-w-0 w-full flex-1 pt-4 transition-[padding] md:px-4 ${
+              sidebarOpen ? 'px-3' : 'pl-[3.75rem] pr-3'
+            }`}
+          >
             <Outlet />
           </main>
         </div>

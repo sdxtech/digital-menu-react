@@ -30,6 +30,7 @@ import { ListRawMaterialsQueryDto } from './dto/list-raw-materials.query.dto';
 import { UpdateRawMaterialDto } from './dto/update-raw-material.dto';
 import { RawMaterialsService } from './raw-materials.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 
 const PRICE_UPDATE_EXTENSIONS = new Set(['.xlsx', '.csv']);
 const PRICE_UPDATE_MIME_TYPES = new Set([
@@ -56,7 +57,10 @@ export class RawMaterialsController {
 
   @Post()
   @Roles(AppRole.Chef, AppRole.Superadmin)
-  async create(@Body() dto: CreateRawMaterialDto, @Req() req: any) {
+  async create(
+    @Body() dto: CreateRawMaterialDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const newMaterial = await this.rawMaterials.create({
       productCode: dto.productCode,
       name: dto.name,
@@ -71,25 +75,24 @@ export class RawMaterialsController {
 
     //  PASTE THIS EXACTLY IN ITS PLACE:
     try {
-      const actorId = req.user?._id?.toString() || req.user?.id?.toString() || 'system';
+      const actorId = req.user.sub;
       const targetSite = req.user?.site || 'global';
 
       await this.notificationsService.createHierarchicalNotification(
-        actorId,                                            // 1. Actor ID
-        'New Raw Material Added',                           // 2. Title
+        actorId, // 1. Actor ID
+        'New Raw Material Added', // 2. Title
         `New material: ${newMaterial.name} (${newMaterial.productCode})`, // 3. Message
-        targetSite,                                         // 4. Site Code (e.g., 'S079')
-        'chef',                                             // 5. Target User Role 🌟 Set to chef so your badge lights up!
-        'RAW_MATERIAL_DATA_BANK',                           // 6. Component Key
-        { 
+        targetSite,
+        'chef', // 5. Target User Role 🌟 Set to chef so your badge lights up!
+        'RAW_MATERIAL_DATA_BANK', // 6. Component Key
+        {
           productCode: newMaterial.productCode,
-          id: newMaterial._id?.toString() || newMaterial.id?.toString() 
-        }                                                   // 7. Payload Object
+          id: newMaterial._id?.toString() || newMaterial.id?.toString(),
+        }, // 7. Payload Object
       );
-      
-      console.log(`Notification successfully dispatched to site ${targetSite} for role chef!`);
-    } catch (err: any) {
-      console.error(`Raw material notification dispatch failed: ${err.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Raw material notification dispatch failed: ${message}`);
     }
 
     return newMaterial;
@@ -185,9 +188,7 @@ export class RawMaterialsController {
 
   @Patch('specific-conversions/bulk')
   @Roles(AppRole.Superadmin)
-  bulkUpdateSpecificConversions(
-    @Body() dto: BulkUpdateSpecificConversionsDto,
-  ) {
+  bulkUpdateSpecificConversions(@Body() dto: BulkUpdateSpecificConversionsDto) {
     return this.rawMaterials.bulkUpdateSpecificConversions({
       search: dto.search,
       unitOfMeasures: dto.unitOfMeasures,
@@ -233,13 +234,13 @@ export class RawMaterialsController {
     if (!worksheet) throw new BadRequestException('Worksheet not found.');
 
     const header = this.buildPriceHeaderMap(
-      (worksheet.getRow(1).values as unknown[]).slice(1),
+      (worksheet.getRow(1).values as unknown as unknown[]).slice(1),
     );
     const rows: PriceUpdateRow[] = [];
 
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const values = row.values as unknown[];
+      const values = row.values as unknown as unknown[];
       const productCode = this.cellToText(values[header.productCode + 1]);
       const price = this.parsePriceValue(values[header.price + 1]);
       if (!productCode && price === undefined) return;
@@ -260,11 +261,11 @@ export class RawMaterialsController {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-    }) as Record<string, unknown>[];
+    }) as unknown as Record<string, unknown>[];
     const rows: PriceUpdateRow[] = [];
 
     records.forEach((record, index) => {
-      const normalized = Object.fromEntries(
+      const normalized: Record<string, unknown> = Object.fromEntries(
         Object.entries(record).map(([key, value]) => [
           this.normalizeHeader(key),
           value,
@@ -327,7 +328,7 @@ export class RawMaterialsController {
   private pickValue(record: Record<string, unknown>, aliases: string[]) {
     for (const alias of aliases) {
       const value = record[alias];
-      if (value !== undefined && value !== null && String(value).trim()) {
+      if (this.cellToText(value)) {
         return value;
       }
     }
@@ -338,15 +339,26 @@ export class RawMaterialsController {
     return value.trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
-  private cellToText(value: unknown) {
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private cellToText(value: unknown): string {
     if (value === undefined || value === null) return '';
-    if (typeof value === 'object' && 'text' in value) {
-      return String((value as { text?: unknown }).text ?? '').trim();
+    if (this.isRecord(value)) {
+      if ('text' in value) return this.cellToText(value.text).trim();
+      if ('result' in value) return this.cellToText(value.result).trim();
     }
-    if (typeof value === 'object' && 'result' in value) {
-      return String((value as { result?: unknown }).result ?? '').trim();
+    if (typeof value === 'string') return value.trim();
+    if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
+      return String(value).trim();
     }
-    return String(value).trim();
+    if (value instanceof Date) return value.toISOString();
+    return '';
   }
 
   private parsePriceValue(value: unknown): number | undefined {

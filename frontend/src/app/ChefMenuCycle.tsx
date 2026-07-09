@@ -501,6 +501,27 @@ const ChefMenuCycle = ({
   }, [menuRows.length])/* Efek samping untuk memastikan halaman input tetap valid saat jumlah baris menu berubah, terutama saat menambah atau menghapus baris. Jika jumlah baris berkurang sehingga halaman saat ini melebihi total halaman, maka halaman akan disesuaikan ke total halaman yang baru. */
 
   useEffect(() => {
+    if (embedded || !accessToken || !user?.site) return
+
+    apiFetch(
+      '/notifications/mark-role-read',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          siteCode: user.site,
+          targetUserRole: 'chef',
+          componentKey: 'MENU_PRODUCTION_RECORDS',
+        }),
+      },
+      accessToken,
+    )
+      .then(() => window.dispatchEvent(new CustomEvent('refresh-notifications')))
+      .catch((err) =>
+        console.error('Failed to clear legacy chef menu production badges:', err),
+      )
+  }, [accessToken, embedded, user?.site])
+
+  useEffect(() => {
     if (!requireProductionSite) return
     setMenuRows([createMenuInputRow()])
     setExpandedMenuRows([])

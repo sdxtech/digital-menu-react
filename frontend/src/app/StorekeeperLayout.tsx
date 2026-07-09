@@ -5,16 +5,9 @@ const navItems = [
     label: 'Quick View',
     to: '/storekeeper',
     end: true,
+    componentKey: 'STORE_REQUEST_STOREKEEPER',
     icon: (className: string) => (
       <i className={`bi bi-speedometer2 ${className}`} aria-hidden="true" />
-    ),
-  },
-  {
-    label: 'Store Requests', // 🌟 ADDED: The destination for new material requests
-    to: '/storekeeper/requests',
-    componentKey: 'STORE_REQUEST_STOREKEEPER', // 🚀 Matches backend parameter to show the badge!
-    icon: (className: string) => (
-      <i className={`bi bi-clipboard-check ${className}`} aria-hidden="true" />
     ),
   },
   {

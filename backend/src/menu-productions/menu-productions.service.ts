@@ -167,6 +167,29 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
   ) {}
 
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private textValue(value: unknown) {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
+      return String(value);
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (value instanceof Types.ObjectId) return value.toString();
+    if (typeof value === 'object') {
+      const text = (value as { toString?: () => string }).toString?.();
+      return text && text !== '[object Object]' ? text : '';
+    }
+    return '';
+  }
+
   private roundQuantity(value: number) {
     if (!Number.isFinite(value)) return 0;
     return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
@@ -294,7 +317,10 @@ export class MenuProductionsService implements OnModuleInit {
       'Unit manager id',
     );
     const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
-    const costSnapshot = this.calculateMenuProductionCostSnapshot(input, recipe);
+    const costSnapshot = this.calculateMenuProductionCostSnapshot(
+      input,
+      recipe,
+    );
     return this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
@@ -380,22 +406,30 @@ export class MenuProductionsService implements OnModuleInit {
     });
 
     // 🚀 Write the records to the database first
-    const createdDocs = await this.menuProductionModel.insertMany(payload, { ordered: false });
+    const createdDocs = await this.menuProductionModel.insertMany(payload, {
+      ordered: false,
+    });
 
     // 🌟 ADDED: If records were created successfully, alert the Unit Manager at this site code!
     if (createdDocs && createdDocs.length > 0) {
       const firstDoc = createdDocs[0];
       const targetSite = firstDoc.site || normalizedSite || 'global';
-      
-      this.notificationsService.createHierarchicalNotification(
-        createdBy || 'system',
-        'New Menu Production Pending',
-        `A new production batch (${firstDoc.productionCode}) is awaiting your approval.`,
-        targetSite,
-        'unit.manager',
-        'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 This exact key activates the sub-menu badge!
-        { productionCode: firstDoc.productionCode }
-      ).catch(err => this.logger.error(`Unit Manager submission notification failed: ${err.message}`));
+
+      this.notificationsService
+        .createHierarchicalNotification(
+          createdBy || 'system',
+          'New Menu Production Pending',
+          `A new production batch (${firstDoc.productionCode}) is awaiting your approval.`,
+          targetSite,
+          'unit.manager',
+          'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 This exact key activates the sub-menu badge!
+          { productionCode: firstDoc.productionCode },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Unit Manager submission notification failed: ${this.errorMessage(err)}`,
+          ),
+        );
     }
 
     return createdDocs;
@@ -530,44 +564,69 @@ export class MenuProductionsService implements OnModuleInit {
 
     // 🌟 Step 3A: If approved, instantly trigger notifications for Storekeeper and Chef
     if (status === 'approved') {
-      this.notificationsService.createHierarchicalNotification(
-        updated.createdBy || 'system',
-        'New Store Request Dispatched',
-        `Production batch ${updated.productionCode} has been approved. Materials aggregation is ready for distribution fulfillment.`,
-        updated.site || 'global',
-        'storekeeper',
-        'STORE_REQUEST_STOREKEEPER',
-        { productionCode: updated.productionCode }
-      ).catch(err => this.logger.error(`Storekeeper notification failed: ${err.message}`));
+      this.notificationsService
+        .createHierarchicalNotification(
+          updated.createdBy || 'system',
+          'New Store Request Dispatched',
+          `Production batch ${updated.productionCode} has been approved. Materials aggregation is ready for distribution fulfillment.`,
+          updated.site || 'global',
+          'storekeeper',
+          'STORE_REQUEST_STOREKEEPER',
+          { productionCode: updated.productionCode },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Storekeeper notification failed: ${this.errorMessage(err)}`,
+          ),
+        );
 
-      this.notificationsService.createHierarchicalNotification(
-        'system',
-        'Menu Production Approved',
-        `Your production batch ${updated.productionCode} has been approved by the Unit Manager.`,
-        updated.site || 'global',
-        'chef',
-        'MENU_PRODUCTION_RECORDS',
-        { productionCode: updated.productionCode }
-      ).catch(err => this.logger.error(`Chef notification failed: ${err.message}`));
-    } 
+      this.notificationsService
+        .createHierarchicalNotification(
+          'system',
+          'Menu Production Approved',
+          `Your production batch ${updated.productionCode} has been approved by the Unit Manager.`,
+          updated.site || 'global',
+          'chef',
+          'STORE_REQUEST_RECORDS',
+          { productionCode: updated.productionCode },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Chef notification failed: ${this.errorMessage(err)}`,
+          ),
+        );
+    }
     // 🌟 ADDED: If rejected or refused, clear Manager counts and notify the Chef!
     else if (status === 'rejected') {
-      this.notificationsService.createHierarchicalNotification(
-        'system',
-        'Menu Production Rejected',
-        `Your production batch ${updated.productionCode} was rejected/refused by the Unit Manager.`,
-        updated.site || 'global',
-        'chef',
-        'MENU_PRODUCTION_RECORDS', // 🚀 Lights up the Chef's production badge
-        { productionCode: updated.productionCode }
-      ).catch(err => this.logger.error(`Chef rejection notification failed: ${err.message}`));
+      this.notificationsService
+        .createHierarchicalNotification(
+          'system',
+          'Menu Production Rejected',
+          `Your production batch ${updated.productionCode} was rejected/refused by the Unit Manager.`,
+          updated.site || 'global',
+          'chef',
+          'STORE_REQUEST_RECORDS',
+          { productionCode: updated.productionCode },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Chef rejection notification failed: ${this.errorMessage(err)}`,
+          ),
+        );
     }
 
     // 🌟 ADDED: Automatically clear the Unit Manager's unread badges for this site context on any decision
-    this.notificationsService.markRoleNotificationsAsRead({
-      siteCode: updated.site || 'global',
-      targetUserRole: 'unit.manager'
-    }).catch(err => this.logger.error(`Failed to clear manager badges: ${err.message}`));
+    this.notificationsService
+      .markRoleNotificationsAsRead({
+        siteCode: updated.site || 'global',
+        targetUserRole: 'unit.manager',
+        componentKey: 'MENU_PRODUCTION_APPROVAL_REQUESTS',
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Failed to clear manager badges: ${this.errorMessage(err)}`,
+        ),
+      );
 
     return updated;
   }
@@ -603,18 +662,23 @@ export class MenuProductionsService implements OnModuleInit {
     }
     item.storeRequestStatus = status;
     if (status === 'fulfilled') {
-      // 🚀 HARDCODED TESTING FIX: Match the 'S079' frontend scope directly
-      const targetSite = item.site || 'S079';
+      const targetSite = item.site || site || 'global';
 
-      this.notificationsService.createHierarchicalNotification(
-        'system',
-        'Store Request Materials Ready',
-        `The materials for production batch ${item.productionCode || 'N/A'} have been fulfilled and are ready for pickup.`,
-        targetSite, // 🌟 Updated to ensure it hits your specific site filter block
-        'chef',
-        'STORE_REQUEST_RECORDS',
-        { productionCode: item.productionCode }
-      ).catch(err => this.logger.error(`Chef fulfillment notification failed: ${err.message}`));
+      this.notificationsService
+        .createHierarchicalNotification(
+          'system',
+          'Store Request Materials Ready',
+          `The materials for production batch ${item.productionCode || 'N/A'} have been fulfilled and are ready for pickup.`,
+          targetSite, // 🌟 Updated to ensure it hits your specific site filter block
+          'chef',
+          'STORE_REQUEST_RECORDS',
+          { productionCode: item.productionCode },
+        )
+        .catch((err) =>
+          this.logger.error(
+            `Chef fulfillment notification failed: ${this.errorMessage(err)}`,
+          ),
+        );
 
       // Your original tracking field logic remains exactly here:
       const actor = fulfilledBy?.trim();
@@ -756,9 +820,13 @@ export class MenuProductionsService implements OnModuleInit {
             ? this.roundQuantity(actualPrice - plannedPrice)
             : undefined;
         const plannedIngredientCost = Number.isFinite(
-          Number(plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost),
+          Number(
+            plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost,
+          ),
         )
-          ? Number(plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost)
+          ? Number(
+              plannedItem.plannedIngredientCost ?? plannedItem.ingredientCost,
+            )
           : undefined;
         const actualIngredientCost =
           actualPrice !== undefined
@@ -1492,15 +1560,24 @@ export class MenuProductionsService implements OnModuleInit {
         item && typeof item === 'object'
           ? (item as Record<string, unknown>)
           : {};
+      const plannedQty = Number(record.plannedQty);
+      const actualQty = Number(record.actualQty);
+      const storedVarianceQty = Number(record.varianceQty);
+      const varianceQty =
+        Number.isFinite(plannedQty) && Number.isFinite(actualQty)
+          ? this.roundQuantity(actualQty - plannedQty)
+          : Number.isFinite(storedVarianceQty)
+            ? storedVarianceQty
+            : 0;
       return {
-        productCode: String(record.productCode ?? '').trim(),
-        name: String(record.name ?? '').trim(),
-        unitOfMeasures: String(record.unitOfMeasures ?? '').trim(),
-        plannedQty: Number(record.plannedQty ?? 0),
-        actualQty: Number(record.actualQty ?? 0),
-        varianceQty: Number(record.varianceQty ?? 0),
-        vendor: String(record.vendor ?? '').trim() || undefined,
-        vendorSite: String(record.vendorSite ?? '').trim() || undefined,
+        productCode: this.textValue(record.productCode).trim(),
+        name: this.textValue(record.name).trim(),
+        unitOfMeasures: this.textValue(record.unitOfMeasures).trim(),
+        plannedQty: Number.isFinite(plannedQty) ? plannedQty : 0,
+        actualQty: Number.isFinite(actualQty) ? actualQty : 0,
+        varianceQty,
+        vendor: this.textValue(record.vendor).trim() || undefined,
+        vendorSite: this.textValue(record.vendorSite).trim() || undefined,
         price: Number.isFinite(Number(record.price))
           ? Number(record.price)
           : undefined,
@@ -1533,7 +1610,7 @@ export class MenuProductionsService implements OnModuleInit {
         variancePrice: Number.isFinite(Number(record.variancePrice))
           ? Number(record.variancePrice)
           : undefined,
-        reason: String(record.reason ?? '').trim() || undefined,
+        reason: this.textValue(record.reason).trim() || undefined,
       };
     });
   }
@@ -1603,7 +1680,7 @@ export class MenuProductionsService implements OnModuleInit {
         productionDate,
         productionCode: String(menu.productionCode ?? ''),
         site: String(menu.site ?? '') || requestedSite,
-        id: String(menu._id ?? menu.id ?? ''),
+        id: this.textValue(menu._id ?? menu.id),
       });
       const group = groups.get(groupKey) ?? {
         site: this.normalizeSite(String(menu.site ?? '')) ?? requestedSite,
@@ -1818,7 +1895,7 @@ export class MenuProductionsService implements OnModuleInit {
       }
 
       group.items.push({
-        id: String(menu._id ?? menu.id ?? ''),
+        id: this.textValue(menu._id ?? menu.id),
         site: this.normalizeSite(String(menu.site ?? '')) ?? group.site,
         productionCode: this.normalizeOptionalProductionCode(
           String(menu.productionCode ?? ''),

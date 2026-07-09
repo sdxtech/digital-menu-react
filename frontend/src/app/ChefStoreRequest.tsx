@@ -1010,24 +1010,26 @@ const ChefStoreRequest = ({
   useEffect(() => {
     fetchStoreRequests().catch(() => null)
 
-    // 🌟 ADDED: Wipe the Chef's unread store request badges when they open this screen
-    const currentSite = 'S079'; 
-    
-    fetch('/api/notifications/mark-read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        siteCode: currentSite,
-        targetUserRole: 'chef'
-      })
-    })
-    .then(() => {
-      // 🚀 Broadcast the event to clear the Chef's badge instantly on the sidebar layout
-      window.dispatchEvent(new CustomEvent('refresh-notifications'));
-    })
-    .catch((err) => console.error('Failed to clear chef badges automatically:', err));
+    if (accessToken && user?.site) {
+      apiFetch(
+        '/notifications/mark-role-read',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            siteCode: user.site,
+            targetUserRole: 'chef',
+            componentKey: 'STORE_REQUEST_RECORDS',
+          }),
+        },
+        accessToken,
+      )
+        .then(() => window.dispatchEvent(new CustomEvent('refresh-notifications')))
+        .catch((err) =>
+          console.error('Failed to clear chef badges automatically:', err),
+        )
+    }
 
-  }, [fetchStoreRequests])
+  }, [fetchStoreRequests, accessToken, user?.site])
 
   useEffect(() => {
     setExpandedGroups([])

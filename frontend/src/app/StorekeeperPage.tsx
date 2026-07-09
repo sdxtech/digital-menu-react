@@ -235,7 +235,7 @@ const buildReconciliationItemKey = (
 }
 
 const StorekeeperPage = () => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const { fulfillStoreRequestBatch, cancelStoreRequestBatch } = useChefData()
   const [loadError, setLoadError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -287,25 +287,28 @@ const StorekeeperPage = () => {
 
   useEffect(() => {
     fetchStoreRequests().catch(() => null)
-
-    // 🌟 ADDED: Automatically wipe the Storekeeper's unread badges when they view this dashboard
-    const currentSite = 'S079'; 
-    
-    fetch('/api/notifications/mark-read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        siteCode: currentSite,
-        targetUserRole: 'storekeeper'
-      })
-    })
-    .then(() => {
-      // 🚀 ADDED: Broadcast the event to clear the Storekeeper badge instantly!
-      window.dispatchEvent(new CustomEvent('refresh-notifications'));
-    })
-    .catch((err) => console.error('Failed to clear storekeeper badges automatically:', err));
-
   }, [fetchStoreRequests])
+
+  const clearStoreRequestNotification = useCallback(async (productionCode?: string) => {
+    if (!accessToken || !user?.site) return
+
+    const code = productionCode?.trim()
+
+    await apiFetch(
+      '/notifications/mark-role-read',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          siteCode: user.site,
+          targetUserRole: 'storekeeper',
+          componentKey: 'STORE_REQUEST_STOREKEEPER',
+          ...(code ? { productionCode: code } : {}),
+        }),
+      },
+      accessToken,
+    )
+    window.dispatchEvent(new CustomEvent('refresh-notifications'))
+  }, [accessToken, user?.site])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -658,6 +661,7 @@ const StorekeeperPage = () => {
         items: payloadItems,
         note: reconciliationNote.trim() || undefined,
       })
+      await clearStoreRequestNotification(reconciliationGroup.productionCode)
       const label = reconciliationGroup.productionCode
         ? `${reconciliationGroup.date} (${reconciliationGroup.productionCode})`
         : reconciliationGroup.date
@@ -711,6 +715,7 @@ const StorekeeperPage = () => {
         menuProductionIds,
         reason,
       })
+      await clearStoreRequestNotification(cancellationGroup.productionCode)
       setActionMessage(`Store request for ${cancellationMenu.menuName} cancelled.`)
       await fetchStoreRequests()
       setExpandedGroups((prev) => prev.filter((item) => item !== groupKey))

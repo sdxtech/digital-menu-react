@@ -793,7 +793,25 @@ const SuperadminUsersPage = () => {
                   </span>
                 </button>
                 {filterOpen ? (
-                  <div className="absolute left-0 top-full z-20 mt-2 w-64 rounded-md border border-border bg-white p-3 shadow-lg">
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Close filter panel"
+                      className="fixed inset-0 z-30 cursor-default bg-transparent md:hidden"
+                      onClick={() => setFilterOpen(false)}
+                    />
+                    <div className="fixed left-3 right-3 top-56 z-40 mt-0 max-h-[calc(100vh-15rem)] overflow-y-auto rounded-md border border-border bg-white p-3 shadow-lg md:absolute md:left-0 md:right-auto md:top-full md:mt-2 md:w-64 md:max-h-none md:overflow-visible">
+                      <div className="mb-3 flex items-center justify-between border-b border-border pb-2 md:hidden">
+                        <p className="text-xs font-semibold text-primary">Filter</p>
+                        <button
+                          type="button"
+                          onClick={() => setFilterOpen(false)}
+                          className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-soft text-primary transition hover:bg-primary hover:text-white"
+                          aria-label="Close filter"
+                        >
+                          <i className="bi bi-x-lg text-[10px]" aria-hidden="true" />
+                        </button>
+                      </div>
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold text-muted">Sites</p>
                       <button
@@ -826,6 +844,7 @@ const SuperadminUsersPage = () => {
                       </div>
                     )}
                   </div>
+                  </>
                 ) : null}
               </div>
             </div>

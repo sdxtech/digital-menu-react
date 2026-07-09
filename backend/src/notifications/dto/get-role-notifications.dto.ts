@@ -12,4 +12,8 @@ export class GetRoleNotificationsDto {
   @IsString()
   @IsOptional()
   componentKey?: string;
+
+  @IsString()
+  @IsOptional()
+  productionCode?: string;
 }

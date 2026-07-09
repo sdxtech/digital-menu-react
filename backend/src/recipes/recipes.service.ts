@@ -175,7 +175,8 @@ export class RecipesService {
     private readonly notificationsService: NotificationsService, // 🌟 ADDED
   ) {}
 
-  async create(input: CreateRecipeDto, actor?: RecipeActor) {const ingredients = await this.applyIngredientUomConversions(
+  async create(input: CreateRecipeDto, actor?: RecipeActor) {
+    const ingredients = await this.applyIngredientUomConversions(
       this.normalizeIngredients(input.ingredients),
     );
     const costFields = await this.buildIngredientCostUpdate(ingredients);
@@ -221,21 +222,25 @@ export class RecipesService {
     if (!isSuperadminActor) {
       try {
         await this.notificationsService.createHierarchicalNotification(
-          (actor as any)?.userId || (actor as any)?.id || 'system',
+          actor?.id || 'system',
           'New Recipe Pending Approval',
           `A new recipe "${saved.name}" has been submitted by the Chef and requires review.`,
           saved.site || 'global',
           'unit.manager',
-          'RECIPE_APPROVALS', // 🌟 Make sure this matches the key in UnitManagerLayout.tsx!
-          { recipeId: saved._id?.toString() }
+          'RECIPE_APPROVAL_REQUESTS',
+          { recipeId: saved._id?.toString() },
         );
-      } catch (err: any) {
-        console.error(`Unit Manager recipe creation notification failed: ${err.message}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `Unit Manager recipe creation notification failed: ${message}`,
+        );
       }
     }
 
     // 3. Return the saved document exactly as the old code did
-    return saved;}
+    return saved;
+  }
 
   async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {
@@ -386,9 +391,7 @@ export class RecipesService {
     const filter = this.withSiteFilter(
       {
         _id: id,
-        ...(this.isSuperadminActor(actor)
-          ? {}
-          : { approvalStatus: 'pending' }),
+        ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
       actor?.site,
     );
@@ -431,16 +434,17 @@ export class RecipesService {
     if (status === 'approved') {
       try {
         await this.notificationsService.createHierarchicalNotification(
-          (actor as any)?.userId || (actor as any)?.id || 'system',
+          actor?.id || 'system',
           'New Recipe Approved',
           `The recipe "${updated.name}" has been approved by the Unit Manager and is ready for raw material staging.`,
           updated.site || 'global',
-          'chef',         // target role is chef
-          'RECIPE_DATA',     // target component key for sub menu in chef
-          { recipeId: updated._id?.toString() }
+          'chef', // target role is chef
+          'RECIPE_DATA_BANK',
+          { recipeId: updated._id?.toString() },
         );
-      } catch (err: any) {
-        console.error(`chef recipe approval notification failed: ${err.message}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`chef recipe approval notification failed: ${message}`);
       }
     }
 
@@ -465,10 +469,7 @@ export class RecipesService {
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(productCodes);
     const rawMaterialByCode = new Map(
-      rawMaterialLookups.map((item) => [
-        item.productCodeNormalized,
-        item,
-      ]),
+      rawMaterialLookups.map((item) => [item.productCodeNormalized, item]),
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
 
@@ -523,10 +524,7 @@ export class RecipesService {
         updatePayload.$unset = { foodCostRecipe: '' };
       }
 
-      await this.recipeModel.updateOne(
-        { _id: recipe._id },
-        updatePayload,
-      );
+      await this.recipeModel.updateOne({ _id: recipe._id }, updatePayload);
       updatedRecipes += 1;
     }
 
@@ -579,17 +577,18 @@ export class RecipesService {
     // 🚀 INJECTED: Trigger real-time hierarchical notification for the Unit Manager dashboard
     try {
       await this.notificationsService.createHierarchicalNotification(
-        (actor as any)?.userId || (actor as any)?.id || 'system',
+        actor?.id || 'system',
         'Recipe Resubmitted for Review',
         `The recipe "${updated.name}" has been modified and resubmitted by the Chef for your approval.`,
-        'S079',               // 🌟 siteCode boundary lock for local dashboard routing
-        'unit.manager',       // 🌟 targetUserRole target
-        'RECIPE_APPROVALS',   // 🌟 componentKey tab alignment
-        { recipeId: updated._id?.toString() }
+        updated.site || actor?.site || 'global',
+        'unit.manager', // 🌟 targetUserRole target
+        'RECIPE_APPROVAL_REQUESTS',
+        { recipeId: updated._id?.toString() },
       );
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       // Catch layout errors cleanly so the core recipe submission state doesn't crash if database updates experience lag
-      console.error(`Manager recipe notification failed: ${err.message}`);
+      console.error(`Manager recipe notification failed: ${message}`);
     }
 
     return updated;
@@ -1657,10 +1656,7 @@ export class RecipesService {
           .filter(Boolean),
       );
     const rawMaterialByCode = new Map(
-      rawMaterialLookups.map((item) => [
-        item.productCodeNormalized,
-        item,
-      ]),
+      rawMaterialLookups.map((item) => [item.productCodeNormalized, item]),
     );
     const nextIngredients = ingredients.map((ingredient) => {
       const result = this.applyIngredientCostFromLookup(
