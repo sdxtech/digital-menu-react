@@ -100,6 +100,7 @@ type ChefDataState = {
   recipes: Recipe[]
   menuProductions: MenuProduction[]
   rawMaterials: RawMaterial[]
+  notifications?: any[]
 }
 
 type CreateRecipeInput = {

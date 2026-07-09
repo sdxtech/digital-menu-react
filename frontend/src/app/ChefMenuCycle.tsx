@@ -122,6 +122,7 @@ const ChefMenuCycle = ({
     menuProductions,
     addMenuProductionsBulk,
     fetchRecipes,
+    notifications, 
   } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
   const [productionSite, setProductionSite] = useState('')
   const [loadedProductionSite, setLoadedProductionSite] = useState('')
@@ -1315,96 +1316,121 @@ const ChefMenuCycle = ({
                 const recipeSuggestions = getRecipeSuggestions(row.recipeQuery)
                 return (
                   <Fragment key={row.id}>
-                    <tr className="border-t border-border">
-                      <td className="px-2 py-3">
-                        <div className="flex justify-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMenuRow(row.id)}
-                            className="dm-x-button text-sm font-semibold leading-none"
-                            aria-label="Remove menu row"
-                            title="Remove menu row"
-                          >
-                            X
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-2 py-3 text-center text-sm text-muted">
-                        {(inputPage - 1) * INPUT_ROWS_PER_PAGE + index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted">
-                        {selectedRecipe?.recipeCode ?? '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          list={`menu-options-${row.id}`}
-                          value={row.recipeQuery}
-                          onChange={(event) =>
-                            updateRowMenuQuery(row.id, event.target.value)
-                          }
-                          placeholder={
-                            availableRecipes.length === 0
-                              ? 'No approved menu available'
-                              : 'Search menu'
-                          }
-                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                        />
-                        <datalist id={`menu-options-${row.id}`}>
-                          {recipeSuggestions.map((recipe) => (
-                            <option
-                              key={recipe.id}
-                              value={recipe.name}
-                              label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
-                            />
-                          ))}
-                        </datalist>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted">
-                        {selectedRecipe?.category ?? '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={row.portion === '' ? '' : String(row.portion)}
-                          onChange={(event) =>
-                            updateRowPortion(row.id, event.target.value)
-                          }
-                          placeholder="Example: 10"
-                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                        />
-                      </td>
-                      {showEstimatedCostColumns ? (
-                        <>
-                          <td className="px-4 py-3 font-medium">
-                            {estimatedCostSummary.pending
-                              ? 'Loading...'
-                              : formatPrice(estimatedTotalCost)}
-                          </td>
-                          <td className="px-4 py-3 font-medium">
-                            {estimatedCostSummary.pending
-                              ? 'Loading...'
-                              : formatPrice(estimatedCostPerPax)}
-                          </td>
-                        </>
-                      ) : null}
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          disabled={!selectedRecipe}
-                          onClick={() => {
-                            if (!selectedRecipe) return
-                            toggleMenuRowDetails(row.id)
-                          }}
-                          className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-expanded={isDetailsOpen}
-                        >
-                          {isDetailsOpen ? 'Hide details' : 'View details'}
-                        </button>
-                      </td>
-                    </tr>
+  {(() => {
+    // 1. Check if this specific row ID matches an unread notification payload ID
+    const isNewlyAdded = notifications?.some(
+      (notif) => notif.componentKey === 'MENU_PRODUCTION_RECORDS' && notif.payload?.productionId === row.id
+    );
+
+    return (
+      <>
+        <tr 
+          className={`border-t border-border transition-all duration-500 ${
+            isNewlyAdded 
+              ? 'bg-yellow-50/70 border-l-4 border-l-yellow-500 font-medium shadow-sm' 
+              : ''
+          }`}
+        >
+          <td className="px-2 py-3">
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => handleRemoveMenuRow(row.id)}
+                className="dm-x-button text-sm font-semibold leading-none"
+                aria-label="Remove menu row"
+                title="Remove menu row"
+              >
+                X
+              </button>
+            </div>
+          </td>
+          <td className="px-2 py-3 text-center text-sm text-muted">
+            <div className="inline-flex items-center justify-center gap-1.5">
+              <span>{(inputPage - 1) * INPUT_ROWS_PER_PAGE + index + 1}</span>
+              {/* 2. Add a visual pulse badge next to the row sequence index number */}
+              {isNewlyAdded && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800 animate-pulse">
+                  NEW
+                </span>
+              )}
+            </div>
+          </td>
+          <td className="px-4 py-3 text-sm text-muted">
+            {selectedRecipe?.recipeCode ?? '-'}
+          </td>
+          <td className="px-4 py-3">
+            <input
+              type="text"
+              list={`menu-options-${row.id}`}
+              value={row.recipeQuery}
+              onChange={(event) =>
+                updateRowMenuQuery(row.id, event.target.value)
+              }
+              placeholder={
+                availableRecipes.length === 0
+                  ? 'No approved menu available'
+                  : 'Search menu'
+              }
+              className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+            />
+            <datalist id={`menu-options-${row.id}`}>
+              {recipeSuggestions.map((recipe) => (
+                <option
+                  key={recipe.id}
+                  value={recipe.name}
+                  label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
+                />
+              ))}
+            </datalist>
+          </td>
+          <td className="px-4 py-3 text-sm text-muted">
+            {selectedRecipe?.category ?? '-'}
+          </td>
+          <td className="px-4 py-3">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={row.portion === '' ? '' : String(row.portion)}
+              onChange={(event) =>
+                updateRowPortion(row.id, event.target.value)
+              }
+              placeholder="Example: 10"
+              className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+            />
+          </td>
+          {showEstimatedCostColumns ? (
+            <>
+              <td className="px-4 py-3 font-medium">
+                {estimatedCostSummary.pending
+                  ? 'Loading...'
+                  : formatPrice(estimatedTotalCost)}
+              </td>
+              <td className="px-4 py-3 font-medium">
+                {estimatedCostSummary.pending
+                  ? 'Loading...'
+                  : formatPrice(estimatedCostPerPax)}
+              </td>
+            </>
+          ) : null}
+          <td className="px-4 py-3">
+            <button
+              type="button"
+              disabled={!selectedRecipe}
+              onClick={() => {
+                if (!selectedRecipe) return;
+                toggleMenuRowDetails(row.id);
+              }}
+              className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-expanded={isDetailsOpen}
+            >
+              {isDetailsOpen ? 'Hide details' : 'View details'}
+            </button>
+          </td>
+        </tr>
+      </>
+    );
+  })()}
                     {isDetailsOpen ? (
                       <tr className="border-t border-border bg-background">
                         <td colSpan={inputTableColumnCount} className="px-4 py-4">

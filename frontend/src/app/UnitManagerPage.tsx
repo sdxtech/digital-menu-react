@@ -180,7 +180,7 @@ const downloadExcel = (
 }
 
 const UnitManagerPage = () => {
-  const { accessToken } = useAuth()
+  const { accessToken, notifications } = useAuth()
   const [searchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const {
@@ -213,6 +213,8 @@ const UnitManagerPage = () => {
   const [activeSection, setActiveSection] = useState<ApprovalCenterSection>(() =>
     isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
   )
+  console.log("UM Notifications Data:", notifications);
+  console.log("UM Production Batches Data:", menuProductionGroups);
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
@@ -968,17 +970,36 @@ const UnitManagerPage = () => {
                         (item) => item.approvalStatus === 'pending',
                       ).length
 
+                      // 1. Calculate if this specific production code matches the notification
+                      const isNewlyAdded = Array.isArray(notifications) && notifications.some(
+                        (n) => 
+                          n.componentKey === 'MENU_PRODUCTION_APPROVAL' && 
+                          n.payload?.productionCode === group.productionCode
+                      )
+
                       return (
                         <Fragment key={groupKey}>
-                          <tr className="border-t border-border">
+                          {/* 2. Soft golden tint applied conditionally to the row background */}
+                          <tr className={`border-t border-border transition-colors ${isNewlyAdded ? 'bg-amber-50/60 hover:bg-amber-50/80' : 'hover:bg-muted/50'}`}>
                             <td className="px-4 py-3 text-sm text-muted">
                               {(menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE +
                                 index +
                                 1}
                             </td>
                             <td className="px-4 py-3">{group.date}</td>
-                            <td className="px-4 py-3 text-xs text-muted">
-                              {group.productionCode ?? '-'}
+                            
+                            {/* 3. Production Code cell updated to feature the flashing badge */}
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={isNewlyAdded ? 'font-semibold text-amber-950 text-sm' : 'text-xs text-muted'}>
+                                  {group.productionCode ?? '-'}
+                                </span>
+                                {isNewlyAdded && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white animate-pulse tracking-wide">
+                                    NEW
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3">{submittedByLabel}</td>
                             <td className="px-4 py-3">

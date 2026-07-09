@@ -1,7 +1,9 @@
 import {
-  createContext,
-  useCallback,
+  Fragment,
+  useEffect,
   useContext,
+  useCallback,
+  createContext,
   useMemo,
   useState,
   type ReactNode,
@@ -24,6 +26,7 @@ export type User = {
 type AuthContextValue = {
   user: User | null
   accessToken: string | null
+  notifications?: any[];
   login: (email: string, password: string) => Promise<User>
   logout: () => void
   updateUser: (updates: Partial<User>) => void
@@ -126,10 +129,40 @@ const readStoredUser = (): User | null => {
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  
   const [user, setUser] = useState<User | null>(() => readStoredUser())
   const [accessToken, setAccessToken] = useState<string | null>(() =>
     readStoredToken(),
   )/* State untuk menyimpan informasi pengguna dan token akses, dengan nilai awal yang dibaca dari storage. */
+
+  // 1. State to hold the live notifications list array
+  const [notifications, setNotifications] = useState<any[]>([
+  { componentKey: 'MENU_PRODUCTION_APPROVAL', payload: { productionCode: 'MPR0060' } }
+])
+
+  // 2. Memoized function to fetch notifications from the API backend route
+  const fetchNotifications = useCallback(async () => {
+    if (!accessToken) return
+    try {
+      const res = await apiFetch<any>('/notifications') 
+      if (res && Array.isArray(res)) {
+        setNotifications(res)
+      } else if (res && res.data) {
+        setNotifications(res.data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch notifications:', err)
+    }
+  }, [accessToken])
+
+  // 3. Side-effect to automatically trigger the fetch or clear on logout
+  useEffect(() => {
+    if (accessToken) {
+      fetchNotifications()
+    } else {
+      setNotifications([])
+    }
+  }, [accessToken, fetchNotifications])
 
   const login = async (email: string, password: string) => {
     const {
@@ -143,7 +176,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })/* Fungsi untuk melakukan login dengan mengirimkan email dan password ke endpoint /auth/login, dan menerima token akses dan refresh token dari respons. */
-
     let nextRole: Role | null = null/* Peran pengguna hasil validasi dari endpoint /auth/me; jika tidak ada role valid, login akan ditolak. */
     let me: {
       id?: string
@@ -195,7 +227,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } else {
       removeStoredItem(REFRESH_TOKEN_KEY)/* Jika tidak ada refresh token, pastikan untuk menghapus token refresh yang mungkin tersisa dari penyimpanan sebelumnya. */
     }
-    return nextUser/* Simpan informasi pengguna dan token akses ke state dan storage, dan kembalikan objek User yang baru. */
+    return nextUser
   }
 
   const logout = useCallback(() => {
@@ -226,11 +258,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       accessToken,
       updateUser,
-    }),/* Nilai yang disediakan oleh konteks autentikasi, yang mencakup informasi pengguna, token akses, dan fungsi login/logout. Nilai ini di-memoize untuk menghindari re-render yang tidak perlu pada komponen yang menggunakan konteks ini. */
-    [user, accessToken, logout, updateUser],/* Nilai akan di-update jika terjadi perubahan pada informasi pengguna, token akses, atau fungsi logout. */
+      notifications, /* Pass notifications down to the app */
+    }),/* Nilai yang disediakan oleh konteks autentikasi... */
+    [user, accessToken, logout, updateUser, notifications],/* Added notifications here so it updates dynamically */
   )
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>/* Komponen provider untuk konteks autentikasi, yang membungkus anak-anaknya dengan AuthContext.Provider dan menyediakan nilai autentikasi. */
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>/* Komponen provider untuk konteks autentikasi... */
 }
 
 export const useAuth = () => {

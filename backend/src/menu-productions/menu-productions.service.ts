@@ -547,7 +547,10 @@ export class MenuProductionsService implements OnModuleInit {
         updated.site || 'global',
         'chef',
         'MENU_PRODUCTION_RECORDS',
-        { productionCode: updated.productionCode }
+        { 
+          productionCode: updated.productionCode,
+          productionId: updated._id?.toString() || updated.id?.toString()
+       }
       ).catch(err => this.logger.error(`Chef notification failed: ${err.message}`));
     } 
     // 🌟 ADDED: If rejected or refused, clear Manager counts and notify the Chef!
@@ -614,7 +617,7 @@ export class MenuProductionsService implements OnModuleInit {
         'chef',
         'STORE_REQUEST_RECORDS',
         { productionCode: item.productionCode }
-      ).catch(err => this.logger.error(`Chef fulfillment notification failed: ${err.message}`));
+      ).catch(err => this.logger.error(`Chef fulfillment notification failed: ${err.message}`)); 
 
       // Your original tracking field logic remains exactly here:
       const actor = fulfilledBy?.trim();
