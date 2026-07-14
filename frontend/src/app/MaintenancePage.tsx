@@ -21,7 +21,7 @@ const MaintenancePage: React.FC = () => {
         Our developers are currently running scheduled system upgrades to serve you better. 
         We'll be back online shortly!
       </p>
-      <div style={{
+      <div style={{ 
         fontSize: '0.9rem',
         color: '#94a3b8',
         borderTop: '1px solid #e2e8f0',

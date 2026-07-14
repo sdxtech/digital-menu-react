@@ -180,7 +180,7 @@ const downloadExcel = (
 }
 
 const UnitManagerPage = () => {
-  const { accessToken, notifications } = useAuth()
+  const { accessToken } = useAuth()
   const [searchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const {
@@ -192,31 +192,27 @@ const UnitManagerPage = () => {
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [pendingRecipes, setPendingRecipes] = useState<Recipe[]>([])
-  const [menuProductionGroups, setMenuProductionGroups] = useState<
-    StoreRequestGroup[]
-  >([])
-  const [recipeRejectTarget, setRecipeRejectTarget] = useState<Recipe | null>(
-    null,
-  )
+  const [menuProductionGroups, setMenuProductionGroups] = useState<StoreRequestGroup[]>([])
+  const [recipeRejectTarget, setRecipeRejectTarget] = useState<Recipe | null>(null)
   const [recipeRejectReason, setRecipeRejectReason] = useState('')
   const [recipeRejectError, setRecipeRejectError] = useState('')
   const [recipeRejectSubmitting, setRecipeRejectSubmitting] = useState(false)
-  const [menuRejectTarget, setMenuRejectTarget] =
-    useState<StoreRequestMenu | null>(null)
+  const [menuRejectTarget, setMenuRejectTarget] = useState<StoreRequestMenu | null>(null)
   const [menuRejectReason, setMenuRejectReason] = useState('')
   const [menuRejectError, setMenuRejectError] = useState('')
   const [menuRejectSubmitting, setMenuRejectSubmitting] = useState(false)
   const [expandedRecipeKeys, setExpandedRecipeKeys] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
+
+  const [locallyReadCodes, setLocallyReadCodes] = useState<string[]>([])
+  const [locallyReadRecipeKeys, setLocallyReadRecipeKeys] = useState<string[]>([])
+
   const [recipePage, setRecipePage] = useState(1)
   const [menuGroupPage, setMenuGroupPage] = useState(1)
   const [activeSection, setActiveSection] = useState<ApprovalCenterSection>(() =>
     isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
   )
-  console.log("UM Notifications Data:", notifications);
-  console.log("UM Production Batches Data:", menuProductionGroups);
 
-  // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
     if (!accessToken) return
     try {
@@ -249,7 +245,6 @@ const UnitManagerPage = () => {
     setActionMessage('')
     fetchPending().catch(() => null)
 
-    // 🌟 Clear the badge dynamically based on which sub-menu is active!
     const currentSite = 'S079';
     
     fetch('/api/notifications/mark-read', {
@@ -261,13 +256,11 @@ const UnitManagerPage = () => {
       })
     })
     .then(() => {
-      // 🚀 ADVANCED UI APPROACH: Broadcast a localized update event to the layout
-      // to instantly drop the badge visibility without waiting for the 5s loop!
       window.dispatchEvent(new CustomEvent('refresh-notifications'));
     })
     .catch((err) => console.error('Failed to clear manager badges automatically:', err));
 
-  }, [fetchPending, sectionParam]) // 🚀 Added sectionParam here so it fires when you switch tabs!
+  }, [fetchPending, sectionParam])
 
   useEffect(() => {
     const nextSection = isApprovalCenterSection(sectionParam)
@@ -306,6 +299,30 @@ const UnitManagerPage = () => {
         ? prev.filter((item) => item !== recipeKey)
         : [...prev, recipeKey],
     )
+
+    const recipeItem = paginatedRecipes.find((r) => getRecipeKey(r) === recipeKey);
+    const targetId = recipeItem?.id || recipeItem?._id;
+    const recipeCode = recipeItem?.recipeCode;
+    
+    if (recipeCode) {
+      setLocallyReadRecipeKeys((prev) => [...prev, recipeKey]);
+      localStorage.setItem('read_recipe_' + recipeCode, 'true');
+    }
+    
+    if (recipeItem && recipeKey && targetId) {
+      const savedToken = sessionStorage.getItem('dm-auth-token') || '';
+      apiFetch(
+        '/notifications/mark-read', 
+        {
+          method: 'POST',
+          body: JSON.stringify({ 
+            recipeId: targetId,
+            componentKey: 'RECIPE_APPROVALS'
+          })
+        },
+        savedToken
+      ).catch((err) => console.error("API Error updating recipe view state:", err));
+    }
   }
 
   const toggleExpandedDate = (groupKey: string) => {
@@ -314,6 +331,14 @@ const UnitManagerPage = () => {
         ? prev.filter((item) => item !== groupKey)
         : [...prev, groupKey],
     )
+
+    const group = paginatedMenuGroups.find((g) => getGroupKey(g) === groupKey);
+    const productionCode = group?.productionCode;
+    
+    if (productionCode) {
+      setLocallyReadCodes((prev) => [...prev, productionCode]);
+      localStorage.setItem('read_menu_' + productionCode, 'true');
+    }
   }
 
   const handleExportMenuProductionGroup = (group: StoreRequestGroup) => {
@@ -752,14 +777,29 @@ const UnitManagerPage = () => {
                         '-'
                       const description = item.description?.trim() || '-'
 
+                      // SIMPLE FIX: If it hasn't been saved to localStorage yet, it's new.
+                      const isRecipeNewlyAdded = item.recipeCode ? (
+                        !locallyReadRecipeKeys.includes(recipeKey) &&
+                        localStorage.getItem('read_recipe_' + item.recipeCode) !== 'true'
+                      ) : false;
+
                       return (
                         <Fragment key={recipeKey}>
-                          <tr className="border-t border-border">
+                          <tr className={`border-t border-border transition-colors duration-200 ${
+                            isRecipeNewlyAdded ? 'bg-[#FFFDF4] hover:bg-[#FFFADF]' : 'hover:bg-muted/50'
+                          }`}>
                             <td className="px-4 py-3 text-sm text-muted">
                               {(recipePage - 1) * RECIPE_ITEMS_PER_PAGE + index + 1}
                             </td>
                             <td className="px-4 py-3 font-medium">
-                              {item.recipeCode ?? '-'}
+                              <div className="flex items-center gap-2">
+                                <span>{item.recipeCode ?? '-'}</span>
+                                {isRecipeNewlyAdded && (
+                                  <span className="inline-flex items-center rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white animate-pulse">
+                                    New
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3">{item.name}</td>
                             <td className="px-4 py-3">{item.category}</td>
@@ -791,7 +831,7 @@ const UnitManagerPage = () => {
                                       )
                                     }
                                   }}
-                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary/90"
                                 >
                                   Approve
                                 </button>
@@ -840,21 +880,11 @@ const UnitManagerPage = () => {
                                       <table className="dm-table min-w-full text-sm">
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                            <th className="w-12 px-4 py-3 font-semibold">
-                                              No
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Product code
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Ingredient name
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Qty
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Unit
-                                            </th>
+                                            <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                            <th className="px-4 py-3 font-semibold">Product code</th>
+                                            <th className="px-4 py-3 font-semibold">Ingredient name</th>
+                                            <th className="px-4 py-3 font-semibold">Qty</th>
+                                            <th className="px-4 py-3 font-semibold">Unit</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -890,9 +920,7 @@ const UnitManagerPage = () => {
                                                   </td>
                                                   <td className="px-4 py-3">
                                                     {ingredient.unitOfMeasures
-                                                      ? formatUnitLabel(
-                                                          ingredient.unitOfMeasures,
-                                                        )
+                                                      ? formatUnitLabel(ingredient.unitOfMeasures)
                                                       : '-'}
                                                   </td>
                                                 </tr>
@@ -970,17 +998,15 @@ const UnitManagerPage = () => {
                         (item) => item.approvalStatus === 'pending',
                       ).length
 
-                      // 1. Calculate if this specific production code matches the notification
-                      const isNewlyAdded = Array.isArray(notifications) && notifications.some(
-                        (n) => 
-                          n.componentKey === 'MENU_PRODUCTION_APPROVAL' && 
-                          n.payload?.productionCode === group.productionCode
-                      )
+                      // SIMPLE FIX: If it hasn't been saved to localStorage yet, it's new.
+                      const isMenuNewlyAdded = group.productionCode ? (
+                        !locallyReadCodes.includes(group.productionCode) &&
+                        localStorage.getItem('read_menu_' + group.productionCode) !== 'true'
+                      ) : false;
 
                       return (
                         <Fragment key={groupKey}>
-                          {/* 2. Soft golden tint applied conditionally to the row background */}
-                          <tr className={`border-t border-border transition-colors ${isNewlyAdded ? 'bg-amber-50/60 hover:bg-amber-50/80' : 'hover:bg-muted/50'}`}>
+                          <tr className={`border-t border-border transition-colors ${isMenuNewlyAdded ? 'bg-[#FFFDF4] hover:bg-[#FFFADF]' : 'hover:bg-muted/50'}`}>
                             <td className="px-4 py-3 text-sm text-muted">
                               {(menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE +
                                 index +
@@ -988,14 +1014,13 @@ const UnitManagerPage = () => {
                             </td>
                             <td className="px-4 py-3">{group.date}</td>
                             
-                            {/* 3. Production Code cell updated to feature the flashing badge */}
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <span className={isNewlyAdded ? 'font-semibold text-amber-950 text-sm' : 'text-xs text-muted'}>
+                                <span className={isMenuNewlyAdded ? 'font-semibold text-amber-950 text-sm' : 'text-xs text-muted'}>
                                   {group.productionCode ?? '-'}
                                 </span>
-                                {isNewlyAdded && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white animate-pulse tracking-wide">
+                                {isMenuNewlyAdded && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white animate-pulse tracking-wide uppercase">
                                     NEW
                                   </span>
                                 )}
@@ -1008,8 +1033,7 @@ const UnitManagerPage = () => {
                                   {getApprovalStatusLabel('pending')}
                                 </span>
                                 <span className="text-muted">
-                                  {pendingMenuCount} of {group.items.length} menus
-                                  pending
+                                  {pendingMenuCount} of {group.items.length} menus pending
                                 </span>
                               </div>
                             </td>
@@ -1050,33 +1074,15 @@ const UnitManagerPage = () => {
                                       <table className="dm-table min-w-full text-sm">
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                            <th className="w-12 px-4 py-3 font-semibold">
-                                              No
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Menu ID
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Menu
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Category
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Portion
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Estimated Cost
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Cost/Pax
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Approval Status
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Action
-                                            </th>
+                                            <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                            <th className="px-4 py-3 font-semibold">Menu ID</th>
+                                            <th className="px-4 py-3 font-semibold">Menu</th>
+                                            <th className="px-4 py-3 font-semibold">Category</th>
+                                            <th className="px-4 py-3 font-semibold">Portion</th>
+                                            <th className="px-4 py-3 font-semibold">Estimated Cost</th>
+                                            <th className="px-4 py-3 font-semibold">Cost/Pax</th>
+                                            <th className="px-4 py-3 font-semibold">Approval Status</th>
+                                            <th className="px-4 py-3 font-semibold">Action</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -1100,11 +1106,9 @@ const UnitManagerPage = () => {
                                                 Number.isFinite(
                                                   Number(item.estimatedCostPerPax),
                                                 )
-                                                  ? Number(
-                                                      item.estimatedCostPerPax,
-                                                    )
+                                                  ? Number(item.estimatedCostPerPax)
                                                   : estimatedCost !== undefined &&
-                                                      item.portion > 0
+                                                    item.portion > 0
                                                     ? estimatedCost / item.portion
                                                     : undefined
 
@@ -1117,7 +1121,9 @@ const UnitManagerPage = () => {
                                                     {itemIndex + 1}
                                                   </td>
                                                   <td className="px-4 py-3 font-medium">
-                                                    {item.recipeCode ?? '-'}
+                                                    <div className="flex items-center gap-2">
+                                                      <span>{item.recipeCode ?? '-'}</span>
+                                                    </div>
                                                   </td>
                                                   <td className="px-4 py-3">
                                                     {item.menuName}
@@ -1132,49 +1138,34 @@ const UnitManagerPage = () => {
                                                     {formatPrice(estimatedCost)}
                                                   </td>
                                                   <td className="px-4 py-3 font-medium">
-                                                    {formatPrice(
-                                                      estimatedCostPerPax,
-                                                    )}
+                                                    {formatPrice(estimatedCostPerPax)}
                                                   </td>
                                                   <td className="px-4 py-3">
                                                     <span
                                                       className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                                                        item.approvalStatus ===
-                                                        'approved'
+                                                        item.approvalStatus === 'approved'
                                                           ? 'bg-primary-soft text-primary'
-                                                          : item.approvalStatus ===
-                                                              'rejected'
+                                                          : item.approvalStatus === 'rejected'
                                                             ? 'bg-danger/10 text-danger'
                                                             : 'bg-background text-muted'
                                                       }`}
                                                     >
-                                                      {getApprovalStatusLabel(
-                                                        item.approvalStatus,
-                                                      )}
+                                                      {getApprovalStatusLabel(item.approvalStatus)}
                                                     </span>
                                                   </td>
                                                   <td className="px-4 py-3">
-                                                    {item.approvalStatus ===
-                                                    'pending' ? (
+                                                    {item.approvalStatus === 'pending' ? (
                                                       <div className="flex flex-wrap gap-2">
                                                         <button
                                                           type="button"
-                                                          onClick={() =>
-                                                            handleMenuApproval(
-                                                              item,
-                                                            )
-                                                          }
+                                                          onClick={() => handleMenuApproval(item)}
                                                           className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
                                                         >
                                                           Approve
                                                         </button>
                                                         <button
                                                           type="button"
-                                                          onClick={() =>
-                                                            openMenuRejectModal(
-                                                              item,
-                                                            )
-                                                          }
+                                                          onClick={() => openMenuRejectModal(item)}
                                                           className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
                                                         >
                                                           Reject
@@ -1195,44 +1186,25 @@ const UnitManagerPage = () => {
                                     </div>
                                     {group.missingRecipes.length > 0 ? (
                                       <p className="mt-3 text-xs text-danger">
-                                        Recipe not found for:{' '}
-                                        {group.missingRecipes.join(', ')}
+                                        Recipe not found for: {group.missingRecipes.join(', ')}
                                       </p>
                                     ) : null}
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
-                                    <p className="text-xs text-muted">
-                                      Ingredient summary
-                                    </p>
+                                    <p className="text-xs text-muted">Ingredient summary</p>
                                     <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                       <table className="dm-table min-w-full text-sm">
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                            <th className="w-12 px-4 py-3 font-semibold">
-                                              No
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Product code
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Ingredient name
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Qty
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Unit
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Vendor
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Price
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Ingredient Cost
-                                            </th>
+                                            <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                            <th className="px-4 py-3 font-semibold">Product code</th>
+                                            <th className="px-4 py-3 font-semibold">Ingredient name</th>
+                                            <th className="px-4 py-3 font-semibold">Qty</th>
+                                            <th className="px-4 py-3 font-semibold">Unit</th>
+                                            <th className="px-4 py-3 font-semibold">Vendor</th>
+                                            <th className="px-4 py-3 font-semibold">Price</th>
+                                            <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -1242,8 +1214,7 @@ const UnitManagerPage = () => {
                                                 colSpan={8}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
-                                                No ingredients available to
-                                                calculate.
+                                                No ingredients available to calculate.
                                               </td>
                                             </tr>
                                           ) : (
@@ -1265,9 +1236,7 @@ const UnitManagerPage = () => {
                                                   {formatQuantity(item.qty)}
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                  {formatUnitLabel(
-                                                    item.unitOfMeasures,
-                                                  )}
+                                                  {formatUnitLabel(item.unitOfMeasures)}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   {item.vendor ?? '-'}
@@ -1276,9 +1245,7 @@ const UnitManagerPage = () => {
                                                   {formatPrice(item.price)}
                                                 </td>
                                                 <td className="px-4 py-3 font-medium">
-                                                  {formatPrice(
-                                                    item.ingredientCost,
-                                                  )}
+                                                  {formatPrice(item.ingredientCost)}
                                                 </td>
                                               </tr>
                                             ))
@@ -1305,4 +1272,4 @@ const UnitManagerPage = () => {
   )
 }
 
-export default UnitManagerPage
+export default UnitManagerPage;
