@@ -10,8 +10,20 @@ export type StoreRequestSummaryIngredient = {
   plannedIngredientCost?: number
 }
 
+type AggregateStoreRequestSummaryOptions = {
+  splitByVendor?: boolean
+}
+
+type StoreRequestSummaryGroup = {
+  items?: Array<{
+    ingredients?: StoreRequestSummaryIngredient[]
+  }>
+  summary?: StoreRequestSummaryIngredient[]
+}
+
 export const aggregateStoreRequestSummary = (
   items: StoreRequestSummaryIngredient[] = [],
+  options: AggregateStoreRequestSummaryOptions = {},
 ): StoreRequestSummaryIngredient[] => {
   const summaryMap = new Map<string, StoreRequestSummaryIngredient>()
 
@@ -19,8 +31,10 @@ export const aggregateStoreRequestSummary = (
     const productCode = String(item.productCode ?? '').trim()
     const name = String(item.name ?? '').trim()
     const unitOfMeasures = String(item.unitOfMeasures ?? '').trim()
-    const key = productCode || `${name}__${unitOfMeasures}`
-    if (!key) return
+    const vendor = String(item.vendor ?? '').trim()
+    const keyBase = productCode || `${name}__${unitOfMeasures}`
+    if (!keyBase) return
+    const key = options.splitByVendor ? `${keyBase}__${vendor}` : keyBase
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
     const existing = summaryMap.get(key)
@@ -35,8 +49,8 @@ export const aggregateStoreRequestSummary = (
           (existing.plannedIngredientCost ?? 0) +
           Number(item.plannedIngredientCost)
       }
-      if (existing.vendor !== item.vendor) {
-        existing.vendor = existing.vendor ? 'Multiple' : item.vendor
+      if ((existing.vendor ?? '') !== vendor) {
+        existing.vendor = existing.vendor ? 'Multiple' : vendor || undefined
       }
       if (existing.vendorSite !== item.vendorSite) {
         existing.vendorSite = undefined
@@ -57,7 +71,7 @@ export const aggregateStoreRequestSummary = (
       name,
       unitOfMeasures,
       qty,
-      vendor: item.vendor,
+      vendor: vendor || undefined,
       vendorSite: item.vendorSite,
       price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
       ingredientCost: Number.isFinite(Number(item.ingredientCost))
@@ -72,4 +86,14 @@ export const aggregateStoreRequestSummary = (
   })
 
   return Array.from(summaryMap.values())
+}
+
+export const aggregateStoreRequestSummaryByVendor = (
+  group: StoreRequestSummaryGroup,
+) => {
+  const ingredientRows =
+    group.items?.flatMap((item) => item.ingredients ?? []) ?? []
+  const sourceItems = ingredientRows.length ? ingredientRows : group.summary ?? []
+
+  return aggregateStoreRequestSummary(sourceItems, { splitByVendor: true })
 }
