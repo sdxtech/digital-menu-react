@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
-import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
+import {
+  aggregateStoreRequestSummary,
+  aggregateStoreRequestSummaryByVendor,
+} from '../lib/store-request-summary'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 
@@ -429,7 +432,7 @@ const StorekeeperPage = () => {
 
     const summaryRows: Array<Array<unknown>> = [
       ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
         item.productCode,
         item.name,
         item.vendor ?? '',

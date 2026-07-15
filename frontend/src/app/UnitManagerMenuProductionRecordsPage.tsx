@@ -3,7 +3,10 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
-import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
+import {
+  aggregateStoreRequestSummary,
+  aggregateStoreRequestSummaryByVendor,
+} from '../lib/store-request-summary'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -385,7 +388,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
 
     const summaryRows: Array<Array<unknown>> = [
       ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
         item.productCode,
         item.name,
         item.vendor ?? '',
