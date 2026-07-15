@@ -49,6 +49,9 @@ const ChefAddRawMaterial = () => {
   const [importCancelling, setImportCancelling] = useState(false)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
+  // Custom Dropdown Open State Toggle
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
   const updateRawMaterialForm = <K extends keyof RawMaterialForm>(
     field: K,
     value: RawMaterialForm[K],
@@ -326,219 +329,255 @@ const ChefAddRawMaterial = () => {
     }
   }, [fetchRawMaterials, importing, importStartedAt, rawMaterialsMeta.limit])
 
+  // Locate current label from array map values
+  const currentUnitLabel = unitOfMeasuresOptions.find(
+    (o) => o.value === rawMaterialForm.unitOfMeasures
+  )?.label || 'Select a unit'
+
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Add Raw Material</h1>
+    <div className="w-full py-2">
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold">Add Raw Material</h1>
+            </div>
+            <ActionButton
+              action="import"
+              onClick={openImportModal}
+              iconClassName="bi bi-upload text-base"
+              size="sm"
+            />
           </div>
-          <ActionButton
-            action="import"
-            onClick={openImportModal}
-            iconClassName="bi bi-upload text-base"
-            size="sm"
-          />
-        </div>
 
-        {importOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div
-              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-foreground">
-                    Import Raw Material
-                  </h3>
-                  <p className="mt-1 text-xs text-muted">
-                    Upload Excel file
-                  </p>
-                  <p className="mt-2 text-sm text-muted">
-                    Upload an Excel file to add multiple raw materials at once.
-                  </p>
+          {importOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div
+                className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-foreground">
+                      Import Raw Material
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      Upload Excel file
+                    </p>
+                    <p className="mt-2 text-sm text-muted">
+                      Upload an Excel file to add multiple raw materials at once.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    disabled={importing || importCancelling}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Close
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={closeImportModal}
-                  disabled={importing || importCancelling}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Close
-                </button>
-              </div>
 
-              <div className="mt-5 space-y-4">
-                <div>
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      File Excel
+                    </label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleImportFileChange}
+                      disabled={importing || importCancelling}
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                    />
+                    {importFile ? (
+                      <p className="mt-2 text-xs text-muted">
+                        Selected file: {importFile.name}
+                      </p>
+                    ) : null}
+                    {importError ? (
+                      <p className="mt-2 text-xs font-medium text-red-600">
+                        {importError}
+                      </p>
+                    ) : null}
+                    {importing ? (
+                      <div className="mt-3" aria-label="Import in progress">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-primary-soft">
+                          <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+                        </div>
+                        <span className="sr-only">Import in progress</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  {importing ? (
+                    <ActionButton
+                      action="cancel"
+                      onClick={handleCancelImport}
+                      disabled={!importJobId || importCancelling}
+                      fullWidth
+                    />
+                  ) : (
+                    <ActionButton
+                      action="import"
+                      onClick={handleImportRawMaterials}
+                      disabled={importing}
+                      fullWidth
+                    />
+                  )}
+                  {importMessage ? (
+                    <p className="text-xs font-medium text-primary">
+                      {importMessage}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {importResult ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div
+                className="w-full max-w-md rounded-md border border-border bg-surface p-6 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-muted">
+                      Import Raw Material
+                    </p>
+                    <h3
+                      className={`mt-2 text-lg font-semibold ${
+                        importResult.status === 'success'
+                          ? 'text-primary'
+                          : importResult.status === 'cancelled'
+                            ? 'text-amber-700'
+                          : 'text-red-600'
+                      }`}
+                    >
+                      {importResult.title}
+                    </h3>
+                    <p className="mt-2 text-sm text-muted">
+                      {importResult.message}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={closeImportResult}
+                    className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+                  >
+                    Ok
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-6 lg:grid-cols-12">
+            <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-12">
+              <h3 className="font-semibold">Material details</h3>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
                   <label className="text-sm font-medium text-foreground">
-                    File Excel
+                    Product name
                   </label>
                   <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleImportFileChange}
-                    disabled={importing || importCancelling}
-                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                    type="text"
+                    value={rawMaterialForm.name}
+                    onChange={(event) =>
+                      updateRawMaterialForm('name', event.target.value)
+                    }
+                    placeholder="Example: Oat Milk"
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                   />
-                  {importFile ? (
-                    <p className="mt-2 text-xs text-muted">
-                      Selected file: {importFile.name}
-                    </p>
-                  ) : null}
-                  {importError ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">
-                      {importError}
-                    </p>
-                  ) : null}
-                  {importing ? (
-                    <div className="mt-3" aria-label="Import in progress">
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-primary-soft">
-                        <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
-                      </div>
-                      <span className="sr-only">Import in progress</span>
-                    </div>
-                  ) : null}
                 </div>
-                {importing ? (
-                  <ActionButton
-                    action="cancel"
-                    onClick={handleCancelImport}
-                    disabled={!importJobId || importCancelling}
-                    fullWidth
+                <div>
+                  <label className="text-sm font-medium text-foreground">
+                    Product code
+                  </label>
+                  <input
+                    type="text"
+                    value={rawMaterialForm.productCode}
+                    onChange={(event) =>
+                      updateRawMaterialForm('productCode', event.target.value)
+                    }
+                    placeholder="Example: RM-001"
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                   />
-                ) : (
-                  <ActionButton
-                    action="import"
-                    onClick={handleImportRawMaterials}
-                    disabled={importing}
-                    fullWidth
-                  />
-                )}
-                {importMessage ? (
-                  <p className="text-xs font-medium text-primary">
-                    {importMessage}
+                </div>
+                
+                {/* Clean Theme-Aligned Dropdown Implementation Container */}
+                <div className="relative">
+                  <label className="text-sm font-medium text-foreground">
+                    Unit of Measures
+                  </label>
+                  
+                  {/* Dropdown Menu Trigger Button Wrapper */}
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="mt-2 flex w-full items-center justify-between rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none shadow-sm transition-all focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  >
+                    <span>{currentUnitLabel}</span>
+                    <i className={`bi bi-chevron-down text-xs text-muted transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Backdrop click closer overlay handler logic */}
+                  {isDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-30 cursor-default" 
+                        onClick={() => setIsDropdownOpen(false)} 
+                      />
+                      
+                      {/* Floating custom list elements rendered above button viewport */}
+                      <ul className="absolute left-0 right-0 z-40 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-white py-1.5 shadow-xl text-sm">
+                        {unitOfMeasuresOptions.map((option) => (
+                          <li
+                            key={option.value}
+                            onClick={() => {
+                              updateRawMaterialForm('unitOfMeasures', option.value)
+                              setIsDropdownOpen(false)
+                            }}
+                            className={`cursor-pointer px-4 py-2 transition-colors duration-150 ${
+                              rawMaterialForm.unitOfMeasures === option.value
+                                ? 'bg-primary-soft text-primary font-medium'
+                                : 'text-foreground hover:bg-muted/60'
+                            }`}
+                          >
+                            {option.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+
+              </div>
+              <div className="mt-6 border-t border-border pt-5">
+                <ActionButton
+                  action="save"
+                  onClick={handleSaveRawMaterial}
+                  className="sm:w-auto"
+                  fullWidth
+                />
+                <p className="mt-3 text-xs text-muted">
+                  After saving, the material will appear in Raw Material Data.
+                </p>
+                {saveError ? (
+                  <p className="mt-2 text-xs font-medium text-red-600">
+                    {saveError}
+                  </p>
+                ) : null}
+                {saveMessage ? (
+                  <p className="mt-2 text-xs font-medium text-primary">
+                    {saveMessage}
                   </p>
                 ) : null}
               </div>
-            </div>
-          </div>
-        ) : null}
-
-        {importResult ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div
-              className="w-full max-w-md rounded-md border border-border bg-surface p-6 shadow-xl"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs text-muted">
-                    Import Raw Material
-                  </p>
-                  <h3
-                    className={`mt-2 text-lg font-semibold ${
-                      importResult.status === 'success'
-                        ? 'text-primary'
-                        : importResult.status === 'cancelled'
-                          ? 'text-amber-700'
-                        : 'text-red-600'
-                    }`}
-                  >
-                    {importResult.title}
-                  </h3>
-                  <p className="mt-2 text-sm text-muted">
-                    {importResult.message}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <button
-                  type="button"
-                  onClick={closeImportResult}
-                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
-                >
-                  Ok
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid gap-6 lg:grid-cols-12">
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-12">
-            <h3 className="font-semibold">Material details</h3>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="text-sm font-medium text-foreground">
-                  Product name
-                </label>
-                <input
-                  type="text"
-                  value={rawMaterialForm.name}
-                  onChange={(event) =>
-                    updateRawMaterialForm('name', event.target.value)
-                  }
-                  placeholder="Example: Oat Milk"
-                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground">
-                  Product code
-                </label>
-                <input
-                  type="text"
-                  value={rawMaterialForm.productCode}
-                  onChange={(event) =>
-                    updateRawMaterialForm('productCode', event.target.value)
-                  }
-                  placeholder="Example: RM-001"
-                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground">
-                  Unit of Measures
-                </label>
-                <select
-                  value={rawMaterialForm.unitOfMeasures}
-                  onChange={(event) =>
-                    updateRawMaterialForm('unitOfMeasures', event.target.value)
-                  }
-                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                >
-                  <option value="">Select a unit</option>
-                  {unitOfMeasuresOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="mt-6 border-t border-border pt-5">
-              <ActionButton
-                action="save"
-                onClick={handleSaveRawMaterial}
-                className="sm:w-auto"
-                fullWidth
-              />
-              <p className="mt-3 text-xs text-muted">
-                After saving, the material will appear in Raw Material Data.
-              </p>
-              {saveError ? (
-                <p className="mt-2 text-xs font-medium text-red-600">
-                  {saveError}
-                </p>
-              ) : null}
-              {saveMessage ? (
-                <p className="mt-2 text-xs font-medium text-primary">
-                  {saveMessage}
-                </p>
-              ) : null}
             </div>
           </div>
         </div>

@@ -159,6 +159,9 @@ const ChefCreateMenu = ({
   const [importMessage, setImportMessage] = useState('')
   const [importOpen, setImportOpen] = useState(false)
 
+  // Custom Category Dropdown Open State Toggle
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false)
+
   const searchTimeoutRef = useRef<number | null>(null)
   const searchRequestRef = useRef(0)
   const isMountedRef = useRef(true)
@@ -821,7 +824,7 @@ const ChefCreateMenu = ({
       }
     }
 
-    try {
+  try {
       const basePayload = {
         name: nextName,
         category: nextCategory,
@@ -884,476 +887,522 @@ const ChefCreateMenu = ({
     baseRecipe?.reviewedBy?.trim() ||
     'Unit Manager'
 
+  // Determine standard trigger view labels matching active selection
+  const currentCategoryLabel = categoriesLoading
+    ? 'Loading categories...'
+    : recipeForm.category || 'Select category'
+
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">
-              {isEditMode ? 'Edit Recipe' : 'Create New Recipe'}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton
-              action="import"
-              onClick={openImportModal}
-              iconClassName="bi bi-upload text-base"
-              size="sm"
-            />
-            {embedded && onClose ? (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close create recipe"
-                title="Close"
-                className="dm-x-button"
-              >
-                <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {isRejectedRecipe ? (
-          <div className="rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
-            <p className="font-semibold text-danger">
-              Rejected by {rejectionReviewer}
-            </p>
-            <p className="mt-2 text-foreground">
-              {baseRecipe?.rejectionReason?.trim() ||
-                'No rejection reason was provided.'}
-            </p>
-          </div>
-        ) : null}
-
-        {importOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div
-              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-foreground">
-                    Import Recipe
-                  </h3>
-                  <p className="mt-1 text-xs text-muted">
-                    Import recipes from Excel
-                  </p>
-                  <p className="mt-2 text-sm text-muted">
-                    Use .xlsx or .xls to import multiple recipes at once.
-                  </p>
-                </div>
+    <div className="w-full py-2">
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold">
+                {isEditMode ? 'Edit Recipe' : 'Create New Recipe'}
+              </h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ActionButton
+                action="import"
+                onClick={openImportModal}
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
+              {embedded && onClose ? (
                 <button
                   type="button"
-                  onClick={closeImportModal}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  onClick={onClose}
+                  aria-label="Close create recipe"
+                  title="Close"
+                  className="dm-x-button"
                 >
-                  Close
+                  <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
                 </button>
-              </div>
+              ) : null}
+            </div>
+          </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    File Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleImportFileChange}
-                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-                  />
-                  {importFile ? (
-                    <p className="mt-2 text-xs text-muted">
-                      Selected file: {importFile.name}
+          {isRejectedRecipe ? (
+            <div className="rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
+              <p className="font-semibold text-danger">
+                Rejected by {rejectionReviewer}
+              </p>
+              <p className="mt-2 text-foreground">
+                {baseRecipe?.rejectionReason?.trim() ||
+                  'No rejection reason was provided.'}
+              </p>
+            </div>
+          ) : null}
+
+          {importOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div
+                className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-foreground">
+                      Import Recipe
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      Import recipes from Excel
                     </p>
-                  ) : null}
-                  {importError ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">
-                      {importError}
+                    <p className="mt-2 text-sm text-muted">
+                      Use .xlsx or .xls to import multiple recipes at once.
                     </p>
-                  ) : null}
-                  {importMessage ? (
-                    <p className="mt-2 text-xs font-medium text-primary">
-                      {importMessage}
-                    </p>
-                  ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                  >
+                    Close
+                  </button>
                 </div>
 
-                <ActionButton
-                  action="import"
-                  onClick={handleImportRecipes}
-                  className="h-fit self-end"
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-foreground">
+                      File Excel
+                    </label>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleImportFileChange}
+                      className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
+                    />
+                    {importFile ? (
+                      <p className="mt-2 text-xs text-muted">
+                        Selected file: {importFile.name}
+                      </p>
+                    ) : null}
+                    {importError ? (
+                      <p className="mt-2 text-xs font-medium text-red-600">
+                        {importError}
+                      </p>
+                    ) : null}
+                    {importMessage ? (
+                      <p className="mt-2 text-xs font-medium text-primary">
+                        {importMessage}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <ActionButton
+                    action="import"
+                    onClick={handleImportRecipes}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+            <h3 className="font-semibold">Recipe details</h3>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-foreground">
+                  Recipe name
+                </label>
+                <input
+                  type="text"
+                  value={recipeForm.name}
+                  onChange={(event) => updateRecipeForm('name', event.target.value)}
+                  placeholder="Example: Teriyaki Chicken Rice"
+                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                />
+              </div>
+
+              {/* Theme-Aligned Custom Category Dropdown Element Wrapper */}
+              <div className="relative">
+                <label className="text-sm font-medium text-foreground">Category</label>
+                
+                {/* Trigger Control Panel Button Element */}
+                <button
+                  type="button"
+                  disabled={categoriesLoading}
+                  onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                  className="mt-2 flex w-full items-center justify-between rounded-2xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none shadow-sm transition-all focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:bg-gray-50"
+                >
+                  <span className={!recipeForm.category ? 'text-gray-400' : ''}>
+                    {currentCategoryLabel}
+                  </span>
+                  <i className={`bi bi-chevron-down text-xs text-muted transition-transform duration-200 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Focus backdrop listener to click-dismiss menu overlays */}
+                {isCategoryDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-30 cursor-default" 
+                      onClick={() => setIsCategoryDropdownOpen(false)} 
+                    />
+                    
+                    {/* Floating Options Panel List */}
+                    <ul className="absolute left-0 right-0 z-40 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-white py-1.5 shadow-xl text-sm">
+                      {recipeForm.category && !categoryOptions.includes(recipeForm.category) && (
+                        <li
+                          onClick={() => {
+                            updateRecipeForm('category', recipeForm.category)
+                            setIsCategoryDropdownOpen(false)
+                          }}
+                          className="cursor-pointer px-4 py-2 transition-colors duration-150 bg-primary-soft text-primary font-medium"
+                        >
+                          {recipeForm.category}
+                        </li>
+                      )}
+                      
+                      {categoryOptions.length === 0 && !recipeForm.category ? (
+                        <li className="px-4 py-2 text-xs text-muted text-center cursor-default">
+                          No categories available
+                        </li>
+                      ) : (
+                        categoryOptions.map((category) => (
+                          <li
+                            key={category}
+                            onClick={() => {
+                              updateRecipeForm('category', category)
+                              setIsCategoryDropdownOpen(false)
+                            }}
+                            className={`cursor-pointer px-4 py-2 transition-colors duration-150 ${
+                              recipeForm.category === category
+                                ? 'bg-primary-soft text-primary font-medium'
+                                : 'text-foreground hover:bg-muted/60'
+                            }`}
+                          >
+                            {category}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </>
+                )}
+
+                {categoriesError ? (
+                  <p className="mt-2 text-xs text-red-600">{categoriesError}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Base pax</label>
+                <input
+                  type="number"
+                  min={1}
+                  step="1"
+                  value={recipeForm.portionSize}
+                  onChange={(event) =>
+                    updateRecipeForm('portionSize', event.target.value)
+                  }
+                  onWheel={(event) => event.currentTarget.blur()}
+                  placeholder="1"
+                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                />
+                <p className="mt-2 text-xs text-muted">
+                  Enter how many pax this recipe yields (e.g., 1 or 10).
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium text-foreground">
+                  Description
+                </label>
+                <textarea
+                  value={recipeForm.description}
+                  onChange={(event) =>
+                    updateRecipeForm('description', event.target.value)
+                  }
+                  placeholder="Short recipe notes..."
+                  rows={3}
+                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                 />
               </div>
             </div>
-          </div>
-        ) : null}
 
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-        <h3 className="font-semibold">Recipe details</h3>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="text-sm font-medium text-foreground">
-              Recipe name
-            </label>
-            <input
-              type="text"
-              value={recipeForm.name}
-              onChange={(event) => updateRecipeForm('name', event.target.value)}
-              placeholder="Example: Teriyaki Chicken Rice"
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground">Category</label>
-            <select
-              value={recipeForm.category}
-              onChange={(event) => updateRecipeForm('category', event.target.value)}
-              disabled={categoriesLoading}
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">
-                {categoriesLoading
-                  ? 'Loading categories...'
-                  : categoryOptions.length
-                    ? 'Select category'
-                    : 'No active categories available'}
-              </option>
-              {recipeForm.category &&
-              !categoryOptions.includes(recipeForm.category) ? (
-                <option value={recipeForm.category}>
-                  {recipeForm.category}
-                </option>
-              ) : null}
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            {categoriesError ? (
-              <p className="mt-2 text-xs text-red-600">{categoriesError}</p>
-            ) : null}
-          </div>
-          <div>
-            <label className="text-sm font-medium text-foreground">Base pax</label>
-            <input
-              type="number"
-              min={1}
-              step="1"
-              value={recipeForm.portionSize}
-              onChange={(event) =>
-                updateRecipeForm('portionSize', event.target.value)
-              }
-              onWheel={(event) => event.currentTarget.blur()}
-              placeholder="1"
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
-            <p className="mt-2 text-xs text-muted">
-              Enter how many pax this recipe yields (e.g., 1 or 10).
-            </p>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-sm font-medium text-foreground">
-              Description
-            </label>
-            <textarea
-              value={recipeForm.description}
-              onChange={(event) =>
-                updateRecipeForm('description', event.target.value)
-              }
-              placeholder="Short recipe notes..."
-              rows={3}
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
-          </div>
-        </div>
+            <div className="mt-6">
+              <h3 className="font-semibold text-foreground">
+                Ingredients
+              </h3>
+              <p className="mt-1 text-xs text-muted">
+                Add ingredients
+              </p>
+              <TablePagination
+                page={ingredientPage}
+                totalPages={ingredientTotalPages}
+                onPageChange={setIngredientPage}
+                summary={`Showing ${paginatedIngredientRows.length} of ${ingredientRows.length} ingredient rows`}
+                className="mt-3"
+              />
 
-        <div className="mt-6">
-          <h3 className="font-semibold text-foreground">
-            Ingredients
-          </h3>
-          <p className="mt-1 text-xs text-muted">
-            Add ingredients
-          </p>
-          <TablePagination
-            page={ingredientPage}
-            totalPages={ingredientTotalPages}
-            onPageChange={setIngredientPage}
-            summary={`Showing ${paginatedIngredientRows.length} of ${ingredientRows.length} ingredient rows`}
-            className="mt-3"
-          />
-
-          <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
-            <datalist id="raw-material-code-options">
-              {rawMaterialOptions.map((item) => (
-                <option
-                  key={`code-${item.id}`}
-                  value={item.productCode}
-                  label={item.name}
-                />
-              ))}
-            </datalist>
-            <datalist id="raw-material-name-options">
-              {rawMaterialOptions.map((item) => (
-                <option
-                  key={`name-${item.id}`}
-                  value={item.name}
-                  label={item.productCode}
-                />
-              ))}
-            </datalist>
-            <table className="dm-table min-w-full bg-white text-sm">
-              <thead className="bg-background">
-                <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                  <th className="w-20 px-2 py-3 font-semibold" />
-                  <th className="w-14 px-2 py-3 font-semibold text-center">
-                    No
-                  </th>
-                  <th className="px-4 py-3 font-semibold w-[160px]">
-                    Product code
-                  </th>
-                  <th className="px-4 py-3 font-semibold min-w-[260px]">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 font-semibold w-[120px]">
-                    {enableIngredientUomConversion ? 'Prod Qty' : 'Qty'}
-                  </th>
-                  {enableIngredientUomConversion ? (
-                    <>
-                      <th className="px-4 py-3 font-semibold w-[160px]">
-                        Prod UOM
-                      </th>
-                      <th className="px-4 py-3 font-semibold w-[140px]">
-                        SR Qty
+              <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
+                <datalist id="raw-material-code-options">
+                  {rawMaterialOptions.map((item) => (
+                    <option
+                      key={`code-${item.id}`}
+                      value={item.productCode}
+                      label={item.name}
+                    />
+                  ))}
+                </datalist>
+                <datalist id="raw-material-name-options">
+                  {rawMaterialOptions.map((item) => (
+                    <option
+                      key={`name-${item.id}`}
+                      value={item.name}
+                      label={item.productCode}
+                    />
+                  ))}
+                </datalist>
+                <table className="dm-table min-w-full bg-white text-sm">
+                  <thead className="bg-background">
+                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                      <th className="w-20 px-2 py-3 font-semibold" />
+                      <th className="w-14 px-2 py-3 font-semibold text-center">
+                        No
                       </th>
                       <th className="px-4 py-3 font-semibold w-[160px]">
-                        SR UOM
+                        Product code
                       </th>
-                    </>
-                  ) : (
-                    <th className="px-4 py-3 font-semibold w-[180px]">
-                      Unit of Measures
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedIngredientRows.map((row, index) => {
-                  const conversionResult = calculateSrQty(row)
-                  return (
-                  <tr key={row.id} className="border-t border-border">
-                    <td className="px-2 py-3">
-                      <div className="flex justify-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveIngredientRow(row.id)}
-                          className="dm-x-button text-sm font-semibold leading-none"
-                          aria-label="Remove ingredient row"
-                          title="Remove ingredient row"
-                        >
-                          <i
-                            className="bi bi-trash3 text-sm leading-none"
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-2 py-3 text-center text-sm text-muted">
-                      {(ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE + index + 1}
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={row.productCode}
-                        onChange={(event) =>
-                          handleIngredientInputChange(
-                            row.id,
-                            'productCode',
-                            event.target.value,
-                          )
-                        }
-                        onFocus={handleRawMaterialFocus}
-                        autoComplete="off"
-                        placeholder="PRD-001"
-                        list="raw-material-code-options"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="grid">
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(event) =>
-                            handleIngredientInputChange(
-                              row.id,
-                              'name',
-                              event.target.value,
-                            )
-                          }
-                          onFocus={handleRawMaterialFocus}
-                          autoComplete="off"
-                          placeholder="Oat Milk"
-                          list="raw-material-name-options"
-                          className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
-                        />
-                        <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
-                          {row.name}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={row.qty}
-                        onChange={(event) =>
-                          updateIngredientRow(row.id, 'qty', event.target.value)
-                        }
-                        onWheel={(event) => event.currentTarget.blur()}
-                        placeholder={enableIngredientUomConversion ? '700' : '2'}
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      />
-                    </td>
-                    {enableIngredientUomConversion ? (
-                      <>
-                        <td className="px-4 py-3">
-                          <select
-                            value={row.prodUomCode}
-                            onChange={(event) =>
-                              updateIngredientRow(
-                                row.id,
-                                'prodUomCode',
-                                event.target.value,
-                              )
-                            }
-                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">Select</option>
-                            {uomOptions.map((unit) => (
-                              <option key={unit.id} value={unit.code}>
-                                {formatUnitLabel(unit.code)}
-                              </option>
-                            ))}
-                          </select>
+                      <th className="px-4 py-3 font-semibold min-w-[260px]">
+                        Name
+                      </th>
+                      <th className="px-4 py-3 font-semibold w-[120px]">
+                        {enableIngredientUomConversion ? 'Prod Qty' : 'Qty'}
+                      </th>
+                      {enableIngredientUomConversion ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold w-[160px]">
+                            Prod UOM
+                          </th>
+                          <th className="px-4 py-3 font-semibold w-[140px]">
+                            SR Qty
+                          </th>
+                          <th className="px-4 py-3 font-semibold w-[160px]">
+                            SR UOM
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-4 py-3 font-semibold w-[180px]">
+                          Unit of Measures
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedIngredientRows.map((row, index) => {
+                      const conversionResult = calculateSrQty(row)
+                      return (
+                      <tr key={row.id} className="border-t border-border">
+                        <td className="px-2 py-3">
+                          <div className="flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveIngredientRow(row.id)}
+                              className="dm-x-button text-sm font-semibold leading-none"
+                              aria-label="Remove ingredient row"
+                              title="Remove ingredient row"
+                            >
+                              <i
+                                className="bi bi-trash3 text-sm leading-none"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-2 py-3 text-center text-sm text-muted">
+                          {(ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE + index + 1}
                         </td>
                         <td className="px-4 py-3">
                           <input
                             type="text"
-                            value={
-                              conversionResult
-                                ? formatQuantity(conversionResult.srQty)
-                                : ''
-                            }
-                            readOnly
-                            aria-readonly="true"
-                            placeholder="Auto"
-                            className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={row.unitOfMeasures}
+                            value={row.productCode}
                             onChange={(event) =>
-                              updateIngredientRow(
+                              handleIngredientInputChange(
                                 row.id,
-                                'unitOfMeasures',
+                                'productCode',
                                 event.target.value,
                               )
                             }
+                            onFocus={handleRawMaterialFocus}
+                            autoComplete="off"
+                            placeholder="PRD-001"
+                            list="raw-material-code-options"
                             className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">Select</option>
-                            {row.unitOfMeasures &&
-                            !uomOptions.some(
-                              (unit) =>
-                                normalizeUomCode(unit.code) ===
-                                normalizeUomCode(row.unitOfMeasures),
-                            ) ? (
-                              <option value={row.unitOfMeasures}>
-                                {formatUnitLabel(row.unitOfMeasures)}
-                              </option>
-                            ) : null}
-                            {uomOptions.map((unit) => (
-                              <option key={unit.id} value={unit.code}>
-                                {formatUnitLabel(unit.code)}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </td>
-                      </>
-                    ) : (
-                      <td className="px-4 py-3">
-                        <input
-                          type="text"
-                          value={
-                            row.unitOfMeasures
-                              ? formatUnitLabel(row.unitOfMeasures)
-                              : ''
-                          }
-                          readOnly
-                          aria-readonly="true"
-                          placeholder="Auto-filled from raw material"
-                          className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                        />
-                      </td>
-                    )}
-                  </tr>
-                )})}
-                <tr className="border-t border-border">
-                  <td
-                    colSpan={enableIngredientUomConversion ? 8 : 6}
-                    className="px-4 py-3"
-                  >
-                    <div className="flex justify-center">
-                      <button
-                        type="button"
-                        onClick={handleAddIngredientRow}
-                        className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover"
+                        <td className="px-4 py-3">
+                          <div className="grid">
+                            <input
+                              type="text"
+                              value={row.name}
+                              onChange={(event) =>
+                                handleIngredientInputChange(
+                                  row.id,
+                                  'name',
+                                  event.target.value,
+                                )
+                              }
+                              onFocus={handleRawMaterialFocus}
+                              autoComplete="off"
+                              placeholder="Oat Milk"
+                              list="raw-material-name-options"
+                              className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
+                            />
+                            <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
+                              {row.name}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={row.qty}
+                            onChange={(event) =>
+                              updateIngredientRow(row.id, 'qty', event.target.value)
+                            }
+                            onWheel={(event) => event.currentTarget.blur()}
+                            placeholder={enableIngredientUomConversion ? '700' : '2'}
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          />
+                        </td>
+                        {enableIngredientUomConversion ? (
+                          <>
+                            <td className="px-4 py-3">
+                              <select
+                                value={row.prodUomCode}
+                                onChange={(event) =>
+                                  updateIngredientRow(
+                                    row.id,
+                                    'prodUomCode',
+                                    event.target.value,
+                                  )
+                                }
+                                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              >
+                                <option value="">Select</option>
+                                {uomOptions.map((unit) => (
+                                  <option key={unit.id} value={unit.code}>
+                                    {formatUnitLabel(unit.code)}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-4 py-3">
+                              <input
+                                type="text"
+                                value={
+                                  conversionResult
+                                    ? formatQuantity(conversionResult.srQty)
+                                    : ''
+                                }
+                                readOnly
+                                aria-readonly="true"
+                                placeholder="Auto"
+                                className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <select
+                                value={row.unitOfMeasures}
+                                onChange={(event) =>
+                                  updateIngredientRow(
+                                    row.id,
+                                    'unitOfMeasures',
+                                    event.target.value,
+                                  )
+                                }
+                                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                              >
+                                <option value="">Select</option>
+                                {row.unitOfMeasures &&
+                                !uomOptions.some(
+                                  (unit) =>
+                                    normalizeUomCode(unit.code) ===
+                                    normalizeUomCode(row.unitOfMeasures),
+                                ) ? (
+                                  <option value={row.unitOfMeasures}>
+                                    {formatUnitLabel(row.unitOfMeasures)}
+                                  </option>
+                                ) : null}
+                                {uomOptions.map((unit) => (
+                                  <option key={unit.id} value={unit.code}>
+                                    {formatUnitLabel(unit.code)}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={
+                                row.unitOfMeasures
+                                  ? formatUnitLabel(row.unitOfMeasures)
+                                  : ''
+                              }
+                              readOnly
+                              aria-readonly="true"
+                              placeholder="Auto-filled from raw material"
+                              className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            />
+                          </td>
+                        )}
+                      </tr>
+                    )})}
+                    <tr className="border-t border-border">
+                      <td
+                        colSpan={enableIngredientUomConversion ? 8 : 6}
+                        className="px-4 py-3"
                       >
-                        <span>+</span>
-                        <span>Add ingredient</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={handleAddIngredientRow}
+                            className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary-hover"
+                          >
+                            <span>+</span>
+                            <span>Add ingredient</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-          <div>
-            {submitError ? (
-              <p className="text-xs font-medium text-red-600">{submitError}</p>
-            ) : null}
-            {submitMessage ? (
-              <p className="text-xs font-medium text-primary">{submitMessage}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            {isRejectedRecipe ? (
-              <ActionButton
-                action="save"
-                onClick={() => handleSaveRecipe()}
-              />
-            ) : null}
-            <ActionButton
-              action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
-              onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
-            />
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+              <div>
+                {submitError ? (
+                  <p className="text-xs font-medium text-red-600">{submitError}</p>
+                ) : null}
+                {submitMessage ? (
+                  <p className="text-xs font-medium text-primary">{submitMessage}</p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {isRejectedRecipe ? (
+                  <ActionButton
+                    action="save"
+                    onClick={() => handleSaveRecipe()}
+                  />
+                ) : null}
+                <ActionButton
+                  action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
+                  onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </div>
   )
 }
 
 export default ChefCreateMenu
-
