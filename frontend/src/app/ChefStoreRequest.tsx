@@ -5,7 +5,10 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
-import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
+import {
+  aggregateStoreRequestSummary,
+  aggregateStoreRequestSummaryByVendor,
+} from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -342,7 +345,7 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
   ]
 
   groups.forEach((group) => {
-    aggregateStoreRequestSummary(group.summary ?? []).forEach((item) => {
+    aggregateStoreRequestSummaryByVendor(group).forEach((item) => {
       rows.push([
         group.date,
         group.site ?? '',

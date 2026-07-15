@@ -5,7 +5,10 @@ import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
-import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
+import {
+  aggregateStoreRequestSummary,
+  aggregateStoreRequestSummaryByVendor,
+} from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -377,7 +380,7 @@ const UnitManagerPage = () => {
 
     const summaryRows: Array<Array<unknown>> = [
       ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummary(group.summary ?? []).map((item) => [
+      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
         item.productCode,
         item.name,
         item.vendor ?? '',
