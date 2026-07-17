@@ -266,4 +266,102 @@ describe('RecipesService site visibility', () => {
     );
     expect(Number(ingredient.conversionMultiplier)).toBeCloseTo(1 / 450);
   });
+
+  it('accepts a required manual SR quantity when no conversion is configured', async () => {
+    const { rawMaterials, recipeModel, service, unitOfMeasures } =
+      makeService();
+    const lean = jest.fn().mockResolvedValue({ _id: 'recipe-manual' });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await service.updateById('recipe-manual', {
+      ingredients: [
+        {
+          productCode: 'RM-MANUAL',
+          name: 'Manual Ingredient',
+          unitOfMeasures: 'L',
+          qty: 2.5,
+          prodQty: 1700,
+          prodUomCode: 'GR',
+          srQty: 2.5,
+          srQtyManual: true,
+          srUomCode: 'L',
+        },
+      ],
+    });
+
+    const ingredient = getUpdatedIngredient(recipeModel);
+
+    expect(rawMaterials.findLookupByNormalizedCode).not.toHaveBeenCalled();
+    expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
+    expect(ingredient).toEqual(
+      expect.objectContaining({
+        qty: 2.5,
+        prodQty: 1700,
+        prodUomCode: 'GR',
+        srQty: 2.5,
+        srQtyManual: true,
+        srUomCode: 'L',
+      }),
+    );
+    expect(ingredient.conversionId).toBeUndefined();
+    expect(ingredient.conversionMultiplier).toBeUndefined();
+  });
+
+  it('selects the matching rule when a raw material has multiple specific conversions', async () => {
+    const { rawMaterials, recipeModel, service, unitOfMeasures } =
+      makeService();
+    const rawMaterial = {
+      productCode: 'RM-003',
+      productCodeNormalized: 'rm-003',
+      name: 'Cooking Oil',
+      unitOfMeasures: 'L',
+      specificConversions: [
+        {
+          prodUomCode: 'ML',
+          srUomCode: 'KG',
+          conversionFactor: 900,
+        },
+        {
+          prodUomCode: 'GR',
+          srUomCode: 'L',
+          conversionFactor: 850,
+        },
+      ],
+      price: 20,
+    };
+    const lean = jest.fn().mockResolvedValue({ _id: 'recipe-c' });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+    unitOfMeasures.findActiveConversion.mockResolvedValue(null);
+    rawMaterials.findLookupByNormalizedCode.mockResolvedValue(rawMaterial);
+    rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([rawMaterial]);
+
+    await service.updateById('recipe-c', {
+      ingredients: [
+        {
+          productCode: 'RM-003',
+          name: 'Cooking Oil',
+          unitOfMeasures: 'L',
+          qty: 2,
+          prodQty: 1700,
+          prodUomCode: 'GR',
+          srUomCode: 'L',
+        },
+      ],
+    });
+
+    const ingredient = getUpdatedIngredient(recipeModel);
+
+    expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
+    expect(ingredient).toEqual(
+      expect.objectContaining({
+        qty: 2,
+        prodQty: 1700,
+        prodUomCode: 'GR',
+        srQty: 2,
+        srUomCode: 'L',
+        conversionId: 'GR To L',
+      }),
+    );
+    expect(Number(ingredient.conversionMultiplier)).toBeCloseTo(1 / 850);
+  });
 });

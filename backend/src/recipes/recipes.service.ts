@@ -1486,6 +1486,7 @@ export class RecipesService {
       prodQty?: number;
       prodUomCode?: string;
       srQty?: number;
+      srQtyManual?: boolean;
       srUomCode?: string;
       conversionId?: string;
       conversionMultiplier?: number;
@@ -1512,6 +1513,7 @@ export class RecipesService {
         ...(prodQty !== undefined ? { prodQty } : {}),
         ...(prodUomCode ? { prodUomCode } : {}),
         ...(srQty !== undefined ? { srQty } : {}),
+        ...(item.srQtyManual ? { srQtyManual: true } : {}),
         ...(srUomCode ? { srUomCode } : {}),
         ...(conversionId ? { conversionId } : {}),
         ...(conversionMultiplier !== undefined ? { conversionMultiplier } : {}),
@@ -1540,6 +1542,27 @@ export class RecipesService {
 
       const normalizedProdUomCode = this.normalizeUomCode(prodUomCode);
       const normalizedSrUomCode = this.normalizeUomCode(srUomCode);
+      if (ingredient.srQtyManual) {
+        const manualSrQty = this.normalizeOptionalNumber(ingredient.srQty);
+        if (manualSrQty === undefined || manualSrQty <= 0) {
+          throw new BadRequestException(
+            `SR quantity for ${ingredient.name || ingredient.productCode || 'ingredient'} must be greater than 0.`,
+          );
+        }
+        nextIngredients.push({
+          ...ingredient,
+          unitOfMeasures: normalizedSrUomCode,
+          qty: manualSrQty,
+          prodQty,
+          prodUomCode: normalizedProdUomCode,
+          srQty: manualSrQty,
+          srQtyManual: true,
+          srUomCode: normalizedSrUomCode,
+          conversionId: undefined,
+          conversionMultiplier: undefined,
+        });
+        continue;
+      }
       if (
         normalizedProdUomCode &&
         normalizedProdUomCode === normalizedSrUomCode
@@ -1613,20 +1636,24 @@ export class RecipesService {
 
     const prod = this.normalizeUomCode(prodUomCode);
     const sr = this.normalizeUomCode(srUomCode);
+    const matchingRule = rawMaterial.specificConversions?.find(
+      (rule) =>
+        this.normalizeUomCode(rule.prodUomCode) === prod &&
+        this.normalizeUomCode(rule.srUomCode) === sr,
+    );
     const rawMaterialSr = this.normalizeUomCode(rawMaterial.unitOfMeasures);
     const rawMaterialBase = this.normalizeUomCode(
       rawMaterial.baseUnitOfMeasures,
     );
+    const legacyMatches = rawMaterialBase === prod && rawMaterialSr === sr;
     const conversionFactor = this.normalizeOptionalNumber(
-      rawMaterial.conversionFactor,
+      matchingRule?.conversionFactor ??
+        (legacyMatches ? rawMaterial.conversionFactor : undefined),
     );
 
     if (
       !prod ||
       !sr ||
-      !rawMaterialBase ||
-      rawMaterialBase !== prod ||
-      rawMaterialSr !== sr ||
       conversionFactor === undefined ||
       conversionFactor <= 0
     ) {

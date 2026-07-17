@@ -67,6 +67,7 @@ export class RawMaterialsController {
       unitOfMeasures: dto.unitOfMeasures,
       baseUnitOfMeasures: dto.baseUnitOfMeasures,
       conversionFactor: dto.conversionFactor,
+      specificConversions: dto.specificConversions,
       vendor: dto.vendor,
       currency: dto.currency,
       minimumQuantity: dto.minimumQuantity,
@@ -190,7 +191,7 @@ export class RawMaterialsController {
   @Roles(AppRole.Superadmin)
   bulkUpdateSpecificConversions(@Body() dto: BulkUpdateSpecificConversionsDto) {
     return this.rawMaterials.bulkUpdateSpecificConversions({
-      search: dto.search,
+      rawMaterialIds: dto.rawMaterialIds,
       unitOfMeasures: dto.unitOfMeasures,
       baseUnitOfMeasures: dto.baseUnitOfMeasures,
       conversionFactor: dto.conversionFactor,
@@ -206,6 +207,9 @@ export class RawMaterialsController {
       unitOfMeasures: dto.unitOfMeasures,
       baseUnitOfMeasures: dto.baseUnitOfMeasures,
       conversionFactor: dto.conversionFactor,
+      ...(dto.specificConversions !== undefined
+        ? { specificConversions: dto.specificConversions }
+        : {}),
       vendor: dto.vendor,
       currency: dto.currency,
       minimumQuantity: dto.minimumQuantity,

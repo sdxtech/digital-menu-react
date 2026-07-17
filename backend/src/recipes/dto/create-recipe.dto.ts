@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsNumber,
@@ -44,6 +45,10 @@ export class RecipeIngredientDto {
   @IsNumber()
   @Min(0)
   srQty?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  srQtyManual?: boolean;
 
   @IsOptional()
   @IsString()
