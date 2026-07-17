@@ -1,11 +1,14 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { RawMaterialSpecificConversionDto } from './create-raw-material.dto';
 
 export class UpdateRawMaterialDto {
   @IsString()
@@ -29,6 +32,12 @@ export class UpdateRawMaterialDto {
   @IsNumber({ allowInfinity: false, allowNaN: false })
   @Min(0)
   conversionFactor?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RawMaterialSpecificConversionDto)
+  specificConversions?: RawMaterialSpecificConversionDto[];
 
   @IsOptional()
   @IsString()

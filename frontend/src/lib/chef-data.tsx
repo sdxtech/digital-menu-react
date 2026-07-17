@@ -25,6 +25,7 @@ export type RecipeIngredient = {
   prodQty?: number
   prodUomCode?: string
   srQty?: number
+  srQtyManual?: boolean
   srUomCode?: string
   conversionId?: string
   conversionMultiplier?: number
@@ -89,8 +90,15 @@ export type RawMaterial = {
   unitOfMeasures: string
   baseUnitOfMeasures?: string
   conversionFactor?: number
+  specificConversions?: RawMaterialSpecificConversion[]
   vendor?: string
   createdAt: string
+}
+
+export type RawMaterialSpecificConversion = {
+  prodUomCode: string
+  srUomCode: string
+  conversionFactor: number
 }
 
 type RecipeApi = Omit<Recipe, 'id'> & { id?: string; _id?: string }
@@ -316,6 +324,21 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   conversionFactor: Number.isFinite(Number(item.conversionFactor))
     ? Number(item.conversionFactor)
     : undefined,
+  specificConversions: Array.isArray(item.specificConversions)
+    ? item.specificConversions
+        .map((rule) => ({
+          prodUomCode: rule.prodUomCode ?? '',
+          srUomCode: rule.srUomCode ?? '',
+          conversionFactor: Number(rule.conversionFactor),
+        }))
+        .filter(
+          (rule) =>
+            rule.prodUomCode &&
+            rule.srUomCode &&
+            Number.isFinite(rule.conversionFactor) &&
+            rule.conversionFactor > 0,
+        )
+    : [],
   vendor: item.vendor,
   createdAt: item.createdAt,
 })

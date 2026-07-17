@@ -28,6 +28,8 @@ type IngredientRow = {
   unitOfMeasures: string
   qty: string
   prodUomCode: string
+  srQty: string
+  srQtyManual: boolean
   baseUnitOfMeasures?: string
   conversionFactor?: number
 }
@@ -94,6 +96,8 @@ const createIngredientRow = (
   unitOfMeasures: values.unitOfMeasures ?? '',
   qty: values.qty ?? '',
   prodUomCode: values.prodUomCode ?? '',
+  srQty: values.srQty ?? '',
+  srQtyManual: values.srQtyManual ?? false,
   baseUnitOfMeasures: values.baseUnitOfMeasures,
   conversionFactor: values.conversionFactor,
 })
@@ -213,6 +217,11 @@ const ChefCreateMenu = ({
                 ingredient.srUomCode ??
                 ingredient.unitOfMeasures ??
                 '',
+              srQty:
+                ingredient.srQtyManual && Number.isFinite(ingredient.srQty)
+                  ? String(ingredient.srQty)
+                  : '',
+              srQtyManual: ingredient.srQtyManual ?? false,
             }),
           )
         : [createIngredientRow()],
@@ -409,19 +418,27 @@ const ChefCreateMenu = ({
     const rawMaterialSrUomCode = normalizeUomCode(
       matchedRawMaterial?.unitOfMeasures ?? '',
     )
+    const matchingRule = matchedRawMaterial?.specificConversions?.find(
+      (rule) =>
+        normalizeUomCode(rule.prodUomCode) === prodUomCode &&
+        normalizeUomCode(rule.srUomCode) === srUomCode,
+    )
     const baseUomCode = normalizeUomCode(
       row.baseUnitOfMeasures ?? matchedRawMaterial?.baseUnitOfMeasures ?? '',
     )
+    const legacyMatches =
+      baseUomCode === prodUomCode &&
+      (!rawMaterialSrUomCode || srUomCode === rawMaterialSrUomCode)
     const conversionFactor = Number(
-      row.conversionFactor ?? matchedRawMaterial?.conversionFactor,
+      matchingRule?.conversionFactor ??
+        (legacyMatches
+          ? (row.conversionFactor ?? matchedRawMaterial?.conversionFactor)
+          : undefined),
     )
 
     if (
       !prodUomCode ||
       !srUomCode ||
-      !baseUomCode ||
-      (rawMaterialSrUomCode && srUomCode !== rawMaterialSrUomCode) ||
-      prodUomCode !== baseUomCode ||
       !Number.isFinite(conversionFactor) ||
       conversionFactor <= 0
     ) {
@@ -495,6 +512,8 @@ const ChefCreateMenu = ({
     productCode: matched.productCode,
     name: matched.name,
     unitOfMeasures: matched.unitOfMeasures,
+    srQty: '',
+    srQtyManual: false,
     baseUnitOfMeasures: matched.baseUnitOfMeasures,
     conversionFactor: matched.conversionFactor,
   })
@@ -520,6 +539,18 @@ const ChefCreateMenu = ({
 
         const next = { ...row, [field]: value }
         if (
+          (field === 'productCode' ||
+            field === 'name' ||
+            field === 'prodUomCode' ||
+            field === 'unitOfMeasures') &&
+          typeof value === 'string' &&
+          normalizeUomCode(value) !==
+            normalizeUomCode(String(row[field] ?? ''))
+        ) {
+          next.srQty = ''
+          next.srQtyManual = false
+        }
+        if (
           field === 'unitOfMeasures' &&
           typeof value === 'string' &&
           normalizeUomCode(value) !== normalizeUomCode(row.unitOfMeasures)
@@ -543,6 +574,16 @@ const ChefCreateMenu = ({
 
         return next
       }),
+    )
+  }
+
+  const updateIngredientSrQty = (id: string, value: string) => {
+    setIngredientRows((current) =>
+      current.map((row) =>
+        row.id === id
+          ? { ...row, srQty: value, srQtyManual: true }
+          : row,
+      ),
     )
   }
 
@@ -791,14 +832,25 @@ const ChefCreateMenu = ({
 
       if (enableIngredientUomConversion) {
         const conversionResult = calculateSrQty(row)
-        if (!conversionResult) {
+        const srQtyRaw = row.srQtyManual
+          ? row.srQty.trim()
+          : conversionResult
+            ? String(conversionResult.srQty)
+            : row.srQty.trim()
+        if (!srQtyRaw) {
           setSubmitError(
-            `Conversion ${prodUomCode} To ${unitOfMeasures} is not configured for ${name}.`,
+            `SR QTY is required for ${name}. Enter it manually when no conversion is configured.`,
           )
           setSubmitMessage('')
           return
         }
-        const srQty = conversionResult.srQty
+        const srQty = Number(srQtyRaw)
+        if (!Number.isFinite(srQty) || srQty <= 0) {
+          setSubmitError(`SR QTY for ${name} must be greater than 0.`)
+          setSubmitMessage('')
+          return
+        }
+        const srQtyManual = row.srQtyManual || !conversionResult
         parsedIngredients.push({
           productCode,
           name,
@@ -807,9 +859,14 @@ const ChefCreateMenu = ({
           prodQty: qty,
           prodUomCode,
           srQty,
+          srQtyManual,
           srUomCode: unitOfMeasures,
-          conversionId: conversionResult.conversion.conversionId,
-          conversionMultiplier: conversionResult.conversion.multiplier,
+          ...(conversionResult && !srQtyManual
+            ? {
+                conversionId: conversionResult.conversion.conversionId,
+                conversionMultiplier: conversionResult.conversion.multiplier,
+              }
+            : {}),
         })
       } else {
         parsedIngredients.push({
@@ -1244,16 +1301,25 @@ const ChefCreateMenu = ({
                         </td>
                         <td className="px-4 py-3">
                           <input
-                            type="text"
+                            type="number"
+                            min={0}
+                            step="any"
                             value={
-                              conversionResult
+                              row.srQtyManual
+                                ? row.srQty
+                                : conversionResult
                                 ? formatQuantity(conversionResult.srQty)
-                                : ''
+                                : row.srQty
                             }
-                            readOnly
-                            aria-readonly="true"
-                            placeholder="Auto"
-                            className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
+                            onChange={(event) =>
+                              updateIngredientSrQty(
+                                row.id,
+                                event.target.value,
+                              )
+                            }
+                            onWheel={(event) => event.currentTarget.blur()}
+                            aria-label={`SR QTY for ${row.name || `ingredient ${index + 1}`}`}
+                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           />
                         </td>
                         <td className="px-4 py-3">
