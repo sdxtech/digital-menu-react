@@ -36,6 +36,13 @@ type RawMaterialApi = {
   unitOfMeasures?: string
   baseUnitOfMeasures?: string
   conversionFactor?: number
+  specificConversions?: SpecificConversionRuleApi[]
+}
+
+type SpecificConversionRuleApi = {
+  prodUomCode?: string
+  srUomCode?: string
+  conversionFactor?: number
 }
 
 type UnitOfMeasure = {
@@ -63,6 +70,13 @@ type RawMaterial = {
   unitOfMeasures: string
   baseUnitOfMeasures?: string
   conversionFactor?: number
+  specificConversions: SpecificConversionRule[]
+}
+
+type SpecificConversionRule = {
+  prodUomCode: string
+  srUomCode: string
+  conversionFactor: number
 }
 
 type Meta = {
@@ -95,14 +109,9 @@ type SpecificConversionForm = {
   conversionFactor: string
 }
 
-type BulkSpecificConversionForm = {
-  srUomCode: string
-  baseUomCode: string
-  conversionFactor: string
-}
-
 type ActiveTab = 'units' | 'conversions' | 'specific-conversions'
 type StatusFilter = 'all' | 'active' | 'disabled'
+type SpecificRuleAction = 'edit' | 'delete'
 
 const DEFAULT_LIMIT = 10
 
@@ -122,12 +131,6 @@ const emptyConversionForm: ConversionForm = {
 const emptySpecificConversionForm: SpecificConversionForm = {
   productCode: '',
   name: '',
-  srUomCode: '',
-  baseUomCode: '',
-  conversionFactor: '',
-}
-
-const emptyBulkSpecificConversionForm: BulkSpecificConversionForm = {
   srUomCode: '',
   baseUomCode: '',
   conversionFactor: '',
@@ -160,6 +163,55 @@ const mapConversion = (item: UnitConversionApi): UnitConversion => ({
   isActive: item.isActive ?? true,
 })
 
+const normalizeUomCode = (value: string) => value.trim().toUpperCase()
+
+const getSpecificConversionKey = (rule: {
+  prodUomCode: string
+  srUomCode: string
+}) =>
+  `${normalizeUomCode(rule.prodUomCode)}::${normalizeUomCode(rule.srUomCode)}`
+
+const mapSpecificConversionRules = (
+  item: RawMaterialApi,
+): SpecificConversionRule[] => {
+  const rulesByKey = new Map<string, SpecificConversionRule>()
+  for (const rule of item.specificConversions ?? []) {
+    const prodUomCode = normalizeUomCode(rule.prodUomCode ?? '')
+    const srUomCode = normalizeUomCode(rule.srUomCode ?? '')
+    const conversionFactor = Number(rule.conversionFactor)
+    if (
+      !prodUomCode ||
+      !srUomCode ||
+      !Number.isFinite(conversionFactor) ||
+      conversionFactor <= 0
+    ) {
+      continue
+    }
+    const normalized = { prodUomCode, srUomCode, conversionFactor }
+    rulesByKey.set(getSpecificConversionKey(normalized), normalized)
+  }
+
+  const legacyProdUomCode = normalizeUomCode(item.baseUnitOfMeasures ?? '')
+  const legacySrUomCode = normalizeUomCode(item.unitOfMeasures ?? '')
+  const legacyFactor = Number(item.conversionFactor)
+  if (
+    legacyProdUomCode &&
+    legacySrUomCode &&
+    Number.isFinite(legacyFactor) &&
+    legacyFactor > 0
+  ) {
+    const legacyRule = {
+      prodUomCode: legacyProdUomCode,
+      srUomCode: legacySrUomCode,
+      conversionFactor: legacyFactor,
+    }
+    const legacyKey = getSpecificConversionKey(legacyRule)
+    if (!rulesByKey.has(legacyKey)) rulesByKey.set(legacyKey, legacyRule)
+  }
+
+  return Array.from(rulesByKey.values())
+}
+
 const mapRawMaterial = (item: RawMaterialApi): RawMaterial => ({
   id: item.id ?? item._id ?? '',
   productCode: item.productCode ?? '',
@@ -169,6 +221,7 @@ const mapRawMaterial = (item: RawMaterialApi): RawMaterial => ({
   conversionFactor: Number.isFinite(Number(item.conversionFactor))
     ? Number(item.conversionFactor)
     : undefined,
+  specificConversions: mapSpecificConversionRules(item),
 })
 
 const formatQuantity = (value: number) =>
@@ -198,6 +251,9 @@ const SuperadminUnitOfMeasuresPage = () => {
   )
   const [conversions, setConversions] = useState<UnitConversion[]>([])
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([])
+  const [selectedRawMaterialIds, setSelectedRawMaterialIds] = useState<
+    string[]
+  >([])
   const [unitMeta, setUnitMeta] = useState<Meta>(emptyMeta)
   const [conversionMeta, setConversionMeta] = useState<Meta>(emptyMeta)
   const [rawMaterialMeta, setRawMaterialMeta] = useState<Meta>(emptyMeta)
@@ -209,14 +265,19 @@ const SuperadminUnitOfMeasuresPage = () => {
     useState<ConversionForm>(emptyConversionForm)
   const [specificConversionForm, setSpecificConversionForm] =
     useState<SpecificConversionForm>(emptySpecificConversionForm)
-  const [bulkSpecificConversionForm, setBulkSpecificConversionForm] =
-    useState<BulkSpecificConversionForm>(emptyBulkSpecificConversionForm)
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null)
   const [editingConversionId, setEditingConversionId] = useState<string | null>(
     null,
   )
   const [editingSpecificRawMaterialId, setEditingSpecificRawMaterialId] =
     useState<string | null>(null)
+  const [editingSpecificRuleKey, setEditingSpecificRuleKey] = useState<
+    string | null
+  >(null)
+  const [specificRulePicker, setSpecificRulePicker] = useState<{
+    rawMaterial: RawMaterial
+    action: SpecificRuleAction
+  } | null>(null)
   const [message, setMessage] = useState('')
   const [formError, setFormError] = useState('')
 
@@ -224,6 +285,13 @@ const SuperadminUnitOfMeasuresPage = () => {
     () => unitOptions.filter((unit) => unit.isActive).map((unit) => unit.code),
     [unitOptions],
   )
+  const selectedRawMaterialIdSet = useMemo(
+    () => new Set(selectedRawMaterialIds),
+    [selectedRawMaterialIds],
+  )
+  const allVisibleRawMaterialsSelected =
+    rawMaterials.length > 0 &&
+    rawMaterials.every((item) => selectedRawMaterialIdSet.has(item.id))
 
   const buildParams = useCallback(
     (page: number, limit: number, searchValue: string) => {
@@ -445,6 +513,12 @@ const SuperadminUnitOfMeasuresPage = () => {
 
   const applySearch = () => {
     setSearch(searchInput.trim())
+    setSelectedRawMaterialIds([])
+    setEditingSpecificRawMaterialId(null)
+    setEditingSpecificRuleKey(null)
+    setSpecificConversionForm(emptySpecificConversionForm)
+    setFormError('')
+    setMessage('')
     setUnitMeta((prev) => ({ ...prev, page: 1 }))
     setConversionMeta((prev) => ({ ...prev, page: 1 }))
     setRawMaterialMeta((prev) => ({ ...prev, page: 1 }))
@@ -454,11 +528,47 @@ const SuperadminUnitOfMeasuresPage = () => {
     setUnitForm(emptyUnitForm)
     setConversionForm(emptyConversionForm)
     setSpecificConversionForm(emptySpecificConversionForm)
-    setBulkSpecificConversionForm(emptyBulkSpecificConversionForm)
     setEditingUnitId(null)
     setEditingConversionId(null)
     setEditingSpecificRawMaterialId(null)
+    setEditingSpecificRuleKey(null)
+    setSpecificRulePicker(null)
+    setSelectedRawMaterialIds([])
     setFormError('')
+  }
+
+  const toggleRawMaterialSelection = (rawMaterialId: string) => {
+    if (editingSpecificRawMaterialId) {
+      setEditingSpecificRawMaterialId(null)
+      setEditingSpecificRuleKey(null)
+      setSpecificConversionForm(emptySpecificConversionForm)
+      setFormError('')
+      setMessage('')
+    }
+    setSelectedRawMaterialIds((current) =>
+      current.includes(rawMaterialId)
+        ? current.filter((id) => id !== rawMaterialId)
+        : [...current, rawMaterialId],
+    )
+  }
+
+  const toggleVisibleRawMaterialSelection = () => {
+    if (editingSpecificRawMaterialId) {
+      setEditingSpecificRawMaterialId(null)
+      setEditingSpecificRuleKey(null)
+      setSpecificConversionForm(emptySpecificConversionForm)
+      setFormError('')
+      setMessage('')
+    }
+    setSelectedRawMaterialIds((current) => {
+      const next = new Set(current)
+      if (allVisibleRawMaterialsSelected) {
+        rawMaterials.forEach((item) => next.delete(item.id))
+      } else {
+        rawMaterials.forEach((item) => next.add(item.id))
+      }
+      return Array.from(next)
+    })
   }
 
   const saveUnit = async () => {
@@ -569,24 +679,46 @@ const SuperadminUnitOfMeasuresPage = () => {
       return
     }
 
-    const baseUnitOfMeasures = specificConversionForm.baseUomCode.trim()
+    const prodUomCode = normalizeUomCode(specificConversionForm.baseUomCode)
+    const srUomCode = normalizeUomCode(specificConversionForm.srUomCode)
     const conversionFactor = Number(specificConversionForm.conversionFactor)
     if (
-      !baseUnitOfMeasures ||
+      !prodUomCode ||
+      !srUomCode ||
       !conversionFactor ||
       !Number.isFinite(conversionFactor) ||
       conversionFactor <= 0
     ) {
-      setFormError('Complete base unit and conversion factor greater than 0.')
+      setFormError(
+        'Complete production unit, SR unit, and conversion factor greater than 0.',
+      )
       return
     }
-    if (baseUnitOfMeasures === rawMaterial.unitOfMeasures) {
-      setFormError('Base unit must be different from SR unit.')
+    if (prodUomCode === srUomCode) {
+      setFormError('Production unit must be different from SR unit.')
       return
     }
 
+    const nextRule = { prodUomCode, srUomCode, conversionFactor }
+    const nextRuleKey = getSpecificConversionKey(nextRule)
+    const duplicateRule = rawMaterial.specificConversions.some((rule) => {
+      const ruleKey = getSpecificConversionKey(rule)
+      return ruleKey === nextRuleKey && ruleKey !== editingSpecificRuleKey
+    })
+    if (duplicateRule) {
+      setFormError('This production-to-SR conversion already exists.')
+      return
+    }
+
+    const nextRules = [
+      ...rawMaterial.specificConversions.filter(
+        (rule) => getSpecificConversionKey(rule) !== editingSpecificRuleKey,
+      ),
+      nextRule,
+    ]
+
     try {
-      await apiFetch(
+      const updated = await apiFetch<RawMaterialApi>(
         `/raw-materials/${editingSpecificRawMaterialId}`,
         {
           method: 'PATCH',
@@ -594,19 +726,29 @@ const SuperadminUnitOfMeasuresPage = () => {
             productCode: rawMaterial.productCode,
             name: rawMaterial.name,
             unitOfMeasures: rawMaterial.unitOfMeasures,
-            baseUnitOfMeasures,
-            conversionFactor,
+            specificConversions: nextRules,
           }),
         },
         accessToken,
       )
-      setMessage('Specific conversion saved.')
-      resetForms()
-      fetchSpecificConversions(
-        rawMaterialMeta.page,
-        rawMaterialMeta.limit,
-        search,
-      ).catch(() => null)
+      const mapped = mapRawMaterial(updated)
+      setRawMaterials((items) =>
+        items.map((item) => (item.id === mapped.id ? mapped : item)),
+      )
+      setSpecificConversionForm({
+        productCode: mapped.productCode,
+        name: mapped.name,
+        srUomCode: '',
+        baseUomCode: '',
+        conversionFactor: '',
+      })
+      setEditingSpecificRuleKey(null)
+      setMessage(
+        editingSpecificRuleKey
+          ? 'Specific conversion rule updated.'
+          : 'Specific conversion rule added.',
+      )
+      setFormError('')
     } catch (error) {
       setFormError(
         error instanceof Error
@@ -620,14 +762,16 @@ const SuperadminUnitOfMeasuresPage = () => {
     if (!accessToken) return
 
     const searchValue = search.trim()
-    const srUomCode = bulkSpecificConversionForm.srUomCode.trim()
-    const baseUnitOfMeasures = bulkSpecificConversionForm.baseUomCode.trim()
-    const conversionFactor = Number(
-      bulkSpecificConversionForm.conversionFactor,
-    )
+    const srUomCode = normalizeUomCode(specificConversionForm.srUomCode)
+    const prodUomCode = normalizeUomCode(specificConversionForm.baseUomCode)
+    const conversionFactor = Number(specificConversionForm.conversionFactor)
 
     if (!searchValue) {
       setFormError('Apply a raw material search before bulk updating.')
+      return
+    }
+    if (selectedRawMaterialIds.length === 0) {
+      setFormError('Select at least one raw material before bulk updating.')
       return
     }
     if (!srUomCode) {
@@ -635,28 +779,35 @@ const SuperadminUnitOfMeasuresPage = () => {
       return
     }
     if (
-      !baseUnitOfMeasures ||
+      !prodUomCode ||
       !conversionFactor ||
       !Number.isFinite(conversionFactor) ||
       conversionFactor <= 0
     ) {
-      setFormError('Complete base unit and conversion factor greater than 0.')
+      setFormError(
+        'Complete production unit and conversion factor greater than 0.',
+      )
       return
     }
-    if (srUomCode && srUomCode === baseUnitOfMeasures) {
-      setFormError('Base unit must be different from SR unit.')
+    if (srUomCode === prodUomCode) {
+      setFormError('Production unit must be different from SR unit.')
       return
     }
 
     const ok = window.confirm(
-      `Apply this specific conversion to all raw materials matching "${searchValue}"${
-        srUomCode ? ` with SR unit ${formatUnitLabel(srUomCode)}` : ''
-      }?`,
+      `Add or update rule ${formatRawMaterialConversion(
+        srUomCode,
+        prodUomCode,
+        conversionFactor,
+      )} for ${selectedRawMaterialIds.length} selected raw material${
+        selectedRawMaterialIds.length === 1 ? '' : 's'
+      }? Existing rules will be kept.`,
     )
     if (!ok) return
 
     try {
       const result = await apiFetch<{
+        requestedCount?: number
         matchedCount?: number
         modifiedCount?: number
       }>(
@@ -664,9 +815,9 @@ const SuperadminUnitOfMeasuresPage = () => {
         {
           method: 'PATCH',
           body: JSON.stringify({
-            search: searchValue,
+            rawMaterialIds: selectedRawMaterialIds,
             unitOfMeasures: srUomCode,
-            baseUnitOfMeasures,
+            baseUnitOfMeasures: prodUomCode,
             conversionFactor,
           }),
         },
@@ -675,10 +826,12 @@ const SuperadminUnitOfMeasuresPage = () => {
       setMessage(
         `Bulk specific conversion updated ${result.modifiedCount ?? 0} of ${
           result.matchedCount ?? 0
-        } matching raw materials.`,
+        } selected raw materials.`,
       )
       setFormError('')
+      setSelectedRawMaterialIds([])
       setEditingSpecificRawMaterialId(null)
+      setEditingSpecificRuleKey(null)
       setSpecificConversionForm(emptySpecificConversionForm)
       fetchSpecificConversions(
         rawMaterialMeta.page,
@@ -694,11 +847,20 @@ const SuperadminUnitOfMeasuresPage = () => {
     }
   }
 
+  const saveSpecificConversionTarget = async () => {
+    if (editingSpecificRawMaterialId) {
+      await saveSpecificConversion()
+      return
+    }
+    await saveBulkSpecificConversions()
+  }
+
   const startEditUnit = (unit: UnitOfMeasure) => {
     setActiveTab('units')
     setEditingUnitId(unit.id)
     setEditingConversionId(null)
     setEditingSpecificRawMaterialId(null)
+    setEditingSpecificRuleKey(null)
     setUnitForm({
       code: unit.code,
       name: unit.name,
@@ -712,6 +874,7 @@ const SuperadminUnitOfMeasuresPage = () => {
     setEditingConversionId(conversion.id)
     setEditingUnitId(null)
     setEditingSpecificRawMaterialId(null)
+    setEditingSpecificRuleKey(null)
     setConversionForm({
       prodUomCode: conversion.prodUomCode,
       srUomCode: conversion.srUomCode,
@@ -728,28 +891,51 @@ const SuperadminUnitOfMeasuresPage = () => {
     setEditingSpecificRawMaterialId(rawMaterial.id)
     setEditingUnitId(null)
     setEditingConversionId(null)
+    setSelectedRawMaterialIds([])
     setSpecificConversionForm({
       productCode: rawMaterial.productCode,
       name: rawMaterial.name,
-      srUomCode: rawMaterial.unitOfMeasures,
-      baseUomCode: rawMaterial.baseUnitOfMeasures ?? '',
-      conversionFactor:
-        rawMaterial.conversionFactor !== undefined
-          ? String(rawMaterial.conversionFactor)
-          : '',
+      srUomCode: '',
+      baseUomCode: '',
+      conversionFactor: '',
     })
+    setEditingSpecificRuleKey(null)
     setFormError('')
     setMessage('')
   }
 
-  const clearSpecificConversion = async (rawMaterial: RawMaterial) => {
+  const startEditSpecificRule = (
+    rawMaterial: RawMaterial,
+    rule: SpecificConversionRule,
+  ) => {
+    startEditSpecificConversion(rawMaterial)
+    setSpecificConversionForm({
+      productCode: rawMaterial.productCode,
+      name: rawMaterial.name,
+      srUomCode: rule.srUomCode,
+      baseUomCode: rule.prodUomCode,
+      conversionFactor: String(rule.conversionFactor),
+    })
+    setEditingSpecificRuleKey(getSpecificConversionKey(rule))
+  }
+
+  const removeSpecificConversionRule = async (
+    rawMaterial: RawMaterial,
+    rule: SpecificConversionRule,
+  ) => {
     if (!accessToken) return
-    if (!window.confirm(`Clear specific conversion for ${rawMaterial.name}?`)) {
+    const label = formatRawMaterialConversion(
+      rule.srUomCode,
+      rule.prodUomCode,
+      rule.conversionFactor,
+    )
+    if (!window.confirm(`Delete ${label} for ${rawMaterial.name}?`)) {
       return
     }
 
     try {
-      await apiFetch(
+      const ruleKey = getSpecificConversionKey(rule)
+      const updated = await apiFetch<RawMaterialApi>(
         `/raw-materials/${rawMaterial.id}`,
         {
           method: 'PATCH',
@@ -757,25 +943,66 @@ const SuperadminUnitOfMeasuresPage = () => {
             productCode: rawMaterial.productCode,
             name: rawMaterial.name,
             unitOfMeasures: rawMaterial.unitOfMeasures,
-            baseUnitOfMeasures: '',
-            conversionFactor: 0,
+            specificConversions: rawMaterial.specificConversions.filter(
+              (item) => getSpecificConversionKey(item) !== ruleKey,
+            ),
           }),
         },
         accessToken,
       )
-      setMessage('Specific conversion cleared.')
-      resetForms()
-      fetchSpecificConversions(
-        rawMaterialMeta.page,
-        rawMaterialMeta.limit,
-        search,
-      ).catch(() => null)
+      const mapped = mapRawMaterial(updated)
+      setRawMaterials((items) =>
+        items.map((item) => (item.id === mapped.id ? mapped : item)),
+      )
+      if (
+        editingSpecificRawMaterialId === rawMaterial.id &&
+        editingSpecificRuleKey === ruleKey
+      ) {
+        setSpecificConversionForm({
+          productCode: mapped.productCode,
+          name: mapped.name,
+          srUomCode: '',
+          baseUomCode: '',
+          conversionFactor: '',
+        })
+        setEditingSpecificRuleKey(null)
+      }
+      setMessage('Specific conversion rule deleted.')
+      setFormError('')
     } catch (error) {
       setFormError(
         error instanceof Error
           ? error.message
-          : 'Failed to clear specific conversion.',
+          : 'Failed to delete specific conversion rule.',
       )
+    }
+  }
+
+  const requestSpecificRuleAction = (
+    rawMaterial: RawMaterial,
+    action: SpecificRuleAction,
+  ) => {
+    const [onlyRule] = rawMaterial.specificConversions
+    if (!onlyRule) return
+    if (rawMaterial.specificConversions.length === 1) {
+      if (action === 'edit') {
+        startEditSpecificRule(rawMaterial, onlyRule)
+      } else {
+        void removeSpecificConversionRule(rawMaterial, onlyRule)
+      }
+      return
+    }
+    setSpecificRulePicker({ rawMaterial, action })
+  }
+
+  const selectSpecificRuleAction = (rule: SpecificConversionRule) => {
+    if (!specificRulePicker) return
+    const { rawMaterial, action } = specificRulePicker
+    setSpecificRulePicker(null)
+    if (action === 'edit') {
+      startEditSpecificRule(rawMaterial, rule)
+    } else {
+      void removeSpecificConversionRule(rawMaterial, rule)
     }
   }
 
@@ -1082,15 +1309,22 @@ const SuperadminUnitOfMeasuresPage = () => {
                 </div>
               ) : (
                 <div className="mt-4 space-y-4">
-                  {editingSpecificRawMaterialId ? (
+                  {editingSpecificRawMaterialId ||
+                  selectedRawMaterialIds.length > 0 ? (
                     <>
                       <div>
                         <label className="text-xs font-semibold text-muted">
-                          Raw material
+                          Target
                         </label>
                         <input
                           type="text"
-                          value={`${specificConversionForm.productCode} - ${specificConversionForm.name}`}
+                          value={
+                            editingSpecificRawMaterialId
+                              ? `${specificConversionForm.productCode} - ${specificConversionForm.name}`
+                              : `${selectedRawMaterialIds.length} selected raw material${
+                                  selectedRawMaterialIds.length === 1 ? '' : 's'
+                                }`
+                          }
                           readOnly
                           className="mt-2 w-full rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted outline-none"
                         />
@@ -1099,18 +1333,33 @@ const SuperadminUnitOfMeasuresPage = () => {
                         <label className="text-xs font-semibold text-muted">
                           SR / Purchase Unit
                         </label>
-                        <input
-                          type="text"
-                          value={
-                            specificConversionForm.srUomCode
-                              ? formatUnitLabel(
-                                  specificConversionForm.srUomCode,
-                                )
-                              : ''
+                        <select
+                          value={specificConversionForm.srUomCode}
+                          onChange={(event) =>
+                            setSpecificConversionForm((prev) => ({
+                              ...prev,
+                              srUomCode: event.target.value,
+                            }))
                           }
-                          readOnly
-                          className="mt-2 w-full rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted outline-none"
-                        />
+                          className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        >
+                          <option value="">Select SR unit</option>
+                          {specificConversionForm.srUomCode &&
+                          !rawMaterialUnitOptions.includes(
+                            specificConversionForm.srUomCode,
+                          ) ? (
+                            <option value={specificConversionForm.srUomCode}>
+                              {formatUnitLabel(
+                                specificConversionForm.srUomCode,
+                              )}
+                            </option>
+                          ) : null}
+                          {rawMaterialUnitOptions.map((code) => (
+                            <option key={code} value={code}>
+                              {formatUnitLabel(code)}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -1135,7 +1384,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-muted">
-                            Base / Recipe Unit
+                            Production / Recipe Unit
                           </label>
                           <select
                             value={specificConversionForm.baseUomCode}
@@ -1180,112 +1429,17 @@ const SuperadminUnitOfMeasuresPage = () => {
                             : undefined,
                         )}
                       </p>
+                      <p className="text-xs text-muted">
+                        Each raw material can have multiple rules. The matching
+                        production and SR unit pair will be used automatically.
+                      </p>
                     </>
                   ) : (
                     <p className="text-sm text-muted">
-                      Select a raw material from the table to set its specific
-                      conversion.
+                      Search and select raw materials with the checkboxes, or
+                      use Add rule/Edit for a single raw material.
                     </p>
                   )}
-
-                  <div className="border-t border-border pt-4">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Bulk set matching search
-                    </h3>
-                    <p className="mt-2 text-xs text-muted">
-                      Current search:{' '}
-                      <span className="font-semibold text-foreground">
-                        {search || 'None'}
-                      </span>
-                    </p>
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <label className="text-xs font-semibold text-muted">
-                          SR / Purchase Unit
-                        </label>
-                        <select
-                          value={bulkSpecificConversionForm.srUomCode}
-                          onChange={(event) =>
-                            setBulkSpecificConversionForm((prev) => ({
-                              ...prev,
-                              srUomCode: event.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                        >
-                          <option value="">Select SR unit</option>
-                          {rawMaterialUnitOptions.map((code) => (
-                            <option key={code} value={code}>
-                              {formatUnitLabel(code)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs font-semibold text-muted">
-                            Equals quantity
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.000001"
-                            value={bulkSpecificConversionForm.conversionFactor}
-                            onChange={(event) =>
-                              setBulkSpecificConversionForm((prev) => ({
-                                ...prev,
-                                conversionFactor: event.target.value,
-                              }))
-                            }
-                            onWheel={(event) => event.currentTarget.blur()}
-                            placeholder="200"
-                            className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-muted">
-                            Base / Recipe Unit
-                          </label>
-                          <select
-                            value={bulkSpecificConversionForm.baseUomCode}
-                            onChange={(event) =>
-                              setBulkSpecificConversionForm((prev) => ({
-                                ...prev,
-                                baseUomCode: event.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">Select</option>
-                            {activeUnitCodes.map((code) => (
-                              <option key={code} value={code}>
-                                {formatUnitLabel(code)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <p className="text-xs font-medium text-muted">
-                        Preview:{' '}
-                        {formatRawMaterialConversion(
-                          bulkSpecificConversionForm.srUomCode || 'SR UOM',
-                          bulkSpecificConversionForm.baseUomCode,
-                          bulkSpecificConversionForm.conversionFactor.trim()
-                            ? Number(
-                                bulkSpecificConversionForm.conversionFactor,
-                              )
-                            : undefined,
-                        )}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={saveBulkSpecificConversions}
-                        className="w-full rounded-md border border-primary bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
-                      >
-                        Apply to matching raw materials
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -1330,11 +1484,17 @@ const SuperadminUnitOfMeasuresPage = () => {
                     </button>
                   )
                 ) : (
-                  <ActionButton
-                    action="save"
-                    onClick={saveSpecificConversion}
-                    size="sm"
-                  />
+                  <button
+                    type="button"
+                    onClick={saveSpecificConversionTarget}
+                    disabled={
+                      !editingSpecificRawMaterialId &&
+                      selectedRawMaterialIds.length === 0
+                    }
+                    className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Save
+                  </button>
                 )}
                 <button
                   type="button"
@@ -1519,11 +1679,23 @@ const SuperadminUnitOfMeasuresPage = () => {
                     <table className="min-w-full divide-y divide-border text-left text-sm">
                       <thead className="bg-background text-xs uppercase tracking-wide text-muted">
                         <tr>
+                          <th className="w-12 px-4 py-3 font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={allVisibleRawMaterialsSelected}
+                              onChange={toggleVisibleRawMaterialSelection}
+                              disabled={!search || rawMaterials.length === 0}
+                              aria-label="Select all raw materials on this page"
+                              className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                            />
+                          </th>
                           <th className="px-4 py-3 font-semibold">
                             Product Code
                           </th>
                           <th className="px-4 py-3 font-semibold">Name</th>
-                          <th className="px-4 py-3 font-semibold">SR Unit</th>
+                          <th className="px-4 py-3 font-semibold">
+                            Default SR Unit
+                          </th>
                           <th className="px-4 py-3 font-semibold">
                             Specific Conversion
                           </th>
@@ -1533,26 +1705,35 @@ const SuperadminUnitOfMeasuresPage = () => {
                       <tbody className="divide-y divide-border bg-surface">
                         {rawMaterialMeta.loading ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-6 text-center">
+                            <td colSpan={6} className="px-4 py-6 text-center">
                               Loading raw materials...
                             </td>
                           </tr>
                         ) : rawMaterials.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-4 py-6 text-center">
+                            <td colSpan={6} className="px-4 py-6 text-center">
                               {rawMaterialMeta.error ||
                                 'No raw materials found.'}
                             </td>
                           </tr>
                         ) : (
                           rawMaterials.map((rawMaterial) => {
-                            const hasSpecificConversion = Boolean(
-                              rawMaterial.baseUnitOfMeasures &&
-                                rawMaterial.conversionFactor,
-                            )
-
                             return (
                               <tr key={rawMaterial.id}>
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedRawMaterialIdSet.has(
+                                      rawMaterial.id,
+                                    )}
+                                    onChange={() =>
+                                      toggleRawMaterialSelection(rawMaterial.id)
+                                    }
+                                    disabled={!search}
+                                    aria-label={`Select ${rawMaterial.productCode} - ${rawMaterial.name}`}
+                                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                                  />
+                                </td>
                                 <td className="px-4 py-3 font-semibold">
                                   {rawMaterial.productCode}
                                 </td>
@@ -1565,14 +1746,29 @@ const SuperadminUnitOfMeasuresPage = () => {
                                   )}
                                 </td>
                                 <td className="px-4 py-3">
-                                  {formatRawMaterialConversion(
-                                    rawMaterial.unitOfMeasures,
-                                    rawMaterial.baseUnitOfMeasures,
-                                    rawMaterial.conversionFactor,
+                                  {rawMaterial.specificConversions.length ? (
+                                    <div className="space-y-2">
+                                      {rawMaterial.specificConversions.map(
+                                        (rule) => (
+                                          <div
+                                            key={getSpecificConversionKey(rule)}
+                                            className="rounded-md border border-border bg-background px-3 py-2 font-medium"
+                                          >
+                                            {formatRawMaterialConversion(
+                                              rule.srUomCode,
+                                              rule.prodUomCode,
+                                              rule.conversionFactor,
+                                            )}
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  ) : (
+                                    '-'
                                   )}
                                 </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex flex-wrap gap-2">
+                                <td className="whitespace-nowrap px-4 py-3">
+                                  <div className="flex w-max flex-nowrap gap-2">
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -1582,18 +1778,35 @@ const SuperadminUnitOfMeasuresPage = () => {
                                       }
                                       className="rounded-md border border-primary/40 bg-primary-soft px-3 py-2 text-xs font-semibold text-primary"
                                     >
-                                      Edit
+                                      Add rule
                                     </button>
-                                    {hasSpecificConversion ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          clearSpecificConversion(rawMaterial)
-                                        }
-                                        className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
-                                      >
-                                        Clear
-                                      </button>
+                                    {rawMaterial.specificConversions.length ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            requestSpecificRuleAction(
+                                              rawMaterial,
+                                              'edit',
+                                            )
+                                          }
+                                          className="rounded-md border border-primary/40 bg-primary-soft px-3 py-2 text-xs font-semibold text-primary"
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            requestSpecificRuleAction(
+                                              rawMaterial,
+                                              'delete',
+                                            )
+                                          }
+                                          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+                                        >
+                                          Delete
+                                        </button>
+                                      </>
                                     ) : null}
                                   </div>
                                 </td>
@@ -1610,6 +1823,54 @@ const SuperadminUnitOfMeasuresPage = () => {
           </div>
         </section>
       </div>
+      {specificRulePicker ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="specific-rule-picker-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-white p-5 shadow-xl">
+            <h2
+              id="specific-rule-picker-title"
+              className="text-lg font-semibold text-foreground"
+            >
+              Select rule to {specificRulePicker.action}
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              {specificRulePicker.rawMaterial.productCode} -{' '}
+              {specificRulePicker.rawMaterial.name}
+            </p>
+            <div className="mt-4 space-y-2">
+              {specificRulePicker.rawMaterial.specificConversions.map(
+                (rule) => (
+                  <button
+                    key={getSpecificConversionKey(rule)}
+                    type="button"
+                    onClick={() => selectSpecificRuleAction(rule)}
+                    className="w-full rounded-md border border-border bg-background px-4 py-3 text-left text-sm font-semibold text-foreground transition hover:border-primary/40 hover:bg-primary-soft"
+                  >
+                    {formatRawMaterialConversion(
+                      rule.srUomCode,
+                      rule.prodUomCode,
+                      rule.conversionFactor,
+                    )}
+                  </button>
+                ),
+              )}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSpecificRulePicker(null)}
+                className="rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-primary"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

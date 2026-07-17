@@ -3,6 +3,12 @@ import { HydratedDocument } from 'mongoose';
 
 export type RawMaterialDocument = HydratedDocument<RawMaterial>;
 
+export type RawMaterialSpecificConversion = {
+  prodUomCode: string;
+  srUomCode: string;
+  conversionFactor: number;
+};
+
 @Schema({ timestamps: true })
 export class RawMaterial {
   @Prop({ required: true, trim: true })
@@ -28,6 +34,19 @@ export class RawMaterial {
 
   @Prop({ type: Number })
   conversionFactor?: number;
+
+  @Prop({
+    type: [
+      {
+        _id: false,
+        prodUomCode: { type: String, required: true, trim: true },
+        srUomCode: { type: String, required: true, trim: true },
+        conversionFactor: { type: Number, required: true },
+      },
+    ],
+    default: [],
+  })
+  specificConversions: RawMaterialSpecificConversion[];
 
   @Prop({ trim: true })
   vendor?: string;

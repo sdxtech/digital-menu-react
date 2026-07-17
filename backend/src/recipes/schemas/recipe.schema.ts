@@ -14,6 +14,7 @@ export type RecipeIngredient = {
   prodQty?: number;
   prodUomCode?: string;
   srQty?: number;
+  srQtyManual?: boolean;
   srUomCode?: string;
   conversionId?: string;
   conversionMultiplier?: number;
@@ -97,6 +98,7 @@ export class Recipe {
         prodQty: { type: Number },
         prodUomCode: { type: String, trim: true },
         srQty: { type: Number },
+        srQtyManual: { type: Boolean },
         srUomCode: { type: String, trim: true },
         conversionId: { type: String, trim: true },
         conversionMultiplier: { type: Number },

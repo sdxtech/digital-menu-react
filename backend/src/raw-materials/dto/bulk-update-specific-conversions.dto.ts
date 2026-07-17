@@ -1,16 +1,19 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
+  IsArray,
+  IsMongoId,
   IsNotEmpty,
   IsNumber,
-  IsOptional,
   IsString,
   Min,
 } from 'class-validator';
 
 export class BulkUpdateSpecificConversionsDto {
-  @IsString()
-  @IsNotEmpty()
-  search: string;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsMongoId({ each: true })
+  rawMaterialIds: string[];
 
   @IsString()
   @IsNotEmpty()
