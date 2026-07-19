@@ -113,6 +113,7 @@ type ChefCreateMenuProps = {
   embedded?: boolean
   baseRecipe?: BaseRecipe
   enableIngredientUomConversion?: boolean
+  lockSrUomToRawMaterial?: boolean
   onClose?: () => void
   onSaved?: () => void
 }
@@ -121,6 +122,7 @@ const ChefCreateMenu = ({
   embedded = false,
   baseRecipe: baseRecipeProp,
   enableIngredientUomConversion = false,
+  lockSrUomToRawMaterial = false,
   onClose,
   onSaved,
 }: ChefCreateMenuProps) => {
@@ -1323,34 +1325,50 @@ const ChefCreateMenu = ({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <select
-                            value={row.unitOfMeasures}
-                            onChange={(event) =>
-                              updateIngredientRow(
-                                row.id,
-                                'unitOfMeasures',
-                                event.target.value,
-                              )
-                            }
-                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">Select</option>
-                            {row.unitOfMeasures &&
-                            !uomOptions.some(
-                              (unit) =>
-                                normalizeUomCode(unit.code) ===
-                                normalizeUomCode(row.unitOfMeasures),
-                            ) ? (
-                              <option value={row.unitOfMeasures}>
-                                {formatUnitLabel(row.unitOfMeasures)}
-                              </option>
-                            ) : null}
-                            {uomOptions.map((unit) => (
-                              <option key={unit.id} value={unit.code}>
-                                {formatUnitLabel(unit.code)}
-                              </option>
-                            ))}
-                          </select>
+                          {lockSrUomToRawMaterial ? (
+                            <input
+                              type="text"
+                              value={
+                                row.unitOfMeasures
+                                  ? formatUnitLabel(row.unitOfMeasures)
+                                  : ''
+                              }
+                              readOnly
+                              aria-readonly="true"
+                              aria-label={`SR UOM for ${row.name || `ingredient ${index + 1}`}`}
+                              placeholder="Auto"
+                              className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
+                            />
+                          ) : (
+                            <select
+                              value={row.unitOfMeasures}
+                              onChange={(event) =>
+                                updateIngredientRow(
+                                  row.id,
+                                  'unitOfMeasures',
+                                  event.target.value,
+                                )
+                              }
+                              className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            >
+                              <option value="">Select</option>
+                              {row.unitOfMeasures &&
+                              !uomOptions.some(
+                                (unit) =>
+                                  normalizeUomCode(unit.code) ===
+                                  normalizeUomCode(row.unitOfMeasures),
+                              ) ? (
+                                <option value={row.unitOfMeasures}>
+                                  {formatUnitLabel(row.unitOfMeasures)}
+                                </option>
+                              ) : null}
+                              {uomOptions.map((unit) => (
+                                <option key={unit.id} value={unit.code}>
+                                  {formatUnitLabel(unit.code)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </td>
                       </>
                     ) : (
