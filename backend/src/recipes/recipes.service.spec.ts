@@ -10,15 +10,24 @@ type RecipeUpdatePayload = {
   };
 };
 
+type RecipeCreatePayload = {
+  parentRecipeId?: string;
+};
+
 describe('RecipesService site visibility', () => {
   const makeService = () => {
     const recipeModel = {
+      create: jest.fn(),
       find: jest.fn(),
       countDocuments: jest.fn().mockResolvedValue(0),
       updateMany: jest.fn(),
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
       findOne: jest.fn(),
       findOneAndUpdate: jest.fn(),
       distinct: jest.fn(),
+    };
+    const recipeCodeCounterModel = {
+      findOneAndUpdate: jest.fn().mockResolvedValue({ seq: 1 }),
     };
     const users = {
       findNamesByIds: jest.fn().mockResolvedValue(new Map()),
@@ -39,7 +48,7 @@ describe('RecipesService site visibility', () => {
 
     const service = new RecipesService(
       recipeModel as never,
-      {} as never,
+      recipeCodeCounterModel as never,
       rawMaterials as never,
       users as never,
       sites as never,
@@ -90,6 +99,112 @@ describe('RecipesService site visibility', () => {
     recipeModel.find.mockReturnValue(query);
     return query;
   };
+
+  const mockRecipeQuery = (result: unknown) => ({
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(result),
+  });
+
+  it('creates an independent recipe as version 1', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.create.mockImplementation((payload: object) =>
+      Promise.resolve({
+        _id: 'recipe-v1',
+        ...payload,
+      }),
+    );
+
+    await service.create({
+      name: 'Classic Cheesecake',
+      category: 'Dessert',
+      ingredients: [],
+    });
+
+    expect(recipeModel.findOne).not.toHaveBeenCalled();
+    expect(recipeModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipeCode: 'RCP0001',
+        name: 'Classic Cheesecake',
+        version: 1,
+        versionGroupId: 'RCP0001',
+      }),
+    );
+    const createCalls = recipeModel.create.mock.calls as unknown as Array<
+      [RecipeCreatePayload]
+    >;
+    expect(createCalls[0]?.[0].parentRecipeId).toBeUndefined();
+  });
+
+  it('creates the next version without changing the base recipe name', async () => {
+    const { recipeModel, service } = makeService();
+    const baseRecipe = {
+      _id: 'recipe-v1',
+      recipeCode: 'RCP0042',
+      name: 'Classic Cheesecake',
+    };
+    recipeModel.findOne
+      .mockReturnValueOnce(mockRecipeQuery(baseRecipe))
+      .mockReturnValueOnce(mockRecipeQuery({ version: 1 }));
+    recipeModel.create.mockImplementation((payload: object) =>
+      Promise.resolve({
+        _id: 'recipe-v2',
+        ...payload,
+      }),
+    );
+
+    await service.create({
+      baseRecipeId: 'recipe-v1',
+      name: 'This name must be ignored',
+      category: 'Dessert',
+      ingredients: [],
+    });
+
+    expect(recipeModel.findOne).toHaveBeenNthCalledWith(1, {
+      _id: 'recipe-v1',
+      approvalStatus: 'approved',
+      deletedAt: { $exists: false },
+    });
+    expect(recipeModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'recipe-v1' },
+      {
+        $set: {
+          version: 1,
+          versionGroupId: 'RCP0042',
+        },
+      },
+    );
+    expect(recipeModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Classic Cheesecake',
+        version: 2,
+        versionGroupId: 'RCP0042',
+        parentRecipeId: 'recipe-v1',
+      }),
+    );
+  });
+
+  it('exposes legacy recipes without version metadata as version 1', async () => {
+    const { recipeModel, service } = makeService();
+    mockRecipeList(recipeModel, [
+      {
+        _id: 'legacy-recipe',
+        recipeCode: 'RCP0099',
+        name: 'Legacy Recipe',
+        status: 'active',
+        approvalStatus: 'approved',
+      },
+    ]);
+
+    const result = await service.findAll({});
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        version: 1,
+        versionGroupId: 'RCP0099',
+      }),
+    );
+  });
 
   it('scopes pending recipe approvals to the unit manager site', async () => {
     const { recipeModel, service } = makeService();

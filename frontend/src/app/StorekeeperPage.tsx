@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
@@ -51,6 +52,7 @@ type StoreRequestMenu = {
   productionCode?: string
   recipeId?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -347,6 +349,7 @@ const StorekeeperPage = () => {
         'Production Date',
         'Production Code',
         'Menu Name',
+        'Version',
         'Recipe Code',
         'Category',
         'Portion',
@@ -388,6 +391,7 @@ const StorekeeperPage = () => {
           menu.productionDate ?? group.date,
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -417,6 +421,7 @@ const StorekeeperPage = () => {
           menu.productionDate ?? group.date,
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -1325,10 +1330,10 @@ const StorekeeperPage = () => {
                         <th className="px-3 py-1.5 font-semibold">Actual qty</th>
                         <th className="px-3 py-1.5 font-semibold">Variance</th>
                         <th className="px-3 py-1.5 font-semibold">
-                          Planned price
+                          Planned Price/Unit
                         </th>
                         <th className="px-3 py-1.5 font-semibold">
-                          Actual price
+                          Actual Price/Unit
                         </th>
                         <th className="px-3 py-1.5 font-semibold">
                           Price variance

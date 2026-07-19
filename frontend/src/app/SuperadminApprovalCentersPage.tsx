@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
 import {
   getApprovalStatusLabel,
@@ -40,6 +41,7 @@ type Recipe = {
   id?: string
   _id?: string
   recipeCode?: string
+  version?: number
   name: string
   category: string
   site?: string
@@ -525,6 +527,7 @@ const SuperadminApprovalCentersPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe ID</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Version</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
@@ -534,13 +537,13 @@ const SuperadminApprovalCentersPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading approval data...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {selectedSite ? 'No recipes found.' : 'Select a site first.'}
                     </td>
                   </tr>
@@ -559,6 +562,9 @@ const SuperadminApprovalCentersPage = () => {
                             {recipe.recipeCode ?? '-'}
                           </td>
                           <td className="px-5 py-4">{recipe.name}</td>
+                          <td className="px-5 py-4 font-semibold text-foreground">
+                            {formatRecipeVersion(recipe.version)}
+                          </td>
                           <td className="px-5 py-4">{recipe.category || '-'}</td>
                           <td className="px-5 py-4">
                             {recipe.status === 'active' ? 'Active' : 'Draft'}
@@ -610,7 +616,7 @@ const SuperadminApprovalCentersPage = () => {
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={7} className="px-5 py-5">
+                            <td colSpan={8} className="px-5 py-5">
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
                                   <p className="text-xs text-muted">Recipe details</p>

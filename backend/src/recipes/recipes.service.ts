@@ -48,6 +48,13 @@ type RecipeAuditFields = {
   reviewedByName?: string;
 };
 
+type RecipeVersionMetadata = {
+  name: string;
+  version: number;
+  versionGroupId: string;
+  parentRecipeId?: string;
+};
+
 type ImportWarningCode =
   | 'missing_product_code'
   | 'missing_uom'
@@ -185,6 +192,10 @@ export class RecipesService {
     );
     const imageUrl = input.imageUrl?.trim();
     const recipeCode = await this.nextRecipeCode();
+    const versionMetadata = await this.resolveRecipeVersionMetadata(
+      input,
+      recipeCode,
+    );
 
     const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
@@ -197,7 +208,12 @@ export class RecipesService {
     // 1. We now save the created recipe document to a variable named 'saved'
     const saved = await this.recipeModel.create({
       recipeCode,
-      name: input.name.trim(),
+      name: versionMetadata.name,
+      version: versionMetadata.version,
+      versionGroupId: versionMetadata.versionGroupId,
+      ...(versionMetadata.parentRecipeId
+        ? { parentRecipeId: versionMetadata.parentRecipeId }
+        : {}),
       category: input.category.trim(),
       description: input.description?.trim(),
       imageUrl: imageUrl || undefined,
@@ -224,7 +240,7 @@ export class RecipesService {
         await this.notificationsService.createHierarchicalNotification(
           actor?.id || 'system',
           'New Recipe Pending Approval',
-          `A new recipe "${saved.name}" has been submitted by the Chef and requires review.`,
+          `A new recipe "${saved.name}" V${saved.version ?? versionMetadata.version} has been submitted by the Chef and requires review.`,
           saved.site || 'global',
           'unit.manager',
           'RECIPE_APPROVAL_REQUESTS',
@@ -319,6 +335,13 @@ export class RecipesService {
         }
       });
     }
+
+    items.forEach((item) => {
+      item.version = this.normalizeRecipeVersion(item.version);
+      if (!item.versionGroupId?.trim()) {
+        item.versionGroupId = item.recipeCode?.trim() || String(item._id);
+      }
+    });
 
     await this.attachActorNames(items);
     await this.attachSiteNames(items);
@@ -706,6 +729,8 @@ export class RecipesService {
     const payload = records.map((record, index) => ({
       recipeCode: recipeCodes[index],
       name: record.name.trim(),
+      version: 1,
+      versionGroupId: recipeCodes[index],
       category: record.category.trim(),
       description: record.description?.trim(),
       imageUrl: record.imageUrl?.trim(),
@@ -1814,6 +1839,85 @@ export class RecipesService {
   private async nextRecipeCode(): Promise<string> {
     const codes = await this.allocateRecipeCodes(1);
     return codes[0];
+  }
+
+  private async resolveRecipeVersionMetadata(
+    input: CreateRecipeDto,
+    recipeCode: string,
+  ): Promise<RecipeVersionMetadata> {
+    const baseRecipeId = input.baseRecipeId?.trim();
+    if (!baseRecipeId) {
+      return {
+        name: input.name.trim(),
+        version: 1,
+        versionGroupId: recipeCode,
+      };
+    }
+
+    const baseRecipe = await this.recipeModel
+      .findOne({
+        _id: baseRecipeId,
+        approvalStatus: 'approved',
+        deletedAt: { $exists: false },
+      })
+      .select({
+        _id: 1,
+        name: 1,
+        recipeCode: 1,
+        version: 1,
+        versionGroupId: 1,
+      })
+      .lean();
+
+    if (!baseRecipe) {
+      throw new NotFoundException('Approved base recipe not found.');
+    }
+
+    const parentRecipeId = String(baseRecipe._id);
+    const baseVersion = this.normalizeRecipeVersion(baseRecipe.version);
+    const versionGroupId =
+      baseRecipe.versionGroupId?.trim() ||
+      baseRecipe.recipeCode?.trim() ||
+      parentRecipeId;
+
+    if (
+      baseRecipe.version !== baseVersion ||
+      baseRecipe.versionGroupId !== versionGroupId
+    ) {
+      await this.recipeModel.updateOne(
+        { _id: baseRecipe._id },
+        {
+          $set: {
+            version: baseVersion,
+            versionGroupId,
+          },
+        },
+      );
+    }
+
+    const latestRecipe = await this.recipeModel
+      .findOne({
+        versionGroupId,
+      })
+      .select({ version: 1 })
+      .sort({ version: -1 })
+      .lean();
+    const latestVersion = Math.max(
+      baseVersion,
+      this.normalizeRecipeVersion(latestRecipe?.version),
+    );
+
+    return {
+      name: baseRecipe.name.trim(),
+      version: latestVersion + 1,
+      versionGroupId,
+      parentRecipeId,
+    };
+  }
+
+  private normalizeRecipeVersion(value?: number): number {
+    const version = Number(value);
+    return Number.isInteger(version) && version >= 1 ? version : 1;
   }
 
   private async backfillMissingRecipeCodes(): Promise<void> {

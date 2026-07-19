@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -20,6 +21,9 @@ type Recipe = {
   id?: string
   _id?: string
   recipeCode?: string
+  version?: number
+  versionGroupId?: string
+  parentRecipeId?: string
   name: string
   category: string
   site?: string
@@ -350,18 +354,35 @@ const ChefMenuBank = () => {
   const canCreateFromSelectedRecipe =
     selectedRecipe?.approvalStatus === 'approved'
 
-  const handleCreateFromRecipe = (recipe: Recipe) => {
+  const buildRecipeTemplate = (recipe: Recipe) => ({
+    recipeCode: recipe.recipeCode,
+    version: recipe.version,
+    name: recipe.name,
+    category: recipe.category,
+    description: recipe.description ?? '',
+    portionSize: recipe.portionSize,
+    ingredients: recipe.ingredients ?? [],
+  })
+
+  const handleCreateNewVersion = (recipe: Recipe) => {
     if (recipe.approvalStatus !== 'approved') return
 
     navigate('/chef/menu-create', {
       state: {
         baseRecipe: {
-          name: recipe.name,
-          category: recipe.category,
-          description: recipe.description ?? '',
-          portionSize: recipe.portionSize,
-          ingredients: recipe.ingredients ?? [],
+          ...buildRecipeTemplate(recipe),
+          sourceRecipeId: getRecipeId(recipe),
         },
+      },
+    })
+  }
+
+  const handleUseAsTemplate = (recipe: Recipe) => {
+    if (recipe.approvalStatus !== 'approved') return
+
+    navigate('/chef/menu-create', {
+      state: {
+        baseRecipe: buildRecipeTemplate(recipe),
       },
     })
   }
@@ -846,6 +867,7 @@ const ChefMenuBank = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe ID</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Version</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Site</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
@@ -856,13 +878,13 @@ const ChefMenuBank = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes yet.'}
                     </td>
                   </tr>
@@ -889,6 +911,9 @@ const ChefMenuBank = () => {
                           {recipe.recipeCode ?? '-'}
                         </td>
                         <td className="px-5 py-4">{recipe.name}</td>
+                        <td className="px-5 py-4 font-semibold text-foreground">
+                          {formatRecipeVersion(recipe.version)}
+                        </td>
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
@@ -937,7 +962,7 @@ const ChefMenuBank = () => {
                 ID: {selectedRecipe.recipeCode ?? '-'}
               </p>
               <p className="mt-1 text-xs text-muted">
-                {selectedRecipe.name}
+                {selectedRecipe.name} | {formatRecipeVersion(selectedRecipe.version)}
               </p>
               <p className="mt-2 text-sm text-muted">
                 {selectedRecipe.description}
@@ -945,13 +970,22 @@ const ChefMenuBank = () => {
             </div>
             <div className="flex items-center gap-2">
               {canCreateFromSelectedRecipe ? (
-                <button
-                  type="button"
-                  onClick={() => handleCreateFromRecipe(selectedRecipe)}
-                  className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-                >
-                  Create menu from this recipe
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleUseAsTemplate(selectedRecipe)}
+                    className="rounded-md border border-primary bg-background px-4 py-2 text-xs font-semibold text-primary shadow-sm"
+                  >
+                    Create menu from this recipe
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCreateNewVersion(selectedRecipe)}
+                    className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
+                  >
+                    Create new version
+                  </button>
+                </>
               ) : null}
               {canEditSelectedRecipe ? (
                 <button

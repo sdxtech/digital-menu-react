@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
@@ -28,6 +29,7 @@ type Recipe = {
   id?: string
   _id?: string
   recipeCode?: string
+  version?: number
   name: string
   category: string
   description?: string
@@ -57,6 +59,7 @@ type StoreRequestMenu = {
   submittedByName?: string
   recipeId?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -326,6 +329,7 @@ const UnitManagerPage = () => {
         'Production Date',
         'Production Code',
         'Menu Name',
+        'Version',
         'Recipe Code',
         'Category',
         'Portion',
@@ -346,6 +350,7 @@ const UnitManagerPage = () => {
           group.date,
           group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -365,6 +370,7 @@ const UnitManagerPage = () => {
           menu.productionDate ?? group.date,
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -733,6 +739,7 @@ const UnitManagerPage = () => {
                     <th className="w-12 px-4 py-3 font-semibold">No</th>
                     <th className="px-4 py-3 font-semibold">Recipe ID</th>
                     <th className="px-4 py-3 font-semibold">Name</th>
+                    <th className="px-4 py-3 font-semibold">Version</th>
                     <th className="px-4 py-3 font-semibold">Category</th>
                     <th className="px-4 py-3 font-semibold">Chef</th>
                     <th className="px-4 py-3 font-semibold">Recipe status</th>
@@ -742,7 +749,7 @@ const UnitManagerPage = () => {
                 <tbody>
                   {pendingRecipes.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-muted">
+                      <td colSpan={8} className="px-4 py-6 text-center text-muted">
                         No recipes pending approval.
                       </td>
                     </tr>
@@ -768,6 +775,9 @@ const UnitManagerPage = () => {
                               {item.recipeCode ?? '-'}
                             </td>
                             <td className="px-4 py-3">{item.name}</td>
+                            <td className="px-4 py-3 font-semibold text-foreground">
+                              {formatRecipeVersion(item.version)}
+                            </td>
                             <td className="px-4 py-3">{item.category}</td>
                             <td className="px-4 py-3">{submittedBy}</td>
                             <td className="px-4 py-3">
@@ -816,7 +826,7 @@ const UnitManagerPage = () => {
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={7} className="px-4 py-4">
+                              <td colSpan={8} className="px-4 py-4">
                                 <div className="grid gap-4 lg:grid-cols-12">
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
                                     <p className="text-xs text-muted">Recipe details</p>
