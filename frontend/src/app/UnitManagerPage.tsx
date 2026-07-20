@@ -15,7 +15,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -308,7 +308,7 @@ const UnitManagerPage = () => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
-          toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
         rowNumber += 1
@@ -321,7 +321,7 @@ const UnitManagerPage = () => {
         item.productCode,
         item.name,
         item.vendor ?? '',
-        toSpreadsheetNumber(formatQuantity(item.qty)),
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
       ]),
     ]

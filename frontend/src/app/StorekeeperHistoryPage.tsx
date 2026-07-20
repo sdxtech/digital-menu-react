@@ -8,7 +8,8 @@ import { useAuth } from '../lib/auth'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
+  toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -323,17 +324,17 @@ const StorekeeperHistoryPage = () => {
           ingredient.productCode,
           ingredient.name,
           fulfillment
-            ? toSpreadsheetNumber(formatQuantity(fulfillment.plannedQty))
-            : toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+            ? toSpreadsheetDecimal(formatQuantity(fulfillment.plannedQty))
+            : toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
           fulfillment
-            ? toSpreadsheetNumber(formatQuantity(fulfillment.actualQty))
+            ? toSpreadsheetDecimal(formatQuantity(fulfillment.actualQty))
             : '',
           fulfillment
-            ? toSpreadsheetNumber(formatQuantity(fulfillment.varianceQty))
+            ? toSpreadsheetDecimal(formatQuantity(fulfillment.varianceQty))
             : '',
-          toSpreadsheetNumber(fulfillment?.plannedPrice),
-          toSpreadsheetNumber(fulfillment?.actualPrice),
-          toSpreadsheetNumber(fulfillment?.variancePrice),
+          toSpreadsheetInteger(fulfillment?.plannedPrice),
+          toSpreadsheetInteger(fulfillment?.actualPrice),
+          toSpreadsheetInteger(fulfillment?.variancePrice),
           formatUnitLabel(
             fulfillment?.unitOfMeasures ?? ingredient.unitOfMeasures,
           ),
@@ -361,12 +362,12 @@ const StorekeeperHistoryPage = () => {
         '',
         item.productCode,
         item.name,
-        toSpreadsheetNumber(formatQuantity(item.plannedQty)),
-        toSpreadsheetNumber(formatQuantity(item.actualQty)),
-        toSpreadsheetNumber(formatQuantity(item.varianceQty)),
-        toSpreadsheetNumber(item.plannedPrice),
-        toSpreadsheetNumber(item.actualPrice),
-        toSpreadsheetNumber(item.variancePrice),
+        toSpreadsheetDecimal(formatQuantity(item.plannedQty)),
+        toSpreadsheetDecimal(formatQuantity(item.actualQty)),
+        toSpreadsheetDecimal(formatQuantity(item.varianceQty)),
+        toSpreadsheetInteger(item.plannedPrice),
+        toSpreadsheetInteger(item.actualPrice),
+        toSpreadsheetInteger(item.variancePrice),
         formatUnitLabel(item.unitOfMeasures),
         item.reason ?? '',
         completedByLabel,

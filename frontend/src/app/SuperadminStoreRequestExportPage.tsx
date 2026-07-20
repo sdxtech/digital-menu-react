@@ -11,7 +11,8 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
+  toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -414,8 +415,8 @@ const SuperadminStoreRequestExportPage = () => {
             menu.menuName,
             formatRecipeVersion(menu.recipeVersion),
             menu.portion,
-            toSpreadsheetNumber(estimatedTotalCost),
-            toSpreadsheetNumber(estimatedCostPerPax),
+            toSpreadsheetInteger(estimatedTotalCost),
+            toSpreadsheetInteger(estimatedCostPerPax),
           ])
 
           const ingredients = menu.ingredients ?? []
@@ -480,21 +481,21 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.productCode,
               ingredient.name,
               ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-              toSpreadsheetNumber(formatQuantity(plannedQty)),
+              toSpreadsheetDecimal(formatQuantity(plannedQty)),
               fulfillmentItem
-                ? toSpreadsheetNumber(formatQuantity(fulfillmentItem.actualQty))
+                ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
                 : '',
               fulfillmentItem
-                ? toSpreadsheetNumber(
+                ? toSpreadsheetDecimal(
                     formatQuantity(fulfillmentItem.varianceQty),
                   )
                 : '',
-              toSpreadsheetNumber(
+              toSpreadsheetInteger(
                 formatPrice(fulfillmentItem?.plannedPrice ?? ingredient.price),
               ),
-              toSpreadsheetNumber(formatPrice(fulfillmentItem?.actualPrice)),
-              toSpreadsheetNumber(formatPrice(fulfillmentItem?.variancePrice)),
-              toSpreadsheetNumber(
+              toSpreadsheetInteger(formatPrice(fulfillmentItem?.actualPrice)),
+              toSpreadsheetInteger(formatPrice(fulfillmentItem?.variancePrice)),
+              toSpreadsheetInteger(
                 formatPrice(getActualIngredientCost(fulfillmentItem)),
               ),
               formatUnitLabel(ingredient.unitOfMeasures),
@@ -524,13 +525,13 @@ const SuperadminStoreRequestExportPage = () => {
             item.productCode,
             item.name,
             item.vendor ?? '',
-            toSpreadsheetNumber(formatQuantity(item.plannedQty)),
-            toSpreadsheetNumber(formatQuantity(item.actualQty)),
-            toSpreadsheetNumber(formatQuantity(item.varianceQty)),
-            toSpreadsheetNumber(formatPrice(item.plannedPrice)),
-            toSpreadsheetNumber(formatPrice(item.actualPrice)),
-            toSpreadsheetNumber(formatPrice(item.variancePrice)),
-            toSpreadsheetNumber(formatPrice(getActualIngredientCost(item))),
+            toSpreadsheetDecimal(formatQuantity(item.plannedQty)),
+            toSpreadsheetDecimal(formatQuantity(item.actualQty)),
+            toSpreadsheetDecimal(formatQuantity(item.varianceQty)),
+            toSpreadsheetInteger(formatPrice(item.plannedPrice)),
+            toSpreadsheetInteger(formatPrice(item.actualPrice)),
+            toSpreadsheetInteger(formatPrice(item.variancePrice)),
+            toSpreadsheetInteger(formatPrice(getActualIngredientCost(item))),
             formatUnitLabel(item.unitOfMeasures),
             '',
             '',

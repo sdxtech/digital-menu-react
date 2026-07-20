@@ -13,7 +13,7 @@ import { useAuth } from '../lib/auth'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -354,7 +354,7 @@ const StorekeeperPage = () => {
           ingredient.productCode,
           ingredient.name,
           vendor,
-          toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
           formatUnitLabel(ingredient.unitOfMeasures),
         ])
         rowNumber += 1
@@ -367,7 +367,7 @@ const StorekeeperPage = () => {
         item.productCode,
         item.name,
         item.vendor ?? '',
-        toSpreadsheetNumber(formatQuantity(item.qty)),
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
       ]),
     ]
