@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
@@ -18,6 +19,9 @@ type Recipe = {
   id?: string
   _id?: string
   recipeCode?: string
+  version?: number
+  versionGroupId?: string
+  parentRecipeId?: string
   name: string
   category: string
   site?: string
@@ -358,6 +362,7 @@ const UnitManagerRecipeDataPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
+                  <th className="px-5 py-4 font-semibold">Version</th>
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Site</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
@@ -368,13 +373,13 @@ const UnitManagerRecipeDataPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes found.'}
                     </td>
                   </tr>
@@ -392,6 +397,9 @@ const UnitManagerRecipeDataPage = () => {
                           {recipe.recipeCode ?? '-'}
                         </td>
                         <td className="px-5 py-4">{recipe.name}</td>
+                        <td className="px-5 py-4 font-semibold text-foreground">
+                          {formatRecipeVersion(recipe.version)}
+                        </td>
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">{statusLabel(recipe.status)}</td>
@@ -429,7 +437,9 @@ const UnitManagerRecipeDataPage = () => {
               <p className="mt-1 text-xs text-muted">
                 Code: {selectedRecipe.recipeCode ?? '-'}
               </p>
-              <p className="mt-1 text-xs text-muted">{selectedRecipe.name}</p>
+              <p className="mt-1 text-xs text-muted">
+                {selectedRecipe.name} | {formatRecipeVersion(selectedRecipe.version)}
+              </p>
               <p className="mt-2 text-sm text-muted">
                 {selectedRecipe.description?.trim() || 'No description.'}
               </p>
@@ -445,7 +455,13 @@ const UnitManagerRecipeDataPage = () => {
             </button>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-md border border-border bg-background p-4">
+              <p className="text-xs text-muted">Version</p>
+              <p className="mt-2 text-sm font-semibold text-primary">
+                {formatRecipeVersion(selectedRecipe.version)}
+              </p>
+            </div>
             <div className="rounded-md border border-border bg-background p-4">
               <p className="text-xs text-muted">Category</p>
               <p className="mt-2 text-sm font-medium">{selectedRecipe.category}</p>

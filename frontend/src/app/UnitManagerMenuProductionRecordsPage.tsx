@@ -3,6 +3,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
@@ -57,6 +58,7 @@ type StoreRequestMenu = {
   submittedByName?: string
   reviewedBy?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -286,6 +288,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         'Production Date',
         'Production Code',
         'Menu Name',
+        'Version',
         'Category',
         'Recipe Code',
         'Portion',
@@ -331,6 +334,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
           group.date,
           group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.category,
           menu.recipeCode ?? '',
           menu.portion,
@@ -365,6 +369,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
           group.date,
           group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.category,
           menu.recipeCode ?? '',
           menu.portion,
@@ -730,8 +735,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="px-4 py-3 font-semibold">Planned</th>
                                           <th className="px-4 py-3 font-semibold">Actual</th>
                                           <th className="px-4 py-3 font-semibold">Variance</th>
-                                          <th className="px-4 py-3 font-semibold">Planned Price</th>
-                                          <th className="px-4 py-3 font-semibold">Actual Price</th>
+                                          <th className="px-4 py-3 font-semibold">Planned Price/Unit</th>
+                                          <th className="px-4 py-3 font-semibold">Actual Price/Unit</th>
                                           <th className="px-4 py-3 font-semibold">Price Variance</th>
                                           <th className="px-4 py-3 font-semibold">Unit</th>
                                           <th className="px-4 py-3 font-semibold">Reason</th>

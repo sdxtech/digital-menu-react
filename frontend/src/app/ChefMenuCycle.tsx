@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api'
 import { useChefData, type MenuProduction, type Recipe } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
+import { formatVersionedRecipeName } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
@@ -744,7 +745,12 @@ const ChefMenuCycle = ({
     return availableRecipes.find((recipe) => {
       const name = normalizeText(recipe.name)
       const recipeCode = normalizeText(recipe.recipeCode)
-      return name === normalized || recipeCode === normalized
+      const versionedName = normalizeText(formatVersionedRecipeName(recipe))
+      return (
+        name === normalized ||
+        recipeCode === normalized ||
+        versionedName === normalized
+      )
     })
   }/* Fungsi untuk mencari resep yang cocok dengan query pencarian secara tepat, baik berdasarkan nama resep maupun kode resep. Query dan data resep dinormalisasi untuk memastikan pencarian tidak sensitif terhadap spasi atau huruf kapital. Digunakan untuk menentukan apakah input pengguna cocok dengan salah satu resep yang tersedia saat mereka mengetik di kolom menu. */
 
@@ -756,6 +762,7 @@ const ChefMenuCycle = ({
           const searchable = [
             recipe.recipeCode,
             recipe.name,
+            formatVersionedRecipeName(recipe),
             recipe.category,
             getRecipeSiteText(recipe),
           ]
@@ -1375,7 +1382,7 @@ const ChefMenuCycle = ({
                           {recipeSuggestions.map((recipe) => (
                             <option
                               key={recipe.id}
-                              value={recipe.name}
+                              value={formatVersionedRecipeName(recipe)}
                               label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
                             />
                           ))}

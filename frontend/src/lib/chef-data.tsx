@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { apiFetch } from './api'
 import { readStoredToken, useAuth } from './auth'
+import { getRecipeVersion } from './recipe-version'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type RecipeStatus = 'draft' | 'active'
@@ -37,6 +38,9 @@ export type Recipe = {
   id: string
   recipeCode?: string
   name: string
+  version: number
+  versionGroupId?: string
+  parentRecipeId?: string
   category: string
   description: string
   imageUrl?: string
@@ -67,6 +71,7 @@ export type MenuProduction = {
   productionCode?: string
   recipeId?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   site?: string
@@ -111,6 +116,7 @@ type ChefDataState = {
 }
 
 type CreateRecipeInput = {
+  baseRecipeId?: string
   name: string
   category: string
   description: string
@@ -198,7 +204,7 @@ type SiteScopedFetchOptions = {
 }
 
 type ChefDataContextValue = ChefDataState & {
-  createRecipe: (input: CreateRecipeInput) => Promise<void>
+  createRecipe: (input: CreateRecipeInput) => Promise<Recipe>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
   importRecipesFromExcel: (file: File) => Promise<number>
   approveRecipe: (id: string) => Promise<void>
@@ -253,6 +259,9 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     id: pickId(item.id ?? item._id, 'recipe'),
     recipeCode: item.recipeCode ?? undefined,
     name: item.name ?? '',
+    version: getRecipeVersion(item.version),
+    versionGroupId: item.versionGroupId ?? undefined,
+    parentRecipeId: item.parentRecipeId ?? undefined,
     category: item.category ?? '',
     description: item.description ?? '',
     imageUrl: item.imageUrl ?? undefined,
@@ -301,6 +310,7 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   productionCode: item.productionCode ?? undefined,
   recipeId: item.recipeId ?? undefined,
   recipeCode: item.recipeCode ?? undefined,
+  recipeVersion: getRecipeVersion(item.recipeVersion),
   menuName: item.menuName ?? '',
   category: item.category ?? '',
   site: item.site ?? undefined,
@@ -434,6 +444,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       recipes: upsertById(prev.recipes, mapped),
     }))
+    return mapped
   }
 
   const updateRecipe = async (id: string, input: UpdateRecipeInput) => {

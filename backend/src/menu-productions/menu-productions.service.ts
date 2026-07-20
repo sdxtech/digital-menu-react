@@ -77,6 +77,7 @@ type StoreRequestMenu = {
   reviewedBy?: string;
   recipeId?: string;
   recipeCode?: string;
+  recipeVersion?: number;
   menuName: string;
   category: string;
   portion: number;
@@ -115,6 +116,7 @@ type TimelineGroup = {
     productionCode?: string;
     recipeId?: string;
     recipeCode?: string;
+    recipeVersion?: number;
     menuName: string;
     category: string;
     portion: number;
@@ -134,6 +136,7 @@ type TimelineStats = {
 type EligibleRecipe = {
   id: string;
   recipeCode?: string;
+  version: number;
   name: string;
   category: string;
   portionSize?: number;
@@ -193,6 +196,11 @@ export class MenuProductionsService implements OnModuleInit {
   private roundQuantity(value: number) {
     if (!Number.isFinite(value)) return 0;
     return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
+  }
+
+  private normalizeRecipeVersion(value: unknown) {
+    const version = Number(value);
+    return Number.isInteger(version) && version >= 1 ? version : 1;
   }
 
   private resolveMenuSnapshot(
@@ -325,6 +333,7 @@ export class MenuProductionsService implements OnModuleInit {
       productionCode,
       recipeId: recipe.id,
       recipeCode: recipe.recipeCode,
+      recipeVersion: recipe.version,
       menuName: menuSnapshot.menuName,
       category: menuSnapshot.category,
       portion: input.portion,
@@ -385,6 +394,7 @@ export class MenuProductionsService implements OnModuleInit {
         productionCode: productionCodeByDate.get(input.productionDate),
         recipeId: recipe.id,
         recipeCode: recipe.recipeCode,
+        recipeVersion: recipe.version,
         menuName: menuSnapshot.menuName,
         category: menuSnapshot.category,
         portion: input.portion,
@@ -1164,18 +1174,23 @@ export class MenuProductionsService implements OnModuleInit {
       ),
     );
     const recipeCodeById = new Map<string, string>();
+    const recipeVersionById = new Map<string, number>();
     if (recipeIds.length) {
       const recipes = await this.recipeModel
         .find({ _id: { $in: recipeIds } })
-        .select({ recipeCode: 1 })
+        .select({ recipeCode: 1, version: 1 })
         .lean();
       recipes.forEach((recipe) => {
         const normalizedRecipeId = this.normalizeOptionalRecipeId(
           String(recipe._id ?? ''),
         );
         const recipeCode = this.normalizeOptionalRecipeCode(recipe.recipeCode);
-        if (!normalizedRecipeId || !recipeCode) return;
-        recipeCodeById.set(normalizedRecipeId, recipeCode);
+        if (!normalizedRecipeId) return;
+        if (recipeCode) recipeCodeById.set(normalizedRecipeId, recipeCode);
+        recipeVersionById.set(
+          normalizedRecipeId,
+          this.normalizeRecipeVersion(recipe.version),
+        );
       });
     }
 
@@ -1203,6 +1218,10 @@ export class MenuProductionsService implements OnModuleInit {
         recipeCode:
           this.normalizeOptionalRecipeCode(item.recipeCode) ??
           (recipeId ? recipeCodeById.get(recipeId) : undefined),
+        recipeVersion: this.normalizeRecipeVersion(
+          item.recipeVersion ??
+            (recipeId ? recipeVersionById.get(recipeId) : undefined),
+        ),
         menuName: item.menuName,
         category: item.category,
         portion: item.portion,
@@ -1346,6 +1365,7 @@ export class MenuProductionsService implements OnModuleInit {
       })
       .select({
         recipeCode: 1,
+        version: 1,
         name: 1,
         category: 1,
         portionSize: 1,
@@ -1362,6 +1382,7 @@ export class MenuProductionsService implements OnModuleInit {
       byId.set(normalizedRecipeId, {
         id: normalizedRecipeId,
         recipeCode: this.normalizeOptionalRecipeCode(recipe.recipeCode),
+        version: this.normalizeRecipeVersion(recipe.version),
         name: recipe.name?.trim() ?? '',
         category: recipe.category?.trim() ?? '',
         portionSize: Number(recipe.portionSize),
@@ -1657,8 +1678,15 @@ export class MenuProductionsService implements OnModuleInit {
         recipeById.set(recipeId, recipe);
       }
       const key = this.normalizeName(recipe.name ?? '');
-      if (!key || recipeByName.has(key)) return;
-      recipeByName.set(key, recipe);
+      if (!key) return;
+      const existing = recipeByName.get(key);
+      if (
+        !existing ||
+        this.normalizeRecipeVersion(recipe.version) <
+          this.normalizeRecipeVersion(existing.version)
+      ) {
+        recipeByName.set(key, recipe);
+      }
     });
 
     const groups = new Map<
@@ -1725,6 +1753,9 @@ export class MenuProductionsService implements OnModuleInit {
       const resolvedRecipeCode =
         this.normalizeOptionalRecipeCode(String(menu.recipeCode ?? '')) ??
         this.normalizeOptionalRecipeCode(recipe?.recipeCode);
+      const resolvedRecipeVersion = this.normalizeRecipeVersion(
+        menu.recipeVersion ?? (menuRecipeId ? recipe?.version : undefined),
+      );
 
       if (!recipe) {
         missingRecipe = true;
@@ -1904,6 +1935,7 @@ export class MenuProductionsService implements OnModuleInit {
         reviewedBy,
         recipeId: resolvedRecipeId,
         recipeCode: resolvedRecipeCode,
+        recipeVersion: resolvedRecipeVersion,
         menuName: String(menu.menuName ?? ''),
         category: String(menu.category ?? ''),
         portion: Number(menu.portion ?? 0),

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatQuantity, formatSignedQuantity } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
@@ -38,6 +39,7 @@ type StoreRequestMenu = {
   productionCode?: string
   recipeId?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -318,6 +320,7 @@ const StorekeeperHistoryPage = () => {
         'Production Date',
         'Production Code',
         'Menu Name',
+        'Version',
         'Recipe Code',
         'Category',
         'Store Request Status',
@@ -327,8 +330,8 @@ const StorekeeperHistoryPage = () => {
         'Planned Qty',
         'Actual Qty',
         'Variance',
-        'Planned Price',
-        'Actual Price',
+        'Planned Price/Unit',
+        'Actual Price/Unit',
         'Price Variance',
         'Unit',
         'Reason',
@@ -348,10 +351,14 @@ const StorekeeperHistoryPage = () => {
           menu.productionDate ?? group.date,
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'fulfilled'),
           menu.portion,
+          '',
+          '',
+          '',
           '',
           '',
           '',
@@ -381,6 +388,7 @@ const StorekeeperHistoryPage = () => {
           menu.productionDate ?? group.date,
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'fulfilled'),
@@ -414,6 +422,7 @@ const StorekeeperHistoryPage = () => {
         rowNumber,
         group.date,
         group.productionCode ?? '',
+        '',
         '',
         '',
         '',
@@ -704,10 +713,10 @@ const StorekeeperHistoryPage = () => {
                                             Variance
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Planned price
+                                            Planned Price/Unit
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Actual price
+                                            Actual Price/Unit
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
                                             Price variance

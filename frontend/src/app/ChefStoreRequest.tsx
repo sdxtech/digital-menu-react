@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
@@ -44,6 +45,7 @@ type StoreRequestMenu = {
   productionCode?: string
   recipeId?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -266,6 +268,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'Site',
       'Production Code',
       'Menu Name',
+      'Version',
       'Recipe Code',
       'Category',
       'Portion',
@@ -290,6 +293,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           group.site ?? '',
           group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -312,6 +316,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           group.site ?? '',
           group.productionCode ?? '',
           menu.menuName,
+          formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
@@ -367,6 +372,7 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
       'Production Date',
       'Site',
       'Menu Name',
+      'Version',
       'Category',
       'Portion',
       'Estimated Total Cost',
@@ -389,6 +395,7 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
         group.date,
         group.site ?? '',
         menu.menuName,
+        formatRecipeVersion(menu.recipeVersion),
         menu.category,
         menu.portion,
         formatPrice(estimatedTotalCost),

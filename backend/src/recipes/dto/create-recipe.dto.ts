@@ -78,6 +78,11 @@ export class RecipeIngredientDto {
 }
 
 export class CreateRecipeDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  baseRecipeId?: string;
+
   @IsString()
   @IsNotEmpty()
   name: string;

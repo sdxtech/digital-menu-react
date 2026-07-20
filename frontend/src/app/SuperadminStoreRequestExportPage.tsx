@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity as formatRawQuantity } from '../lib/quantity'
+import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -51,6 +52,7 @@ type StoreRequestMenu = {
   submittedByName?: string
   reviewedBy?: string
   recipeCode?: string
+  recipeVersion?: number
   menuName: string
   category: string
   portion: number
@@ -427,6 +429,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Site',
           'Production Code',
           'Menu Name',
+          'Version',
           'Category',
           'Recipe Code',
           'Portion',
@@ -436,8 +439,8 @@ const SuperadminStoreRequestExportPage = () => {
           'QTY Planned',
           'QTY Actual',
           'Variance',
-          'Planned Price',
-          'Actual Price',
+          'Planned Price/Unit',
+          'Actual Price/Unit',
           'Price Variance',
           'Ingredient Cost',
           'Unit Of Measures',
@@ -453,6 +456,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Production Date',
           'Site',
           'Menu Name',
+          'Version',
           'Portion',
           'Estimated Total Cost',
           'Cost Per Pax',
@@ -495,6 +499,7 @@ const SuperadminStoreRequestExportPage = () => {
             group.date,
             siteName,
             menu.menuName,
+            formatRecipeVersion(menu.recipeVersion),
             menu.portion,
             formatRupiah(estimatedTotalCost),
             formatRupiah(estimatedCostPerPax),
@@ -514,6 +519,7 @@ const SuperadminStoreRequestExportPage = () => {
               siteName,
               group.productionCode ?? '',
               menu.menuName,
+              formatRecipeVersion(menu.recipeVersion),
               menu.category,
               menu.recipeCode ?? '',
               menu.portion,
@@ -554,6 +560,7 @@ const SuperadminStoreRequestExportPage = () => {
               siteName,
               group.productionCode ?? '',
               menu.menuName,
+              formatRecipeVersion(menu.recipeVersion),
               menu.category,
               menu.recipeCode ?? '',
               menu.portion,
@@ -588,6 +595,7 @@ const SuperadminStoreRequestExportPage = () => {
             group.date,
             siteName,
             group.productionCode ?? '',
+            '',
             '',
             '',
             '',
