@@ -16,7 +16,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -305,12 +305,12 @@ const UnitManagerMenuProductionRecordsPage = () => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-          toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
           fulfillmentItem
-            ? toSpreadsheetNumber(formatQuantity(fulfillmentItem.actualQty))
+            ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
             : '',
           fulfillmentItem
-            ? toSpreadsheetNumber(formatQuantity(fulfillmentItem.varianceQty))
+            ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.varianceQty))
             : '',
           formatUnitLabel(ingredient.unitOfMeasures),
           approvedBy,
@@ -330,7 +330,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         item.productCode,
         item.name,
         item.vendor ?? '',
-        toSpreadsheetNumber(formatQuantity(item.qty)),
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
       ]),
     ]

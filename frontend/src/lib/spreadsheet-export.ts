@@ -1,11 +1,23 @@
-export type SpreadsheetCell = string | number | Date | null | undefined
+type SpreadsheetDecimalCell = {
+  kind: 'decimal'
+  value: number
+}
+
+export type SpreadsheetCell =
+  | string
+  | number
+  | Date
+  | SpreadsheetDecimalCell
+  | null
+  | undefined
 
 export type SpreadsheetSheet = {
   name: string
   rows: SpreadsheetCell[][]
 }
 
-const NUMBER_FORMAT = '#,##0.##########'
+const INTEGER_FORMAT = '#,##0'
+const DECIMAL_FORMAT = '0.######'
 const DATE_FORMAT = 'dd/mm/yyyy'
 
 const sanitizeWorksheetName = (value: string) => {
@@ -15,10 +27,11 @@ const sanitizeWorksheetName = (value: string) => {
 
 const getCellDisplayLength = (value: SpreadsheetCell) => {
   if (value instanceof Date) return DATE_FORMAT.length
+  if (isSpreadsheetDecimalCell(value)) return String(value.value).length
   return value === null || value === undefined ? 0 : String(value).length
 }
 
-export const toSpreadsheetNumber = (value: unknown): number | '' => {
+const parseSpreadsheetNumber = (value: unknown): number | '' => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : ''
   }
@@ -26,6 +39,26 @@ export const toSpreadsheetNumber = (value: unknown): number | '' => {
 
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : ''
+}
+
+const isSpreadsheetDecimalCell = (
+  value: SpreadsheetCell,
+): value is SpreadsheetDecimalCell =>
+  typeof value === 'object' &&
+  value !== null &&
+  !(value instanceof Date) &&
+  value.kind === 'decimal'
+
+export const toSpreadsheetInteger = (value: unknown): number | '' => {
+  const parsed = parseSpreadsheetNumber(value)
+  return parsed === '' ? '' : Math.trunc(parsed)
+}
+
+export const toSpreadsheetDecimal = (
+  value: unknown,
+): SpreadsheetDecimalCell | '' => {
+  const parsed = parseSpreadsheetNumber(value)
+  return parsed === '' ? '' : { kind: 'decimal', value: parsed }
 }
 
 export const toSpreadsheetDate = (value: unknown): Date | '' => {
@@ -65,7 +98,10 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
     const worksheet = workbook.addWorksheet(sanitizeWorksheetName(sheet.name))
     worksheet.addRows(
       sheet.rows.map((row) =>
-        row.map((cell) => (cell === null || cell === undefined ? '' : cell)),
+        row.map((cell) => {
+          if (isSpreadsheetDecimalCell(cell)) return cell.value
+          return cell === null || cell === undefined ? '' : cell
+        }),
       ),
     )
 
@@ -81,11 +117,14 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
 
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return
-      row.eachCell({ includeEmpty: false }, (cell) => {
+      row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+        const sourceCell = sheet.rows[rowNumber - 1]?.[columnNumber - 1]
         if (cell.value instanceof Date) {
           cell.numFmt = DATE_FORMAT
+        } else if (isSpreadsheetDecimalCell(sourceCell)) {
+          cell.numFmt = DECIMAL_FORMAT
         } else if (typeof cell.value === 'number') {
-          cell.numFmt = NUMBER_FORMAT
+          cell.numFmt = INTEGER_FORMAT
         }
       })
     })
