@@ -123,9 +123,6 @@ type RawMaterialVendorPriceOption = {
   key: string
   vendor: string
   site?: string
-  sites: string[]
-  currency?: string
-  unitOfMeasures?: string
   minimumQuantity?: number
   priceQuantity?: number
   price?: number
@@ -312,8 +309,6 @@ const mapRawMaterialVendorPriceOption = (
   if (!vendor) return null
 
   const site = item.site?.trim() || undefined
-  const currency = item.currency?.trim() || undefined
-  const unitOfMeasures = item.unitOfMeasures?.trim() || undefined
   const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
     ? Number(item.minimumQuantity)
     : undefined
@@ -327,10 +322,6 @@ const mapRawMaterialVendorPriceOption = (
     : undefined
   const key = [
     normalizeTextKey(vendor),
-    normalizeTextKey(site),
-    normalizeTextKey(currency),
-    normalizeTextKey(unitOfMeasures),
-    minimumQuantity ?? '',
     price ?? '',
     priceQuantity ?? '',
   ].join('|')
@@ -339,9 +330,6 @@ const mapRawMaterialVendorPriceOption = (
     key,
     vendor,
     site,
-    sites: site ? [site] : [],
-    currency,
-    unitOfMeasures,
     minimumQuantity,
     priceQuantity,
     price,
@@ -359,76 +347,6 @@ const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
 
 const formatVendorOptionLabel = (option: RawMaterialVendorPriceOption) =>
   option.vendor
-
-const getVendorPriceCoverageKey = (option: RawMaterialVendorPriceOption) =>
-  [
-    normalizeTextKey(option.vendor),
-    normalizeTextKey(option.currency),
-    normalizeTextKey(option.unitOfMeasures),
-    option.minimumQuantity ?? '',
-    getVendorUnitPrice(option) ?? '',
-  ].join('|')
-
-const mergeVendorPriceSites = (...siteLists: string[][]) => {
-  const uniqueSites = new Map<string, string>()
-  siteLists.flat().forEach((site) => {
-    const trimmedSite = site.trim()
-    const siteKey = normalizeTextKey(trimmedSite)
-    if (siteKey && !uniqueSites.has(siteKey)) {
-      uniqueSites.set(siteKey, trimmedSite)
-    }
-  })
-
-  return Array.from(uniqueSites.values()).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: 'base' }),
-  )
-}
-
-const groupVendorPricesByCoverage = (
-  options: RawMaterialVendorPriceOption[],
-) => {
-  const groupedOptions = new Map<string, RawMaterialVendorPriceOption>()
-
-  options.forEach((option) => {
-    const coverageKey = getVendorPriceCoverageKey(option)
-    const optionSites = mergeVendorPriceSites(
-      option.sites,
-      option.site ? [option.site] : [],
-    )
-    const existing = groupedOptions.get(coverageKey)
-
-    if (!existing) {
-      groupedOptions.set(coverageKey, {
-        ...option,
-        key: `coverage|${coverageKey}`,
-        sites: optionSites,
-      })
-      return
-    }
-
-    existing.sites = mergeVendorPriceSites(existing.sites, optionSites)
-  })
-
-  return Array.from(groupedOptions.values()).sort((a, b) => {
-    const vendorComparison = a.vendor.localeCompare(b.vendor, undefined, {
-      sensitivity: 'base',
-    })
-    if (vendorComparison !== 0) return vendorComparison
-
-    return Number(getVendorUnitPrice(a) ?? 0) - Number(getVendorUnitPrice(b) ?? 0)
-  })
-}
-
-const formatVendorCoverageLabel = (option: RawMaterialVendorPriceOption) => {
-  const siteCount = option.sites.length
-  const siteLabel = `${siteCount} site${siteCount === 1 ? '' : 's'}`
-  return `${option.vendor} — ${formatPrice(getVendorUnitPrice(option))} (${siteLabel})`
-}
-
-const formatVendorCoverageSites = (option: RawMaterialVendorPriceOption) =>
-  option.sites.length > 0
-    ? `Sites (${option.sites.length}): ${option.sites.join(', ')}`
-    : 'Site coverage unavailable'
 
 const pickDefaultVendorOption = (
   rawMaterial: RawMaterial,
@@ -1919,13 +1837,27 @@ const SuperadminMenuManagementPage = () => {
           undefined,
           accessToken,
         )
+        const optionsByKey = new Map<string, RawMaterialVendorPriceOption>()
         const mappedOptions = (data ?? [])
           .map(mapRawMaterialVendorPriceOption)
           .filter(
             (option): option is RawMaterialVendorPriceOption =>
               option !== null,
           )
-        const options = groupVendorPricesByCoverage(mappedOptions)
+        mappedOptions.forEach((option) => {
+          optionsByKey.set(option.key, option)
+        })
+
+        const options = Array.from(optionsByKey.values()).sort((a, b) =>
+          [
+            a.vendor,
+            String(a.price ?? ''),
+          ]
+            .join(' ')
+            .localeCompare(
+              [b.vendor, String(b.price ?? '')].join(' '),
+            ),
+        )
 
         setRawMaterialVendorOptionsByCode((prev) => ({
           ...prev,
@@ -3880,37 +3812,25 @@ const SuperadminMenuManagementPage = () => {
                         <td className="px-5 py-4">{rawMaterial.name}</td>
                         <td className="px-5 py-4 align-top">
                           {vendorOptions.length > 0 ? (
-                            <div className="w-72 max-w-full space-y-1.5">
-                              <select
-                                value={selectedVendorKey}
-                                onChange={(event) =>
-                                  setSelectedRawMaterialVendorByCode((prev) => ({
-                                    ...prev,
-                                    [productKey]: event.target.value,
-                                  }))
-                                }
-                                className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                              >
-                                {vendorOptions.length > 1 ? (
-                                  <option value="">Select vendor price</option>
-                                ) : null}
-                                {vendorOptions.map((option) => (
-                                  <option key={option.key} value={option.key}>
-                                    {formatVendorCoverageLabel(option)}
-                                  </option>
-                                ))}
-                              </select>
-                              {selectedVendorOption ? (
-                                <p
-                                  className="whitespace-normal break-words text-xs leading-5 text-muted"
-                                  title={selectedVendorOption.sites.join(', ')}
-                                >
-                                  {formatVendorCoverageSites(
-                                    selectedVendorOption,
-                                  )}
-                                </p>
+                            <select
+                              value={selectedVendorKey}
+                              onChange={(event) =>
+                                setSelectedRawMaterialVendorByCode((prev) => ({
+                                  ...prev,
+                                  [productKey]: event.target.value,
+                                }))
+                              }
+                              className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            >
+                              {vendorOptions.length > 1 ? (
+                                <option value="">Select vendor</option>
                               ) : null}
-                            </div>
+                              {vendorOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {formatVendorOptionLabel(option)}
+                                </option>
+                              ))}
+                            </select>
                           ) : (
                             <span
                               title={vendorError || undefined}
