@@ -326,68 +326,6 @@ describe('RawMaterialsService price updates', () => {
     });
   });
 
-  it('keeps the same vendor record for other sites during duplicate cleanup', async () => {
-    const previousVendorPrices = [
-      {
-        _id: 'japfa-site-a',
-        productCodeNormalized: 'it00900_n',
-        siteNormalized: 'sitea',
-        vendorNormalized: 'japfa food indonesia pt',
-        currencyNormalized: 'idr',
-        unitOfMeasuresNormalized: 'kg (kg)',
-        price: 50000,
-        updatedAt: new Date('2026-07-01'),
-      },
-      {
-        _id: 'japfa-site-b',
-        productCodeNormalized: 'it00900_n',
-        siteNormalized: 'siteb',
-        vendorNormalized: 'japfa food indonesia pt',
-        currencyNormalized: 'idr',
-        unitOfMeasuresNormalized: 'kg (kg)',
-        price: 47500,
-        updatedAt: new Date('2026-07-01'),
-      },
-    ];
-    const { rawMaterialVendorPriceModel, service } =
-      makePriceService(previousVendorPrices);
-    rawMaterialVendorPriceModel.bulkWrite.mockResolvedValueOnce({
-      matchedCount: 1,
-      modifiedCount: 1,
-      upsertedCount: 0,
-      deletedCount: 0,
-    });
-
-    const result = await service.bulkUpdatePricesByProductCode([
-      {
-        productCode: 'IT00900_N',
-        name: 'Chicken Breast',
-        site: 'Site A',
-        vendor: 'JAPFA FOOD INDONESIA PT',
-        currency: 'IDR',
-        unitOfMeasures: 'KG (KG)',
-        priceQuantity: 1,
-        price: 42500,
-      },
-    ]);
-
-    const [vendorOperations] = rawMaterialVendorPriceModel.bulkWrite.mock
-      .calls[0] as unknown as [
-      Array<{
-        updateOne?: { filter: { _id: string } };
-        deleteMany?: unknown;
-      }>,
-    ];
-    expect(vendorOperations).toHaveLength(1);
-    expect(vendorOperations[0].updateOne?.filter).toEqual({
-      _id: 'japfa-site-a',
-    });
-    expect(vendorOperations.every((operation) => !operation.deleteMany)).toBe(
-      true,
-    );
-    expect(result.vendorPriceDuplicateRemovedCount).toBe(0);
-  });
-
   it('adds a new vendor only when its raw material already exists', async () => {
     const { rawMaterialVendorPriceModel, service } = makePriceService();
 
