@@ -57,6 +57,9 @@ export class MenuProduction {
   @Prop({ type: String, trim: true, index: true })
   recipeCode?: string;
 
+  @Prop({ type: Number, min: 1, default: 1 })
+  recipeVersion?: number;
+
   @Prop({ required: true, trim: true })
   menuName: string;
 

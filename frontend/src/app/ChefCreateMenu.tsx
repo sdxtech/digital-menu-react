@@ -10,6 +10,10 @@ import {
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity, roundQuantity } from '../lib/quantity'
+import {
+  formatRecipeVersion,
+  getRecipeVersion,
+} from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INGREDIENT_ROWS_PER_PAGE = 8
@@ -75,6 +79,9 @@ type CategoryApi = {
 
 export type BaseRecipe = {
   id?: string
+  sourceRecipeId?: string
+  recipeCode?: string
+  version?: number
   name: string
   category: string
   description?: string
@@ -113,6 +120,7 @@ type ChefCreateMenuProps = {
   embedded?: boolean
   baseRecipe?: BaseRecipe
   enableIngredientUomConversion?: boolean
+  lockSrUomToRawMaterial?: boolean
   onClose?: () => void
   onSaved?: () => void
 }
@@ -121,6 +129,7 @@ const ChefCreateMenu = ({
   embedded = false,
   baseRecipe: baseRecipeProp,
   enableIngredientUomConversion = false,
+  lockSrUomToRawMaterial = false,
   onClose,
   onSaved,
 }: ChefCreateMenuProps) => {
@@ -139,7 +148,11 @@ const ChefCreateMenu = ({
     (location.state as { baseRecipe?: BaseRecipe } | null)?.baseRecipe
   const editingRecipeId = baseRecipe?.id ?? ''
   const isEditMode = Boolean(editingRecipeId)
-  const isCreateFromRecipe = Boolean(baseRecipe && !isEditMode)
+  const isCreateFromRecipe = Boolean(baseRecipe?.sourceRecipeId && !isEditMode)
+  const isCreateFromTemplate = Boolean(
+    baseRecipe && !isEditMode && !baseRecipe.sourceRecipeId,
+  )
+  const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -771,10 +784,10 @@ const ChefCreateMenu = ({
     if (
       isCreateFromRecipe &&
       baseRecipe?.name?.trim() &&
-      normalizeValue(nextName) === normalizeValue(baseRecipe.name)
+      normalizeValue(nextName) !== normalizeValue(baseRecipe.name)
     ) {
       setSubmitError(
-        'The menu name must be different from the original recipe name.',
+        'The recipe name must stay the same as the base recipe.',
       )
       setSubmitMessage('')
       return
@@ -887,6 +900,7 @@ const ChefCreateMenu = ({
         portionSize,
         ingredients: parsedIngredients,
       }
+      let createdRecipeVersion: number | undefined
 
       if (isEditMode && editingRecipeId) {
         await updateRecipe(editingRecipeId, basePayload)
@@ -896,10 +910,14 @@ const ChefCreateMenu = ({
         }
         onSaved?.()
       } else {
-        await createRecipe({
+        const createdRecipe = await createRecipe({
           ...basePayload,
+          ...(isCreateFromRecipe && baseRecipe?.sourceRecipeId
+            ? { baseRecipeId: baseRecipe.sourceRecipeId }
+            : {}),
           status: 'draft',
         })
+        createdRecipeVersion = createdRecipe.version
         setRecipeForm(initialRecipeForm)
         setIngredientRows([createIngredientRow()])
         onSaved?.()
@@ -913,7 +931,11 @@ const ChefCreateMenu = ({
             ? 'Recipe draft saved. Resubmit when ready.'
           : isEditMode
             ? 'Recipe updated successfully.'
-            : 'Recipe saved and submitted to the Unit Manager.',
+            : isCreateFromRecipe
+              ? `Recipe ${formatRecipeVersion(createdRecipeVersion)} saved without changing the base recipe.`
+              : isCreateFromTemplate
+                ? `New recipe ${formatRecipeVersion(createdRecipeVersion)} created from the template.`
+                : 'Recipe saved and submitted to the Unit Manager.',
       )
     } catch (error) {
       const message =
@@ -947,7 +969,13 @@ const ChefCreateMenu = ({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">
-              {isEditMode ? 'Edit Recipe' : 'Create New Recipe'}
+              {isEditMode
+                ? 'Edit Recipe'
+                : isCreateFromRecipe
+                  ? 'Create Recipe Version'
+                  : isCreateFromTemplate
+                    ? 'Create Recipe from Template'
+                    : 'Create New Recipe'}
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -979,6 +1007,30 @@ const ChefCreateMenu = ({
             <p className="mt-2 text-foreground">
               {baseRecipe?.rejectionReason?.trim() ||
                 'No rejection reason was provided.'}
+            </p>
+          </div>
+        ) : null}
+
+        {isCreateFromRecipe ? (
+          <div className="rounded-md border border-primary/30 bg-primary-soft p-4 text-sm">
+            <p className="font-semibold text-primary">New recipe version</p>
+            <p className="mt-1 text-foreground">
+              Based on {baseRecipe?.name} {formatRecipeVersion(baseRecipeVersion)}
+              {baseRecipe?.recipeCode ? ` (${baseRecipe.recipeCode})` : ''}. The
+              base recipe will remain unchanged, and the next version number is
+              assigned when this recipe is submitted.
+            </p>
+          </div>
+        ) : null}
+
+        {isCreateFromTemplate ? (
+          <div className="rounded-md border border-accent-blue/30 bg-accent-blue/10 p-4 text-sm">
+            <p className="font-semibold text-accent-blue">Recipe template</p>
+            <p className="mt-1 text-foreground">
+              Ingredients were copied from {baseRecipe?.name}{' '}
+              {formatRecipeVersion(baseRecipeVersion)}. Change the recipe name and
+              any ingredients you need; the result will be saved as a separate V1
+              recipe.
             </p>
           </div>
         ) : null}
@@ -1060,8 +1112,14 @@ const ChefCreateMenu = ({
               type="text"
               value={recipeForm.name}
               onChange={(event) => updateRecipeForm('name', event.target.value)}
+              readOnly={isCreateFromRecipe}
+              aria-readonly={isCreateFromRecipe}
               placeholder="Example: Teriyaki Chicken Rice"
-              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              className={`mt-2 w-full rounded-2xl border border-border px-4 py-3 text-sm shadow-sm outline-none ${
+                isCreateFromRecipe
+                  ? 'bg-slate-200 text-muted'
+                  : 'bg-white focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20'
+              }`}
             />
           </div>
           <div>
@@ -1323,34 +1381,50 @@ const ChefCreateMenu = ({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <select
-                            value={row.unitOfMeasures}
-                            onChange={(event) =>
-                              updateIngredientRow(
-                                row.id,
-                                'unitOfMeasures',
-                                event.target.value,
-                              )
-                            }
-                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">Select</option>
-                            {row.unitOfMeasures &&
-                            !uomOptions.some(
-                              (unit) =>
-                                normalizeUomCode(unit.code) ===
-                                normalizeUomCode(row.unitOfMeasures),
-                            ) ? (
-                              <option value={row.unitOfMeasures}>
-                                {formatUnitLabel(row.unitOfMeasures)}
-                              </option>
-                            ) : null}
-                            {uomOptions.map((unit) => (
-                              <option key={unit.id} value={unit.code}>
-                                {formatUnitLabel(unit.code)}
-                              </option>
-                            ))}
-                          </select>
+                          {lockSrUomToRawMaterial ? (
+                            <input
+                              type="text"
+                              value={
+                                row.unitOfMeasures
+                                  ? formatUnitLabel(row.unitOfMeasures)
+                                  : ''
+                              }
+                              readOnly
+                              aria-readonly="true"
+                              aria-label={`SR UOM for ${row.name || `ingredient ${index + 1}`}`}
+                              placeholder="Auto"
+                              className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
+                            />
+                          ) : (
+                            <select
+                              value={row.unitOfMeasures}
+                              onChange={(event) =>
+                                updateIngredientRow(
+                                  row.id,
+                                  'unitOfMeasures',
+                                  event.target.value,
+                                )
+                              }
+                              className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            >
+                              <option value="">Select</option>
+                              {row.unitOfMeasures &&
+                              !uomOptions.some(
+                                (unit) =>
+                                  normalizeUomCode(unit.code) ===
+                                  normalizeUomCode(row.unitOfMeasures),
+                              ) ? (
+                                <option value={row.unitOfMeasures}>
+                                  {formatUnitLabel(row.unitOfMeasures)}
+                                </option>
+                              ) : null}
+                              {uomOptions.map((unit) => (
+                                <option key={unit.id} value={unit.code}>
+                                  {formatUnitLabel(unit.code)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </td>
                       </>
                     ) : (

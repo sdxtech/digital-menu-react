@@ -36,6 +36,15 @@ export class Recipe {
   @Prop({ required: true, trim: true })
   name: string;
 
+  @Prop({ type: Number, min: 1, default: 1, index: true })
+  version: number;
+
+  @Prop({ type: String, trim: true, index: true })
+  versionGroupId?: string;
+
+  @Prop({ type: String, index: true })
+  parentRecipeId?: string;
+
   @Prop({ trim: true, default: '' })
   category: string;
 
@@ -132,3 +141,13 @@ export class Recipe {
 export const RecipeSchema = SchemaFactory.createForClass(Recipe);
 RecipeSchema.index({ name: 1 });
 RecipeSchema.index({ category: 1 });
+RecipeSchema.index(
+  { versionGroupId: 1, version: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      versionGroupId: { $type: 'string' },
+      version: { $type: 'number' },
+    },
+  },
+);
