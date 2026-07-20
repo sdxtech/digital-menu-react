@@ -45,6 +45,9 @@ export class RawMaterialVendorPrice {
   @Prop({ type: Number })
   price?: number;
 
+  @Prop({ type: Number, min: 0 })
+  priceQuantity?: number;
+
   @Prop({ type: Map, of: String, default: {} })
   extraFields: Record<string, string>;
 }

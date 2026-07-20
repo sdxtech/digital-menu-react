@@ -48,6 +48,7 @@ type RawMaterialHeaderMap = {
   vendor: number;
   currency: number;
   minimumQuantity: number;
+  priceQuantity: number;
   price: number;
   extraFields: Record<string, number>;
 };
@@ -107,6 +108,12 @@ const RAW_MATERIAL_HEADER_ALIASES = {
     'minimum_qty',
     'minimal_qty',
   ],
+  priceQuantity: [
+    'quantity',
+    'price quantity',
+    'pricing quantity',
+    'price_quantity',
+  ],
   price: ['price', 'unit price', 'unit_price', 'harga', 'cost'],
 };
 
@@ -120,6 +127,7 @@ const RAW_MATERIAL_RESERVED_HEADERS = new Set([
   ...RAW_MATERIAL_HEADER_ALIASES.vendor,
   ...RAW_MATERIAL_HEADER_ALIASES.currency,
   ...RAW_MATERIAL_HEADER_ALIASES.minimumQuantity,
+  ...RAW_MATERIAL_HEADER_ALIASES.priceQuantity,
   ...RAW_MATERIAL_HEADER_ALIASES.price,
 ]);
 
@@ -292,6 +300,8 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     let successCount = 0;
     let failCount = 0;
     let processed = 0;
+    const importedProductCodes = new Set<string>();
+    const existingProductCodes = new Set<string>();
 
     const pushError = (error: ImportError) => {
       failCount += 1;
@@ -309,15 +319,60 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         vendor?: string;
         currency?: string;
         minimumQuantity?: number;
+        priceQuantity?: number;
         price?: number;
         extraFields?: Record<string, string>;
         row: number;
       }>,
     ) => {
       if (batch.length === 0) return;
+      let rowsToSave = batch;
+      let newlyImportedCodes: string[] = [];
       try {
+        const batchCodes = Array.from(
+          new Set(
+            batch.map((item) => this.normalizeProductCode(item.productCode)),
+          ),
+        );
+        const unseenCodes = batchCodes.filter(
+          (code) =>
+            !importedProductCodes.has(code) && !existingProductCodes.has(code),
+        );
+        const foundCodes =
+          await this.rawMaterials.findExistingProductCodes(unseenCodes);
+        newlyImportedCodes = unseenCodes.filter(
+          (code) => !foundCodes.has(code),
+        );
+        foundCodes.forEach((code) => existingProductCodes.add(code));
+        newlyImportedCodes.forEach((code) => importedProductCodes.add(code));
+
+        const skippedRows = batch.filter((item) =>
+          existingProductCodes.has(this.normalizeProductCode(item.productCode)),
+        );
+        skippedRows.forEach((item) =>
+          pushError({
+            row: item.row,
+            name: item.name,
+            reason: 'Product code already exists. Use Update Prices instead.',
+          }),
+        );
+        rowsToSave = batch.filter((item) =>
+          importedProductCodes.has(this.normalizeProductCode(item.productCode)),
+        );
+        if (rowsToSave.length === 0) return;
+
+        const firstNewRowByCode = new Map<string, (typeof batch)[number]>();
+        for (const item of rowsToSave) {
+          const code = this.normalizeProductCode(item.productCode);
+          if (
+            newlyImportedCodes.includes(code) &&
+            !firstNewRowByCode.has(code)
+          ) {
+            firstNewRowByCode.set(code, item);
+          }
+        }
         await this.rawMaterials.bulkUpsertByProductCode(
-          batch.map(
+          Array.from(firstNewRowByCode.values()).map(
             ({
               productCode,
               name,
@@ -328,6 +383,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               vendor,
               currency,
               minimumQuantity,
+              priceQuantity,
               price,
               extraFields,
             }) => ({
@@ -340,13 +396,14 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               vendor,
               currency,
               minimumQuantity,
+              priceQuantity,
               price,
               extraFields,
             }),
           ),
         );
         await this.rawMaterials.bulkUpsertVendorPrices(
-          batch.map(
+          rowsToSave.map(
             ({
               productCode,
               name,
@@ -355,6 +412,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               vendor,
               currency,
               minimumQuantity,
+              priceQuantity,
               price,
               extraFields,
             }) => ({
@@ -365,17 +423,19 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
               vendor,
               currency,
               minimumQuantity,
+              priceQuantity,
               price,
               extraFields,
             }),
           ),
         );
-        successCount += batch.length;
+        successCount += rowsToSave.length;
       } catch (error) {
+        newlyImportedCodes.forEach((code) => importedProductCodes.delete(code));
         this.logger.warn(
           `Raw material batch failed: ${(error as Error).message}`,
         );
-        batch.forEach((item) =>
+        rowsToSave.forEach((item) =>
           pushError({
             row: item.row,
             name: item.name,
@@ -414,6 +474,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         vendor?: string;
         currency?: string;
         minimumQuantity?: number;
+        priceQuantity?: number;
         price?: number;
         extraFields?: Record<string, string>;
         row: number;
@@ -445,6 +506,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const vendor = record.vendor;
         const currency = record.currency;
         const minimumQuantity = record.minimumQuantity;
+        const priceQuantity = record.priceQuantity;
         const price = record.price;
         const extraFields = record.extraFields;
 
@@ -467,6 +529,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           vendor,
           currency,
           minimumQuantity,
+          priceQuantity,
           price,
           extraFields,
           row: record.rowNumber,
@@ -577,11 +640,16 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.minimumQuantity,
       );
+      const priceQuantityRaw = this.pickValue(
+        normalized,
+        RAW_MATERIAL_HEADER_ALIASES.priceQuantity,
+      );
       const priceRaw = this.pickValue(
         normalized,
         RAW_MATERIAL_HEADER_ALIASES.price,
       );
       const minimumQuantity = this.parseNumber(minimumQuantityRaw);
+      const priceQuantity = this.parseNumber(priceQuantityRaw);
       const price = this.parseNumber(priceRaw);
       const conversionFactor = this.parseNumber(conversionFactorRaw);
       const extraFields: Record<string, string> = {};
@@ -601,6 +669,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         vendor: this.normalizeOptionalText(vendor),
         currency: this.normalizeOptionalText(currency),
         minimumQuantity,
+        priceQuantity,
         price,
         extraFields,
       };
@@ -647,8 +716,13 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           values,
           headerMap.minimumQuantity,
         );
+        const priceQuantityRaw = this.getCellValue(
+          values,
+          headerMap.priceQuantity,
+        );
         const priceRaw = this.getCellValue(values, headerMap.price);
         const minimumQuantity = this.parseNumber(minimumQuantityRaw);
+        const priceQuantity = this.parseNumber(priceQuantityRaw);
         const price = this.parseNumber(priceRaw);
         const conversionFactor = this.parseNumber(conversionFactorRaw);
         const extraFields: Record<string, string> = {};
@@ -667,6 +741,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           vendor: this.normalizeOptionalText(vendor),
           currency: this.normalizeOptionalText(currency),
           minimumQuantity,
+          priceQuantity,
           price,
           extraFields,
         };
@@ -708,6 +783,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       vendor: 0,
       currency: 0,
       minimumQuantity: 0,
+      priceQuantity: 0,
       price: 0,
       extraFields: {},
     };
@@ -749,6 +825,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       }
       if (RAW_MATERIAL_HEADER_ALIASES.minimumQuantity.includes(header)) {
         map.minimumQuantity = idx;
+        continue;
+      }
+      if (RAW_MATERIAL_HEADER_ALIASES.priceQuantity.includes(header)) {
+        map.priceQuantity = idx;
         continue;
       }
       if (RAW_MATERIAL_HEADER_ALIASES.price.includes(header)) {

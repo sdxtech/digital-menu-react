@@ -115,6 +115,7 @@ type RawMaterialVendorPriceApi = {
   vendor?: string
   currency?: string
   minimumQuantity?: number
+  priceQuantity?: number
   price?: number
 }
 
@@ -123,6 +124,7 @@ type RawMaterialVendorPriceOption = {
   vendor: string
   site?: string
   minimumQuantity?: number
+  priceQuantity?: number
   price?: number
 }
 
@@ -175,11 +177,23 @@ type ImportResult = {
 }
 
 type RawMaterialPriceUploadResult = {
+  mode: 'master' | 'vendor' | 'mixed'
   requestedCount: number
   matchedCount: number
   modifiedCount: number
+  matchedProductCount: number
   notFoundCount: number
+  notFoundRowCount: number
   notFoundProductCodes: string[]
+  vendorPriceRequestedCount: number
+  vendorPriceUniqueCount: number
+  vendorPriceMatchedCount: number
+  vendorPriceModifiedCount: number
+  vendorPriceUpsertedCount: number
+  vendorPriceDuplicateRemovedCount: number
+  duplicateVendorPriceRowCount: number
+  conflictingVendorPriceCount: number
+  priceQuantityAdjustedCount: number
 }
 
 type IngredientCostBackfillResult = {
@@ -298,18 +312,37 @@ const mapRawMaterialVendorPriceOption = (
   const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
     ? Number(item.minimumQuantity)
     : undefined
+  const priceQuantity =
+    Number.isFinite(Number(item.priceQuantity)) &&
+    Number(item.priceQuantity) > 0
+      ? Number(item.priceQuantity)
+      : undefined
   const price = Number.isFinite(Number(item.price))
     ? Number(item.price)
     : undefined
-  const key = [normalizeTextKey(vendor), price ?? ''].join('|')
+  const key = [
+    normalizeTextKey(vendor),
+    price ?? '',
+    priceQuantity ?? '',
+  ].join('|')
 
   return {
     key,
     vendor,
     site,
     minimumQuantity,
+    priceQuantity,
     price,
   }
+}
+
+const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
+  if (!Number.isFinite(Number(option?.price))) return undefined
+  const priceQuantity = Number(option?.priceQuantity)
+  return (
+    Number(option?.price) /
+    (Number.isFinite(priceQuantity) && priceQuantity > 0 ? priceQuantity : 1)
+  )
 }
 
 const formatVendorOptionLabel = (option: RawMaterialVendorPriceOption) =>
@@ -330,7 +363,9 @@ const pickDefaultVendorOption = (
   }
 
   if (rawMaterial.price !== undefined) {
-    const byPrice = options.find((option) => option.price === rawMaterial.price)
+    const byPrice = options.find(
+      (option) => getVendorUnitPrice(option) === rawMaterial.price,
+    )
     if (byPrice) return byPrice
   }
 
@@ -367,8 +402,9 @@ const getIngredientUnitPrice = (
   ingredient: RecipeIngredient,
   vendorPrice?: RawMaterialVendorPriceOption,
 ) => {
-  if (Number.isFinite(Number(vendorPrice?.price))) {
-    return Number(vendorPrice?.price)
+  const vendorUnitPrice = getVendorUnitPrice(vendorPrice)
+  if (Number.isFinite(vendorUnitPrice)) {
+    return vendorUnitPrice
   }
   if (Number.isFinite(Number(ingredient.priceUom))) {
     return Number(ingredient.priceUom)
@@ -408,8 +444,8 @@ const pickHighestVendorPriceOption = (
   if (options.length === 0) return undefined
 
   return options.reduce((selected, option) => {
-    const selectedPrice = Number(selected.price)
-    const optionPrice = Number(option.price)
+    const selectedPrice = Number(getVendorUnitPrice(selected))
+    const optionPrice = Number(getVendorUnitPrice(option))
     const selectedHasPrice = Number.isFinite(selectedPrice)
     const optionHasPrice = Number.isFinite(optionPrice)
 
@@ -435,8 +471,8 @@ const dedupeVendorPricesByVendor = (
       return
     }
 
-    const existingPrice = Number(existing.price)
-    const optionPrice = Number(option.price)
+    const existingPrice = Number(getVendorUnitPrice(existing))
+    const optionPrice = Number(getVendorUnitPrice(option))
     const existingHasPrice = Number.isFinite(existingPrice)
     const optionHasPrice = Number.isFinite(optionPrice)
     if (optionHasPrice && (!existingHasPrice || optionPrice > existingPrice)) {
@@ -2437,22 +2473,46 @@ const SuperadminMenuManagementPage = () => {
         },
         accessToken,
       )
-      const costSyncResult = await apiFetch<IngredientCostBackfillResult>(
-        '/recipes/ingredient-costs/backfill',
-        { method: 'PATCH' },
-        accessToken,
-      )
+      const costSyncResult =
+        result.mode === 'vendor'
+          ? null
+          : await apiFetch<IngredientCostBackfillResult>(
+              '/recipes/ingredient-costs/backfill',
+              { method: 'PATCH' },
+              accessToken,
+            )
       const notFoundText = result.notFoundCount
-        ? ` ${result.notFoundCount} product codes were not found${
+        ? ` Skipped ${result.notFoundRowCount} rows for ${result.notFoundCount} product codes that were not found${
             result.notFoundProductCodes.length
               ? `: ${result.notFoundProductCodes.join(', ')}`
               : '.'
           }`
         : ''
-      setRawMaterialPriceUploadMessage(
-        `Updated ${result.modifiedCount} prices from ${result.matchedCount} matched raw materials. Synced ${costSyncResult.updatedIngredients} approved recipe ingredient costs.${notFoundText}`,
-      )
+      const duplicateText = result.vendorPriceDuplicateRemovedCount
+        ? ` Removed ${result.vendorPriceDuplicateRemovedCount} stale duplicate vendor records.`
+        : ''
+      const quantityText = result.priceQuantityAdjustedCount
+        ? ` Applied price quantities on ${result.priceQuantityAdjustedCount} rows when calculating unit prices.`
+        : ''
+      const conflictText = result.conflictingVendorPriceCount
+        ? ` Resolved ${result.conflictingVendorPriceCount} repeated vendor prices in this file using the highest unit price.`
+        : ''
+
+      if (result.mode === 'vendor') {
+        setRawMaterialPriceUploadMessage(
+          `Updated ${result.vendorPriceModifiedCount} vendor prices and added ${result.vendorPriceUpsertedCount} vendor prices for ${result.matchedProductCount} existing raw materials.${duplicateText}${quantityText}${conflictText}${notFoundText}`,
+        )
+      } else {
+        const vendorText = result.vendorPriceRequestedCount
+          ? ` Updated ${result.vendorPriceModifiedCount} vendor prices and added ${result.vendorPriceUpsertedCount} vendor prices.${duplicateText}${quantityText}${conflictText}`
+          : ''
+        setRawMaterialPriceUploadMessage(
+          `Updated ${result.modifiedCount} master prices from ${result.matchedCount} matched raw materials. Synced ${costSyncResult?.updatedIngredients ?? 0} approved recipe ingredient costs.${vendorText}${notFoundText}`,
+        )
+      }
       setRawMaterialPriceUploadFile(null)
+      setRawMaterialVendorOptionsByCode({})
+      setSelectedRawMaterialVendorByCode({})
       fetchRawMaterials(
         rawMaterialMeta.page,
         rawMaterialMeta.limit,
@@ -2982,7 +3042,9 @@ const SuperadminMenuManagementPage = () => {
                     Upload Excel or CSV file
                   </p>
                   <p className="mt-2 text-sm text-muted">
-                    Upload a file to add or update multiple raw materials.
+                    Upload a file to add new raw materials. Existing product
+                    codes are skipped; use Update Prices for price or vendor
+                    changes.
                   </p>
                 </div>
                 <button
@@ -3064,7 +3126,10 @@ const SuperadminMenuManagementPage = () => {
                     Update Raw Material Prices
                   </h3>
                   <p className="mt-1 text-xs text-muted">
-                    Upload .xlsx or .csv with product code and price columns.
+                    Use Product Code + Price to update master prices, or upload
+                    the full pricelist with Site, Vendor, Quantity, UOM, and
+                    Price to update or add vendor prices for existing raw
+                    materials. Unknown product codes will not be created.
                   </p>
                 </div>
                 <button
@@ -3728,7 +3793,7 @@ const SuperadminMenuManagementPage = () => {
                       (option) => option.key === selectedVendorKey,
                     )
                     const displayPrice = selectedVendorOption
-                      ? selectedVendorOption.price
+                      ? getVendorUnitPrice(selectedVendorOption)
                       : rawMaterial.price
 
                     return (
