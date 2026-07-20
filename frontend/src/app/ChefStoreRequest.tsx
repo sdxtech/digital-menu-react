@@ -15,7 +15,8 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetNumber,
+  toSpreadsheetDecimal,
+  toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -249,10 +250,10 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
-          toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
           formatUnitLabel(ingredient.unitOfMeasures),
-          toSpreadsheetNumber(ingredient.price),
-          toSpreadsheetNumber(ingredient.ingredientCost),
+          toSpreadsheetInteger(ingredient.price),
+          toSpreadsheetInteger(ingredient.ingredientCost),
         ])
         rowNumber += 1
       })
@@ -283,7 +284,7 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
         item.productCode,
         item.name,
         item.vendor ?? '',
-        toSpreadsheetNumber(formatQuantity(item.qty)),
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
       ])
     })
@@ -324,8 +325,8 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
         formatRecipeVersion(menu.recipeVersion),
         menu.category,
         menu.portion,
-        toSpreadsheetNumber(estimatedTotalCost),
-        toSpreadsheetNumber(estimatedCostPerPax),
+        toSpreadsheetInteger(estimatedTotalCost),
+        toSpreadsheetInteger(estimatedCostPerPax),
       ])
     })
   })
