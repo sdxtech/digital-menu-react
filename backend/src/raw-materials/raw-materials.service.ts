@@ -16,6 +16,10 @@ import {
 } from './schemas/raw-material-vendor-price.schema';
 import { Recipe, RecipeDocument } from '../recipes/schemas/recipe.schema';
 import { SitesService } from '../sites/sites.service';
+import type {
+  RawMaterialPriceUpdateInput,
+  RawMaterialPriceUpdateMode,
+} from './raw-material-price-update.types';
 
 export type RawMaterialUpsertInput = {
   productCode: string;
@@ -28,17 +32,12 @@ export type RawMaterialUpsertInput = {
   currency?: string;
   minimumQuantity?: number;
   price?: number;
+  priceQuantity?: number;
   extraFields?: Record<string, string>;
 };
 
 export type RawMaterialVendorPriceUpsertInput = RawMaterialUpsertInput & {
   site?: string;
-};
-
-export type RawMaterialPriceUpdateInput = {
-  productCode: string;
-  price: number;
-  rowNumber?: number;
 };
 
 type ListRawMaterialsQuery = {
@@ -335,6 +334,23 @@ export class RawMaterialsService {
       .sort((a, b) => a.localeCompare(b));
   }
 
+  async findExistingProductCodes(productCodes: string[]) {
+    const normalizedCodes = Array.from(
+      new Set(
+        productCodes
+          .map((productCode) => this.normalizeProductCode(productCode))
+          .filter(Boolean),
+      ),
+    );
+    if (normalizedCodes.length === 0) return new Set<string>();
+
+    const items = await this.rawMaterialModel
+      .find({ productCodeNormalized: { $in: normalizedCodes } })
+      .select({ productCodeNormalized: 1 })
+      .lean<Array<{ productCodeNormalized: string }>>();
+    return new Set(items.map((item) => item.productCodeNormalized));
+  }
+
   async findVendorPrices(query: ListRawMaterialVendorPricesQuery) {
     const productCodeNormalized = this.normalizeProductCode(query.productCode);
     if (!productCodeNormalized) return [];
@@ -351,11 +367,37 @@ export class RawMaterialsService {
     }
     if (vendorNormalized) filter.vendorNormalized = vendorNormalized;
 
-    return this.rawMaterialVendorPriceModel
+    const items = await this.rawMaterialVendorPriceModel
       .find(filter)
-      .sort({ site: 1, vendor: 1, minimumQuantity: 1 })
+      .sort({ site: 1, vendor: 1, updatedAt: -1, minimumQuantity: 1 })
       .limit(500)
-      .lean();
+      .lean<
+        Array<
+          RawMaterialVendorPrice & {
+            _id: unknown;
+            updatedAt?: Date;
+          }
+        >
+      >();
+
+    const latestByVendor = new Map<string, (typeof items)[number]>();
+    for (const item of items) {
+      const key = siteNormalizedValues.length
+        ? [item.productCodeNormalized, item.vendorNormalized].join('|')
+        : [
+            item.productCodeNormalized,
+            item.siteNormalized,
+            item.vendorNormalized,
+          ].join('|');
+      const existing = latestByVendor.get(key);
+      const itemUpdatedAt = new Date(item.updatedAt ?? 0).getTime();
+      const existingUpdatedAt = new Date(existing?.updatedAt ?? 0).getTime();
+      if (!existing || itemUpdatedAt > existingUpdatedAt) {
+        latestByVendor.set(key, item);
+      }
+    }
+
+    return Array.from(latestByVendor.values());
   }
 
   async bulkUpsertByProductCode(rows: RawMaterialUpsertInput[]) {
@@ -403,7 +445,9 @@ export class RawMaterialsService {
         if (row.minimumQuantity !== undefined) {
           updateFields.minimumQuantity = row.minimumQuantity;
         }
-        if (row.price !== undefined) updateFields.price = row.price;
+        if (row.price !== undefined) {
+          updateFields.price = this.getUnitPrice(row) ?? row.price;
+        }
         if (row.extraFields !== undefined) {
           updateFields.extraFields = row.extraFields;
         }
@@ -412,8 +456,8 @@ export class RawMaterialsService {
           updateOne: {
             filter: { productCodeNormalized: normalizedCode },
             update: {
-              $set: updateFields,
               $setOnInsert: {
+                ...updateFields,
                 productCodeNormalized: normalizedCode,
               },
             },
@@ -460,7 +504,7 @@ export class RawMaterialsService {
         row.minimumQuantity ?? '',
       ].join('|');
       const existing = latestByKey.get(key);
-      if (!existing || this.isHigherPrice(row.price, existing.price)) {
+      if (!existing || this.isHigherUnitPrice(row, existing)) {
         latestByKey.set(key, row);
       }
     }
@@ -490,6 +534,9 @@ export class RawMaterialsService {
               ? { minimumQuantity: row.minimumQuantity }
               : {}),
             ...(row.price !== undefined ? { price: row.price } : {}),
+            ...(row.priceQuantity !== undefined
+              ? { priceQuantity: row.priceQuantity }
+              : {}),
             ...(row.extraFields !== undefined
               ? { extraFields: row.extraFields }
               : {}),
@@ -520,64 +567,321 @@ export class RawMaterialsService {
     };
   }
 
-  async bulkUpdatePricesByProductCode(rows: RawMaterialPriceUpdateInput[]) {
-    const validRows = rows.filter(
-      (row) =>
-        row.productCode.trim() &&
-        typeof row.price === 'number' &&
-        Number.isFinite(row.price) &&
-        row.price >= 0,
-    );
+  async bulkUpdatePricesByProductCode(
+    rows:
+      | Iterable<RawMaterialPriceUpdateInput>
+      | AsyncIterable<RawMaterialPriceUpdateInput>,
+  ) {
+    const masterPriceByCode = new Map<string, RawMaterialPriceUpdateInput>();
+    const vendorPriceByKey = new Map<string, RawMaterialPriceUpdateInput>();
+    const sourceProductCodes = new Map<string, string>();
+    const rowCountByCode = new Map<string, number>();
+    const conflictingVendorKeys = new Set<string>();
+    let requestedCount = 0;
+    let vendorPriceRequestedCount = 0;
+    let duplicateVendorPriceRowCount = 0;
+    let priceQuantityAdjustedCount = 0;
 
-    if (validRows.length === 0) {
-      return {
-        requestedCount: rows.length,
-        matchedCount: 0,
-        modifiedCount: 0,
-        notFoundCount: 0,
-        notFoundProductCodes: [],
-      };
+    for await (const input of rows) {
+      requestedCount += 1;
+      const productCode = input.productCode?.trim() ?? '';
+      const normalizedCode = this.normalizeProductCode(productCode);
+      if (
+        !normalizedCode ||
+        typeof input.price !== 'number' ||
+        !Number.isFinite(input.price) ||
+        input.price < 0
+      ) {
+        continue;
+      }
+
+      sourceProductCodes.set(normalizedCode, productCode);
+      rowCountByCode.set(
+        normalizedCode,
+        (rowCountByCode.get(normalizedCode) ?? 0) + 1,
+      );
+      const site = this.normalizeOptionalText(input.site);
+      const vendor = this.normalizeOptionalText(input.vendor);
+
+      if (site && vendor) {
+        vendorPriceRequestedCount += 1;
+        if (input.priceQuantity !== undefined && input.priceQuantity !== 1) {
+          priceQuantityAdjustedCount += 1;
+        }
+        const vendorKey = [
+          normalizedCode,
+          this.normalizeSiteKey(site),
+          vendor.toLowerCase(),
+        ].join('|');
+        const row: RawMaterialPriceUpdateInput = {
+          ...input,
+          productCode,
+          site,
+          vendor,
+        };
+        const existing = vendorPriceByKey.get(vendorKey);
+        if (existing) {
+          duplicateVendorPriceRowCount += 1;
+          if (this.getUnitPrice(existing) !== this.getUnitPrice(row)) {
+            conflictingVendorKeys.add(vendorKey);
+          }
+        }
+        if (!existing || this.isHigherUnitPrice(row, existing)) {
+          vendorPriceByKey.set(vendorKey, row);
+        }
+      } else {
+        masterPriceByCode.set(normalizedCode, {
+          ...input,
+          productCode,
+        });
+      }
     }
 
-    const priceByCode = new Map<string, RawMaterialPriceUpdateInput>();
-    for (const row of validRows) {
-      priceByCode.set(this.normalizeProductCode(row.productCode), row);
-    }
-
-    const normalizedCodes = Array.from(priceByCode.keys());
-    const existing = await this.rawMaterialModel
-      .find({ productCodeNormalized: { $in: normalizedCodes } })
-      .select({ productCode: 1, productCodeNormalized: 1 })
-      .lean<Array<{ productCode: string; productCodeNormalized: string }>>();
-    const existingCodes = new Set(
-      existing.map((item) => item.productCodeNormalized),
+    const mode: RawMaterialPriceUpdateMode = vendorPriceByKey.size
+      ? masterPriceByCode.size
+        ? 'mixed'
+        : 'vendor'
+      : 'master';
+    const normalizedCodes = Array.from(sourceProductCodes.keys());
+    const existing = normalizedCodes.length
+      ? await this.rawMaterialModel
+          .find({ productCodeNormalized: { $in: normalizedCodes } })
+          .select({
+            _id: 1,
+            productCode: 1,
+            productCodeNormalized: 1,
+            name: 1,
+            unitOfMeasures: 1,
+          })
+          .lean<
+            Array<{
+              _id: unknown;
+              productCode: string;
+              productCodeNormalized: string;
+              name: string;
+              unitOfMeasures: string;
+            }>
+          >()
+      : [];
+    const existingByCode = new Map(
+      existing.map((item) => [item.productCodeNormalized, item]),
     );
-    const operations = normalizedCodes
-      .filter((code) => existingCodes.has(code))
-      .map((code) => ({
+    const notFoundCodes = normalizedCodes.filter(
+      (code) => !existingByCode.has(code),
+    );
+    const notFoundRowCount = notFoundCodes.reduce(
+      (sum, code) => sum + (rowCountByCode.get(code) ?? 0),
+      0,
+    );
+
+    const masterOperations = Array.from(masterPriceByCode.entries())
+      .filter(([code]) => existingByCode.has(code))
+      .map(([code, row]) => ({
         updateOne: {
           filter: { productCodeNormalized: code },
           update: {
             $set: {
-              price: priceByCode.get(code)?.price ?? 0,
+              price: this.getUnitPrice(row) ?? row.price,
             },
           },
         },
       }));
+    let masterMatchedCount = 0;
+    let masterModifiedCount = 0;
+    for (const operations of this.chunkItems(masterOperations, 1000)) {
+      const result = await this.rawMaterialModel.bulkWrite(operations, {
+        ordered: false,
+      });
+      masterMatchedCount += result.matchedCount ?? 0;
+      masterModifiedCount += result.modifiedCount ?? 0;
+    }
 
-    const result = operations.length
-      ? await this.rawMaterialModel.bulkWrite(operations, { ordered: false })
-      : null;
-    const notFoundProductCodes = normalizedCodes
-      .filter((code) => !existingCodes.has(code))
-      .map((code) => priceByCode.get(code)?.productCode.trim() ?? code);
+    const normalizedVendorPrices = new Map<
+      string,
+      NonNullable<ReturnType<RawMaterialsService['normalizeVendorPriceRow']>>
+    >();
+    for (const [vendorKey, row] of vendorPriceByKey) {
+      const rawMaterial = existingByCode.get(
+        this.normalizeProductCode(row.productCode),
+      );
+      if (!rawMaterial) continue;
+      const normalized = this.normalizeVendorPriceRow({
+        productCode: rawMaterial.productCode,
+        name: this.normalizeOptionalText(row.name) ?? rawMaterial.name,
+        unitOfMeasures:
+          this.normalizeOptionalText(row.unitOfMeasures) ??
+          rawMaterial.unitOfMeasures,
+        site: row.site,
+        vendor: row.vendor,
+        currency: row.currency,
+        minimumQuantity: row.minimumQuantity,
+        price: row.price,
+        priceQuantity: row.priceQuantity,
+      });
+      if (normalized) normalizedVendorPrices.set(vendorKey, normalized);
+    }
+    vendorPriceByKey.clear();
+
+    type ExistingVendorPrice = RawMaterialVendorPrice & {
+      _id: unknown;
+      updatedAt?: Date;
+    };
+    const vendorProductCodes = Array.from(
+      new Set(
+        Array.from(normalizedVendorPrices.values()).map(
+          (row) => row.productCodeNormalized,
+        ),
+      ),
+    );
+    const existingVendorPrices = vendorProductCodes.length
+      ? await this.rawMaterialVendorPriceModel
+          .find({ productCodeNormalized: { $in: vendorProductCodes } })
+          .select({
+            _id: 1,
+            productCodeNormalized: 1,
+            siteNormalized: 1,
+            vendorNormalized: 1,
+            currencyNormalized: 1,
+            unitOfMeasuresNormalized: 1,
+            minimumQuantity: 1,
+            updatedAt: 1,
+          })
+          .lean<ExistingVendorPrice[]>()
+      : [];
+    const existingByVendor = new Map<string, ExistingVendorPrice[]>();
+    for (const item of existingVendorPrices) {
+      const key = [
+        item.productCodeNormalized,
+        this.normalizeSiteKey(item.siteNormalized),
+        item.vendorNormalized,
+      ].join('|');
+      const group = existingByVendor.get(key) ?? [];
+      group.push(item);
+      existingByVendor.set(key, group);
+    }
+
+    let vendorPriceMatchedCount = 0;
+    let vendorPriceModifiedCount = 0;
+    let vendorPriceUpsertedCount = 0;
+    let vendorPriceDuplicateRemovedCount = 0;
+    let vendorOperations: unknown[] = [];
+    const flushVendorOperations = async () => {
+      if (vendorOperations.length === 0) return;
+      const result = await this.rawMaterialVendorPriceModel.bulkWrite(
+        vendorOperations as never,
+        { ordered: false },
+      );
+      vendorPriceMatchedCount += result.matchedCount ?? 0;
+      vendorPriceModifiedCount += result.modifiedCount ?? 0;
+      vendorPriceUpsertedCount += result.upsertedCount ?? 0;
+      vendorPriceDuplicateRemovedCount += result.deletedCount ?? 0;
+      vendorOperations = [];
+    };
+
+    for (const [vendorKey, row] of normalizedVendorPrices) {
+      const previous = existingByVendor.get(vendorKey) ?? [];
+      const fullKey = this.getVendorPriceFullKey(row);
+      const canonical =
+        previous.find((item) => this.getVendorPriceFullKey(item) === fullKey) ??
+        previous
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt ?? 0).getTime() -
+              new Date(a.updatedAt ?? 0).getTime(),
+          )[0];
+      const duplicateIds = previous
+        .filter((item) => String(item._id) !== String(canonical?._id))
+        .map((item) => item._id);
+      const setFields = {
+        productCode: row.productCode,
+        productCodeNormalized: row.productCodeNormalized,
+        name: row.name,
+        unitOfMeasures: row.unitOfMeasures,
+        unitOfMeasuresNormalized: row.unitOfMeasuresNormalized,
+        site: row.site,
+        siteNormalized: row.siteNormalized,
+        vendor: row.vendor,
+        vendorNormalized: row.vendorNormalized,
+        ...(row.currency !== undefined ? { currency: row.currency } : {}),
+        ...(row.currencyNormalized !== undefined
+          ? { currencyNormalized: row.currencyNormalized }
+          : {}),
+        ...(row.minimumQuantity !== undefined
+          ? { minimumQuantity: row.minimumQuantity }
+          : {}),
+        ...(row.price !== undefined ? { price: row.price } : {}),
+        ...(row.priceQuantity !== undefined
+          ? { priceQuantity: row.priceQuantity }
+          : {}),
+      };
+      const unsetFields = {
+        ...(row.currency === undefined ? { currency: 1 } : {}),
+        ...(row.currencyNormalized === undefined
+          ? { currencyNormalized: 1 }
+          : {}),
+        ...(row.minimumQuantity === undefined ? { minimumQuantity: 1 } : {}),
+        ...(row.priceQuantity === undefined ? { priceQuantity: 1 } : {}),
+      };
+      const updateOperation = canonical
+        ? {
+            updateOne: {
+              filter: { _id: canonical._id },
+              update: {
+                $set: setFields,
+                ...(Object.keys(unsetFields).length
+                  ? { $unset: unsetFields }
+                  : {}),
+              },
+            },
+          }
+        : {
+            updateOne: {
+              filter: {
+                productCodeNormalized: row.productCodeNormalized,
+                siteNormalized: row.siteNormalized,
+                vendorNormalized: row.vendorNormalized,
+                currencyNormalized: row.currencyNormalized,
+                unitOfMeasuresNormalized: row.unitOfMeasuresNormalized,
+                minimumQuantity: row.minimumQuantity,
+              },
+              update: { $set: setFields },
+              upsert: true,
+            },
+          };
+
+      vendorOperations.push(updateOperation);
+      if (duplicateIds.length) {
+        vendorOperations.push({
+          deleteMany: {
+            filter: { _id: { $in: duplicateIds } },
+          },
+        });
+      }
+      if (vendorOperations.length >= 5000) await flushVendorOperations();
+    }
+    await flushVendorOperations();
 
     return {
-      requestedCount: rows.length,
-      matchedCount: result?.matchedCount ?? 0,
-      modifiedCount: result?.modifiedCount ?? 0,
-      notFoundCount: notFoundProductCodes.length,
-      notFoundProductCodes: notFoundProductCodes.slice(0, 20),
+      mode,
+      requestedCount,
+      matchedCount: masterMatchedCount,
+      modifiedCount: masterModifiedCount,
+      matchedProductCount: existingByCode.size,
+      notFoundCount: notFoundCodes.length,
+      notFoundRowCount,
+      notFoundProductCodes: notFoundCodes
+        .map((code) => sourceProductCodes.get(code) ?? code)
+        .slice(0, 20),
+      vendorPriceRequestedCount,
+      vendorPriceUniqueCount: normalizedVendorPrices.size,
+      vendorPriceMatchedCount,
+      vendorPriceModifiedCount,
+      vendorPriceUpsertedCount,
+      vendorPriceDuplicateRemovedCount,
+      duplicateVendorPriceRowCount,
+      conflictingVendorPriceCount: conflictingVendorKeys.size,
+      priceQuantityAdjustedCount,
     };
   }
 
@@ -765,6 +1069,9 @@ export class RawMaterialsService {
     const currency = this.normalizeOptionalText(row.currency);
     const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
     const price = this.normalizeOptionalNumber(row.price);
+    const priceQuantity = this.normalizePositiveOptionalNumber(
+      row.priceQuantity,
+    );
 
     return {
       productCode,
@@ -780,14 +1087,59 @@ export class RawMaterialsService {
       currencyNormalized: currency?.toLowerCase(),
       minimumQuantity,
       price,
+      priceQuantity,
       extraFields: row.extraFields,
     };
   }
 
-  private isHigherPrice(next?: number, current?: number) {
-    if (next === undefined) return current === undefined;
-    if (current === undefined) return true;
-    return next > current;
+  private isHigherUnitPrice(
+    next: { price?: number; priceQuantity?: number },
+    current: { price?: number; priceQuantity?: number },
+  ) {
+    const nextPrice = this.getUnitPrice(next);
+    const currentPrice = this.getUnitPrice(current);
+    if (nextPrice === undefined) return currentPrice === undefined;
+    if (currentPrice === undefined) return true;
+    return nextPrice > currentPrice;
+  }
+
+  private getUnitPrice(input: {
+    price?: number;
+    priceQuantity?: number;
+  }): number | undefined {
+    const price = this.normalizeOptionalNumber(input.price);
+    if (price === undefined) return undefined;
+    const priceQuantity = this.normalizePositiveOptionalNumber(
+      input.priceQuantity,
+    );
+    const unitPrice = price / (priceQuantity ?? 1);
+    return Math.round(unitPrice * 1_000_000) / 1_000_000;
+  }
+
+  private getVendorPriceFullKey(input: {
+    productCodeNormalized: string;
+    siteNormalized: string;
+    vendorNormalized: string;
+    currencyNormalized?: string;
+    unitOfMeasuresNormalized: string;
+    minimumQuantity?: number;
+  }) {
+    return [
+      input.productCodeNormalized,
+      input.siteNormalized,
+      input.vendorNormalized,
+      input.currencyNormalized ?? '',
+      input.unitOfMeasuresNormalized,
+      input.minimumQuantity ?? '',
+    ].join('|');
+  }
+
+  private chunkItems<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
   }
 
   private normalizeOptionalText(value?: string) {

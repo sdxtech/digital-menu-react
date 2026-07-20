@@ -42,6 +42,7 @@ type RawMaterialVendorPriceApi = {
   unitOfMeasures?: string
   minimumQuantity?: number
   price?: number
+  priceQuantity?: number
 }
 
 type RawMaterialVendorPriceOption = {
@@ -53,6 +54,7 @@ type RawMaterialVendorPriceOption = {
   unitOfMeasures: string
   minimumQuantity?: number
   price?: number
+  priceQuantity?: number
 }
 
 type MenuInputRow = {
@@ -101,6 +103,14 @@ type ChefMenuCycleProps = {
   showIngredientCostColumns?: boolean
   showIngredientVendorColumn?: boolean
   allowIngredientCostSync?: boolean
+}
+
+const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
+  const price = Number(option?.price)
+  if (!Number.isFinite(price)) return undefined
+  const priceQuantity = Number(option?.priceQuantity)
+  return price /
+    (Number.isFinite(priceQuantity) && priceQuantity > 0 ? priceQuantity : 1)
 }
 
 const ChefMenuCycle = ({
@@ -212,6 +222,11 @@ const ChefMenuCycle = ({
       const price = Number.isFinite(Number(item.price))
         ? Number(item.price)
         : undefined
+      const priceQuantity =
+        Number.isFinite(Number(item.priceQuantity)) &&
+        Number(item.priceQuantity) > 0
+          ? Number(item.priceQuantity)
+          : undefined
       const currency = item.currency?.trim() || undefined
       const key = [
         normalizeText(productCode),
@@ -221,6 +236,7 @@ const ChefMenuCycle = ({
         normalizeText(unitOfMeasures),
         minimumQuantity ?? '',
         price ?? '',
+        priceQuantity ?? '',
       ].join('|')
 
       return {
@@ -232,6 +248,7 @@ const ChefMenuCycle = ({
         unitOfMeasures,
         minimumQuantity,
         price,
+        priceQuantity,
       }
     },
     [normalizeText],
@@ -261,8 +278,8 @@ const ChefMenuCycle = ({
     if (options.length === 0) return undefined
 
     return options.reduce((selected, option) => {
-      const selectedPrice = Number(selected.price)
-      const optionPrice = Number(option.price)
+      const selectedPrice = Number(getVendorUnitPrice(selected))
+      const optionPrice = Number(getVendorUnitPrice(option))
       const selectedHasPrice = Number.isFinite(selectedPrice)
       const optionHasPrice = Number.isFinite(optionPrice)
 
@@ -309,8 +326,8 @@ const ChefMenuCycle = ({
           return
         }
 
-        const existingPrice = Number(existing.price)
-        const optionPrice = Number(option.price)
+        const existingPrice = Number(getVendorUnitPrice(existing))
+        const optionPrice = Number(getVendorUnitPrice(option))
         const existingHasPrice = Number.isFinite(existingPrice)
         const optionHasPrice = Number.isFinite(optionPrice)
         if (
@@ -329,8 +346,8 @@ const ChefMenuCycle = ({
     ingredient: Recipe['ingredients'][number],
     vendorPrice?: RawMaterialVendorPriceOption,
   ) => {
-    if (Number.isFinite(Number(vendorPrice?.price))) {
-      return Number(vendorPrice?.price)
+    if (Number.isFinite(getVendorUnitPrice(vendorPrice))) {
+      return getVendorUnitPrice(vendorPrice)
     }
     if (Number.isFinite(Number(ingredient.priceUom))) {
       return Number(ingredient.priceUom)
@@ -949,7 +966,7 @@ const ChefMenuCycle = ({
                     site: selectedVendor.site,
                     currency: selectedVendor.currency,
                     minimumQuantity: selectedVendor.minimumQuantity,
-                    price: selectedVendor.price,
+                    price: getVendorUnitPrice(selectedVendor),
                   }
                 },
               )
@@ -1791,4 +1808,3 @@ const ChefMenuCycle = ({
 }
 
 export default ChefMenuCycle
-

@@ -5,6 +5,12 @@ import { formatRecipeVersion } from '../lib/recipe-version'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
+import {
+  downloadSpreadsheet,
+  toSpreadsheetDate,
+  toSpreadsheetNumber,
+  type SpreadsheetCell,
+} from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
   productCode: string
@@ -67,21 +73,6 @@ const ITEMS_PER_PAGE = 10
 const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
 
-const xmlEscape = (value: unknown) => {
-  const text = value === null || value === undefined ? '' : String(value)
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-const sanitizeWorksheetName = (value: string) => {
-  const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
-  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
-}
-
 const formatPrice = (value?: number) => {
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return '-'
@@ -91,68 +82,6 @@ const formatPrice = (value?: number) => {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value)
-}
-
-const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
-  const safeName = sanitizeWorksheetName(sheetName)
-  const rowXml = rows
-    .map((row, index) => {
-      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
-      const cells = row
-        .map((cell) => {
-          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
-          const type = isNumber ? 'Number' : 'String'
-          const value = isNumber ? String(cell) : xmlEscape(cell)
-          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
-        })
-        .join('')
-      return `<Row${rowStyle}>${cells}</Row>`
-    })
-    .join('')
-
-  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
-  <Table>${rowXml}</Table>
- </Worksheet>`
-}
-
-const buildWorkbookXml = (sheetName: string, rows: Array<Array<unknown>>) => {
-  const worksheetXml = buildWorksheetXml(sheetName, rows)
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Header">
-   <Font ss:Bold="1"/>
-   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
- </Styles>
- ${worksheetXml}
-</Workbook>`
-}
-
-const downloadExcel = (
-  filename: string,
-  sheetName: string,
-  rows: Array<Array<unknown>>,
-) => {
-  const xml = buildWorkbookXml(sheetName, rows)
-  const blob = new Blob([xml], {
-    type: 'application/vnd.ms-excel;charset=utf-8;',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 const buildHistoryIngredientKey = (
@@ -249,9 +178,7 @@ const StorekeeperHistoryPage = () => {
 
   const handleExportHistoryGroup = (group: StoreRequestGroup) => {
     const completedByLabel = getCompletedByNames(group).join(', ')
-    const completedAtLabel = group.fulfillment?.completedAt
-      ? new Date(group.fulfillment.completedAt).toLocaleString()
-      : ''
+    const completedAtLabel = toSpreadsheetDate(group.fulfillment?.completedAt)
     const resolutionStatus =
       group.fulfillment?.status ??
       (group.items.some((item) => item.storeRequestStatus === 'cancelled')
@@ -314,7 +241,7 @@ const StorekeeperHistoryPage = () => {
       })
     })
 
-    const rows: Array<Array<unknown>> = [
+    const rows: SpreadsheetCell[][] = [
       [
         'No',
         'Production Date',
@@ -348,7 +275,7 @@ const StorekeeperHistoryPage = () => {
       if (ingredients.length === 0) {
         rows.push([
           rowNumber,
-          menu.productionDate ?? group.date,
+          toSpreadsheetDate(menu.productionDate ?? group.date),
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -385,7 +312,7 @@ const StorekeeperHistoryPage = () => {
 
         rows.push([
           rowNumber,
-          menu.productionDate ?? group.date,
+          toSpreadsheetDate(menu.productionDate ?? group.date),
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -396,13 +323,17 @@ const StorekeeperHistoryPage = () => {
           ingredient.productCode,
           ingredient.name,
           fulfillment
-            ? formatQuantity(fulfillment.plannedQty)
-            : formatQuantity(ingredient.qty),
-          fulfillment ? formatQuantity(fulfillment.actualQty) : '',
-          fulfillment ? formatQuantity(fulfillment.varianceQty) : '',
-          fulfillment ? formatPrice(fulfillment.plannedPrice) : '',
-          fulfillment ? formatPrice(fulfillment.actualPrice) : '',
-          fulfillment ? formatPrice(fulfillment.variancePrice) : '',
+            ? toSpreadsheetNumber(formatQuantity(fulfillment.plannedQty))
+            : toSpreadsheetNumber(formatQuantity(ingredient.qty)),
+          fulfillment
+            ? toSpreadsheetNumber(formatQuantity(fulfillment.actualQty))
+            : '',
+          fulfillment
+            ? toSpreadsheetNumber(formatQuantity(fulfillment.varianceQty))
+            : '',
+          toSpreadsheetNumber(fulfillment?.plannedPrice),
+          toSpreadsheetNumber(fulfillment?.actualPrice),
+          toSpreadsheetNumber(fulfillment?.variancePrice),
           formatUnitLabel(
             fulfillment?.unitOfMeasures ?? ingredient.unitOfMeasures,
           ),
@@ -420,7 +351,7 @@ const StorekeeperHistoryPage = () => {
 
       rows.push([
         rowNumber,
-        group.date,
+        toSpreadsheetDate(group.date),
         group.productionCode ?? '',
         '',
         '',
@@ -430,12 +361,12 @@ const StorekeeperHistoryPage = () => {
         '',
         item.productCode,
         item.name,
-        formatQuantity(item.plannedQty),
-        formatQuantity(item.actualQty),
-        formatQuantity(item.varianceQty),
-        formatPrice(item.plannedPrice),
-        formatPrice(item.actualPrice),
-        formatPrice(item.variancePrice),
+        toSpreadsheetNumber(formatQuantity(item.plannedQty)),
+        toSpreadsheetNumber(formatQuantity(item.actualQty)),
+        toSpreadsheetNumber(formatQuantity(item.varianceQty)),
+        toSpreadsheetNumber(item.plannedPrice),
+        toSpreadsheetNumber(item.actualPrice),
+        toSpreadsheetNumber(item.variancePrice),
         formatUnitLabel(item.unitOfMeasures),
         item.reason ?? '',
         completedByLabel,
@@ -448,7 +379,7 @@ const StorekeeperHistoryPage = () => {
     if (rows.length === 1) {
       rows.push([
         1,
-        group.date,
+        toSpreadsheetDate(group.date),
         group.productionCode ?? '',
         '',
         '',
@@ -473,10 +404,9 @@ const StorekeeperHistoryPage = () => {
       /[\\/:*?"<>|]/g,
       '-',
     )
-    downloadExcel(
-      `issuance-history-${safeDate}-${safeProductionCode}.xls`,
-      'Issuance History',
-      rows,
+    downloadSpreadsheet(
+      `issuance-history-${safeDate}-${safeProductionCode}.xlsx`,
+      [{ name: 'Issuance History', rows }],
     )
   }
 
