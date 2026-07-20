@@ -8,6 +8,12 @@ import {
   getStoreRequestStatusLabel,
 } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import {
+  downloadSpreadsheet,
+  toSpreadsheetDate,
+  toSpreadsheetNumber,
+  type SpreadsheetCell,
+} from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
   productCode: string
@@ -89,21 +95,6 @@ const toInputDate = (date: Date) => {
   return `${year}-${month}-${day}`
 }
 
-const xmlEscape = (value: unknown) => {
-  const text = value === null || value === undefined ? '' : String(value)
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-const sanitizeWorksheetName = (value: string) => {
-  const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
-  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
-}
-
 const sanitizeFilenameSegment = (value: string) =>
   value
     .trim()
@@ -145,71 +136,6 @@ const compareSiteCodes = (a: string, b: string) => {
   })
 }
 
-const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
-  const safeName = sanitizeWorksheetName(sheetName)
-  const rowXml = rows
-    .map((row, index) => {
-      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
-      const cells = row
-        .map((cell) => {
-          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
-          const type = isNumber ? 'Number' : 'String'
-          const value = isNumber ? String(cell) : xmlEscape(cell)
-          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
-        })
-        .join('')
-      return `<Row${rowStyle}>${cells}</Row>`
-    })
-    .join('')
-
-  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
-  <Table>${rowXml}</Table>
- </Worksheet>`
-}
-
-const buildWorkbookXml = (
-  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
-) => {
-  const worksheetsXml = sheets
-    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
-    .join('')
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Header">
-   <Font ss:Bold="1"/>
-   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
- </Styles>
- ${worksheetsXml}
-</Workbook>`
-}
-
-const downloadExcel = (
-  filename: string,
-  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
-) => {
-  const xml = buildWorkbookXml(sheets)
-  const blob = new Blob([xml], {
-    type: 'application/vnd.ms-excel;charset=utf-8;',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
 const buildIngredientKey = (
   productCode: string,
   name: string,
@@ -225,17 +151,6 @@ const formatPrice = (value?: number) => {
   return value === undefined || value === null || !Number.isFinite(value)
     ? ''
     : formatRawQuantity(value, '')
-}
-
-const formatRupiah = (value?: number) => {
-  if (value === undefined || value === null || !Number.isFinite(value)) {
-    return ''
-  }
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value)
 }
 
 const getActualIngredientCost = (item?: StoreFulfillmentIngredient) => {
@@ -422,7 +337,7 @@ const SuperadminStoreRequestExportPage = () => {
         return
       }
 
-      const rows: Array<Array<unknown>> = [
+      const rows: SpreadsheetCell[][] = [
         [
           'No',
           'Production Date',
@@ -451,7 +366,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Completed At',
         ],
       ]
-      const estimatedCostRows: Array<Array<unknown>> = [
+      const estimatedCostRows: SpreadsheetCell[][] = [
         [
           'Production Date',
           'Site',
@@ -477,9 +392,7 @@ const SuperadminStoreRequestExportPage = () => {
           ]),
         )
 
-        const completedAt = group.fulfillment?.completedAt
-          ? new Date(group.fulfillment.completedAt).toLocaleString()
-          : ''
+        const completedAt = toSpreadsheetDate(group.fulfillment?.completedAt)
         const completedBy = group.fulfillment?.completedBy ?? ''
         const consumedFulfillmentKeys = new Set<string>()
 
@@ -496,13 +409,13 @@ const SuperadminStoreRequestExportPage = () => {
               : undefined
 
           estimatedCostRows.push([
-            group.date,
+            toSpreadsheetDate(group.date),
             siteName,
             menu.menuName,
             formatRecipeVersion(menu.recipeVersion),
             menu.portion,
-            formatRupiah(estimatedTotalCost),
-            formatRupiah(estimatedCostPerPax),
+            toSpreadsheetNumber(estimatedTotalCost),
+            toSpreadsheetNumber(estimatedCostPerPax),
           ])
 
           const ingredients = menu.ingredients ?? []
@@ -515,7 +428,7 @@ const SuperadminStoreRequestExportPage = () => {
           if (ingredients.length === 0) {
             rows.push([
               rowNumber,
-              group.date,
+              toSpreadsheetDate(group.date),
               siteName,
               group.productionCode ?? '',
               menu.menuName,
@@ -556,7 +469,7 @@ const SuperadminStoreRequestExportPage = () => {
 
             rows.push([
               rowNumber,
-              group.date,
+              toSpreadsheetDate(group.date),
               siteName,
               group.productionCode ?? '',
               menu.menuName,
@@ -567,15 +480,23 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.productCode,
               ingredient.name,
               ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-              formatQuantity(plannedQty),
-              fulfillmentItem ? formatQuantity(fulfillmentItem.actualQty) : '',
+              toSpreadsheetNumber(formatQuantity(plannedQty)),
               fulfillmentItem
-                ? formatQuantity(fulfillmentItem.varianceQty)
+                ? toSpreadsheetNumber(formatQuantity(fulfillmentItem.actualQty))
                 : '',
-              formatPrice(fulfillmentItem?.plannedPrice ?? ingredient.price),
-              formatPrice(fulfillmentItem?.actualPrice),
-              formatPrice(fulfillmentItem?.variancePrice),
-              formatPrice(getActualIngredientCost(fulfillmentItem)),
+              fulfillmentItem
+                ? toSpreadsheetNumber(
+                    formatQuantity(fulfillmentItem.varianceQty),
+                  )
+                : '',
+              toSpreadsheetNumber(
+                formatPrice(fulfillmentItem?.plannedPrice ?? ingredient.price),
+              ),
+              toSpreadsheetNumber(formatPrice(fulfillmentItem?.actualPrice)),
+              toSpreadsheetNumber(formatPrice(fulfillmentItem?.variancePrice)),
+              toSpreadsheetNumber(
+                formatPrice(getActualIngredientCost(fulfillmentItem)),
+              ),
               formatUnitLabel(ingredient.unitOfMeasures),
               approvedBy,
               approvalStatus,
@@ -592,7 +513,7 @@ const SuperadminStoreRequestExportPage = () => {
 
           rows.push([
             rowNumber,
-            group.date,
+            toSpreadsheetDate(group.date),
             siteName,
             group.productionCode ?? '',
             '',
@@ -603,13 +524,13 @@ const SuperadminStoreRequestExportPage = () => {
             item.productCode,
             item.name,
             item.vendor ?? '',
-            formatQuantity(item.plannedQty),
-            formatQuantity(item.actualQty),
-            formatQuantity(item.varianceQty),
-            formatPrice(item.plannedPrice),
-            formatPrice(item.actualPrice),
-            formatPrice(item.variancePrice),
-            formatPrice(getActualIngredientCost(item)),
+            toSpreadsheetNumber(formatQuantity(item.plannedQty)),
+            toSpreadsheetNumber(formatQuantity(item.actualQty)),
+            toSpreadsheetNumber(formatQuantity(item.varianceQty)),
+            toSpreadsheetNumber(formatPrice(item.plannedPrice)),
+            toSpreadsheetNumber(formatPrice(item.actualPrice)),
+            toSpreadsheetNumber(formatPrice(item.variancePrice)),
+            toSpreadsheetNumber(formatPrice(getActualIngredientCost(item))),
             formatUnitLabel(item.unitOfMeasures),
             '',
             '',
@@ -627,10 +548,10 @@ const SuperadminStoreRequestExportPage = () => {
       const siteFilenameSegment = buildSiteFilenameSegment(selectedSites)
       const filename =
         exportMode === 'range'
-          ? `store-request-${siteFilenameSegment}-${startDate}_to_${endDate}.xls`
-          : `store-request-${siteFilenameSegment}-all-dates.xls`
+          ? `store-request-${siteFilenameSegment}-${startDate}_to_${endDate}.xlsx`
+          : `store-request-${siteFilenameSegment}-all-dates.xlsx`
 
-      downloadExcel(filename, [
+      await downloadSpreadsheet(filename, [
         { name: 'Store Requests', rows },
         { name: 'Estimated Costs', rows: estimatedCostRows },
       ])
@@ -830,8 +751,8 @@ const SuperadminStoreRequestExportPage = () => {
             </span>
           </button>
           <span className="text-xs text-muted">
-            Output format: `.xls` with a single sheet matching the requested
-            export layout.
+            Output format: `.xlsx` workbook with Store Requests and Estimated
+            Costs sheets.
           </span>
         </div>
 

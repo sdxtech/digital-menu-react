@@ -12,6 +12,12 @@ import {
 } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import {
+  downloadSpreadsheet,
+  toSpreadsheetDate,
+  toSpreadsheetNumber,
+  type SpreadsheetCell,
+} from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
   productCode: string
@@ -180,88 +186,8 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
     })
 }
 
-const xmlEscape = (value: unknown) => {
-  const text = value === null || value === undefined ? '' : String(value)
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-const sanitizeWorksheetName = (value: string) => {
-  const cleaned = value.replace(/[\\/:*?[\]]/g, '-')
-  return cleaned.length > 31 ? cleaned.slice(0, 31) : cleaned
-}
-
-const buildWorksheetXml = (sheetName: string, rows: Array<Array<unknown>>) => {
-  const safeName = sanitizeWorksheetName(sheetName)
-  const rowXml = rows
-    .map((row, index) => {
-      const rowStyle = index === 0 ? ' ss:StyleID="Header"' : ''
-      const cells = row
-        .map((cell) => {
-          const isNumber = typeof cell === 'number' && Number.isFinite(cell)
-          const type = isNumber ? 'Number' : 'String'
-          const value = isNumber ? String(cell) : xmlEscape(cell)
-          return `<Cell><Data ss:Type="${type}">${value}</Data></Cell>`
-        })
-        .join('')
-      return `<Row${rowStyle}>${cells}</Row>`
-    })
-    .join('')
-
-  return `<Worksheet ss:Name="${xmlEscape(safeName)}">
-  <Table>${rowXml}</Table>
- </Worksheet>`
-}
-
-const buildWorkbookXml = (
-  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
-) => {
-  const worksheetsXml = sheets
-    .map((sheet) => buildWorksheetXml(sheet.name, sheet.rows))
-    .join('')
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Header">
-   <Font ss:Bold="1"/>
-   <Interior ss:Color="#D9E1F2" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
- </Styles>
- ${worksheetsXml}
-</Workbook>`
-}
-
-const downloadExcel = (
-  filename: string,
-  sheets: Array<{ name: string; rows: Array<Array<unknown>> }>,
-) => {
-  const xml = buildWorkbookXml(sheets)
-  const blob = new Blob([xml], {
-    type: 'application/vnd.ms-excel;charset=utf-8;',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
 const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
-  const rows: Array<Array<unknown>> = [
+  const rows: SpreadsheetCell[][] = [
     [
       'No',
       'Production Date',
@@ -289,7 +215,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       if (ingredients.length === 0) {
         rows.push([
           rowNumber,
-          group.date,
+          toSpreadsheetDate(group.date),
           group.site ?? '',
           group.productionCode ?? '',
           menu.menuName,
@@ -312,7 +238,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       ingredients.forEach((ingredient) => {
         rows.push([
           rowNumber,
-          group.date,
+          toSpreadsheetDate(group.date),
           group.site ?? '',
           group.productionCode ?? '',
           menu.menuName,
@@ -323,10 +249,10 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
-          formatQuantity(ingredient.qty),
+          toSpreadsheetNumber(formatQuantity(ingredient.qty)),
           formatUnitLabel(ingredient.unitOfMeasures),
-          formatPrice(ingredient.price),
-          formatPrice(ingredient.ingredientCost),
+          toSpreadsheetNumber(ingredient.price),
+          toSpreadsheetNumber(ingredient.ingredientCost),
         ])
         rowNumber += 1
       })
@@ -337,7 +263,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
 }
 
 const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
-  const rows: Array<Array<unknown>> = [
+  const rows: SpreadsheetCell[][] = [
     [
       'Production Date',
       'Site',
@@ -352,12 +278,12 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
   groups.forEach((group) => {
     aggregateStoreRequestSummaryByVendor(group).forEach((item) => {
       rows.push([
-        group.date,
+        toSpreadsheetDate(group.date),
         group.site ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',
-        formatQuantity(item.qty),
+        toSpreadsheetNumber(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
       ])
     })
@@ -367,7 +293,7 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
 }
 
 const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
-  const rows: Array<Array<unknown>> = [
+  const rows: SpreadsheetCell[][] = [
     [
       'Production Date',
       'Site',
@@ -392,14 +318,14 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
           : undefined
 
       rows.push([
-        group.date,
+        toSpreadsheetDate(group.date),
         group.site ?? '',
         menu.menuName,
         formatRecipeVersion(menu.recipeVersion),
         menu.category,
         menu.portion,
-        formatPrice(estimatedTotalCost),
-        formatPrice(estimatedCostPerPax),
+        toSpreadsheetNumber(estimatedTotalCost),
+        toSpreadsheetNumber(estimatedCostPerPax),
       ])
     })
   })
@@ -544,7 +470,7 @@ const ChefStoreRequest = ({
       /[\\/:*?"<>|]/g,
       '-',
     )
-    downloadExcel(`store-request-${safeDate}-${safeProductionCode}.xls`, [
+    downloadSpreadsheet(`store-request-${safeDate}-${safeProductionCode}.xlsx`, [
       { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
       { name: 'Estimated Costs', rows: estimatedCostRows },
@@ -607,8 +533,8 @@ const ChefStoreRequest = ({
         site: getSiteDisplayName(group.site),
       }))
 
-      downloadExcel(
-        `store-request-bulk-${bulkExportStartDate}_to_${bulkExportEndDate}.xls`,
+      await downloadSpreadsheet(
+        `store-request-bulk-${bulkExportStartDate}_to_${bulkExportEndDate}.xlsx`,
         [
           {
             name: 'Store Requests',
@@ -2344,4 +2270,3 @@ const ChefStoreRequest = ({
 }
 
 export default ChefStoreRequest
-
