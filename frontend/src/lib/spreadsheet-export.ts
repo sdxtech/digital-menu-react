@@ -122,7 +122,9 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
         if (cell.value instanceof Date) {
           cell.numFmt = DATE_FORMAT
         } else if (isSpreadsheetDecimalCell(sourceCell)) {
-          cell.numFmt = DECIMAL_FORMAT
+          cell.numFmt = Number.isInteger(sourceCell.value)
+            ? INTEGER_FORMAT
+            : DECIMAL_FORMAT
         } else if (typeof cell.value === 'number') {
           cell.numFmt = INTEGER_FORMAT
         }
