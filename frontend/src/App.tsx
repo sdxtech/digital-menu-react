@@ -129,7 +129,12 @@ function App() {
             <Route path="menu-bank" element={<ChefMenuBank />} />
             <Route
               path="menu-create"
-              element={<ChefCreateMenu enableIngredientUomConversion />}
+              element={
+                <ChefCreateMenu
+                  enableIngredientUomConversion
+                  lockSrUomToRawMaterial
+                />
+              }
             />
             <Route
               path="raw-material"
