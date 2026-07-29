@@ -77,7 +77,7 @@ export const validateEnv = (rawEnv: Record<string, unknown>) => {
     'AUTH_RATE_LIMIT_WINDOW_MS',
   );
   env.AUTH_IDLE_TIMEOUT_MINUTES = parsePositiveInt(
-    env.AUTH_IDLE_TIMEOUT_MINUTES?.trim() || '30',
+    env.AUTH_IDLE_TIMEOUT_MINUTES?.trim() || '480',
     'AUTH_IDLE_TIMEOUT_MINUTES',
   );
 

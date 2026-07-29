@@ -73,11 +73,15 @@ export const toSpreadsheetDate = (value: unknown): Date | '' => {
     const year = Number(dateOnlyMatch[1])
     const month = Number(dateOnlyMatch[2])
     const day = Number(dateOnlyMatch[3])
-    const parsed = new Date(year, month - 1, day)
+    // ExcelJS converts Date values to serial numbers from their UTC timestamp.
+    // Using local midnight here makes date-only values move to the previous day
+    // in positive-offset time zones (for example, UTC+7). Keep civil dates at
+    // UTC midnight so the exported calendar date remains unchanged.
+    const parsed = new Date(Date.UTC(year, month - 1, day))
     if (
-      parsed.getFullYear() === year &&
-      parsed.getMonth() === month - 1 &&
-      parsed.getDate() === day
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
     ) {
       return parsed
     }

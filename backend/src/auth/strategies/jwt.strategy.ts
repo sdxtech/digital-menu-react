@@ -6,7 +6,7 @@ import type { JwtPayload } from '../types/jwt-payload.type';
 import { UsersService } from '../../users/users.service';
 import { AppRole } from '../roles.constants';
 
-const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
 const ACTIVITY_UPDATE_MIN_INTERVAL_MS = 60_000;
 
 @Injectable()

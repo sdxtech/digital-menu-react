@@ -174,6 +174,8 @@ type FulfillStoreRequestBatchInput = {
     productCode: string
     name: string
     unitOfMeasures: string
+    vendor?: string
+    vendorSite?: string
     actualQty: number
     actualPrice?: number
     reason?: string
