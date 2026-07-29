@@ -164,6 +164,7 @@ const ChefCreateMenu = ({
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
   const rawMaterialCacheRef = useRef<Map<string, RawMaterial>>(new Map())
   const [uomOptions, setUomOptions] = useState<UnitOfMeasureOption[]>([])
+  const [srUomOptions, setSrUomOptions] = useState<string[]>([])
   const [unitConversions, setUnitConversions] = useState<UnitConversion[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
@@ -300,6 +301,7 @@ const ChefCreateMenu = ({
   useEffect(() => {
     if (!enableIngredientUomConversion || !accessToken) {
       setUomOptions([])
+      setSrUomOptions([])
       setUnitConversions([])
       return
     }
@@ -307,9 +309,14 @@ const ChefCreateMenu = ({
     let cancelled = false
     const fetchUomData = async () => {
       try {
-        const [unitsData, conversionsData] = await Promise.all([
+        const [unitsData, srUnitsData, conversionsData] = await Promise.all([
           apiFetch<{ items?: UnitOfMeasureApi[] }>(
             '/unit-of-measures?page=1&limit=100&isActive=true',
+            undefined,
+            accessToken,
+          ),
+          apiFetch<string[]>(
+            '/raw-materials/unit-options',
             undefined,
             accessToken,
           ),
@@ -329,6 +336,7 @@ const ChefCreateMenu = ({
             }))
             .filter((item) => item.id && item.code),
         )
+        setSrUomOptions((srUnitsData ?? []).filter(Boolean))
         setUnitConversions(
           (conversionsData.items ?? [])
             .map((item) => ({
@@ -350,6 +358,7 @@ const ChefCreateMenu = ({
       } catch {
         if (cancelled) return
         setUomOptions([])
+        setSrUomOptions([])
         setUnitConversions([])
       }
     }
@@ -520,16 +529,39 @@ const ChefCreateMenu = ({
   const applyRawMaterialToRow = (
     row: IngredientRow,
     matched: RawMaterial,
-  ): IngredientRow => ({
-    ...row,
-    productCode: matched.productCode,
-    name: matched.name,
-    unitOfMeasures: matched.unitOfMeasures,
-    srQty: '',
-    srQtyManual: false,
-    baseUnitOfMeasures: matched.baseUnitOfMeasures,
-    conversionFactor: matched.conversionFactor,
-  })
+  ): IngredientRow => {
+    const srUomChanged =
+      normalizeUomCode(row.unitOfMeasures) !==
+      normalizeUomCode(matched.unitOfMeasures)
+
+    return {
+      ...row,
+      productCode: matched.productCode,
+      name: matched.name,
+      unitOfMeasures: matched.unitOfMeasures,
+      ...(srUomChanged ? { srQty: '', srQtyManual: false } : {}),
+      baseUnitOfMeasures: matched.baseUnitOfMeasures,
+      conversionFactor: matched.conversionFactor,
+    }
+  }
+
+  const resolveRawMaterialByProductCode = async (productCode: string) => {
+    const normalizedCode = normalizeValue(productCode)
+    if (!normalizedCode) return undefined
+
+    const cached = rawMaterialCacheRef.current.get(`code:${normalizedCode}`)
+    if (cached) return cached
+
+    try {
+      const results = await searchRawMaterials(productCode, 40)
+      cacheRawMaterials(results)
+      return results.find(
+        (item) => normalizeValue(item.productCode) === normalizedCode,
+      )
+    } catch {
+      return undefined
+    }
+  }
 
   const updateRecipeForm = <K extends keyof RecipeForm>(
     field: K,
@@ -817,7 +849,35 @@ const ChefCreateMenu = ({
     }
 
     const parsedIngredients: RecipeIngredient[] = []
-    for (const row of usedRows) {
+    for (const sourceRow of usedRows) {
+      const enteredProductCode = sourceRow.productCode.trim()
+      if (!enteredProductCode) {
+        setSubmitError('Select a valid raw material for each ingredient row.')
+        setSubmitMessage('')
+        return
+      }
+
+      const matchedRawMaterial =
+        await resolveRawMaterialByProductCode(enteredProductCode)
+      if (!matchedRawMaterial) {
+        setSubmitError(
+          `Raw material ${enteredProductCode} was not found. Select an IT code from raw material data.`,
+        )
+        setSubmitMessage('')
+        return
+      }
+
+      const row = applyRawMaterialToRow(sourceRow, matchedRawMaterial)
+      if (
+        row.productCode !== sourceRow.productCode ||
+        row.name !== sourceRow.name ||
+        row.unitOfMeasures !== sourceRow.unitOfMeasures
+      ) {
+        setIngredientRows((current) =>
+          current.map((item) => (item.id === row.id ? row : item)),
+        )
+      }
+
       const productCode = row.productCode.trim()
       const name = row.name.trim()
       const unitOfMeasures = row.unitOfMeasures.trim()
@@ -1409,18 +1469,18 @@ const ChefCreateMenu = ({
                             >
                               <option value="">Select</option>
                               {row.unitOfMeasures &&
-                              !uomOptions.some(
-                                (unit) =>
-                                  normalizeUomCode(unit.code) ===
+                              !srUomOptions.some(
+                                (code) =>
+                                  normalizeUomCode(code) ===
                                   normalizeUomCode(row.unitOfMeasures),
                               ) ? (
                                 <option value={row.unitOfMeasures}>
                                   {formatUnitLabel(row.unitOfMeasures)}
                                 </option>
                               ) : null}
-                              {uomOptions.map((unit) => (
-                                <option key={unit.id} value={unit.code}>
-                                  {formatUnitLabel(unit.code)}
+                              {srUomOptions.map((code) => (
+                                <option key={code} value={code}>
+                                  {formatUnitLabel(code)}
                                 </option>
                               ))}
                             </select>

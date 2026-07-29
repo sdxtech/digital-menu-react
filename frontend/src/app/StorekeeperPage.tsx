@@ -91,9 +91,11 @@ type ReconciliationRow = {
   productCode: string
   name: string
   unitOfMeasures: string
+  vendor?: string
+  vendorSite?: string
   plannedQty: number
   actualQty: string
-  plannedPrice: number
+  plannedPrice?: number
   actualPrice: string
   reason: string
   isAdditional: boolean
@@ -146,7 +148,7 @@ const createAdditionalReconciliationRow = (): ReconciliationRow => ({
   unitOfMeasures: '',
   plannedQty: 0,
   actualQty: '',
-  plannedPrice: 0,
+  plannedPrice: undefined,
   actualPrice: '',
   reason: '',
   isAdditional: true,
@@ -158,11 +160,15 @@ const buildReconciliationItemKey = (
   productCode: string,
   name: string,
   unitOfMeasures: string,
+  vendor?: string,
+  vendorSite?: string,
 ) => {
   const identity = normalizeReconciliationText(productCode || name)
   const unit = normalizeReconciliationText(unitOfMeasures)
   if (!identity || !unit) return ''
-  return `${identity}__${unit}`
+  return `${identity}__${unit}__${normalizeReconciliationText(
+    vendor ?? '',
+  )}__${normalizeReconciliationText(vendorSite ?? '')}`
 }
 
 const StorekeeperPage = () => {
@@ -253,17 +259,23 @@ const StorekeeperPage = () => {
     `${group.date}__${group.productionCode ?? 'no-code'}`
 
   const toReconciliationRows = (group: StoreRequestGroup): ReconciliationRow[] =>
-    aggregateStoreRequestSummary(group.summary ?? []).map((item) => ({
+    aggregateStoreRequestSummary(group.summary ?? [], {
+      splitByVendor: true,
+    }).map((item) => ({
       id: makeReconciliationRowId(),
       productCode: item.productCode,
       name: item.name,
       unitOfMeasures: item.unitOfMeasures,
+      vendor: item.vendor,
+      vendorSite: item.vendorSite,
       plannedQty: item.qty,
       actualQty: formatQuantity(item.qty),
-      plannedPrice: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+      plannedPrice: Number.isFinite(Number(item.price))
+        ? Number(item.price)
+        : undefined,
       actualPrice: Number.isFinite(Number(item.price))
         ? String(Number(item.price))
-        : '0',
+        : '',
       reason: '',
       isAdditional: false,
     }))
@@ -456,12 +468,6 @@ const StorekeeperPage = () => {
     return parsed.value - plannedQty
   }
 
-  const getVariancePrice = (plannedPrice: number, actualPriceText: string) => {
-    const parsed = parseDotDecimal(actualPriceText)
-    if (!parsed.valid) return null
-    return parsed.value - plannedPrice
-  }
-
   const handleSubmitReconciliation = async () => {
     if (!reconciliationGroup) return
 
@@ -497,7 +503,13 @@ const StorekeeperPage = () => {
         }
       }
 
-      const itemKey = buildReconciliationItemKey(productCode, name, unitOfMeasures)
+      const itemKey = buildReconciliationItemKey(
+        productCode,
+        name,
+        unitOfMeasures,
+        row.vendor,
+        row.vendorSite,
+      )
       if (!itemKey) {
         setReconciliationError(
           `Ingredient identity is incomplete for ${fieldLabel || 'an issuance row'}.`,
@@ -542,32 +554,30 @@ const StorekeeperPage = () => {
         return
       }
       const actualPriceText = row.actualPrice.trim()
-      if (!actualPriceText) {
-        setReconciliationError(
-          `Actual price is required for ${fieldLabel || 'an ingredient'}.`,
-        )
-        return
-      }
-
-      const parsedActualPrice = parseDotDecimal(actualPriceText)
-      if (!parsedActualPrice.valid) {
-        if (parsedActualPrice.reason === 'comma') {
+      let actualPrice: number | undefined
+      if (actualPriceText) {
+        const parsedActualPrice = parseDotDecimal(actualPriceText)
+        if (!parsedActualPrice.valid) {
+          if (parsedActualPrice.reason === 'comma') {
+            setReconciliationError(
+              `Use dot decimal format for actual price of ${fieldLabel}, for example 12500.5.`,
+            )
+            return
+          }
           setReconciliationError(
-            `Use dot decimal format for actual price of ${fieldLabel}, for example 12500.5.`,
+            `Actual price for ${fieldLabel} must be a valid number using dot decimals, for example 12500.5.`,
           )
           return
         }
-        setReconciliationError(
-          `Actual price for ${fieldLabel} must be a valid number using dot decimals, for example 12500.5.`,
-        )
-        return
+        actualPrice = parsedActualPrice.value
       }
 
-      const actualPrice = parsedActualPrice.value
       const reason = row.reason.trim()
       if (
         (quantitiesDiffer(actualQty, row.plannedQty) ||
-          quantitiesDiffer(actualPrice, row.plannedPrice)) &&
+          (actualPrice !== undefined &&
+            row.plannedPrice !== undefined &&
+            quantitiesDiffer(actualPrice, row.plannedPrice))) &&
         !reason
       ) {
         setReconciliationError(
@@ -580,8 +590,10 @@ const StorekeeperPage = () => {
         productCode,
         name,
         unitOfMeasures,
+        vendor: row.vendor,
+        vendorSite: row.vendorSite,
         actualQty,
-        actualPrice,
+        ...(actualPrice !== undefined ? { actualPrice } : {}),
         reason: reason || undefined,
       })
     }
@@ -1252,18 +1264,10 @@ const StorekeeperPage = () => {
                         <th className="w-12 px-3 py-1.5 font-semibold">No</th>
                         <th className="px-3 py-1.5 font-semibold">Product code</th>
                         <th className="px-3 py-1.5 font-semibold">Ingredient</th>
+                        <th className="px-3 py-1.5 font-semibold">Vendor</th>
                         <th className="px-3 py-1.5 font-semibold">Planned qty</th>
                         <th className="px-3 py-1.5 font-semibold">Actual qty</th>
                         <th className="px-3 py-1.5 font-semibold">Variance</th>
-                        <th className="px-3 py-1.5 font-semibold">
-                          Planned Price/Unit
-                        </th>
-                        <th className="px-3 py-1.5 font-semibold">
-                          Actual Price/Unit
-                        </th>
-                        <th className="px-3 py-1.5 font-semibold">
-                          Price variance
-                        </th>
                         <th className="px-3 py-1.5 font-semibold">Unit</th>
                         <th className="min-w-[220px] px-3 py-1.5 font-semibold">
                           Reason
@@ -1277,10 +1281,6 @@ const StorekeeperPage = () => {
                           row.plannedQty,
                           row.actualQty,
                         )
-                        const variancePrice = getVariancePrice(
-                          row.plannedPrice,
-                          row.actualPrice,
-                        )
                         const varianceClass =
                           varianceQty === null
                             ? 'text-muted'
@@ -1289,15 +1289,6 @@ const StorekeeperPage = () => {
                               : varianceQty > 0
                                 ? 'text-primary'
                                 : 'text-danger'
-                        const variancePriceClass =
-                          variancePrice === null
-                            ? 'text-muted'
-                            : !quantitiesDiffer(variancePrice, 0)
-                              ? 'text-muted'
-                              : variancePrice > 0
-                                ? 'text-primary'
-                                : 'text-danger'
-
                         return (
                           <tr
                             key={row.id}
@@ -1344,6 +1335,9 @@ const StorekeeperPage = () => {
                                 row.name
                               )}
                             </td>
+                            <td className="px-3 py-1.5">
+                              {row.vendor ?? '-'}
+                            </td>
                             <td className="px-3 py-1.5 font-medium">
                               {formatQuantity(row.plannedQty)}
                             </td>
@@ -1367,32 +1361,6 @@ const StorekeeperPage = () => {
                               {varianceQty === null
                                 ? '-'
                                 : formatSignedQuantity(varianceQty)}
-                            </td>
-                            <td className="px-3 py-1.5 font-medium">
-                              {formatPrice(row.plannedPrice)}
-                            </td>
-                            <td className="px-3 py-1.5">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={row.actualPrice}
-                                onChange={(event) =>
-                                  updateReconciliationRow(
-                                    row.id,
-                                    'actualPrice',
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder="0"
-                                className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                              />
-                            </td>
-                            <td
-                              className={`px-3 py-1.5 font-medium ${variancePriceClass}`}
-                            >
-                              {variancePrice === null
-                                ? '-'
-                                : formatPrice(variancePrice)}
                             </td>
                             <td className="px-3 py-1.5">
                               {row.isAdditional ? (

@@ -32,9 +32,17 @@ export const aggregateStoreRequestSummary = (
     const name = String(item.name ?? '').trim()
     const unitOfMeasures = String(item.unitOfMeasures ?? '').trim()
     const vendor = String(item.vendor ?? '').trim()
-    const keyBase = productCode || `${name}__${unitOfMeasures}`
-    if (!keyBase) return
-    const key = options.splitByVendor ? `${keyBase}__${vendor}` : keyBase
+    const vendorSite = String(item.vendorSite ?? '').trim()
+    const identity = (productCode || name).toLowerCase()
+    const normalizedUnit = unitOfMeasures.toLowerCase()
+    if (!identity || !normalizedUnit) return
+
+    // Keep this identity in sync with the backend store-request key. A product
+    // can legitimately be requested in more than one unit of measure.
+    const keyBase = `${identity}__${normalizedUnit}`
+    const key = options.splitByVendor
+      ? `${keyBase}__${vendor.toLowerCase()}__${vendorSite.toLowerCase()}`
+      : keyBase
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
     const existing = summaryMap.get(key)

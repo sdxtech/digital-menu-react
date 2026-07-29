@@ -141,8 +141,14 @@ const buildIngredientKey = (
   productCode: string,
   name: string,
   unitOfMeasures: string,
-) =>
-  `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
+  vendor?: string,
+  vendorSite?: string,
+) => {
+  const baseKey = `${(productCode || name).trim().toLowerCase()}__${unitOfMeasures.trim().toLowerCase()}`
+  const normalizedVendor = vendor?.trim().toLowerCase() ?? ''
+  if (!normalizedVendor || normalizedVendor === 'multiple') return baseKey
+  return `${baseKey}__${normalizedVendor}__${vendorSite?.trim().toLowerCase() ?? ''}`
+}
 
 const formatQuantity = (value: number) => {
   return formatRawQuantity(value, '')
@@ -388,6 +394,8 @@ const SuperadminStoreRequestExportPage = () => {
               item.productCode,
               item.name,
               item.unitOfMeasures,
+              item.vendor,
+              item.vendorSite,
             ),
             item,
           ]),
@@ -463,10 +471,40 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.productCode,
               ingredient.name,
               ingredient.unitOfMeasures,
+              ingredient.vendor,
+              ingredient.vendorSite,
             )
-            consumedFulfillmentKeys.add(ingredientKey)
-            const fulfillmentItem = fulfillmentByKey.get(ingredientKey)
+            const legacyIngredientKey = buildIngredientKey(
+              ingredient.productCode,
+              ingredient.name,
+              ingredient.unitOfMeasures,
+            )
+            const fulfillmentItem =
+              fulfillmentByKey.get(ingredientKey) ??
+              fulfillmentByKey.get(legacyIngredientKey)
+            consumedFulfillmentKeys.add(
+              fulfillmentByKey.has(ingredientKey)
+                ? ingredientKey
+                : legacyIngredientKey,
+            )
             const plannedQty = fulfillmentItem?.plannedQty ?? ingredient.qty
+            const plannedPrice = fulfillmentItem?.plannedPrice ?? ingredient.price
+            const useLegacyVendorPriceFallback =
+              fulfillmentItem?.actualPrice === 0 &&
+              Number(plannedPrice) > 0 &&
+              (!fulfillmentItem.vendor || fulfillmentItem.vendor === 'Multiple')
+            const actualPrice = fulfillmentItem
+              ? useLegacyVendorPriceFallback
+                ? plannedPrice
+                : fulfillmentItem.actualPrice ?? plannedPrice
+              : undefined
+            const variancePrice =
+              actualPrice !== undefined && plannedPrice !== undefined
+                ? actualPrice - plannedPrice
+                : fulfillmentItem?.variancePrice
+            const actualIngredientCost = useLegacyVendorPriceFallback
+              ? Number(actualPrice) * fulfillmentItem.actualQty
+              : getActualIngredientCost(fulfillmentItem)
 
             rows.push([
               rowNumber,
@@ -491,12 +529,12 @@ const SuperadminStoreRequestExportPage = () => {
                   )
                 : '',
               toSpreadsheetInteger(
-                formatPrice(fulfillmentItem?.plannedPrice ?? ingredient.price),
+                formatPrice(plannedPrice),
               ),
-              toSpreadsheetInteger(formatPrice(fulfillmentItem?.actualPrice)),
-              toSpreadsheetInteger(formatPrice(fulfillmentItem?.variancePrice)),
+              toSpreadsheetInteger(formatPrice(actualPrice)),
+              toSpreadsheetInteger(formatPrice(variancePrice)),
               toSpreadsheetInteger(
-                formatPrice(getActualIngredientCost(fulfillmentItem)),
+                formatPrice(actualIngredientCost),
               ),
               formatUnitLabel(ingredient.unitOfMeasures),
               approvedBy,
@@ -545,7 +583,9 @@ const SuperadminStoreRequestExportPage = () => {
         })
       })
 
-      const selectedSitesLabel = formatSelectedSitesLabel(selectedSites)
+      const selectedSitesLabel = formatSelectedSitesLabel(
+        selectedSites.map(getSiteDisplayName),
+      )
       const siteFilenameSegment = buildSiteFilenameSegment(selectedSites)
       const filename =
         exportMode === 'range'
@@ -656,7 +696,7 @@ const SuperadminStoreRequestExportPage = () => {
                               onChange={() => toggleSiteSelection(site)}
                               className="h-4 w-4 rounded border-border text-primary focus:ring-accent-blue"
                             />
-                            <span>{site}</span>
+                            <span>{getSiteDisplayName(site)}</span>
                           </label>
                         ))
                       )}
@@ -670,7 +710,7 @@ const SuperadminStoreRequestExportPage = () => {
               {sitesLoading
                 ? 'Loading site options...'
                 : selectedSites.length
-                  ? `Export will include ${formatSelectedSitesLabel(selectedSites)}.`
+                  ? `Export will include ${formatSelectedSitesLabel(selectedSites.map(getSiteDisplayName))}.`
                   : 'All sites will be included in the export.'}
             </p>
             {siteError ? (

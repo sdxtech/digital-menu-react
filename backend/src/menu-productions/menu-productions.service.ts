@@ -783,10 +783,12 @@ export class MenuProductionsService implements OnModuleInit {
 
     const actualItems = new Map<string, FulfillStoreRequestBatchItemDto>();
     input.items.forEach((item) => {
-      const key = this.buildStoreIngredientKey(
+      const key = this.buildStoreFulfillmentItemKey(
         item.productCode,
         item.name,
         item.unitOfMeasures,
+        item.vendor,
+        item.vendorSite,
       );
       if (!key) {
         throw new BadRequestException(
@@ -803,10 +805,12 @@ export class MenuProductionsService implements OnModuleInit {
 
     const fulfillmentItems: StoreFulfillmentIngredient[] = batch.summary.map(
       (plannedItem) => {
-        const key = this.buildStoreIngredientKey(
+        const key = this.buildStoreFulfillmentItemKey(
           plannedItem.productCode,
           plannedItem.name,
           plannedItem.unitOfMeasures,
+          plannedItem.vendor,
+          plannedItem.vendorSite,
         );
         const actualItem = key ? actualItems.get(key) : undefined;
         if (!actualItem) {
@@ -900,6 +904,8 @@ export class MenuProductionsService implements OnModuleInit {
         productCode: actualItem.productCode,
         name: actualItem.name,
         unitOfMeasures: actualItem.unitOfMeasures,
+        vendor: actualItem.vendor?.trim() || undefined,
+        vendorSite: actualItem.vendorSite?.trim() || undefined,
         plannedQty: 0,
         actualQty,
         varianceQty: actualQty,
@@ -1512,6 +1518,25 @@ export class MenuProductionsService implements OnModuleInit {
     return `${identity}__${unit}`;
   }
 
+  private buildStoreFulfillmentItemKey(
+    productCode?: string,
+    name?: string,
+    unitOfMeasures?: string,
+    vendor?: string,
+    vendorSite?: string,
+  ) {
+    const ingredientKey = this.buildStoreIngredientKey(
+      productCode,
+      name,
+      unitOfMeasures,
+    );
+    if (!ingredientKey) return '';
+
+    return `${ingredientKey}__${this.normalizeName(vendor || '')}__${this.normalizeName(
+      vendorSite || '',
+    )}`;
+  }
+
   private normalizeIngredientVendors(
     vendors?: MenuProductionIngredientVendor[],
   ): MenuProductionIngredientVendor[] {
@@ -1808,10 +1833,12 @@ export class MenuProductionsService implements OnModuleInit {
             estimatedCostTotal += ingredientCost ?? 0;
             hasEstimatedCost = true;
           }
-          const normalizedKey = this.buildStoreIngredientKey(
+          const normalizedKey = this.buildStoreFulfillmentItemKey(
             productCode,
             name,
             unitOfMeasures,
+            selectedVendor?.vendor,
+            selectedVendor?.site,
           );
           const existing = group.summaryMap.get(normalizedKey);
           if (existing) {

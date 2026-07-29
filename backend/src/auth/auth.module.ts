@@ -22,7 +22,7 @@ import { AuthThrottleGuard } from './guards/auth-throttle.guard';
       useFactory: (config: ConfigService) => {
         const accessExpiresIn = resolveExpiresIn(
           config.get<string>('JWT_ACCESS_EXPIRES_IN'),
-          '15m',
+          '8h',
         );
 
         return {

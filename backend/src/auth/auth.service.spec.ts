@@ -7,9 +7,9 @@ describe('AuthService', () => {
   const env = {
     JWT_ACCESS_SECRET: 'access-secret',
     JWT_REFRESH_SECRET: 'refresh-secret',
-    JWT_ACCESS_EXPIRES_IN: '15m',
-    JWT_REFRESH_EXPIRES_IN: '7d',
-    AUTH_IDLE_TIMEOUT_MINUTES: '30',
+    JWT_ACCESS_EXPIRES_IN: '8h',
+    JWT_REFRESH_EXPIRES_IN: '8h',
+    AUTH_IDLE_TIMEOUT_MINUTES: '480',
   };
 
   const makeConfig = () => ({
@@ -129,7 +129,7 @@ describe('AuthService', () => {
       isActive: true,
       roles: [AppRole.Chef],
       sites: ['SITE-001'],
-      lastActivityAt: new Date(Date.now() - 31 * 60 * 1000),
+      lastActivityAt: new Date(Date.now() - 481 * 60 * 1000),
       refreshTokenHash: await bcrypt.hash(refreshToken, 10),
     });
     jwt.verifyAsync.mockResolvedValue({ sub: 'user-1' });
@@ -276,7 +276,7 @@ describe('AuthService', () => {
         siteId: undefined,
         siteName: undefined,
       }),
-      { expiresIn: '15m' },
+      { expiresIn: '8h' },
     );
     expect(users.setRefreshToken).toHaveBeenCalledWith(
       'admin-1',
@@ -320,7 +320,7 @@ describe('AuthService', () => {
         site: 'HQ',
         siteName: 'HQ',
       }),
-      { expiresIn: '15m' },
+      { expiresIn: '8h' },
     );
   });
 });
