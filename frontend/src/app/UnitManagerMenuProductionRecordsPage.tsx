@@ -142,10 +142,18 @@ const buildIngredientKey = (
   productCode?: string,
   name?: string,
   unitOfMeasures?: string,
-) =>
-  `${String(productCode ?? '').trim()}__${String(name ?? '').trim()}__${String(
+  vendor?: string,
+  vendorSite?: string,
+) => {
+  const baseKey = `${String(productCode || name || '').trim().toLowerCase()}__${String(
     unitOfMeasures ?? '',
-  ).trim()}`
+  )
+    .trim()
+    .toLowerCase()}`
+  const normalizedVendor = vendor?.trim().toLowerCase() ?? ''
+  if (!normalizedVendor || normalizedVendor === 'multiple') return baseKey
+  return `${baseKey}__${normalizedVendor}__${vendorSite?.trim().toLowerCase() ?? ''}`
+}
 
 const UnitManagerMenuProductionRecordsPage = () => {
   const { accessToken } = useAuth()
@@ -241,7 +249,13 @@ const UnitManagerMenuProductionRecordsPage = () => {
 
     const fulfillmentByKey = new Map(
       (group.fulfillment?.items ?? []).map((item) => [
-        buildIngredientKey(item.productCode, item.name, item.unitOfMeasures),
+        buildIngredientKey(
+          item.productCode,
+          item.name,
+          item.unitOfMeasures,
+          item.vendor,
+          item.vendorSite,
+        ),
         item,
       ]),
     )
@@ -286,13 +300,22 @@ const UnitManagerMenuProductionRecordsPage = () => {
       }
 
       menuIngredients.forEach((ingredient) => {
-        const fulfillmentItem = fulfillmentByKey.get(
-          buildIngredientKey(
-            ingredient.productCode,
-            ingredient.name,
-            ingredient.unitOfMeasures,
-          ),
+        const ingredientKey = buildIngredientKey(
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.unitOfMeasures,
+          ingredient.vendor,
+          ingredient.vendorSite,
         )
+        const fulfillmentItem =
+          fulfillmentByKey.get(ingredientKey) ??
+          fulfillmentByKey.get(
+            buildIngredientKey(
+              ingredient.productCode,
+              ingredient.name,
+              ingredient.unitOfMeasures,
+            ),
+          )
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),

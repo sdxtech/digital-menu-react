@@ -2,11 +2,15 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
-import { apiFetch } from './api' /* Fungsi untuk melakukan fetch API dengan penanganan token dan error yang sesuai. */
+import {
+  apiFetch,
+  AUTH_TOKEN_REFRESHED_EVENT,
+} from './api' /* Fungsi untuk melakukan fetch API dengan penanganan token dan error yang sesuai. */
 
 export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
 
@@ -95,6 +99,29 @@ export const readStoredRefreshToken = (): string | null => {
   return readSessionStorage(REFRESH_TOKEN_KEY)
 }/* Fungsi untuk membaca token refresh yang disimpan dari sessionStorage. */
 
+const getJwtExpirationTime = (token: string) => {
+  try {
+    const encodedPayload = token.split('.')[1]
+    if (!encodedPayload) return null
+
+    const normalizedPayload = encodedPayload
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+    const paddingLength = (4 - (normalizedPayload.length % 4)) % 4
+    const payload = JSON.parse(
+      window.atob(
+        normalizedPayload.padEnd(
+          normalizedPayload.length + paddingLength,
+          '=',
+        ),
+      ),
+    ) as { exp?: number }
+    return Number.isFinite(payload.exp) ? Number(payload.exp) * 1000 : null
+  } catch {
+    return null
+  }
+}
+
 const migrateLegacyUserToSession = () => {
   const legacyUser = readLocalStorage(USER_KEY)
   if (!legacyUser) return null
@@ -130,6 +157,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [accessToken, setAccessToken] = useState<string | null>(() =>
     readStoredToken(),
   )/* State untuk menyimpan informasi pengguna dan token akses, dengan nilai awal yang dibaca dari storage. */
+
+  useEffect(() => {
+    const syncRefreshedAccessToken = (event: Event) => {
+      const nextAccessToken = (event as CustomEvent<string>).detail
+      if (nextAccessToken) {
+        setAccessToken(nextAccessToken)
+      }
+    }
+
+    window.addEventListener(
+      AUTH_TOKEN_REFRESHED_EVENT,
+      syncRefreshedAccessToken,
+    )
+    return () => {
+      window.removeEventListener(
+        AUTH_TOKEN_REFRESHED_EVENT,
+        syncRefreshedAccessToken,
+      )
+    }
+  }, [])
 
   const login = async (email: string, password: string) => {
     const {
@@ -198,17 +245,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return nextUser/* Simpan informasi pengguna dan token akses ke state dan storage, dan kembalikan objek User yang baru. */
   }
 
+  const clearAuthentication = useCallback(() => {
+    setUser(null)
+    removeStoredItem(USER_KEY)
+    setAccessToken(null)
+    removeStoredItem(ACCESS_TOKEN_KEY)
+    removeStoredItem(REFRESH_TOKEN_KEY)
+  }, [])
+
   const logout = useCallback(() => {
     const token = accessToken ?? readStoredToken()
     if (token) {
       apiFetch('/auth/logout', { method: 'POST' }, token).catch(() => null)/* Fungsi untuk melakukan logout, yang mengirimkan permintaan ke endpoint /auth/logout dengan token akses. Jika terjadi error saat logout, error tersebut diabaikan. */
     }
-    setUser(null)/* Bersihkan state pengguna. */
-    removeStoredItem(USER_KEY)/* Hapus data pengguna dari storage. */
-    setAccessToken(null)/* Bersihkan state token akses. */
-    removeStoredItem(ACCESS_TOKEN_KEY)/* Hapus token akses dari storage. */
-    removeStoredItem(REFRESH_TOKEN_KEY)/* Hapus token refresh dari storage. */
-  }, [accessToken])/* Fungsi untuk melakukan logout, yang mengirimkan permintaan ke endpoint /auth/logout, membersihkan state pengguna dan token, serta menghapus data terkait dari storage. */
+    clearAuthentication()
+  }, [accessToken, clearAuthentication])/* Fungsi untuk melakukan logout, yang mengirimkan permintaan ke endpoint /auth/logout, membersihkan state pengguna dan token, serta menghapus data terkait dari storage. */
+
+  useEffect(() => {
+    if (!accessToken) return
+
+    const expiresAt = getJwtExpirationTime(accessToken)
+    if (!expiresAt) return
+
+    const remainingMs = expiresAt - Date.now()
+    if (remainingMs <= 0) {
+      clearAuthentication()
+      return
+    }
+
+    const timeoutId = window.setTimeout(clearAuthentication, remainingMs)
+    return () => window.clearTimeout(timeoutId)
+  }, [accessToken, clearAuthentication])
 
   const updateUser = useCallback((updates: Partial<User>) => {
     setUser((current) => {

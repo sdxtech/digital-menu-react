@@ -3269,6 +3269,7 @@ const SuperadminMenuManagementPage = () => {
           <ChefCreateMenu
             embedded
             enableIngredientUomConversion
+            lockSrUomToRawMaterial
             onSaved={() => {
               handleRecipeSaved('Recipe created.')
             }}

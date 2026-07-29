@@ -24,6 +24,14 @@ export class FulfillStoreRequestBatchItemDto {
   @IsNotEmpty()
   unitOfMeasures: string;
 
+  @IsOptional()
+  @IsString()
+  vendor?: string;
+
+  @IsOptional()
+  @IsString()
+  vendorSite?: string;
+
   @Type(() => Number)
   @IsNumber()
   @Min(0)

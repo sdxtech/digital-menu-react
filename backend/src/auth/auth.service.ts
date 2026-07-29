@@ -9,7 +9,7 @@ import { SitesService } from '../sites/sites.service';
 import { resolveExpiresIn } from './jwt.utils';
 import { AppRole } from './roles.constants';
 
-const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
 
 type UserSiteInput = {
   roles?: AppRole[];
@@ -192,11 +192,11 @@ export class AuthService {
   ) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
-      '15m',
+      '8h',
     );
     const refreshExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
-      '7d',
+      '8h',
     );
     const refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
     const appRole = this.resolveAppRole(roles);

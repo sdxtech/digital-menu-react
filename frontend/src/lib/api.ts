@@ -24,6 +24,7 @@ const AUTH_STORAGE_KEYS = [
 ]
 const TOKEN_KEY = 'dm-auth-token'
 const REFRESH_TOKEN_KEY = 'dm-auth-refresh-token'
+export const AUTH_TOKEN_REFRESHED_EVENT = 'dm-auth-token-refreshed'
 let hasRedirected = false
 let refreshPromise: Promise<string | null> | null = null
 
@@ -82,6 +83,13 @@ const tryRefreshAccessToken = async () => {
       if (data?.refreshToken) {
         sessionStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken)
         localStorage.removeItem(REFRESH_TOKEN_KEY)
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent<string>(AUTH_TOKEN_REFRESHED_EVENT, {
+            detail: nextAccessToken,
+          }),
+        )
       }
       return nextAccessToken
     } catch {

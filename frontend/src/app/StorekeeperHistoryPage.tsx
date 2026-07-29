@@ -18,6 +18,9 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  vendor?: string
+  vendorSite?: string
+  price?: number
 }
 
 type StoreFulfillmentIngredient = {
@@ -27,6 +30,8 @@ type StoreFulfillmentIngredient = {
   plannedQty: number
   actualQty: number
   varianceQty: number
+  vendor?: string
+  vendorSite?: string
   plannedPrice?: number
   actualPrice?: number
   variancePrice?: number
@@ -89,14 +94,17 @@ const buildHistoryIngredientKey = (
   productCode: string,
   name: string,
   unitOfMeasures: string,
+  vendor?: string,
+  vendorSite?: string,
 ) => {
-  const normalizedCode = productCode.trim().toLowerCase()
-  if (normalizedCode) return normalizedCode
-
-  const normalizedName = name.trim().toLowerCase()
+  const identity = (productCode || name).trim().toLowerCase()
   const normalizedUnit = unitOfMeasures.trim().toLowerCase()
-  if (!normalizedName) return ''
-  return `${normalizedName}__${normalizedUnit}`
+  if (!identity || !normalizedUnit) return ''
+
+  const baseKey = `${identity}__${normalizedUnit}`
+  const normalizedVendor = vendor?.trim().toLowerCase() ?? ''
+  if (!normalizedVendor || normalizedVendor === 'multiple') return baseKey
+  return `${baseKey}__${normalizedVendor}__${vendorSite?.trim().toLowerCase() ?? ''}`
 }
 
 const StorekeeperHistoryPage = () => {
@@ -193,6 +201,8 @@ const StorekeeperHistoryPage = () => {
         item.productCode,
         item.name,
         item.unitOfMeasures,
+        item.vendor,
+        item.vendorSite,
       )
       if (!key) return
 
@@ -232,6 +242,8 @@ const StorekeeperHistoryPage = () => {
         productCode: item.productCode,
         name: item.name,
         unitOfMeasures: item.unitOfMeasures,
+        vendor: item.vendor,
+        vendorSite: item.vendorSite,
         plannedQty,
         actualQty,
         varianceQty,
@@ -307,9 +319,33 @@ const StorekeeperHistoryPage = () => {
           ingredient.productCode,
           ingredient.name,
           ingredient.unitOfMeasures,
+          ingredient.vendor,
+          ingredient.vendorSite,
         )
-        if (key) consumedKeys.add(key)
-        const fulfillment = key ? fulfillmentMap.get(key) : undefined
+        const legacyKey = buildHistoryIngredientKey(
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.unitOfMeasures,
+        )
+        const fulfillment = key
+          ? fulfillmentMap.get(key) ?? fulfillmentMap.get(legacyKey)
+          : undefined
+        const consumedKey = fulfillmentMap.has(key) ? key : legacyKey
+        if (fulfillment && consumedKey) consumedKeys.add(consumedKey)
+        const plannedPrice = fulfillment?.plannedPrice ?? ingredient.price
+        const useLegacyVendorPriceFallback =
+          fulfillment?.actualPrice === 0 &&
+          Number(plannedPrice) > 0 &&
+          (!fulfillment.vendor || fulfillment.vendor === 'Multiple')
+        const actualPrice = fulfillment
+          ? useLegacyVendorPriceFallback
+            ? plannedPrice
+            : fulfillment.actualPrice ?? plannedPrice
+          : undefined
+        const variancePrice =
+          actualPrice !== undefined && plannedPrice !== undefined
+            ? actualPrice - plannedPrice
+            : fulfillment?.variancePrice
 
         rows.push([
           rowNumber,
@@ -332,9 +368,9 @@ const StorekeeperHistoryPage = () => {
           fulfillment
             ? toSpreadsheetDecimal(formatQuantity(fulfillment.varianceQty))
             : '',
-          toSpreadsheetInteger(fulfillment?.plannedPrice),
-          toSpreadsheetInteger(fulfillment?.actualPrice),
-          toSpreadsheetInteger(fulfillment?.variancePrice),
+          toSpreadsheetInteger(plannedPrice),
+          toSpreadsheetInteger(actualPrice),
+          toSpreadsheetInteger(variancePrice),
           formatUnitLabel(
             fulfillment?.unitOfMeasures ?? ingredient.unitOfMeasures,
           ),
