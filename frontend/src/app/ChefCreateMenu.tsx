@@ -62,6 +62,12 @@ type UnitOfMeasureOption = {
   name: string
 }
 
+type PaginatedApiResponse<T> = {
+  items?: T[]
+  total?: number
+  totalPages?: number
+}
+
 type UnitConversion = {
   id: string
   prodUomCode: string
@@ -307,28 +313,51 @@ const ChefCreateMenu = ({
     }
 
     let cancelled = false
+    const fetchAllPages = async <T,>(path: string) => {
+      const items: T[] = []
+      const limit = 100
+      let page = 1
+      let total = 0
+
+      do {
+        const separator = path.includes('?') ? '&' : '?'
+        const data = await apiFetch<PaginatedApiResponse<T>>(
+          `${path}${separator}page=${page}&limit=${limit}`,
+          undefined,
+          accessToken,
+        )
+        const pageItems = data.items ?? []
+        items.push(...pageItems)
+        total = data.total ?? items.length
+        if (pageItems.length < limit) break
+        page += 1
+      } while (items.length < total)
+
+      return items
+    }
+
     const fetchUomData = async () => {
-      try {
-        const [unitsData, srUnitsData, conversionsData] = await Promise.all([
-          apiFetch<{ items?: UnitOfMeasureApi[] }>(
-            '/unit-of-measures?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
+      const [unitsResult, srUnitsResult, conversionsResult] =
+        await Promise.allSettled([
+          fetchAllPages<UnitOfMeasureApi>(
+            '/unit-of-measures?isActive=true',
           ),
-          apiFetch<string[]>(
-            '/raw-materials/unit-options',
-            undefined,
-            accessToken,
-          ),
-          apiFetch<{ items?: UnitConversionApi[] }>(
-            '/unit-of-measures/conversions?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
+          lockSrUomToRawMaterial
+            ? Promise.resolve<string[]>([])
+            : apiFetch<string[]>(
+                '/raw-materials/unit-options',
+                undefined,
+                accessToken,
+              ),
+          fetchAllPages<UnitConversionApi>(
+            '/unit-of-measures/conversions?isActive=true',
           ),
         ])
-        if (cancelled) return
+      if (cancelled) return
+
+      if (unitsResult.status === 'fulfilled') {
         setUomOptions(
-          (unitsData.items ?? [])
+          unitsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.code ?? '',
               code: item.code ?? '',
@@ -336,9 +365,19 @@ const ChefCreateMenu = ({
             }))
             .filter((item) => item.id && item.code),
         )
-        setSrUomOptions((srUnitsData ?? []).filter(Boolean))
+      } else {
+        setUomOptions([])
+      }
+
+      if (srUnitsResult.status === 'fulfilled') {
+        setSrUomOptions(srUnitsResult.value.filter(Boolean))
+      } else {
+        setSrUomOptions([])
+      }
+
+      if (conversionsResult.status === 'fulfilled') {
         setUnitConversions(
-          (conversionsData.items ?? [])
+          conversionsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.conversionId ?? '',
               prodUomCode: item.prodUomCode ?? '',
@@ -355,10 +394,7 @@ const ChefCreateMenu = ({
                 item.multiplier > 0,
             ),
         )
-      } catch {
-        if (cancelled) return
-        setUomOptions([])
-        setSrUomOptions([])
+      } else {
         setUnitConversions([])
       }
     }
@@ -368,7 +404,7 @@ const ChefCreateMenu = ({
     return () => {
       cancelled = true
     }
-  }, [accessToken, enableIngredientUomConversion])
+  }, [accessToken, enableIngredientUomConversion, lockSrUomToRawMaterial])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
