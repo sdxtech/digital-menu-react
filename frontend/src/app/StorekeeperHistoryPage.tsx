@@ -79,17 +79,6 @@ const ITEMS_PER_PAGE = 10
 const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
 
-const formatPrice = (value?: number) => {
-  if (value === undefined || value === null || !Number.isFinite(value)) {
-    return '-'
-  }
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
 const buildHistoryIngredientKey = (
   productCode: string,
   name: string,
@@ -267,6 +256,7 @@ const StorekeeperHistoryPage = () => {
         'Portions',
         'Product Code',
         'Ingredient Name',
+        'Vendor',
         'Planned Qty',
         'Actual Qty',
         'Variance',
@@ -296,6 +286,7 @@ const StorekeeperHistoryPage = () => {
           menu.category,
           getStoreRequestStatusLabel(menu.storeRequestStatus ?? 'fulfilled'),
           menu.portion,
+          '',
           '',
           '',
           '',
@@ -359,6 +350,7 @@ const StorekeeperHistoryPage = () => {
           menu.portion,
           ingredient.productCode,
           ingredient.name,
+          fulfillment?.vendor?.trim() || ingredient.vendor?.trim() || '',
           fulfillment
             ? toSpreadsheetDecimal(formatQuantity(fulfillment.plannedQty))
             : toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
@@ -398,6 +390,7 @@ const StorekeeperHistoryPage = () => {
         '',
         item.productCode,
         item.name,
+        item.vendor?.trim() ?? '',
         toSpreadsheetDecimal(formatQuantity(item.plannedQty)),
         toSpreadsheetDecimal(formatQuantity(item.actualQty)),
         toSpreadsheetDecimal(formatQuantity(item.varianceQty)),
@@ -421,7 +414,12 @@ const StorekeeperHistoryPage = () => {
         '',
         '',
         '',
+        '',
         groupStatus,
+        '',
+        '',
+        '',
+        '',
         '',
         '',
         '',
@@ -680,15 +678,6 @@ const StorekeeperHistoryPage = () => {
                                             Variance
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Planned Price/Unit
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Actual Price/Unit
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Price variance
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
@@ -733,15 +722,6 @@ const StorekeeperHistoryPage = () => {
                                                     item.varianceQty,
                                                   )}
                                                 </td>
-                                                <td className="px-3 py-1.5 font-medium">
-                                                  {formatPrice(item.plannedPrice)}
-                                                </td>
-                                                <td className="px-3 py-1.5 font-medium">
-                                                  {formatPrice(item.actualPrice)}
-                                                </td>
-                                                <td className="px-3 py-1.5 font-medium">
-                                                  {formatPrice(item.variancePrice)}
-                                                </td>
                                                 <td className="px-3 py-1.5">
                                                   {formatUnitLabel(
                                                     item.unitOfMeasures,
@@ -756,7 +736,7 @@ const StorekeeperHistoryPage = () => {
                                         ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={11}
+                                              colSpan={8}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to

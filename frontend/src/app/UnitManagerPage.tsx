@@ -6,10 +6,7 @@ import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
-import {
-  aggregateStoreRequestSummary,
-  aggregateStoreRequestSummaryByVendor,
-} from '../lib/store-request-summary'
+import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
@@ -905,7 +902,8 @@ const UnitManagerPage = () => {
                     paginatedMenuGroups.map((group, index) => {
                       const groupKey = getGroupKey(group)
                       const isExpanded = expandedGroups.includes(groupKey)
-                      const summaryItems = aggregateStoreRequestSummary(group.summary)
+                      const summaryItems =
+                        aggregateStoreRequestSummaryByVendor(group)
                       const submittedByNames = Array.from(
                         new Set(
                           group.items

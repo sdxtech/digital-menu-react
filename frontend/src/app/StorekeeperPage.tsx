@@ -103,17 +103,6 @@ type ReconciliationRow = {
 
 const ITEMS_PER_PAGE = 10
 
-const formatPrice = (value?: number) => {
-  if (value === undefined || value === null || !Number.isFinite(value)) {
-    return '-'
-  }
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
 const parseDotDecimal = (value: string) => {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -859,34 +848,12 @@ const StorekeeperPage = () => {
                                             Portion
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Estimated Cost
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Cost/Pax
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
                                             Action
                                           </th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((menu, idx) => {
-                                          const estimatedCost = Number.isFinite(
-                                            Number(menu.estimatedCost),
-                                          )
-                                            ? Number(menu.estimatedCost)
-                                            : undefined
-                                          const estimatedCostPerPax =
-                                            Number.isFinite(
-                                              Number(menu.estimatedCostPerPax),
-                                            )
-                                              ? Number(menu.estimatedCostPerPax)
-                                              : estimatedCost !== undefined &&
-                                                  menu.portion > 0
-                                                ? estimatedCost / menu.portion
-                                                : undefined
-
-                                          return (
+                                        {group.items.map((menu, idx) => (
                                             <tr
                                               key={menu.id}
                                               className="border-t border-border"
@@ -905,14 +872,6 @@ const StorekeeperPage = () => {
                                               </td>
                                               <td className="px-3 py-1.5">
                                                 {menu.portion}
-                                              </td>
-                                              <td className="px-3 py-1.5 font-medium">
-                                                {formatPrice(estimatedCost)}
-                                              </td>
-                                              <td className="px-3 py-1.5 font-medium">
-                                                {formatPrice(
-                                                  estimatedCostPerPax,
-                                                )}
                                               </td>
                                               <td className="px-3 py-1.5">
                                                 <button
@@ -935,8 +894,7 @@ const StorekeeperPage = () => {
                                                 </button>
                                               </td>
                                             </tr>
-                                          )
-                                        })}
+                                        ))}
                                       </tbody>
                                     </table>
                                   </div>
@@ -971,22 +929,13 @@ const StorekeeperPage = () => {
                                           <th className="px-3 py-1.5 font-semibold">
                                             Unit
                                           </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Vendor
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Price
-                                          </th>
-                                          <th className="px-3 py-1.5 font-semibold">
-                                            Ingredient Cost
-                                          </th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={8}
+                                              colSpan={5}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to
@@ -1014,17 +963,6 @@ const StorekeeperPage = () => {
                                               <td className="px-3 py-1.5">
                                                 {formatUnitLabel(
                                                   item.unitOfMeasures,
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-1.5">
-                                                {item.vendor ?? '-'}
-                                              </td>
-                                              <td className="px-3 py-1.5 font-medium">
-                                                {formatPrice(item.price)}
-                                              </td>
-                                              <td className="px-3 py-1.5 font-medium">
-                                                {formatPrice(
-                                                  item.ingredientCost,
                                                 )}
                                               </td>
                                             </tr>
@@ -1264,7 +1202,6 @@ const StorekeeperPage = () => {
                         <th className="w-12 px-3 py-1.5 font-semibold">No</th>
                         <th className="px-3 py-1.5 font-semibold">Product code</th>
                         <th className="px-3 py-1.5 font-semibold">Ingredient</th>
-                        <th className="px-3 py-1.5 font-semibold">Vendor</th>
                         <th className="px-3 py-1.5 font-semibold">Planned qty</th>
                         <th className="px-3 py-1.5 font-semibold">Actual qty</th>
                         <th className="px-3 py-1.5 font-semibold">Variance</th>
@@ -1334,9 +1271,6 @@ const StorekeeperPage = () => {
                               ) : (
                                 row.name
                               )}
-                            </td>
-                            <td className="px-3 py-1.5">
-                              {row.vendor ?? '-'}
                             </td>
                             <td className="px-3 py-1.5 font-medium">
                               {formatQuantity(row.plannedQty)}
@@ -1418,7 +1352,7 @@ const StorekeeperPage = () => {
                         )
                       })}
                       <tr className="border-t border-border">
-                        <td colSpan={12} className="px-3 py-3">
+                        <td colSpan={9} className="px-3 py-3">
                           <div className="flex justify-center">
                             <button
                               type="button"
