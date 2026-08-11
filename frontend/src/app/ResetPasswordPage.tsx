@@ -10,18 +10,35 @@ const ResetPasswordPage = () => {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null)
+  const [message, setMessage] = useState<{
+    text: string
+    isError: boolean
+  } | null>(null)
 
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!token) {
-      setMessage({ text: 'Invalid or expired recovery session token.', isError: true })
+      setMessage({
+        text: 'Invalid or expired recovery session token.',
+        isError: true,
+      })
       return
     }
 
     if (newPassword !== confirmPassword) {
-      setMessage({ text: 'Your password entries do not match.', isError: true })
+      setMessage({
+        text: 'Your password entries do not match.',
+        isError: true,
+      })
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setMessage({
+        text: 'Password must contain at least 6 characters.',
+        isError: true,
+      })
       return
     }
 
@@ -35,10 +52,14 @@ const ResetPasswordPage = () => {
         body: JSON.stringify({ token, newPassword }),
       })
 
-      setMessage({ text: 'Password modified successfully! Redirecting to login...', isError: false })
+      setMessage({
+        text: 'Password modified successfully! Redirecting to login...',
+        isError: false,
+      })
       setTimeout(() => navigate('/login'), 3000)
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to reset password.'
+      const errMsg =
+        err instanceof Error ? err.message : 'Failed to reset password.'
       setMessage({ text: errMsg, isError: true })
     } finally {
       setIsLoading(false)
@@ -48,7 +69,6 @@ const ResetPasswordPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#dce4fd] to-[#f4f6fe] flex items-center justify-center p-4">
       <div className="max-w-4xl w-full flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
-        
         {/* LEFT BRAND SECTION */}
         <div className="flex items-center gap-3 md:flex-1 justify-center md:justify-start">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm border border-black/5">
@@ -78,11 +98,13 @@ const ResetPasswordPage = () => {
           </div>
 
           {message && (
-            <div className={`p-3 rounded-lg mb-4 text-xs font-medium border ${
-              message.isError 
-                ? 'bg-rose-50 text-rose-600 border-rose-100' 
-                : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-            }`}>
+            <div
+              className={`p-3 rounded-lg mb-4 text-xs font-medium border ${
+                message.isError
+                  ? 'bg-rose-50 text-rose-600 border-rose-100'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+              }`}
+            >
               {message.text}
             </div>
           )}
@@ -94,6 +116,7 @@ const ResetPasswordPage = () => {
               </label>
               <input
                 type="password"
+                minLength={6}
                 required
                 disabled={isLoading || !token}
                 value={newPassword}
@@ -108,6 +131,7 @@ const ResetPasswordPage = () => {
               </label>
               <input
                 type="password"
+                minLength={6}
                 required
                 disabled={isLoading || !token}
                 value={confirmPassword}
@@ -125,7 +149,6 @@ const ResetPasswordPage = () => {
             </button>
           </form>
         </div>
-
       </div>
     </div>
   )

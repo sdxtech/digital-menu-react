@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   NotFoundException,
   Patch,
   Post,
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { SetMetadata } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash, randomBytes } from 'crypto';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -23,16 +25,21 @@ import type { AuthenticatedRequest } from './types/authenticated-request.type';
 import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
 import * as bcrypt from 'bcrypt';
-import * as nodemailer from 'nodemailer';
+import { MailService } from '../mail/mail.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly auth: AuthService,
     private readonly users: UsersService,
     private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
 
   @Post('register')
@@ -122,7 +129,7 @@ export class AuthController {
     @Body() dto: { currentPassword?: string; newPassword?: string },
   ) {
     const userId = req.user.sub;
-    
+
     const user = await this.users.findByEmail(req.user.email, true);
     if (!user) throw new NotFoundException('User account missing.');
 
@@ -131,73 +138,69 @@ export class AuthController {
       user.passwordHash,
     );
     if (!isCurrentMatch) {
-      throw new BadRequestException('Your current password entry is incorrect.');
+      throw new BadRequestException(
+        'Your current password entry is incorrect.',
+      );
     }
 
     return this.users.updatePassword(userId, dto.newPassword || '');
   }
 
-  // 🌟 REVISED ENDPOINT: Intercepts tokens locally to run 100% firewall-free
   @Post('forgot-password')
-  async forgotPassword(
-    @Body() dto: { email: string },
-  ) {
+  @SetMetadata('isPublic', true)
+  @UseGuards(AuthThrottleGuard)
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
     const user = await this.users.findByEmail(dto.email);
-    
-    if (!user) {
-      return { 
-        ok: true, 
-        message: 'If that email exists in our system, a recovery link has been dispatched.' 
-      };
+
+    if (user && user.isActive !== false) {
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+      const appBaseUrl = this.config.getOrThrow<string>('APP_BASE_URL');
+      const resetUrl = `${appBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+      await this.users.setPasswordResetToken(user.id, tokenHash, expiresAt);
+      try {
+        await this.mail.enqueue({
+          to: user.email,
+          subject: 'Reset your Food Recipe System password',
+          text: `Use this link to reset your password within 30 minutes: ${resetUrl}`,
+          html: `<p>A password reset was requested for your Food Recipe System account.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request it, you can ignore this email.</p>`,
+          category: 'password-reset',
+          deduplicationKey: `password-reset-${user.id}-${tokenHash}`,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to enqueue password reset email: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
-    const testToken = 'SECRET_TEST_TOKEN_123';
-
-    // @ts-ignore
-    await this.users.userModel.updateOne(
-      { _id: user._id },
-      { $set: { resetToken: testToken } }
-    );
-
-    try {
-      // 📬 LOCAL DEV INTERCEPTOR: Completely bypasses outbound internet port restrictions
-      console.log('\n==================================================');
-      console.log('📬 [LOCAL DEV EMAIL INTERCEPTOR]');
-      console.log(`A password reset link was requested for: ${dto.email}`);
-      console.log('--------------------------------------------------');
-      console.log('Click or copy this link into your browser to test the frontend form:');
-      console.log(`👉 http://localhost:5173/reset-password?token=${testToken}`);
-      console.log('==================================================\n');
-
-    } catch (mailError) {
-      console.error('❌ Local Logging Failure:', mailError);
-    }
-    
-    return { 
-      ok: true, 
-      message: 'If that email exists in our system, a recovery link has been dispatched.' 
+    return {
+      ok: true,
+      message:
+        'If that email exists in our system, a recovery link has been dispatched.',
     };
   }
 
   @Post('reset-password')
-  async resetPassword(
-    @Body() dto: { token: string; newPassword?: string },
-  ) {
-    if (!dto.token) {
-      throw new BadRequestException('A valid security recovery token must be provided.');
-    }
-
-    const user = await this.users.findByResetToken(dto.token);
+  @SetMetadata('isPublic', true)
+  @UseGuards(AuthThrottleGuard)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const user = await this.users.consumePasswordResetToken(tokenHash);
     if (!user) {
-      throw new BadRequestException('This recovery link is invalid or has expired.');
+      throw new BadRequestException(
+        'This recovery link is invalid or has expired.',
+      );
     }
 
-    await this.users.updatePassword(user.id, dto.newPassword || '');
-    await this.users.clearResetToken(user.id);
+    await this.users.updatePassword(user.id, dto.newPassword);
+    await this.users.setRefreshToken(user.id, null);
 
-    return { 
-      ok: true, 
-      message: 'Password updated successfully.' 
+    return {
+      ok: true,
+      message: 'Password updated successfully.',
     };
   }
 

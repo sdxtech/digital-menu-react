@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -28,6 +29,7 @@ import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WorkflowMailService } from '../mail/workflow-mail.service';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -170,6 +172,8 @@ const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
 
 @Injectable()
 export class RecipesService {
+  private readonly logger = new Logger(RecipesService.name);
+
   constructor(
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
@@ -180,6 +184,7 @@ export class RecipesService {
     private readonly sites: SitesService,
     private readonly unitOfMeasures: UnitOfMeasuresService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED
+    private readonly workflowMail: WorkflowMailService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
@@ -252,6 +257,22 @@ export class RecipesService {
           `Unit Manager recipe creation notification failed: ${message}`,
         );
       }
+
+      void this.workflowMail
+        .notifyRecipeSubmitted({
+          id: saved._id.toString(),
+          name: saved.name,
+          recipeCode: saved.recipeCode,
+          version: saved.version,
+          site: saved.site,
+          createdBy: saved.createdBy,
+          createdByEmail: saved.createdByEmail,
+        })
+        .catch((error) =>
+          this.logger.error(
+            `Recipe submission email failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
     }
 
     // 3. Return the saved document exactly as the old code did
@@ -453,7 +474,7 @@ export class RecipesService {
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
 
-    // 🚀 INJECTED: Trigger real-time notification to the Store Keeper ONLY upon successful approval
+    // 🚀 INJECTED: Trigger real-time notification upon successful approval
     if (status === 'approved') {
       try {
         await this.notificationsService.createHierarchicalNotification(
@@ -469,6 +490,28 @@ export class RecipesService {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`chef recipe approval notification failed: ${message}`);
       }
+    }
+
+    if (status !== 'pending') {
+      void this.workflowMail
+        .notifyRecipeDecision(
+          {
+            id: String(updated._id),
+            name: updated.name,
+            recipeCode: updated.recipeCode,
+            version: updated.version,
+            site: updated.site,
+            createdBy: updated.createdBy,
+            createdByEmail: updated.createdByEmail,
+          },
+          status,
+          reason,
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Recipe decision email failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
     }
 
     return updated;
@@ -613,6 +656,25 @@ export class RecipesService {
       // Catch layout errors cleanly so the core recipe submission state doesn't crash if database updates experience lag
       console.error(`Manager recipe notification failed: ${message}`);
     }
+
+    void this.workflowMail
+      .notifyRecipeSubmitted(
+        {
+          id: String(updated._id),
+          name: updated.name,
+          recipeCode: updated.recipeCode,
+          version: updated.version,
+          site: updated.site,
+          createdBy: updated.createdBy,
+          createdByEmail: updated.createdByEmail,
+        },
+        true,
+      )
+      .catch((error) =>
+        this.logger.error(
+          `Recipe resubmission email failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
 
     return updated;
   }

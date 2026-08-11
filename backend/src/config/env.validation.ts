@@ -9,10 +9,7 @@ const REQUIRED_ENV_KEYS = [
   'S3_BUCKET',
   'S3_PUBLIC_BASE_URL',
   'EMAIL_FROM',
-  'SMTP_HOST',
-  'SMTP_PORT',
-  'SMTP_USER',
-  'SMTP_PASS',
+  'HOSTINGER_MAIL_API_TOKEN',
 ] as const;
 
 const TEST_DEFAULTS: Record<string, string> = {
@@ -26,10 +23,7 @@ const TEST_DEFAULTS: Record<string, string> = {
   S3_BUCKET: 'test-bucket',
   S3_PUBLIC_BASE_URL: 'http://localhost:9000/test-bucket',
   EMAIL_FROM: 'Test <test@example.com>',
-  SMTP_HOST: 'localhost',
-  SMTP_PORT: '2525',
-  SMTP_USER: 'test-user',
-  SMTP_PASS: 'test-pass',
+  HOSTINGER_MAIL_API_TOKEN: 'hostinger_test_token',
 };
 
 const parsePositiveInt = (value: string, key: string) => {
@@ -38,6 +32,24 @@ const parsePositiveInt = (value: string, key: string) => {
     throw new Error(`${key} must be a positive integer`);
   }
   return String(parsed);
+};
+
+const parseBoolean = (value: string, key: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (!['true', 'false'].includes(normalized)) {
+    throw new Error(`${key} must be either true or false`);
+  }
+  return normalized;
+};
+
+const parseHttpUrl = (value: string, key: string) => {
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    throw new Error(`${key} must be a valid HTTP(S) URL`);
+  }
 };
 
 const assertSecret = (value: string, key: string) => {
@@ -50,7 +62,7 @@ const looksLikePlaceholder = (value: string) => {
   const normalized = value.trim().toLowerCase();
   return (
     normalized.startsWith('change_me') ||
-    normalized.startsWith('your_') ||
+    normalized.includes('your_') ||
     normalized.includes('example.com')
   );
 };
@@ -92,6 +104,19 @@ export const validateEnv = (rawEnv: Record<string, unknown>) => {
   }
   env.CORS_ORIGIN = corsOrigin;
 
+  const appBaseUrl =
+    env.APP_BASE_URL?.trim() ||
+    (nodeEnv === 'development' || isTest ? 'http://localhost:5173' : '');
+  if (!appBaseUrl) {
+    throw new Error('APP_BASE_URL is required');
+  }
+  env.APP_BASE_URL = parseHttpUrl(appBaseUrl, 'APP_BASE_URL');
+  env.EMAIL_NOTIFICATIONS_ENABLED = parseBoolean(
+    env.EMAIL_NOTIFICATIONS_ENABLED?.trim() || 'false',
+    'EMAIL_NOTIFICATIONS_ENABLED',
+  );
+  env.EMAIL_RECIPIENT_OVERRIDE = env.EMAIL_RECIPIENT_OVERRIDE?.trim() || '';
+
   for (const key of REQUIRED_ENV_KEYS) {
     const fallbackValue = isTest ? TEST_DEFAULTS[key] : undefined;
     const value = env[key]?.trim() || fallbackValue;
@@ -100,26 +125,23 @@ export const validateEnv = (rawEnv: Record<string, unknown>) => {
     }
     env[key] = value;
   }
-
-  env.SMTP_PORT = parsePositiveInt(
-    (env.SMTP_PORT as string).trim(),
-    'SMTP_PORT',
-  );
+  env.HOSTINGER_MAILBOX_ID = env.HOSTINGER_MAILBOX_ID?.trim() || '';
 
   assertSecret(env.JWT_ACCESS_SECRET as string, 'JWT_ACCESS_SECRET');
   assertSecret(env.JWT_REFRESH_SECRET as string, 'JWT_REFRESH_SECRET');
 
   if (nodeEnv === 'production') {
-    const sensitiveKeys = [
+    const sensitiveKeys: string[] = [
       'S3_ACCESS_KEY',
       'S3_SECRET_KEY',
-      'SMTP_HOST',
-      'SMTP_USER',
-      'SMTP_PASS',
-    ] as const;
+      'HOSTINGER_MAIL_API_TOKEN',
+    ];
 
     for (const key of sensitiveKeys) {
       assertNotPlaceholderInProduction(env[key] as string, key);
+    }
+    if (env.EMAIL_RECIPIENT_OVERRIDE) {
+      throw new Error('EMAIL_RECIPIENT_OVERRIDE must be empty in production');
     }
   }
 

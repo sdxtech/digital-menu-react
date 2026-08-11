@@ -29,6 +29,7 @@ import {
 } from './schemas/menu-production.schema';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WorkflowMailService } from '../mail/workflow-mail.service';
 
 type StoreRequestIngredient = {
   productCode: string;
@@ -168,10 +169,101 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
+    private readonly workflowMail: WorkflowMailService,
   ) {}
 
   private errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private toMailRecord(record: {
+    _id?: unknown;
+    id?: unknown;
+    productionCode?: unknown;
+    menuName?: unknown;
+    productionDate?: unknown;
+    site?: unknown;
+    createdBy?: unknown;
+    unitManagerId?: unknown;
+    approvalStatus?: unknown;
+  }) {
+    return {
+      id: this.textValue(record._id ?? record.id),
+      productionCode: this.textValue(record.productionCode),
+      menuName: this.textValue(record.menuName),
+      productionDate: this.textValue(record.productionDate),
+      site: this.textValue(record.site),
+      createdBy: this.textValue(record.createdBy),
+      unitManagerId: this.textValue(record.unitManagerId),
+      approvalStatus: record.approvalStatus as
+        | 'pending'
+        | 'approved'
+        | 'rejected'
+        | undefined,
+    };
+  }
+
+  private dispatchMenuProductionSubmissionNotifications(
+    records: Array<Parameters<MenuProductionsService['toMailRecord']>[0]>,
+  ) {
+    const mailRecords = records.map((record) => this.toMailRecord(record));
+    const byProductionCode = new Map<string, (typeof mailRecords)[number]>();
+    mailRecords.forEach((record) => {
+      if (
+        record.productionCode &&
+        !byProductionCode.has(record.productionCode)
+      ) {
+        byProductionCode.set(record.productionCode, record);
+      }
+    });
+    byProductionCode.forEach((record) => {
+      this.notificationsService
+        .createHierarchicalNotification(
+          record.createdBy || 'system',
+          'New Menu Production Pending',
+          `A new production batch (${record.productionCode}) is awaiting your approval.`,
+          record.site || 'global',
+          'unit.manager',
+          'MENU_PRODUCTION_APPROVAL_REQUESTS',
+          { productionCode: record.productionCode },
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Unit Manager submission notification failed: ${this.errorMessage(error)}`,
+          ),
+        );
+    });
+    void this.workflowMail
+      .notifyMenuProductionsSubmitted(mailRecords)
+      .catch((error) =>
+        this.logger.error(
+          `Menu production submission email failed: ${this.errorMessage(error)}`,
+        ),
+      );
+  }
+
+  private async dispatchMenuProductionDecisionEmail(record: {
+    productionCode?: string;
+    site?: string;
+  }) {
+    const reviewedBatch = await this.menuProductionModel
+      .find({
+        productionCode: record.productionCode,
+        ...(record.site ? { site: record.site } : {}),
+      })
+      .select({
+        productionCode: 1,
+        menuName: 1,
+        productionDate: 1,
+        site: 1,
+        createdBy: 1,
+        unitManagerId: 1,
+        approvalStatus: 1,
+      })
+      .lean();
+    await this.workflowMail.notifyMenuProductionBatchReviewed(
+      reviewedBatch.map((item) => this.toMailRecord(item)),
+    );
   }
 
   private textValue(value: unknown) {
@@ -329,7 +421,7 @@ export class MenuProductionsService implements OnModuleInit {
       input,
       recipe,
     );
-    return this.menuProductionModel.create({
+    const created = await this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
       recipeCode: recipe.recipeCode,
@@ -349,6 +441,8 @@ export class MenuProductionsService implements OnModuleInit {
       assistedBy,
       site: normalizedSite,
     });
+    this.dispatchMenuProductionSubmissionNotifications([created]);
+    return created;
   }
 
   async createMany(
@@ -420,26 +514,8 @@ export class MenuProductionsService implements OnModuleInit {
       ordered: false,
     });
 
-    // 🌟 ADDED: If records were created successfully, alert the Unit Manager at this site code!
-    if (createdDocs && createdDocs.length > 0) {
-      const firstDoc = createdDocs[0];
-      const targetSite = firstDoc.site || normalizedSite || 'global';
-
-      this.notificationsService
-        .createHierarchicalNotification(
-          createdBy || 'system',
-          'New Menu Production Pending',
-          `A new production batch (${firstDoc.productionCode}) is awaiting your approval.`,
-          targetSite,
-          'unit.manager',
-          'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 This exact key activates the sub-menu badge!
-          { productionCode: firstDoc.productionCode },
-        )
-        .catch((err) =>
-          this.logger.error(
-            `Unit Manager submission notification failed: ${this.errorMessage(err)}`,
-          ),
-        );
+    if (createdDocs.length > 0) {
+      this.dispatchMenuProductionSubmissionNotifications(createdDocs);
     }
 
     return createdDocs;
@@ -637,6 +713,12 @@ export class MenuProductionsService implements OnModuleInit {
           `Failed to clear manager badges: ${this.errorMessage(err)}`,
         ),
       );
+
+    void this.dispatchMenuProductionDecisionEmail(updated).catch((error) =>
+      this.logger.error(
+        `Menu production decision email failed: ${this.errorMessage(error)}`,
+      ),
+    );
 
     return updated;
   }

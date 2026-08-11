@@ -33,11 +33,12 @@ export class SuperadminController {
   @Post('test-email')
   @Roles(AppRole.Superadmin)
   testEmail(@Body() dto: TestEmailDto) {
-    return this.mail.enqueue(
-      dto.to,
-      'Test Email',
-      'Ini email test dari Digital Menu.',
-    );
+    return this.mail.enqueue({
+      to: dto.to,
+      subject: 'Test Email',
+      text: 'Ini email test dari Food Recipe System.',
+      category: 'test',
+    });
   }
 
   @Get('store-requests/sites')

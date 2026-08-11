@@ -35,6 +35,18 @@ type ListUsersQuery = {
   sites?: string;
 };
 
+export type EmailRecipient = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type FindEmailRecipientsInput = {
+  roles: AppRole[];
+  site?: string;
+  userIds?: string[];
+};
+
 type UserRecord = {
   _id?: unknown;
   id?: unknown;
@@ -71,15 +83,35 @@ export class UsersService {
   }
 
   // 🌟 NEW METHOD: Finds a user by their active password recovery token
-  async findByResetToken(token: string) {
-    return this.userModel.findOne({ resetToken: token });
-  }
-
-  // 🌟 NEW METHOD: Clears the recovery token from the database after a successful reset
-  async clearResetToken(userId: string) {
+  async setPasswordResetToken(
+    userId: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ) {
     await this.userModel.updateOne(
       { _id: userId },
-      { $set: { resetToken: null } }
+      {
+        $set: { resetTokenHash: tokenHash, resetTokenExpiresAt: expiresAt },
+        $unset: { resetToken: 1 },
+      },
+    );
+  }
+
+  async consumePasswordResetToken(tokenHash: string) {
+    return this.userModel.findOneAndUpdate(
+      {
+        resetTokenHash: tokenHash,
+        resetTokenExpiresAt: { $gt: new Date() },
+        isActive: true,
+      },
+      {
+        $unset: {
+          resetTokenHash: 1,
+          resetTokenExpiresAt: 1,
+          resetToken: 1,
+        },
+      },
+      { new: false },
     );
   }
 
@@ -109,6 +141,59 @@ export class UsersService {
       map.set(String(user._id), user.name);
     });
     return map;
+  }
+
+  async findActiveEmailRecipients(
+    input: FindEmailRecipientsInput,
+  ): Promise<EmailRecipient[]> {
+    if (!input.roles.length) return [];
+
+    const andFilters: Record<string, unknown>[] = [
+      { roles: { $in: input.roles } },
+      { isActive: { $ne: false } },
+      { email: { $type: 'string', $ne: '' } },
+    ];
+
+    if (input.userIds) {
+      const validIds = Array.from(
+        new Set(input.userIds.filter((id) => Types.ObjectId.isValid(id))),
+      );
+      if (!validIds.length) return [];
+      andFilters.push({
+        _id: { $in: validIds.map((id) => new Types.ObjectId(id)) },
+      });
+    }
+
+    const normalizedSite = this.normalizeSiteCode(input.site ?? '');
+    if (normalizedSite) {
+      const siteByCode = await this.sites.findSummariesByCodes([
+        normalizedSite,
+      ]);
+      const site = siteByCode.get(normalizedSite);
+      const siteFilters: Record<string, unknown>[] = [
+        { sites: normalizedSite },
+      ];
+      if (site?.id && Types.ObjectId.isValid(site.id)) {
+        siteFilters.push({ siteId: new Types.ObjectId(site.id) });
+      }
+      andFilters.push({ $or: siteFilters });
+    }
+
+    const users = await this.userModel
+      .find({ $and: andFilters })
+      .select({ name: 1, email: 1 })
+      .lean();
+    const unique = new Map<string, EmailRecipient>();
+    users.forEach((user) => {
+      const email = user.email?.trim().toLowerCase();
+      if (!email || unique.has(email)) return;
+      unique.set(email, {
+        id: String(user._id),
+        name: user.name?.trim() || email,
+        email,
+      });
+    });
+    return Array.from(unique.values());
   }
 
   async create(input: CreateUserInput) {
