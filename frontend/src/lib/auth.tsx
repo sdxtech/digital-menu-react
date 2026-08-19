@@ -12,7 +12,7 @@ import {
   AUTH_TOKEN_REFRESHED_EVENT,
 } from './api' /* Fungsi untuk melakukan fetch API dengan penanganan token dan error yang sesuai. */
 
-export type Role = 'chef' | 'unit-manager' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
+export type Role = 'chef' | 'unit-manager' | 'admin-site' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
 
 export type User = {
   id?: string
@@ -40,11 +40,12 @@ const REFRESH_TOKEN_KEY = 'dm-auth-refresh-token'/* Kunci untuk menyimpan token 
 const rolePaths: Record<Role, string> = {
   chef: '/chef',
   'unit-manager': '/unit-manager',
+  'admin-site': '/admin-site',
   storekeeper: '/storekeeper',
   superadmin: '/superadmin',
 }/* Pemetaan peran pengguna ke path dashboard yang sesuai. */
 
-const rolePriority: Role[] = ['superadmin', 'unit-manager', 'storekeeper', 'chef']
+const rolePriority: Role[] = ['superadmin', 'unit-manager', 'admin-site', 'storekeeper', 'chef']
 
 const isRole = (value?: string): value is Role => {
   return Boolean(value && value in rolePaths)

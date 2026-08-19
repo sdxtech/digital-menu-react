@@ -63,9 +63,11 @@ type StoreRequestMenu = {
   productionCode?: string
   submittedByName?: string
   reviewedBy?: string
+  approvedAt?: string
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   estimatedCost?: number
@@ -225,6 +227,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
       [
         'No',
         'Production Date',
+        'Client Name',
         'Production Code',
         'Menu Name',
         'Version',
@@ -275,6 +278,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -319,6 +323,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -348,8 +353,9 @@ const UnitManagerMenuProductionRecordsPage = () => {
     })
 
     const summaryRows: SpreadsheetCell[][] = [
-      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
       ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
+        group.items[0]?.clientName ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',
@@ -422,6 +428,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
+                  <th className="px-5 py-4 font-semibold">Client name</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">Reviewed by</th>
                   <th className="px-5 py-4 font-semibold">Total menu</th>
@@ -433,13 +440,13 @@ const UnitManagerMenuProductionRecordsPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={10} className="px-5 py-10 text-center text-muted">
                       Loading production records...
                     </td>
                   </tr>
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={10} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
                         : 'No approved, rejected, completed, or cancelled production batches yet.'}
@@ -510,10 +517,11 @@ const UnitManagerMenuProductionRecordsPage = () => {
                             {(page - 1) * RECORD_ITEMS_PER_PAGE + index + 1}
                           </td>
                           <td className="px-5 py-4">{group.date}</td>
-                          <td className="px-5 py-4 text-xs text-muted">
-                            {group.productionCode ?? '-'}
-                          </td>
-                          <td className="px-5 py-4">
+                      <td className="px-5 py-4 text-xs text-muted">
+                        {group.productionCode ?? '-'}
+                      </td>
+                      <td className="px-5 py-4">{group.items[0]?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-sm">
                               {hasPendingReview ? (
                                 <span className="text-muted">Submitted</span>

@@ -15,6 +15,7 @@ const allowedRoles = new Set([
   'superadmin',
   'chef',
   'unit-manager',
+  'admin-site',
   'storekeeper',
 ])
 

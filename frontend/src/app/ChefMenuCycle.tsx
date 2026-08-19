@@ -23,6 +23,19 @@ type ProductionUserOption = {
   roles: string[]
 }
 
+type ProductionClientOption = {
+  id: string
+  name: string
+  clientId: string
+}
+
+type ProductionClientApi = {
+  id?: string
+  _id?: string
+  name?: string
+  clientId?: string
+}
+
 type ProductionUserApi = {
   id?: string
   _id?: string
@@ -135,6 +148,11 @@ const ChefMenuCycle = ({
     fetchRecipes,
   } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
   const [productionSite, setProductionSite] = useState('')
+  const [productionClientId, setProductionClientId] = useState('')
+  const [productionClients, setProductionClients] = useState<
+    ProductionClientOption[]
+  >([])
+  const [productionClientLoading, setProductionClientLoading] = useState(false)
   const [loadedProductionSite, setLoadedProductionSite] = useState('')
   const [siteRecipes, setSiteRecipes] = useState<Recipe[]>([])
   const [siteMenuProductions, setSiteMenuProductions] = useState<
@@ -175,6 +193,11 @@ const ChefMenuCycle = ({
   const [inputMessage, setInputMessage] = useState('')/* Menyimpan pesan informasi yang terkait dengan input menu, seperti keberhasilan penambahan baris atau submit */
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])/* Menyimpan daftar baris menu yang diperluas untuk menampilkan detail */
   const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
+  const [activeRecipeDropdownId, setActiveRecipeDropdownId] = useState<string | null>(null)
+  const [recipeDropdownPosition, setRecipeDropdownPosition] = useState<{
+    left: number
+    top: number
+  } | null>(null)
 
   const normalizeText = useCallback(
     (value?: string) => value?.trim().toLowerCase() ?? '',
@@ -548,11 +571,65 @@ const ChefMenuCycle = ({
     setInputMessage('')
     setProductionChefId('')
     setProductionUnitManagerId('')
+    setProductionClientId('')
+    setProductionClients([])
     setVendorPricesByProductKey({})
     setVendorPriceLoadingByProductKey({})
     setVendorPriceErrorByProductKey({})
     setSelectedVendorPriceByIngredientKey({})
   }, [productionSite, requireProductionSite])
+
+  const clientSiteCode = requireProductionSite
+    ? productionSite
+    : user?.site?.trim() ?? ''
+
+  useEffect(() => {
+    if (!accessToken || !clientSiteCode) {
+      setProductionClients([])
+      setProductionClientId('')
+      setProductionClientLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setProductionClientLoading(true)
+    apiFetch<{ items?: ProductionClientApi[] }>(
+      `/clients/by-site/${encodeURIComponent(clientSiteCode)}`,
+      undefined,
+      accessToken,
+    )
+      .then((data) => {
+        if (cancelled) return
+        setProductionClients(
+          (data.items ?? [])
+            .map((client) => ({
+              id: client.id ?? client._id ?? '',
+              name: client.name ?? '',
+              clientId: client.clientId ?? '',
+            }))
+            .filter((client) => client.id && client.name && client.clientId)
+            .sort((first, second) => {
+              const clientIdOrder = first.clientId.localeCompare(second.clientId, undefined, {
+                numeric: true,
+                sensitivity: 'base',
+              })
+              return clientIdOrder || first.name.localeCompare(second.name, undefined, {
+                sensitivity: 'base',
+              })
+            }),
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setProductionClients([])
+      })
+      .finally(() => {
+        if (!cancelled) setProductionClientLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, clientSiteCode])
 
   useEffect(() => {
     if (!requireProductionSite) return
@@ -790,6 +867,23 @@ const ChefMenuCycle = ({
     return filtered.slice(0, 20)
   }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial berdasarkan kode, nama, kategori, dan site. */
 
+  const positionRecipeDropdown = (input: HTMLElement) => {
+    const bounds = input.getBoundingClientRect()
+    const dropdownWidth = Math.min(420, window.innerWidth - 32)
+    const dropdownHeight = Math.min(360, window.innerHeight - 32)
+    const gap = 4
+    const canOpenBelow = bounds.bottom + gap + dropdownHeight <= window.innerHeight
+    const top = canOpenBelow
+      ? bounds.bottom + gap
+      : Math.max(16, bounds.top - dropdownHeight - gap)
+    const left = Math.min(
+      Math.max(16, bounds.left),
+      Math.max(16, window.innerWidth - dropdownWidth - 16),
+    )
+
+    setRecipeDropdownPosition({ left, top })
+  }
+
   const updateRowMenuQuery = (id: string, value: string) => {
     const matchedRecipe = findRecipeByExactQuery(value)
     setMenuRows((prev) =>
@@ -847,6 +941,12 @@ const ChefMenuCycle = ({
       return
     }
 
+    if (!productionClientId) {
+      setInputError('Select a client first.')
+      setInputMessage('')
+      return
+    }
+
     setMenuRows((prev) => {
       const nextRows = [...prev, createMenuInputRow()]
       const nextTotalPages = Math.max(1, Math.ceil(nextRows.length / INPUT_ROWS_PER_PAGE))
@@ -881,6 +981,15 @@ const ChefMenuCycle = ({
       return
     }
 
+    const selectedClient = productionClients.find(
+      (client) => client.id === productionClientId,
+    )
+    if (!selectedClient) {
+      setInputError('Select a valid client first.')
+      setInputMessage('')
+      return
+    }
+
     const usedRows = menuRows.filter((row) => row.recipeId !== '' || row.portion !== '')
 
     if (usedRows.length === 0) {
@@ -894,6 +1003,8 @@ const ChefMenuCycle = ({
       menuName: string
       category: string
       site?: string
+      clientId?: string
+      clientName?: string
       chefId?: string
       unitManagerId?: string
       portion: number
@@ -981,6 +1092,8 @@ const ChefMenuCycle = ({
         menuName: recipe.name,
         category: recipe.category,
         ...(requireProductionSite ? { site: productionSite } : {}),
+        clientId: selectedClient.clientId,
+        clientName: selectedClient.name,
         ...(requireProductionActors
           ? {
               chefId: productionChefId,
@@ -1209,6 +1322,32 @@ const ChefMenuCycle = ({
                 className="mt-2 w-full max-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted">
+                Client name
+              </label>
+              <select
+                value={productionClientId}
+                onChange={(event) => setProductionClientId(event.target.value)}
+                disabled={
+                  !clientSiteCode || productionClientLoading || productionClients.length === 0
+                }
+                className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">
+                  {productionClientLoading
+                    ? 'Loading clients...'
+                    : productionClients.length === 0
+                      ? 'No client available'
+                      : 'Select client'}
+                </option>
+                {productionClients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name} ({client.clientId})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1383,11 +1522,22 @@ const ChefMenuCycle = ({
                       <td className="px-4 py-3">
                         <input
                           type="text"
-                          list={`menu-options-${row.id}`}
                           value={row.recipeQuery}
                           onChange={(event) =>
                             updateRowMenuQuery(row.id, event.target.value)
                           }
+                          onFocus={(event) => {
+                            setActiveRecipeDropdownId(row.id)
+                            positionRecipeDropdown(event.currentTarget)
+                          }}
+                          onBlur={() => {
+                            window.setTimeout(() => {
+                              setActiveRecipeDropdownId((current) =>
+                                current === row.id ? null : current,
+                              )
+                              setRecipeDropdownPosition(null)
+                            }, 150)
+                          }}
                           placeholder={
                             availableRecipes.length === 0
                               ? 'No approved menu available'
@@ -1395,15 +1545,46 @@ const ChefMenuCycle = ({
                           }
                           className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         />
-                        <datalist id={`menu-options-${row.id}`}>
-                          {recipeSuggestions.map((recipe) => (
-                            <option
-                              key={recipe.id}
-                              value={formatVersionedRecipeName(recipe)}
-                              label={`${recipe.category || '-'} | ${getRecipeSiteText(recipe)}`}
-                            />
-                          ))}
-                        </datalist>
+                        {activeRecipeDropdownId === row.id &&
+                        recipeSuggestions.length > 0 ? (
+                          <div
+                            className="fixed z-[100] w-[26rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
+                            style={
+                              recipeDropdownPosition
+                                ? {
+                                    left: recipeDropdownPosition.left,
+                                    top: recipeDropdownPosition.top,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <div className="max-h-[22.5rem] overflow-y-auto py-1">
+                              {recipeSuggestions.map((recipe) => (
+                                <button
+                                  key={recipe.id}
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateRowMenuQuery(
+                                      row.id,
+                                      formatVersionedRecipeName(recipe),
+                                    )
+                                    setActiveRecipeDropdownId(null)
+                                    setRecipeDropdownPosition(null)
+                                  }}
+                                  className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-primary-soft"
+                                >
+                                  <span className="block truncate text-sm font-semibold text-foreground">
+                                    {formatVersionedRecipeName(recipe)}
+                                  </span>
+                                  <span className="mt-1 block text-xs text-muted">
+                                    {recipe.category || '-'} | {getRecipeSiteText(recipe)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
                         {selectedRecipe?.category ?? '-'}
@@ -1608,7 +1789,7 @@ const ChefMenuCycle = ({
                                                 )}
                                               </td>
                                               {showIngredientVendorColumn ? (
-                                                <td className="min-w-56 px-4 py-3">
+                                                <td className="min-w-[21rem] px-4 py-3">
                                                   <select
                                                     value={selectedVendorKey}
                                                     onChange={(event) => {
@@ -1649,7 +1830,11 @@ const ChefMenuCycle = ({
                                                       vendorLoading ||
                                                       otherSiteVendorLoading
                                                     }
-                                                    className="w-56 rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                                    className={`w-[21rem] rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${
+                                                      vendorOptions.length > 1
+                                                        ? 'border-amber-400 bg-amber-100'
+                                                        : 'border-border bg-white'
+                                                    }`}
                                                   >
                                                     {vendorLoading ? (
                                                       <option value="">
