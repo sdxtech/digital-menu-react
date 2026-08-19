@@ -53,6 +53,7 @@ type StoreRequestMenu = {
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   productionDate?: string
@@ -247,6 +248,7 @@ const StorekeeperHistoryPage = () => {
       [
         'No',
         'Production Date',
+        'Client Name',
         'Production Code',
         'Menu Name',
         'Version',
@@ -279,6 +281,7 @@ const StorekeeperHistoryPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(menu.productionDate ?? group.date),
+          menu.clientName ?? '',
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -341,6 +344,7 @@ const StorekeeperHistoryPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(menu.productionDate ?? group.date),
+          menu.clientName ?? '',
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -381,6 +385,7 @@ const StorekeeperHistoryPage = () => {
       rows.push([
         rowNumber,
         toSpreadsheetDate(group.date),
+        group.items[0]?.clientName ?? '',
         group.productionCode ?? '',
         '',
         '',

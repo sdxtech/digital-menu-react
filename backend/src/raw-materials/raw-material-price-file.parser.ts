@@ -14,7 +14,8 @@ type PriceHeaderField =
   | 'currency'
   | 'unitOfMeasures'
   | 'minimumQuantity'
-  | 'priceQuantity';
+  | 'priceQuantity'
+  | 'startDate';
 
 type PriceHeaderMap = Partial<Record<PriceHeaderField, number>> & {
   productCode: number;
@@ -61,6 +62,15 @@ const HEADER_ALIASES: Record<PriceHeaderField, string[]> = {
     'price quantity',
     'pricing quantity',
     'price_quantity',
+  ],
+  startDate: [
+    'start date',
+    'start_date',
+    'startdate',
+    'valid from',
+    'valid_from',
+    'effective date',
+    'effective_date',
   ],
 };
 
@@ -156,6 +166,7 @@ export class RawMaterialPriceFileParser {
     const unitOfMeasures = this.cellToText(value('unitOfMeasures'));
     const minimumQuantityText = this.cellToText(value('minimumQuantity'));
     const priceQuantityText = this.cellToText(value('priceQuantity'));
+    const startDateText = this.cellToText(value('startDate'));
 
     if (
       !productCode &&
@@ -166,7 +177,8 @@ export class RawMaterialPriceFileParser {
       !currency &&
       !unitOfMeasures &&
       !minimumQuantityText &&
-      !priceQuantityText
+      !priceQuantityText &&
+      !startDateText
     ) {
       return undefined;
     }
@@ -198,6 +210,12 @@ export class RawMaterialPriceFileParser {
         `Invalid quantity at row ${rowNumber}. Quantity must be greater than 0.`,
       );
     }
+    const startDate = startDateText
+      ? this.parseDateOnly(value('startDate'))
+      : undefined;
+    if (startDateText && !startDate) {
+      throw new BadRequestException(`Invalid start date at row ${rowNumber}.`);
+    }
 
     return {
       productCode,
@@ -210,6 +228,7 @@ export class RawMaterialPriceFileParser {
       ...(unitOfMeasures ? { unitOfMeasures } : {}),
       ...(minimumQuantity !== undefined ? { minimumQuantity } : {}),
       ...(priceQuantity !== undefined ? { priceQuantity } : {}),
+      ...(startDate ? { startDate } : {}),
     };
   }
 
@@ -317,5 +336,58 @@ export class RawMaterialPriceFileParser {
 
     const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private parseDateOnly(value: unknown): string | undefined {
+    if (value instanceof Date) {
+      if (!Number.isFinite(value.getTime())) return undefined;
+      return this.formatDateOnly(
+        value.getFullYear(),
+        value.getMonth() + 1,
+        value.getDate(),
+      );
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const excelDate = new Date(Date.UTC(1899, 11, 30 + value));
+      return this.formatDateOnly(
+        excelDate.getUTCFullYear(),
+        excelDate.getUTCMonth() + 1,
+        excelDate.getUTCDate(),
+      );
+    }
+
+    const text = this.cellToText(value);
+    const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    const dayFirstMatch = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (isoMatch) {
+      return this.formatDateOnly(
+        Number(isoMatch[1]),
+        Number(isoMatch[2]),
+        Number(isoMatch[3]),
+      );
+    }
+    if (dayFirstMatch) {
+      return this.formatDateOnly(
+        Number(dayFirstMatch[3]),
+        Number(dayFirstMatch[2]),
+        Number(dayFirstMatch[1]),
+      );
+    }
+    return undefined;
+  }
+
+  private formatDateOnly(year: number, month: number, day: number) {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      return undefined;
+    }
+    return `${year.toString().padStart(4, '0')}-${month
+      .toString()
+      .padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
   }
 }

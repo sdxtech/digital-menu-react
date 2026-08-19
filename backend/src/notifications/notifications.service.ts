@@ -57,7 +57,12 @@ export class NotificationsService {
     title: string,
     message: string,
     siteCode: string,
-    targetUserRole: 'superadmin' | 'unit.manager' | 'storekeeper' | 'chef',
+    targetUserRole:
+      | 'superadmin'
+      | 'unit.manager'
+      | 'admin-site'
+      | 'storekeeper'
+      | 'chef',
     componentKey: string,
     meta?: Record<string, unknown>,
   ) {

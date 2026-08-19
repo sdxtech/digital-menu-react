@@ -23,6 +23,8 @@ import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.d
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { RejectMenuProductionDto } from './dto/reject-menu-production.dto';
+import { UpdateMenuProductionSalesDetailsDto } from './dto/update-menu-production-sales-details.dto';
+import { UpdateMenuProductionBatchSalesDetailsDto } from './dto/update-menu-production-batch-sales-details.dto';
 import { MenuProductionsService } from './menu-productions.service';
 
 @Controller('menu-productions')
@@ -198,6 +200,33 @@ export class MenuProductionsController {
       req.user.name || req.user.email,
       this.resolveUnitManagerAssignmentScope(req),
       dto.reason,
+    );
+  }
+
+  @Patch('batch/sales-details')
+  @Roles(AppRole.AdminSite, AppRole.Superadmin)
+  updateBatchSalesDetails(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateMenuProductionBatchSalesDetailsDto,
+  ) {
+    return this.menuProductions.updateBatchSalesDetails(
+      dto.productionCode,
+      dto,
+      getUserSiteScope(req.user),
+    );
+  }
+
+  @Patch(':id/sales-details')
+  @Roles(AppRole.AdminSite, AppRole.Superadmin)
+  updateSalesDetails(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateMenuProductionSalesDetailsDto,
+  ) {
+    return this.menuProductions.updateSalesDetails(
+      id,
+      dto,
+      getUserSiteScope(req.user),
     );
   }
 

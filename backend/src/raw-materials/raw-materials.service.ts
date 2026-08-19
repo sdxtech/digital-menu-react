@@ -38,6 +38,7 @@ export type RawMaterialUpsertInput = {
 
 export type RawMaterialVendorPriceUpsertInput = RawMaterialUpsertInput & {
   site?: string;
+  startDate?: string;
 };
 
 type ListRawMaterialsQuery = {
@@ -581,6 +582,7 @@ export class RawMaterialsService {
     let vendorPriceRequestedCount = 0;
     let duplicateVendorPriceRowCount = 0;
     let priceQuantityAdjustedCount = 0;
+    const updateDate = this.getDateOnly(new Date());
 
     for await (const input of rows) {
       requestedCount += 1;
@@ -626,7 +628,10 @@ export class RawMaterialsService {
             conflictingVendorKeys.add(vendorKey);
           }
         }
-        if (!existing || this.isHigherUnitPrice(row, existing)) {
+        if (
+          !existing ||
+          this.isPreferredVendorPrice(row, existing, updateDate)
+        ) {
           vendorPriceByKey.set(vendorKey, row);
         }
       } else {
@@ -701,6 +706,7 @@ export class RawMaterialsService {
       NonNullable<ReturnType<RawMaterialsService['normalizeVendorPriceRow']>>
     >();
     for (const [vendorKey, row] of vendorPriceByKey) {
+      if (row.startDate && row.startDate > updateDate) continue;
       const rawMaterial = existingByCode.get(
         this.normalizeProductCode(row.productCode),
       );
@@ -717,6 +723,7 @@ export class RawMaterialsService {
         minimumQuantity: row.minimumQuantity,
         price: row.price,
         priceQuantity: row.priceQuantity,
+        startDate: row.startDate,
       });
       if (normalized) normalizedVendorPrices.set(vendorKey, normalized);
     }
@@ -814,6 +821,7 @@ export class RawMaterialsService {
         ...(row.priceQuantity !== undefined
           ? { priceQuantity: row.priceQuantity }
           : {}),
+        ...(row.startDate !== undefined ? { startDate: row.startDate } : {}),
       };
       const unsetFields = {
         ...(row.currency === undefined ? { currency: 1 } : {}),
@@ -822,6 +830,7 @@ export class RawMaterialsService {
           : {}),
         ...(row.minimumQuantity === undefined ? { minimumQuantity: 1 } : {}),
         ...(row.priceQuantity === undefined ? { priceQuantity: 1 } : {}),
+        ...(row.startDate === undefined ? { startDate: 1 } : {}),
       };
       const updateOperation = canonical
         ? {
@@ -1088,6 +1097,7 @@ export class RawMaterialsService {
       minimumQuantity,
       price,
       priceQuantity,
+      startDate: row.startDate,
       extraFields: row.extraFields,
     };
   }
@@ -1101,6 +1111,46 @@ export class RawMaterialsService {
     if (nextPrice === undefined) return currentPrice === undefined;
     if (currentPrice === undefined) return true;
     return nextPrice > currentPrice;
+  }
+
+  private isPreferredVendorPrice(
+    next: { price?: number; priceQuantity?: number; startDate?: string },
+    current: { price?: number; priceQuantity?: number; startDate?: string },
+    updateDate: string,
+  ) {
+    const nextHasStartDate = Boolean(next.startDate);
+    const currentHasStartDate = Boolean(current.startDate);
+    const nextEligible = Boolean(next.startDate && next.startDate <= updateDate);
+    const currentEligible = Boolean(
+      current.startDate && current.startDate <= updateDate,
+    );
+
+    if (nextEligible !== currentEligible) return nextEligible;
+    if (nextEligible && currentEligible) {
+      const nextValue = this.daysSinceStartDate(next.startDate!, updateDate);
+      const currentValue = this.daysSinceStartDate(
+        current.startDate!,
+        updateDate,
+      );
+      if (nextValue !== currentValue) return nextValue < currentValue;
+      return this.isHigherUnitPrice(next, current);
+    }
+
+    if (nextHasStartDate !== currentHasStartDate) return !nextHasStartDate;
+    return this.isHigherUnitPrice(next, current);
+  }
+
+  private daysSinceStartDate(startDate: string, updateDate: string) {
+    return (
+      Date.parse(`${updateDate}T00:00:00Z`) -
+      Date.parse(`${startDate}T00:00:00Z`)
+    ) / 86_400_000;
+  }
+
+  private getDateOnly(date: Date) {
+    return `${date.getFullYear().toString().padStart(4, '0')}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
   }
 
   private getUnitPrice(input: {

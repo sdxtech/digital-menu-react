@@ -23,7 +23,7 @@ export class Notification {
   @Prop({
     type: String,
     required: false,
-    enum: ['superadmin', 'unit.manager', 'storekeeper', 'chef'],
+    enum: ['superadmin', 'unit.manager', 'admin-site', 'storekeeper', 'chef'],
   })
   targetUserRole?: string;
 

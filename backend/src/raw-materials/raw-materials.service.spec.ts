@@ -326,6 +326,57 @@ describe('RawMaterialsService price updates', () => {
     });
   });
 
+  it('chooses the closest non-future start date before comparing price', async () => {
+    const formatDate = (offset: number) => {
+      const date = new Date();
+      date.setDate(date.getDate() + offset);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
+    const { rawMaterialVendorPriceModel, service } = makePriceService();
+
+    await service.bulkUpdatePricesByProductCode([
+      {
+        productCode: 'IT00900_N',
+        site: 'SO Kitchen',
+        vendor: 'PT Belitang Panen Raya',
+        currency: 'IDR',
+        unitOfMeasures: 'BAG_20 (KG)',
+        startDate: formatDate(-49),
+        price: 300000,
+      },
+      {
+        productCode: 'IT00900_N',
+        site: 'SO Kitchen',
+        vendor: 'PT Belitang Panen Raya',
+        currency: 'IDR',
+        unitOfMeasures: 'BAG_20 (KG)',
+        startDate: formatDate(-5),
+        price: 310000,
+      },
+      {
+        productCode: 'IT00900_N',
+        site: 'SO Kitchen',
+        vendor: 'PT Belitang Panen Raya',
+        currency: 'IDR',
+        unitOfMeasures: 'BAG_20 (KG)',
+        startDate: formatDate(12),
+        price: 320000,
+      },
+    ]);
+
+    const vendorOperations = rawMaterialVendorPriceModel.bulkWrite.mock
+      .calls[0][0] as Array<{
+      updateOne?: { update: { $set: Record<string, unknown> } };
+    }>;
+    const updateOperation = vendorOperations.find(
+      (operation) => operation.updateOne,
+    );
+    expect(updateOperation?.updateOne?.update.$set).toMatchObject({
+      price: 310000,
+      startDate: formatDate(-5),
+    });
+  });
+
   it('adds a new vendor only when its raw material already exists', async () => {
     const { rawMaterialVendorPriceModel, service } = makePriceService();
 

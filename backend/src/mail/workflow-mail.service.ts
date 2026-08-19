@@ -115,36 +115,23 @@ export class WorkflowMailService {
       if (!first || !this.hasSite(first.site, 'menu production submission')) {
         continue;
       }
-      const assignedManagerIds = Array.from(
-        new Set(group.map((item) => item.unitManagerId).filter(Boolean)),
-      ) as string[];
-      let recipients = await this.users.findActiveEmailRecipients({
-        roles: [AppRole.UnitManager],
+      const recipients = await this.users.findActiveEmailRecipients({
+        roles: [AppRole.AdminSite],
         site: first.site,
-        ...(assignedManagerIds.length ? { userIds: assignedManagerIds } : {}),
       });
-      if (!recipients.length && assignedManagerIds.length) {
-        this.logger.warn(
-          `Assigned Unit Manager has no active email for ${first.productionCode}; falling back to active managers at the site.`,
-        );
-        recipients = await this.users.findActiveEmailRecipients({
-          roles: [AppRole.UnitManager],
-          site: first.site,
-        });
-      }
       await this.enqueueForRecipients(recipients, {
-        subject: `Menu Production Awaiting Approval: ${first.productionCode}`,
-        title: 'Menu Production Awaiting Approval',
-        message: `${group.length} menu item(s) have been submitted and require review.`,
+        subject: `Menu Production Sales Input Required: ${first.productionCode}`,
+        title: 'Menu Production Sales Input Required',
+        message: `${group.length} menu item(s) have been submitted and require selling price and pax calculation input.`,
         details: [
           ['Production code', first.productionCode],
           ['Production date', first.productionDate ?? '-'],
           ['Site', first.site ?? '-'],
         ],
-        path: '/unit-manager?section=menu-productions',
-        actionLabel: 'Review Menu Production',
-        category: 'menu-production-submitted',
-        deduplicationPrefix: `menu-production-submitted-${first.productionCode}`,
+        path: '/admin-site/menu-productions',
+        actionLabel: 'Complete Sales Input',
+        category: 'menu-production-sales-input',
+        deduplicationPrefix: `menu-production-sales-input-${first.productionCode}`,
       });
     }
   }
