@@ -61,6 +61,7 @@ type StoreRequestMenu = {
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   estimatedCost?: number
@@ -349,6 +350,7 @@ const SuperadminStoreRequestExportPage = () => {
           'No',
           'Production Date',
           'Site',
+          'Client Name',
           'Production Code',
           'Menu Name',
           'Version',
@@ -377,6 +379,7 @@ const SuperadminStoreRequestExportPage = () => {
         [
           'Production Date',
           'Site',
+          'Client Name',
           'Menu Name',
           'Version',
           'Portion',
@@ -420,6 +423,7 @@ const SuperadminStoreRequestExportPage = () => {
           estimatedCostRows.push([
             toSpreadsheetDate(group.date),
             siteName,
+            menu.clientName ?? '',
             menu.menuName,
             formatRecipeVersion(menu.recipeVersion),
             menu.portion,
@@ -439,6 +443,7 @@ const SuperadminStoreRequestExportPage = () => {
               rowNumber,
               toSpreadsheetDate(group.date),
               siteName,
+              menu.clientName ?? '',
               group.productionCode ?? '',
               menu.menuName,
               formatRecipeVersion(menu.recipeVersion),
@@ -510,6 +515,7 @@ const SuperadminStoreRequestExportPage = () => {
               rowNumber,
               toSpreadsheetDate(group.date),
               siteName,
+              menu.clientName ?? '',
               group.productionCode ?? '',
               menu.menuName,
               formatRecipeVersion(menu.recipeVersion),
@@ -554,6 +560,7 @@ const SuperadminStoreRequestExportPage = () => {
             rowNumber,
             toSpreadsheetDate(group.date),
             siteName,
+            group.items[0]?.clientName ?? '',
             group.productionCode ?? '',
             '',
             '',

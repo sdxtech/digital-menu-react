@@ -617,6 +617,7 @@ const SuperadminUsersPage = () => {
                       >
                         <option value="chef">chef</option>
                         <option value="unit-manager">unit-manager</option>
+                        <option value="admin-site">admin-site</option>
                         <option value="storekeeper">storekeeper</option>
                         <option value="superadmin">superadmin</option>
                       </select>
@@ -716,7 +717,7 @@ const SuperadminUsersPage = () => {
                     <li>sites</li>
                   </ul>
                   <p className="mt-3 text-xs text-muted">
-                    roles: superadmin, chef, unit-manager, storekeeper. You can
+                    roles: superadmin, chef, unit-manager, admin-site, storekeeper. You can
                     separate multiple roles with commas.
                   </p>
                   <p className="mt-2 text-xs text-muted">

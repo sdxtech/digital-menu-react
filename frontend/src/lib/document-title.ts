@@ -111,6 +111,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Issuance History',
   },
   {
+    path: '/admin-site/menu-production-history',
+    getPageTitle: () => 'Menu Production History',
+  },
+  {
     path: '/superadmin',
     getPageTitle: () => 'Quick View',
   },
