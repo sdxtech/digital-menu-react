@@ -137,6 +137,7 @@ export class AuthService {
   private resolveAppRole(roles: AppRole[] = []) {
     if (roles.includes(AppRole.Superadmin)) return 'superadmin';
     if (roles.includes(AppRole.UnitManager)) return 'unit-manager';
+    if (roles.includes(AppRole.AdminSite)) return 'admin-site';
     if (roles.includes(AppRole.Storekeeper)) return 'storekeeper';
     if (roles.includes(AppRole.Chef)) return 'chef';
     throw new UnauthorizedException('User role is required');

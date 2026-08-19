@@ -89,12 +89,17 @@ export type MenuProduction = {
   menuName: string
   category: string
   site?: string
+  clientId?: string
+  clientName?: string
   unitManagerId?: string
   assistedBy?: string
   portion: number
   cost?: number
   estimatedTotalCost?: number
   estimatedCostPerPax?: number
+  sellingPricePerPax?: number
+  sellingQuantity?: number
+  estimatedRevenue?: number
   productionDate: string
   approvalStatus: ApprovalStatus
   rejectionReason?: string
@@ -156,6 +161,8 @@ type AddMenuProductionInput = {
   menuName: string
   category: string
   site?: string
+  clientId?: string
+  clientName?: string
   chefId?: string
   unitManagerId?: string
   portion: number
@@ -228,6 +235,14 @@ type ChefDataContextValue = ChefDataState & {
   resubmitRecipe: (id: string, feedback: string) => Promise<void>
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
   addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
+  updateMenuProductionSalesDetails: (
+    id: string,
+    input: { sellingPricePerPax: number; sellingQuantity: number },
+  ) => Promise<void>
+  updateMenuProductionBatchSalesDetails: (
+    productionCode: string,
+    input: { sellingPricePerPax: number; sellingQuantity: number },
+  ) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
   rejectMenuProduction: (id: string, reason: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
@@ -348,6 +363,21 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   assistedBy: item.assistedBy ?? undefined,
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
   cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined,
+  estimatedTotalCost: Number.isFinite(Number(item.estimatedTotalCost))
+    ? Number(item.estimatedTotalCost)
+    : undefined,
+  estimatedCostPerPax: Number.isFinite(Number(item.estimatedCostPerPax))
+    ? Number(item.estimatedCostPerPax)
+    : undefined,
+  sellingPricePerPax: Number.isFinite(Number(item.sellingPricePerPax))
+    ? Number(item.sellingPricePerPax)
+    : undefined,
+  sellingQuantity: Number.isFinite(Number(item.sellingQuantity))
+    ? Number(item.sellingQuantity)
+    : undefined,
+  estimatedRevenue: Number.isFinite(Number(item.estimatedRevenue))
+    ? Number(item.estimatedRevenue)
+    : undefined,
   productionDate: item.productionDate ?? '',
   approvalStatus: item.approvalStatus ?? 'pending',
   rejectionReason: item.rejectionReason ?? undefined,
@@ -656,6 +686,50 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
+  const updateMenuProductionSalesDetails = async (
+    id: string,
+    input: { sellingPricePerPax: number; sellingQuantity: number },
+  ) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+    const updated = await apiFetch<MenuProductionApi>(
+      `/menu-productions/${id}/sales-details`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      accessToken,
+    )
+    const mapped = mapMenuProduction(updated)
+    setState((prev) => ({
+      ...prev,
+      menuProductions: upsertById(prev.menuProductions, mapped),
+    }))
+  }
+
+  const updateMenuProductionBatchSalesDetails = async (
+    productionCode: string,
+    input: { sellingPricePerPax: number; sellingQuantity: number },
+  ) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save data to the database.')
+    }
+    const updated = await apiFetch<MenuProductionApi[]>(
+      '/menu-productions/batch/sales-details',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ productionCode, ...input }),
+      },
+      accessToken,
+    )
+    const mapped = updated.map(mapMenuProduction)
+    setState((prev) => ({
+      ...prev,
+      menuProductions: mapped.reduce(
+        (items, item) => upsertById(items, item),
+        prev.menuProductions,
+      ),
+    }))
+  }
+
   const addRawMaterial = (input: AddRawMaterialInput) => {
     if (!accessToken) {
       return Promise.reject(
@@ -903,6 +977,8 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     resubmitRecipe,
     addMenuProduction,
     addMenuProductionsBulk,
+    updateMenuProductionSalesDetails,
+    updateMenuProductionBatchSalesDetails,
     approveMenuProduction,
     rejectMenuProduction,
     importRawMaterialsFromExcel,

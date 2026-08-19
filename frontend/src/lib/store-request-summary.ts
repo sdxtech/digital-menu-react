@@ -57,10 +57,10 @@ export const aggregateStoreRequestSummary = (
           (existing.plannedIngredientCost ?? 0) +
           Number(item.plannedIngredientCost)
       }
-      if ((existing.vendor ?? '') !== vendor) {
+      if (!options.splitByVendor && (existing.vendor ?? '') !== vendor) {
         existing.vendor = existing.vendor ? 'Multiple' : vendor || undefined
       }
-      if (existing.vendorSite !== item.vendorSite) {
+      if (!options.splitByVendor && existing.vendorSite !== item.vendorSite) {
         existing.vendorSite = undefined
       }
       if (existing.price !== item.price) {

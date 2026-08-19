@@ -10,6 +10,8 @@ import { Model, Types } from 'mongoose';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
+import { UpdateMenuProductionSalesDetailsDto } from './dto/update-menu-production-sales-details.dto';
+import { UpdateMenuProductionBatchSalesDetailsDto } from './dto/update-menu-production-batch-sales-details.dto';
 import {
   FulfillStoreRequestBatchDto,
   FulfillStoreRequestBatchItemDto,
@@ -29,6 +31,7 @@ import {
 } from './schemas/menu-production.schema';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WorkflowMailService } from '../mail/workflow-mail.service';
 
 type StoreRequestIngredient = {
   productCode: string;
@@ -75,15 +78,20 @@ type StoreRequestMenu = {
   productionCode?: string;
   submittedByName?: string;
   reviewedBy?: string;
+  approvedAt?: string;
   recipeId?: string;
   recipeCode?: string;
   recipeVersion?: number;
   menuName: string;
+  clientName?: string;
   category: string;
   portion: number;
   cost?: number;
   estimatedCost?: number;
   estimatedCostPerPax?: number;
+  sellingPricePerPax?: number;
+  sellingQuantity?: number;
+  estimatedRevenue?: number;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   rejectionReason?: string;
@@ -118,6 +126,7 @@ type TimelineGroup = {
     recipeCode?: string;
     recipeVersion?: number;
     menuName: string;
+    clientName?: string;
     category: string;
     portion: number;
     cost?: number;
@@ -168,10 +177,101 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
+    private readonly workflowMail: WorkflowMailService,
   ) {}
 
   private errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private toMailRecord(record: {
+    _id?: unknown;
+    id?: unknown;
+    productionCode?: unknown;
+    menuName?: unknown;
+    productionDate?: unknown;
+    site?: unknown;
+    createdBy?: unknown;
+    unitManagerId?: unknown;
+    approvalStatus?: unknown;
+  }) {
+    return {
+      id: this.textValue(record._id ?? record.id),
+      productionCode: this.textValue(record.productionCode),
+      menuName: this.textValue(record.menuName),
+      productionDate: this.textValue(record.productionDate),
+      site: this.textValue(record.site),
+      createdBy: this.textValue(record.createdBy),
+      unitManagerId: this.textValue(record.unitManagerId),
+      approvalStatus: record.approvalStatus as
+        | 'pending'
+        | 'approved'
+        | 'rejected'
+        | undefined,
+    };
+  }
+
+  private dispatchMenuProductionSubmissionNotifications(
+    records: Array<Parameters<MenuProductionsService['toMailRecord']>[0]>,
+  ) {
+    const mailRecords = records.map((record) => this.toMailRecord(record));
+    const byProductionCode = new Map<string, (typeof mailRecords)[number]>();
+    mailRecords.forEach((record) => {
+      if (
+        record.productionCode &&
+        !byProductionCode.has(record.productionCode)
+      ) {
+        byProductionCode.set(record.productionCode, record);
+      }
+    });
+    byProductionCode.forEach((record) => {
+      this.notificationsService
+        .createHierarchicalNotification(
+          record.createdBy || 'system',
+          'New Menu Production Sales Input',
+          `A new production batch (${record.productionCode}) is awaiting selling price and pax calculation input.`,
+          record.site || 'global',
+          'admin-site',
+          'ADMIN_SITE_MENU_PRODUCTION_SALES',
+          { productionCode: record.productionCode },
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Unit Manager submission notification failed: ${this.errorMessage(error)}`,
+          ),
+        );
+    });
+    void this.workflowMail
+      .notifyMenuProductionsSubmitted(mailRecords)
+      .catch((error) =>
+        this.logger.error(
+          `Menu production submission email failed: ${this.errorMessage(error)}`,
+        ),
+      );
+  }
+
+  private async dispatchMenuProductionDecisionEmail(record: {
+    productionCode?: string;
+    site?: string;
+  }) {
+    const reviewedBatch = await this.menuProductionModel
+      .find({
+        productionCode: record.productionCode,
+        ...(record.site ? { site: record.site } : {}),
+      })
+      .select({
+        productionCode: 1,
+        menuName: 1,
+        productionDate: 1,
+        site: 1,
+        createdBy: 1,
+        unitManagerId: 1,
+        approvalStatus: 1,
+      })
+      .lean();
+    await this.workflowMail.notifyMenuProductionBatchReviewed(
+      reviewedBatch.map((item) => this.toMailRecord(item)),
+    );
   }
 
   private textValue(value: unknown) {
@@ -329,13 +429,15 @@ export class MenuProductionsService implements OnModuleInit {
       input,
       recipe,
     );
-    return this.menuProductionModel.create({
+    const created = await this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
       recipeCode: recipe.recipeCode,
       recipeVersion: recipe.version,
       menuName: menuSnapshot.menuName,
       category: menuSnapshot.category,
+      clientId: input.clientId?.trim(),
+      clientName: input.clientName?.trim(),
       portion: input.portion,
       cost: costSnapshot.estimatedTotalCost ?? input.cost,
       estimatedTotalCost: costSnapshot.estimatedTotalCost,
@@ -349,6 +451,8 @@ export class MenuProductionsService implements OnModuleInit {
       assistedBy,
       site: normalizedSite,
     });
+    this.dispatchMenuProductionSubmissionNotifications([created]);
+    return created;
   }
 
   async createMany(
@@ -397,6 +501,8 @@ export class MenuProductionsService implements OnModuleInit {
         recipeVersion: recipe.version,
         menuName: menuSnapshot.menuName,
         category: menuSnapshot.category,
+        clientId: input.clientId?.trim(),
+        clientName: input.clientName?.trim(),
         portion: input.portion,
         cost: costSnapshot.estimatedTotalCost ?? input.cost,
         estimatedTotalCost: costSnapshot.estimatedTotalCost,
@@ -420,26 +526,8 @@ export class MenuProductionsService implements OnModuleInit {
       ordered: false,
     });
 
-    // 🌟 ADDED: If records were created successfully, alert the Unit Manager at this site code!
-    if (createdDocs && createdDocs.length > 0) {
-      const firstDoc = createdDocs[0];
-      const targetSite = firstDoc.site || normalizedSite || 'global';
-
-      this.notificationsService
-        .createHierarchicalNotification(
-          createdBy || 'system',
-          'New Menu Production Pending',
-          `A new production batch (${firstDoc.productionCode}) is awaiting your approval.`,
-          targetSite,
-          'unit.manager',
-          'MENU_PRODUCTION_APPROVAL_REQUESTS', // 🚀 This exact key activates the sub-menu badge!
-          { productionCode: firstDoc.productionCode },
-        )
-        .catch((err) =>
-          this.logger.error(
-            `Unit Manager submission notification failed: ${this.errorMessage(err)}`,
-          ),
-        );
+    if (createdDocs.length > 0) {
+      this.dispatchMenuProductionSubmissionNotifications(createdDocs);
     }
 
     return createdDocs;
@@ -534,6 +622,21 @@ export class MenuProductionsService implements OnModuleInit {
     unitManagerId?: string,
     rejectionReason?: string,
   ) {
+    if (status === 'approved') {
+      const salesDetails = await this.menuProductionModel
+        .findOne(this.withUnitManagerFilter(this.withSiteFilter({ _id: id }, site), unitManagerId))
+        .select({ sellingPricePerPax: 1, sellingQuantity: 1 })
+        .lean();
+      if (
+        !salesDetails ||
+        !Number.isFinite(Number(salesDetails.sellingPricePerPax)) ||
+        !Number.isFinite(Number(salesDetails.sellingQuantity))
+      ) {
+        throw new BadRequestException(
+          'Selling price per pax and selling quantity must be completed by Admin Site before approval.',
+        );
+      }
+    }
     // BACKEND LOGIC: approval drives store-request status automatically.
     const nextStoreStatus: StoreRequestStatus =
       status === 'approved' ? 'requested' : 'not-requested';
@@ -554,10 +657,12 @@ export class MenuProductionsService implements OnModuleInit {
             approvalStatus: status,
             storeRequestStatus: nextStoreStatus,
             ...(actor ? { reviewedBy: actor } : {}),
+            ...(status === 'approved' ? { approvedAt: new Date() } : {}),
             ...(status === 'rejected' ? { rejectionReason: reason } : {}),
           },
           $unset: {
             ...(status === 'approved' ? { rejectionReason: 1 } : {}),
+            ...(status !== 'approved' ? { approvedAt: 1 } : {}),
             fulfilledBy: 1,
             storeFulfillmentItems: 1,
             storeFulfillmentCompletedAt: 1,
@@ -638,7 +743,105 @@ export class MenuProductionsService implements OnModuleInit {
         ),
       );
 
+    void this.dispatchMenuProductionDecisionEmail(updated).catch((error) =>
+      this.logger.error(
+        `Menu production decision email failed: ${this.errorMessage(error)}`,
+      ),
+    );
+
     return updated;
+  }
+
+  async updateSalesDetails(
+    id: string,
+    input: UpdateMenuProductionSalesDetailsDto,
+    site?: string,
+  ) {
+    const sellingPricePerPax = Number(input.sellingPricePerPax);
+    const sellingQuantity = Number(input.sellingQuantity);
+    if (
+      !Number.isFinite(sellingPricePerPax) ||
+      !Number.isFinite(sellingQuantity)
+    ) {
+      throw new BadRequestException('Sales details must be valid numbers.');
+    }
+
+    const updated = await this.menuProductionModel.findOneAndUpdate(
+      this.withSiteFilter(
+        { _id: id, approvalStatus: { $in: ['pending', 'rejected'] } },
+        site,
+      ),
+      {
+        $set: {
+          approvalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+          sellingPricePerPax,
+          sellingQuantity,
+          estimatedRevenue: this.roundQuantity(
+            sellingPricePerPax * sellingQuantity,
+          ),
+        },
+        $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      throw new NotFoundException(
+        'Pending menu production not found for this site.',
+      );
+    }
+    return updated;
+  }
+
+  async updateBatchSalesDetails(
+    productionCode: string,
+    input: UpdateMenuProductionBatchSalesDetailsDto,
+    site?: string,
+  ) {
+    const normalizedCode = productionCode?.trim();
+    const sellingPricePerPax = Number(input.sellingPricePerPax);
+    const sellingQuantity = Number(input.sellingQuantity);
+    if (!normalizedCode || !Number.isFinite(sellingPricePerPax) || !Number.isFinite(sellingQuantity)) {
+      throw new BadRequestException('Production batch sales details are invalid.');
+    }
+
+    const filter = this.withSiteFilter(
+      { productionCode: normalizedCode, approvalStatus: { $in: ['pending', 'rejected'] } },
+      site,
+    );
+    const result = await this.menuProductionModel.updateMany(filter, {
+      $set: {
+        approvalStatus: 'pending',
+        storeRequestStatus: 'not-requested',
+        sellingPricePerPax,
+        sellingQuantity,
+        estimatedRevenue: this.roundQuantity(sellingPricePerPax * sellingQuantity),
+      },
+      $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
+    });
+    if (!result.matchedCount) {
+      throw new NotFoundException('Pending production batch not found for this site.');
+    }
+    const updatedItems = await this.menuProductionModel.find(filter).lean();
+    const firstItem = updatedItems[0];
+    if (firstItem) {
+      this.notificationsService
+        .createHierarchicalNotification(
+          firstItem.createdBy || 'system',
+          'Menu Production Ready For Approval',
+          `Production batch ${normalizedCode} has completed sales input and is ready for Unit Manager approval.`,
+          firstItem.site || 'global',
+          'unit.manager',
+          'MENU_PRODUCTION_APPROVAL_REQUESTS',
+          { productionCode: normalizedCode },
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Unit Manager sales submission notification failed: ${this.errorMessage(error)}`,
+          ),
+        );
+    }
+    return updatedItems;
   }
 
   async setStoreRequestStatus(
@@ -1802,7 +2005,9 @@ export class MenuProductionsService implements OnModuleInit {
           const name = ingredient.name?.trim() ?? '';
           const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
           const baseQty = Number(ingredient.qty);
-          const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+          const qty = this.roundQuantity(
+            (Number.isFinite(baseQty) ? baseQty : 0) * multiplier,
+          );
           const selectedVendor = this.findIngredientVendor(
             ingredientVendors,
             index,
@@ -1960,10 +2165,14 @@ export class MenuProductionsService implements OnModuleInit {
         ),
         submittedByName,
         reviewedBy,
+        approvedAt: menu.approvedAt
+          ? new Date(String(menu.approvedAt)).toISOString()
+          : undefined,
         recipeId: resolvedRecipeId,
         recipeCode: resolvedRecipeCode,
         recipeVersion: resolvedRecipeVersion,
         menuName: String(menu.menuName ?? ''),
+        clientName: String(menu.clientName ?? '').trim() || undefined,
         category: String(menu.category ?? ''),
         portion: Number(menu.portion ?? 0),
         cost: Number.isFinite(Number(menu.cost))
@@ -1971,6 +2180,15 @@ export class MenuProductionsService implements OnModuleInit {
           : undefined,
         estimatedCost,
         estimatedCostPerPax,
+        sellingPricePerPax: Number.isFinite(Number(menu.sellingPricePerPax))
+          ? Number(menu.sellingPricePerPax)
+          : undefined,
+        sellingQuantity: Number.isFinite(Number(menu.sellingQuantity))
+          ? Number(menu.sellingQuantity)
+          : undefined,
+        estimatedRevenue: Number.isFinite(Number(menu.estimatedRevenue))
+          ? Number(menu.estimatedRevenue)
+          : undefined,
         productionDate,
         approvalStatus: menu.approvalStatus ?? 'pending',
         rejectionReason: String(menu.rejectionReason ?? '').trim() || undefined,

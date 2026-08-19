@@ -47,6 +47,10 @@ describe('RecipesService site visibility', () => {
     const notifications = {
       createHierarchicalNotification: jest.fn().mockResolvedValue(null),
     };
+    const workflowMail = {
+      notifyRecipeSubmitted: jest.fn().mockResolvedValue(undefined),
+      notifyRecipeDecision: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
@@ -56,6 +60,7 @@ describe('RecipesService site visibility', () => {
       sites as never,
       unitOfMeasures as never,
       notifications as never,
+      workflowMail as never,
     );
     jest
       .spyOn(

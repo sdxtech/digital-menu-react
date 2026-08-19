@@ -102,4 +102,26 @@ describe('RawMaterialPriceFileParser', () => {
       collect(parser.parse(filePath, 'invalid.csv')),
     ).rejects.toThrow('must include both site and vendor headers');
   });
+
+  it('parses the optional start date column', async () => {
+    const filePath = join(directory, 'prices-with-start-date.csv');
+    await writeFile(
+      filePath,
+      'Product Code,Site,Vendor,Start Date,Price\nRM-001,Site A,Vendor A,2026-08-14,310000\n',
+      'utf8',
+    );
+
+    await expect(
+      collect(parser.parse(filePath, 'prices-with-start-date.csv')),
+    ).resolves.toEqual([
+      {
+        productCode: 'RM-001',
+        site: 'Site A',
+        vendor: 'Vendor A',
+        startDate: '2026-08-14',
+        price: 310000,
+        rowNumber: 2,
+      },
+    ]);
+  });
 });

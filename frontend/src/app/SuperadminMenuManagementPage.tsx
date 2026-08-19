@@ -2495,7 +2495,7 @@ const SuperadminMenuManagementPage = () => {
         ? ` Applied price quantities on ${result.priceQuantityAdjustedCount} rows when calculating unit prices.`
         : ''
       const conflictText = result.conflictingVendorPriceCount
-        ? ` Resolved ${result.conflictingVendorPriceCount} repeated vendor prices in this file using the highest unit price.`
+        ? ` Resolved ${result.conflictingVendorPriceCount} repeated vendor prices using the closest non-future Start Date; ties use the highest unit price.`
         : ''
 
       if (result.mode === 'vendor') {

@@ -189,6 +189,11 @@ const ChefCreateMenu = ({
   const [categoriesLoading, setCategoriesLoading] = useState(false)
   const [categoriesError, setCategoriesError] = useState('')
   const [ingredientPage, setIngredientPage] = useState(1)
+  const [activeIngredientDropdownId, setActiveIngredientDropdownId] = useState<string | null>(null)
+  const [ingredientDropdownPosition, setIngredientDropdownPosition] = useState<{
+    left: number
+    top: number
+  } | null>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
@@ -352,7 +357,9 @@ const ChefCreateMenu = ({
     const fetchUomData = async () => {
       const [unitsResult, srUnitsResult, conversionsResult] =
         await Promise.allSettled([
-          fetchAllPages<UnitOfMeasureApi>('/unit-of-measures?isActive=true'),
+          fetchAllPages<UnitOfMeasureApi>(
+            '/unit-of-measures?isActive=true',
+          ),
           lockSrUomToRawMaterial
             ? Promise.resolve<string[]>([])
             : apiFetch<string[]>(
@@ -364,7 +371,6 @@ const ChefCreateMenu = ({
             '/unit-of-measures/conversions?isActive=true',
           ),
         ])
-
       if (cancelled) return
 
       if (unitsResult.status === 'fulfilled') {
@@ -718,7 +724,7 @@ const ChefCreateMenu = ({
     const trimmed = query.trim()
     const targetMeta = trimmed && target ? { ...target } : null
     const delay = trimmed ? 200 : 0
-    const fetchLimit = trimmed ? 40 : 5
+    const fetchLimit = trimmed ? 40 : 10
 
     searchTimeoutRef.current = window.setTimeout(async () => {
       try {
@@ -728,7 +734,7 @@ const ChefCreateMenu = ({
         }
         cacheRawMaterials(results)
         const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
-        setRawMaterialOptions(ranked.slice(0, 5))
+        setRawMaterialOptions(ranked.slice(0, 10))
 
         if (targetMeta) {
           setIngredientRows((prev) =>
@@ -772,6 +778,33 @@ const ChefCreateMenu = ({
 
   const handleRawMaterialFocus = () => {
     scheduleRawMaterialSearch('')
+  }
+
+  const positionIngredientDropdown = (input: HTMLElement) => {
+    const bounds = input.getBoundingClientRect()
+    const dropdownWidth = Math.min(576, window.innerWidth - 32)
+    const dropdownHeight = Math.min(296, window.innerHeight - 32)
+    const gap = 4
+    const canOpenBelow = bounds.bottom + gap + dropdownHeight <= window.innerHeight
+    const top = canOpenBelow
+      ? bounds.bottom + gap
+      : Math.max(16, bounds.top - dropdownHeight - gap)
+    const left = Math.min(
+      Math.max(16, bounds.left),
+      Math.max(16, window.innerWidth - dropdownWidth - 16),
+    )
+
+    setIngredientDropdownPosition({ left, top })
+  }
+
+  const selectRawMaterialForRow = (rowId: string, material: RawMaterial) => {
+    setIngredientRows((prev) =>
+      prev.map((row) => (
+        row.id === rowId ? applyRawMaterialToRow(row, material) : row
+      )),
+    )
+    setActiveIngredientDropdownId(null)
+    setIngredientDropdownPosition(null)
   }
 
   const handleAddIngredientRow = () => {
@@ -1402,15 +1435,6 @@ const ChefCreateMenu = ({
                 />
               ))}
             </datalist>
-            <datalist id="raw-material-name-options">
-              {rawMaterialOptions.map((item) => (
-                <option
-                  key={`name-${item.id}`}
-                  value={item.name}
-                  label={item.productCode}
-                />
-              ))}
-            </datalist>
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -1421,7 +1445,7 @@ const ChefCreateMenu = ({
                   <th className="px-4 py-3 font-semibold w-[160px]">
                     Product code
                   </th>
-                  <th className="px-4 py-3 font-semibold min-w-[260px]">
+                  <th className="px-4 py-3 font-semibold min-w-[390px]">
                     Name
                   </th>
                   <th className="px-4 py-3 font-semibold w-[120px]">
@@ -1488,7 +1512,7 @@ const ChefCreateMenu = ({
                         className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="relative px-4 py-3">
                       <div className="grid">
                         <input
                           type="text"
@@ -1500,16 +1524,62 @@ const ChefCreateMenu = ({
                               event.target.value,
                             )
                           }
-                          onFocus={handleRawMaterialFocus}
+                          onFocus={() => {
+                            setActiveIngredientDropdownId(row.id)
+                            const input = document.activeElement
+                            if (input instanceof HTMLElement) {
+                              positionIngredientDropdown(input)
+                            }
+                            handleRawMaterialFocus()
+                          }}
+                          onBlur={() => {
+                            window.setTimeout(() => {
+                              setActiveIngredientDropdownId((current) =>
+                                current === row.id ? null : current,
+                              )
+                              setIngredientDropdownPosition(null)
+                            }, 150)
+                          }}
                           autoComplete="off"
                           placeholder="Oat Milk"
-                          list="raw-material-name-options"
                           className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
                         />
                         <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
                           {row.name}
                         </div>
                       </div>
+                      {activeIngredientDropdownId === row.id && rawMaterialOptions.length > 0 ? (
+                        <div
+                          className="fixed z-[100] w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
+                          style={
+                            ingredientDropdownPosition
+                              ? {
+                                  left: ingredientDropdownPosition.left,
+                                  top: ingredientDropdownPosition.top,
+                                }
+                              : undefined
+                          }
+                        >
+                          <div className="max-h-72 overflow-y-auto py-1">
+                            {rawMaterialOptions.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => selectRawMaterialForRow(row.id, item)}
+                                className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-primary-soft"
+                              >
+                                <span className="block truncate text-sm font-semibold text-foreground">
+                                  {item.name}
+                                </span>
+                                <span className="mt-1 block text-xs text-muted">
+                                  {item.productCode}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <input
