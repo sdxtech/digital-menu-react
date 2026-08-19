@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
 import {
@@ -62,6 +62,12 @@ type UnitOfMeasureOption = {
   name: string
 }
 
+type PaginatedApiResponse<T> = {
+  items?: T[]
+  total?: number
+  totalPages?: number
+}
+
 type UnitConversion = {
   id: string
   prodUomCode: string
@@ -91,6 +97,14 @@ export type BaseRecipe = {
   reviewedBy?: string
   reviewedByName?: string
   reviewedByEmail?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   ingredients?: RecipeIngredient[]
 }
 
@@ -134,6 +148,7 @@ const ChefCreateMenu = ({
   onSaved,
 }: ChefCreateMenuProps) => {
   const location = useLocation()
+  const navigate = useNavigate()
   const {
     createRecipe,
     updateRecipe,
@@ -156,6 +171,8 @@ const ChefCreateMenu = ({
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
+  const [resubmitFeedback, setResubmitFeedback] = useState('')
+  const [resubmitModalOpen, setResubmitModalOpen] = useState(false)
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -241,6 +258,8 @@ const ChefCreateMenu = ({
         : [createIngredientRow()],
     )
     setIngredientPage(1)
+    setResubmitFeedback('')
+    setResubmitModalOpen(false)
     setSubmitError('')
     setSubmitMessage('')
   }, [baseRecipe, enableIngredientUomConversion])
@@ -307,28 +326,50 @@ const ChefCreateMenu = ({
     }
 
     let cancelled = false
+    const fetchAllPages = async <T,>(path: string) => {
+      const items: T[] = []
+      const limit = 100
+      let page = 1
+      let total = 0
+
+      do {
+        const separator = path.includes('?') ? '&' : '?'
+        const data = await apiFetch<PaginatedApiResponse<T>>(
+          `${path}${separator}page=${page}&limit=${limit}`,
+          undefined,
+          accessToken,
+        )
+        const pageItems = data.items ?? []
+        items.push(...pageItems)
+        total = data.total ?? items.length
+        if (pageItems.length < limit) break
+        page += 1
+      } while (items.length < total)
+
+      return items
+    }
+
     const fetchUomData = async () => {
-      try {
-        const [unitsData, srUnitsData, conversionsData] = await Promise.all([
-          apiFetch<{ items?: UnitOfMeasureApi[] }>(
-            '/unit-of-measures?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
-          ),
-          apiFetch<string[]>(
-            '/raw-materials/unit-options',
-            undefined,
-            accessToken,
-          ),
-          apiFetch<{ items?: UnitConversionApi[] }>(
-            '/unit-of-measures/conversions?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
+      const [unitsResult, srUnitsResult, conversionsResult] =
+        await Promise.allSettled([
+          fetchAllPages<UnitOfMeasureApi>('/unit-of-measures?isActive=true'),
+          lockSrUomToRawMaterial
+            ? Promise.resolve<string[]>([])
+            : apiFetch<string[]>(
+                '/raw-materials/unit-options',
+                undefined,
+                accessToken,
+              ),
+          fetchAllPages<UnitConversionApi>(
+            '/unit-of-measures/conversions?isActive=true',
           ),
         ])
-        if (cancelled) return
+
+      if (cancelled) return
+
+      if (unitsResult.status === 'fulfilled') {
         setUomOptions(
-          (unitsData.items ?? [])
+          unitsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.code ?? '',
               code: item.code ?? '',
@@ -336,9 +377,19 @@ const ChefCreateMenu = ({
             }))
             .filter((item) => item.id && item.code),
         )
-        setSrUomOptions((srUnitsData ?? []).filter(Boolean))
+      } else {
+        setUomOptions([])
+      }
+
+      if (srUnitsResult.status === 'fulfilled') {
+        setSrUomOptions(srUnitsResult.value.filter(Boolean))
+      } else {
+        setSrUomOptions([])
+      }
+
+      if (conversionsResult.status === 'fulfilled') {
         setUnitConversions(
-          (conversionsData.items ?? [])
+          conversionsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.conversionId ?? '',
               prodUomCode: item.prodUomCode ?? '',
@@ -355,10 +406,7 @@ const ChefCreateMenu = ({
                 item.multiplier > 0,
             ),
         )
-      } catch {
-        if (cancelled) return
-        setUomOptions([])
-        setSrUomOptions([])
+      } else {
         setUnitConversions([])
       }
     }
@@ -368,7 +416,7 @@ const ChefCreateMenu = ({
     return () => {
       cancelled = true
     }
-  }, [accessToken, enableIngredientUomConversion])
+  }, [accessToken, enableIngredientUomConversion, lockSrUomToRawMaterial])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
@@ -805,6 +853,13 @@ const ChefCreateMenu = ({
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
+    const nextResubmitFeedback = resubmitFeedback.trim()
+
+    if (options.resubmit && !nextResubmitFeedback) {
+      setSubmitError('Feedback is required before resubmitting the recipe.')
+      setSubmitMessage('')
+      return
+    }
     const portionRaw = recipeForm.portionSize.trim()
 
     if (!nextName || !nextCategory) {
@@ -814,12 +869,12 @@ const ChefCreateMenu = ({
     }
 
     if (
-      isCreateFromRecipe &&
+      isCreateFromTemplate &&
       baseRecipe?.name?.trim() &&
-      normalizeValue(nextName) !== normalizeValue(baseRecipe.name)
+      normalizeValue(nextName) === normalizeValue(baseRecipe.name)
     ) {
       setSubmitError(
-        'The recipe name must stay the same as the base recipe.',
+        'Change the recipe name before creating a recipe from this recipe.',
       )
       setSubmitMessage('')
       return
@@ -965,8 +1020,11 @@ const ChefCreateMenu = ({
       if (isEditMode && editingRecipeId) {
         await updateRecipe(editingRecipeId, basePayload)
         if (options.resubmit) {
-          await resubmitRecipe(editingRecipeId)
+          await resubmitRecipe(editingRecipeId, nextResubmitFeedback)
           setCurrentApprovalStatus('pending')
+          onSaved?.()
+          navigate('/chef/menu-bank', { replace: true })
+          return
         }
         onSaved?.()
       } else {
@@ -1025,6 +1083,73 @@ const ChefCreateMenu = ({
 
   return (
     <div className="space-y-6">
+      {resubmitModalOpen && isRejectedRecipe ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resubmit-feedback-title"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id="resubmit-feedback-title"
+                  className="font-semibold text-foreground"
+                >
+                  Resubmit recipe
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Explain what you changed before sending this recipe back to
+                  the Unit Manager.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResubmitModalOpen(false)}
+                className="dm-x-button"
+                aria-label="Close resubmit feedback"
+              >
+                <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
+              </button>
+            </div>
+            <label className="mt-5 block text-sm font-medium text-foreground">
+              Feedback <span className="text-danger">*</span>
+              <textarea
+                autoFocus
+                value={resubmitFeedback}
+                onChange={(event) => setResubmitFeedback(event.target.value)}
+                rows={5}
+                maxLength={1000}
+                placeholder="Example: Reduced salt from 10 g to 7 g."
+                className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                This feedback will be recorded in the approval history.
+              </span>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <ActionButton
+                action="cancel"
+                onClick={() => setResubmitModalOpen(false)}
+                size="sm"
+              />
+              <ActionButton
+                action="submit"
+                onClick={() => {
+                  if (!resubmitFeedback.trim()) {
+                    setSubmitError('Feedback is required before resubmitting the recipe.')
+                    return
+                  }
+                  setResubmitModalOpen(false)
+                  handleSaveRecipe({ resubmit: true }).catch(() => null)
+                }}
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1181,6 +1306,11 @@ const ChefCreateMenu = ({
                   : 'bg-white focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20'
               }`}
             />
+            {isCreateFromTemplate ? (
+              <p className="mt-2 text-xs text-muted">
+                The new recipe name must be different from the source recipe.
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Category</label>
@@ -1545,7 +1675,11 @@ const ChefCreateMenu = ({
             ) : null}
             <ActionButton
               action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
-              onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
+              onClick={() =>
+                isRejectedRecipe
+                  ? setResubmitModalOpen(true)
+                  : handleSaveRecipe()
+              }
             />
           </div>
         </div>

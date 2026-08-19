@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -183,6 +184,19 @@ export class RecipesService {
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
+    const normalizedName = input.name.trim();
+    if (!input.baseRecipeId) {
+      const duplicate = await this.recipeModel.exists({
+        deletedAt: { $exists: false },
+        name: new RegExp(`^${this.escapeRegExp(normalizedName)}$`, 'i'),
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          'A recipe with this name already exists. Please use a different name.',
+        );
+      }
+    }
+
     const ingredients = await this.applyIngredientUomConversions(
       this.normalizeIngredients(input.ingredients),
     );
@@ -445,6 +459,17 @@ export class RecipesService {
         ...(status === 'rejected' ? { rejectionReason: reason } : {}),
       },
     };
+    if (status === 'rejected') {
+      updatePayload.$push = {
+        approvalHistory: {
+          rejectionReason: reason,
+          rejectedBy: actor?.id,
+          rejectedByName: actor?.name,
+          rejectedByEmail: actor?.email,
+          rejectedAt: new Date(),
+        },
+      };
+    }
     if (status === 'approved') {
       updatePayload.$unset = { rejectionReason: '' };
     }
@@ -560,7 +585,18 @@ export class RecipesService {
     };
   }
 
-  async resubmitRejectedRecipe(id: string, actor?: RecipeActor) {
+  async resubmitRejectedRecipe(
+    id: string,
+    actor?: RecipeActor,
+    feedback?: string,
+  ) {
+    const trimmedFeedback = feedback?.trim();
+    if (!trimmedFeedback) {
+      throw new BadRequestException(
+        'Resubmission feedback is required.',
+      );
+    }
+
     const existing = await this.recipeModel
       .findOne(this.withSiteFilter({ _id: id }, actor?.site))
       .lean();
@@ -572,26 +608,56 @@ export class RecipesService {
     }
 
     const updatedFields = this.buildActorFields(actor, 'updated');
+    const approvalHistory = existing.approvalHistory ?? [];
+    const lastHistoryIndex = approvalHistory.length - 1;
+    const updatePayload: Record<string, unknown> = {
+      $set: {
+        approvalStatus: 'pending',
+        status: 'draft',
+        ...updatedFields,
+      },
+      $unset: {
+        rejectionReason: '',
+        reviewedBy: '',
+        reviewedByName: '',
+        reviewedByEmail: '',
+        reviewedAt: '',
+      },
+    };
+
+    if (lastHistoryIndex >= 0) {
+      Object.assign(updatePayload.$set as Record<string, unknown>, {
+        [`approvalHistory.${lastHistoryIndex}.resubmissionFeedback`]:
+          trimmedFeedback,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedBy`]: actor?.id,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedByName`]: actor?.name,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedByEmail`]: actor?.email,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedAt`]: new Date(),
+      });
+    } else {
+      updatePayload.$push = {
+        approvalHistory: {
+          rejectionReason: existing.rejectionReason?.trim() || 'Rejected',
+          rejectedBy: existing.reviewedBy,
+          rejectedByName: existing.reviewedByName,
+          rejectedByEmail: existing.reviewedByEmail,
+          rejectedAt: existing.reviewedAt ?? new Date(),
+          resubmissionFeedback: trimmedFeedback,
+          resubmittedBy: actor?.id,
+          resubmittedByName: actor?.name,
+          resubmittedByEmail: actor?.email,
+          resubmittedAt: new Date(),
+        },
+      };
+    }
+
     const updated = await this.recipeModel
       .findOneAndUpdate(
         this.withSiteFilter(
           { _id: id, approvalStatus: 'rejected' },
           actor?.site,
         ),
-        {
-          $set: {
-            approvalStatus: 'pending',
-            status: 'draft',
-            ...updatedFields,
-          },
-          $unset: {
-            rejectionReason: '',
-            reviewedBy: '',
-            reviewedByName: '',
-            reviewedByEmail: '',
-            reviewedAt: '',
-          },
-        },
+        updatePayload,
         { new: true },
       )
       .lean();

@@ -27,6 +27,7 @@ import { getUploadDir } from '../common/upload-dir';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
+import { ResubmitRecipeDto } from './dto/resubmit-recipe.dto';
 import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
@@ -120,8 +121,16 @@ export class RecipesController {
 
   @Patch(':id/resubmit')
   @Roles(AppRole.Chef, AppRole.Superadmin)
-  resubmit(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.resubmitRejectedRecipe(id, this.buildActor(req));
+  resubmit(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ResubmitRecipeDto,
+  ) {
+    return this.recipes.resubmitRejectedRecipe(
+      id,
+      this.buildActor(req),
+      dto.feedback,
+    );
   }
 
   @Patch(':id/photo')

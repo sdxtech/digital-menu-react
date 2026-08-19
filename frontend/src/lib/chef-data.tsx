@@ -34,6 +34,19 @@ export type RecipeIngredient = {
   foodCost?: number
 }
 
+export type RecipeApprovalHistoryEntry = {
+  rejectionReason: string
+  rejectedBy?: string
+  rejectedByName?: string
+  rejectedByEmail?: string
+  rejectedAt?: string
+  resubmissionFeedback?: string
+  resubmittedBy?: string
+  resubmittedByName?: string
+  resubmittedByEmail?: string
+  resubmittedAt?: string
+}
+
 export type Recipe = {
   id: string
   recipeCode?: string
@@ -62,6 +75,7 @@ export type Recipe = {
   reviewedByEmail?: string
   reviewedAt?: string
   rejectionReason?: string
+  approvalHistory?: RecipeApprovalHistoryEntry[]
   site?: string
   siteName?: string
 }
@@ -211,7 +225,7 @@ type ChefDataContextValue = ChefDataState & {
   importRecipesFromExcel: (file: File) => Promise<number>
   approveRecipe: (id: string) => Promise<void>
   rejectRecipe: (id: string, reason: string) => Promise<void>
-  resubmitRecipe: (id: string) => Promise<void>
+  resubmitRecipe: (id: string, feedback: string) => Promise<void>
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
   addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
   approveMenuProduction: (id: string) => Promise<void>
@@ -302,6 +316,20 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     reviewedByEmail: item.reviewedByEmail ?? '',
     reviewedAt: item.reviewedAt ?? '',
     rejectionReason: item.rejectionReason ?? '',
+    approvalHistory: Array.isArray(item.approvalHistory)
+      ? item.approvalHistory.map((entry) => ({
+          rejectionReason: entry.rejectionReason ?? '',
+          rejectedBy: entry.rejectedBy ?? '',
+          rejectedByName: entry.rejectedByName ?? '',
+          rejectedByEmail: entry.rejectedByEmail ?? '',
+          rejectedAt: entry.rejectedAt ?? '',
+          resubmissionFeedback: entry.resubmissionFeedback ?? '',
+          resubmittedBy: entry.resubmittedBy ?? '',
+          resubmittedByName: entry.resubmittedByName ?? '',
+          resubmittedByEmail: entry.resubmittedByEmail ?? '',
+          resubmittedAt: entry.resubmittedAt ?? '',
+        }))
+      : [],
     site: item.site ?? undefined,
     siteName: item.siteName ?? undefined,
   }
@@ -524,13 +552,16 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     }))
   }
 
-  const resubmitRecipe = async (id: string) => {
+  const resubmitRecipe = async (id: string, feedback: string) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
     const updated = await apiFetch<RecipeApi>(
       `/recipes/${id}/resubmit`,
-      { method: 'PATCH' },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ feedback }),
+      },
       accessToken,
     )
     const mapped = mapRecipe(updated)
