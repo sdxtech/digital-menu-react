@@ -22,6 +22,19 @@ export type RecipeIngredient = {
   foodCost?: number;
 };
 
+export type RecipeApprovalHistoryEntry = {
+  rejectionReason: string;
+  rejectedBy?: string;
+  rejectedByName?: string;
+  rejectedByEmail?: string;
+  rejectedAt: Date;
+  resubmissionFeedback?: string;
+  resubmittedBy?: string;
+  resubmittedByName?: string;
+  resubmittedByEmail?: string;
+  resubmittedAt?: Date;
+};
+
 @Schema({ timestamps: true })
 export class Recipe {
   @Prop({
@@ -96,6 +109,26 @@ export class Recipe {
 
   @Prop({ type: String, trim: true })
   rejectionReason?: string;
+
+  @Prop({
+    type: [
+      {
+        _id: false,
+        rejectionReason: { type: String, required: true, trim: true },
+        rejectedBy: { type: String, index: true },
+        rejectedByName: { type: String, trim: true },
+        rejectedByEmail: { type: String, trim: true, lowercase: true },
+        rejectedAt: { type: Date, required: true },
+        resubmissionFeedback: { type: String, trim: true },
+        resubmittedBy: { type: String, index: true },
+        resubmittedByName: { type: String, trim: true },
+        resubmittedByEmail: { type: String, trim: true, lowercase: true },
+        resubmittedAt: { type: Date },
+      },
+    ],
+    default: [],
+  })
+  approvalHistory: RecipeApprovalHistoryEntry[];
 
   @Prop({
     type: [

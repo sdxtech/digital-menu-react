@@ -284,7 +284,7 @@ describe('AuthService', () => {
     );
   });
 
-  it('includes assigned superadmin site in the issued access token', async () => {
+  it('keeps superadmin site scope global in the issued access token', async () => {
     const users = makeUsers();
     const sites = makeSites();
     const jwt = makeJwt();
@@ -317,8 +317,9 @@ describe('AuthService', () => {
         sub: 'admin-1',
         roles: [AppRole.Superadmin],
         appRole: 'superadmin',
-        site: 'HQ',
-        siteName: 'HQ',
+        site: undefined,
+        siteId: undefined,
+        siteName: undefined,
       }),
       { expiresIn: '8h' },
     );
