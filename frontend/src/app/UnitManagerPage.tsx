@@ -41,6 +41,14 @@ type Recipe = {
   createdBy?: string
   createdByName?: string
   createdByEmail?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   status: 'draft' | 'active'
   approvalStatus: 'pending' | 'approved' | 'rejected'
 }
@@ -787,6 +795,38 @@ const UnitManagerPage = () => {
                                     <p className="mt-1 text-sm text-foreground">
                                       {description}
                                     </p>
+                                    {item.approvalHistory?.length ? (
+                                      <div className="mt-4 border-t border-border pt-4">
+                                        <p className="text-xs font-semibold text-foreground">
+                                          Approval history
+                                        </p>
+                                        <div className="mt-2 space-y-2">
+                                          {item.approvalHistory.map((entry, historyIndex) => (
+                                            <div
+                                              key={`${entry.rejectedAt ?? 'rejection'}-${historyIndex}`}
+                                              className="rounded-md border border-border bg-background p-3 text-xs"
+                                            >
+                                              <p className="font-semibold text-danger">
+                                                Rejection {historyIndex + 1}
+                                              </p>
+                                              <p className="mt-1 text-foreground">
+                                                {entry.rejectionReason || 'No rejection note.'}
+                                              </p>
+                                              {entry.resubmissionFeedback?.trim() ? (
+                                                <div className="mt-2 rounded-md border border-primary/20 bg-primary-soft p-2">
+                                                  <p className="font-semibold text-primary">
+                                                    Chef feedback
+                                                  </p>
+                                                  <p className="mt-1 text-foreground">
+                                                    {entry.resubmissionFeedback}
+                                                  </p>
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-8">
