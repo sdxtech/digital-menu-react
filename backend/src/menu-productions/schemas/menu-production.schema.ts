@@ -96,6 +96,9 @@ export class MenuProduction {
   @Prop({ type: Number, min: 0 })
   estimatedRevenue?: number;
 
+  @Prop({ type: String, trim: true })
+  salesInputBy?: string;
+
   @Prop({
     type: [
       {

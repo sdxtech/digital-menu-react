@@ -216,6 +216,7 @@ export class MenuProductionsController {
       dto.productionCode,
       dto,
       getUserSiteScope(req.user),
+      req.user.name || req.user.email,
     );
   }
 
@@ -230,6 +231,7 @@ export class MenuProductionsController {
       id,
       dto,
       getUserSiteScope(req.user),
+      req.user.name || req.user.email,
     );
   }
 

@@ -83,6 +83,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  salesInputBy?: string
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
@@ -989,6 +990,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     <th className="px-4 py-3 font-semibold">Production code</th>
                     <th className="px-4 py-3 font-semibold">Client name</th>
                     <th className="px-4 py-3 font-semibold">Chef</th>
+                    <th className="px-4 py-3 font-semibold">Admin</th>
                     <th className="px-4 py-3 font-semibold">Total Estimated Cost</th>
                     <th className="px-4 py-3 font-semibold">Selling Price/Pax</th>
                     <th className="px-4 py-3 font-semibold">Pax Calculation</th>
@@ -1001,7 +1003,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 <tbody>
                   {menuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
-                      <td colSpan={12} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={13} className="px-4 py-8 text-center text-muted">
                         No production menus pending approval.
                       </td>
                     </tr>
@@ -1021,6 +1023,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       const submittedByLabel = submittedByNames.length
                         ? submittedByNames.join(', ')
                         : '-'
+                      const salesInputByLabel =
+                        group.items[0]?.salesInputBy?.trim() || '-'
                       const pendingMenuCount = group.items.filter(
                         (item) => item.approvalStatus === 'pending',
                       ).length
@@ -1071,6 +1075,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                               {group.items[0]?.clientName ?? '-'}
                             </td>
                             <td className="px-4 py-3">{submittedByLabel}</td>
+                            <td className="px-4 py-3">{salesInputByLabel}</td>
                             <td className="px-4 py-3 font-medium">
                               {formatPrice(totalEstimatedCost)}
                             </td>
@@ -1128,7 +1133,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={11} className="px-4 py-4">
+                              <td colSpan={12} className="px-4 py-4">
                                 <div className="grid gap-4 lg:grid-cols-12">
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                     <p className="text-xs text-muted">Menu list</p>

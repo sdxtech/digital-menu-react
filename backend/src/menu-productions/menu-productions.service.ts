@@ -93,6 +93,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number;
   sellingQuantity?: number;
   estimatedRevenue?: number;
+  salesInputBy?: string;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   rejectionReason?: string;
@@ -757,6 +758,7 @@ export class MenuProductionsService implements OnModuleInit {
     id: string,
     input: UpdateMenuProductionSalesDetailsDto,
     site?: string,
+    salesInputBy?: string,
   ) {
     const sellingPricePerPax = Number(input.sellingPricePerPax);
     const sellingQuantity = Number(input.sellingQuantity);
@@ -781,6 +783,7 @@ export class MenuProductionsService implements OnModuleInit {
           estimatedRevenue: this.roundQuantity(
             sellingPricePerPax * sellingQuantity,
           ),
+          salesInputBy: salesInputBy?.trim() || undefined,
         },
         $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
       },
@@ -798,6 +801,7 @@ export class MenuProductionsService implements OnModuleInit {
     productionCode: string,
     input: UpdateMenuProductionBatchSalesDetailsDto,
     site?: string,
+    salesInputBy?: string,
   ) {
     const normalizedCode = productionCode?.trim();
     const sellingPricePerPax = Number(input.sellingPricePerPax);
@@ -817,6 +821,7 @@ export class MenuProductionsService implements OnModuleInit {
         sellingPricePerPax,
         sellingQuantity,
         estimatedRevenue: this.roundQuantity(sellingPricePerPax * sellingQuantity),
+        salesInputBy: salesInputBy?.trim() || undefined,
       },
       $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
     });
@@ -2207,6 +2212,7 @@ export class MenuProductionsService implements OnModuleInit {
         sellingQuantity: Number.isFinite(Number(menu.sellingQuantity))
           ? Number(menu.sellingQuantity)
           : undefined,
+        salesInputBy: String(menu.salesInputBy ?? '').trim() || undefined,
         estimatedRevenue: Number.isFinite(Number(menu.estimatedRevenue))
           ? Number(menu.estimatedRevenue)
           : undefined,
