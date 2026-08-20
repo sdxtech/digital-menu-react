@@ -16,7 +16,7 @@ import {
 } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
-const INGREDIENT_ROWS_PER_PAGE = 8
+const INGREDIENT_ROWS_PER_PAGE = 30
 
 type RecipeForm = {
   name: string
