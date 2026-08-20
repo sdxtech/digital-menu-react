@@ -2055,7 +2055,15 @@ export class MenuProductionsService implements OnModuleInit {
             selectedVendor?.vendor,
             selectedVendor?.site,
           );
-          const existing = group.summaryMap.get(normalizedKey);
+          // IT ingredients can be summarized. NMP ingredients must remain as
+          // separate rows because the product code is shared by different raw
+          // materials.
+          const isNmpProductCode = productCode.toUpperCase() === 'NMP';
+          const summaryKey =
+            ingredient.ingredientType === 'IT' && !isNmpProductCode
+              ? normalizedKey
+              : `nmp__${group.summaryMap.size}__${normalizedKey}`;
+          const existing = group.summaryMap.get(summaryKey);
           if (existing) {
             existing.qty += qty;
             if (ingredientCost !== undefined) {
@@ -2076,7 +2084,8 @@ export class MenuProductionsService implements OnModuleInit {
               existing.price = undefined;
             }
           } else {
-            group.summaryMap.set(normalizedKey, {
+            group.summaryMap.set(summaryKey, {
+              ingredientType: ingredient.ingredientType,
               productCode,
               name,
               unitOfMeasures,
