@@ -1155,15 +1155,14 @@ export class RawMaterialsService {
 
   private getUnitPrice(input: {
     price?: number;
-    priceQuantity?: number;
   }): number | undefined {
     const price = this.normalizeOptionalNumber(input.price);
     if (price === undefined) return undefined;
-    const priceQuantity = this.normalizePositiveOptionalNumber(
-      input.priceQuantity,
-    );
-    const unitPrice = price / (priceQuantity ?? 1);
-    return Math.round(unitPrice * 1_000_000) / 1_000_000;
+
+    // Price-list prices are already the prices to use in the system. The
+    // quantity column is descriptive metadata and must not rescale the price
+    // (for example, 37,000 with quantity 0.1 must remain 37,000).
+    return price;
   }
 
   private getVendorPriceFullKey(input: {
