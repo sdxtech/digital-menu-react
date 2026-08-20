@@ -38,6 +38,7 @@ type Recipe = {
   updatedByEmail?: string
   portionSize: number
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: 'pending' | 'approved' | 'rejected'
   approvalHistory?: Array<{
     rejectionReason: string
@@ -411,7 +412,11 @@ const UnitManagerRecipeDataPage = () => {
                         </td>
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
-                        <td className="px-5 py-4">{statusLabel(recipe.status)}</td>
+                        <td className="px-5 py-4">
+                          {recipe.isActive === false
+                            ? 'Disabled'
+                            : statusLabel(recipe.status)}
+                        </td>
                         <td className="px-5 py-4">
                           {getApprovalStatusLabel(recipe.approvalStatus)}
                         </td>

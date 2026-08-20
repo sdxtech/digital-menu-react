@@ -505,9 +505,11 @@ export class RecipesService {
     // 🚀 INJECTED: Trigger real-time notification upon successful approval
     if (status === 'approved') {
       try {
-        const reviewerLabel = this.isCorporateChefActor(actor)
-          ? 'Corporate Chef'
-          : 'Unit Manager';
+        const reviewerLabel = this.isSuperadminActor(actor)
+          ? 'Superadmin'
+          : this.isCorporateChefActor(actor)
+            ? 'Corporate Chef'
+            : 'Unit Manager';
         await this.notificationsService.createHierarchicalNotification(
           actor?.id || 'system',
           'New Recipe Approved',

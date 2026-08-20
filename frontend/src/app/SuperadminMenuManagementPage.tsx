@@ -1477,6 +1477,12 @@ const SuperadminMenuManagementPage = () => {
   const [recipeCategory, setRecipeCategory] = useState('')
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [recipeMessage, setRecipeMessage] = useState('')
+  const [recipeRejectTarget, setRecipeRejectTarget] = useState<Recipe | null>(
+    null,
+  )
+  const [recipeRejectReason, setRecipeRejectReason] = useState('')
+  const [recipeRejectError, setRecipeRejectError] = useState('')
+  const [recipeRejectSubmitting, setRecipeRejectSubmitting] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState<BaseRecipe | null>(null)
   const [recipeImportOpen, setRecipeImportOpen] = useState(false)
   const [recipeImportFile, setRecipeImportFile] = useState<File | null>(null)
@@ -2146,14 +2152,30 @@ const SuperadminMenuManagementPage = () => {
     }
   }
 
-  const rejectRecipe = async (recipe: Recipe) => {
-    if (!accessToken) return
-    const recipeId = recipe.id ?? recipe._id
+  const openRecipeRejectModal = (recipe: Recipe) => {
+    setRecipeRejectTarget(recipe)
+    setRecipeRejectReason('')
+    setRecipeRejectError('')
+  }
+
+  const closeRecipeRejectModal = () => {
+    if (recipeRejectSubmitting) return
+    setRecipeRejectTarget(null)
+    setRecipeRejectReason('')
+    setRecipeRejectError('')
+  }
+
+  const rejectRecipe = async () => {
+    if (!accessToken || !recipeRejectTarget) return
+    const recipeId = recipeRejectTarget.id ?? recipeRejectTarget._id
+    const reason = recipeRejectReason.trim()
     if (!recipeId) return
+    if (!reason) {
+      setRecipeRejectError('Notes wajib diisi.')
+      return
+    }
 
-    const reason = window.prompt(`Reject ${recipe.name}. Reason:`)?.trim()
-    if (!reason) return
-
+    setRecipeRejectSubmitting(true)
     try {
       await apiFetch(
         `/recipes/${recipeId}/reject`,
@@ -2164,10 +2186,15 @@ const SuperadminMenuManagementPage = () => {
         accessToken,
       )
       handleRecipeSaved('Recipe rejected.')
+      setRecipeRejectTarget(null)
+      setRecipeRejectReason('')
+      setRecipeRejectError('')
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to reject recipe.'
-      setRecipeMeta((prev) => ({ ...prev, error: message }))
+      setRecipeRejectError(message)
+    } finally {
+      setRecipeRejectSubmitting(false)
     }
   }
 
@@ -2850,6 +2877,95 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        {recipeRejectTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div
+              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="recipe-reject-title"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs text-muted">Force rejection</p>
+                  <h3
+                    id="recipe-reject-title"
+                    className="mt-1 text-lg font-semibold text-foreground"
+                  >
+                    Reject recipe
+                  </h3>
+                  <p className="mt-2 text-sm text-muted">
+                    {recipeRejectTarget.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRecipeRejectModal}
+                  disabled={recipeRejectSubmitting}
+                  className="dm-x-button disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label="Close recipe rejection form"
+                  title="Close"
+                >
+                  <i
+                    className="bi bi-x-lg text-sm leading-none"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+
+              <div className="mt-5">
+                <label
+                  htmlFor="recipe-reject-reason"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Notes / rejection reason
+                </label>
+                <textarea
+                  id="recipe-reject-reason"
+                  value={recipeRejectReason}
+                  onChange={(event) => {
+                    setRecipeRejectReason(event.target.value)
+                    if (recipeRejectError) setRecipeRejectError('')
+                  }}
+                  rows={5}
+                  maxLength={500}
+                  autoFocus
+                  placeholder="Explain why this recipe is being rejected."
+                  className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                />
+                <div className="mt-2 flex items-center justify-between text-xs text-muted">
+                  <span>Notes ini akan disimpan di approval history.</span>
+                  <span>{recipeRejectReason.length}/500</span>
+                </div>
+                {recipeRejectError ? (
+                  <p className="mt-3 text-xs font-medium text-red-600">
+                    {recipeRejectError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeRecipeRejectModal}
+                  disabled={recipeRejectSubmitting}
+                  className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void rejectRecipe()}
+                  disabled={recipeRejectSubmitting}
+                  className="rounded-md bg-danger px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {recipeRejectSubmitting ? 'Rejecting...' : 'Confirm reject'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {recipeImportOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
@@ -3488,7 +3604,7 @@ const SuperadminMenuManagementPage = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => rejectRecipe(recipe)}
+                                  onClick={() => openRecipeRejectModal(recipe)}
                                   className="rounded-md border border-warning bg-background px-3 py-1 text-xs font-semibold text-warning"
                                 >
                                   <span className="flex items-center gap-1.5">
@@ -3497,7 +3613,29 @@ const SuperadminMenuManagementPage = () => {
                                   </span>
                                 </button>
                               </>
-                            ) : null}
+                            ) : recipe.approvalStatus === 'approved' ? (
+                              <button
+                                type="button"
+                                onClick={() => openRecipeRejectModal(recipe)}
+                                className="rounded-md border border-danger bg-background px-3 py-1 text-xs font-semibold text-danger"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <i className="bi bi-x-circle text-sm" aria-hidden="true" />
+                                  <span>Force reject</span>
+                                </span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => approveRecipe(recipe)}
+                                className="rounded-md border border-success bg-background px-3 py-1 text-xs font-semibold text-success"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <i className="bi bi-check2-circle text-sm" aria-hidden="true" />
+                                  <span>Force approve</span>
+                                </span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => toggleRecipeActive(recipe)}
