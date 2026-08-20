@@ -535,7 +535,9 @@ const ChefMenuCycle = ({
     () =>
       scopedRecipes.filter(
         (recipe) =>
-          recipe.approvalStatus === 'approved' && recipe.status === 'active',
+          recipe.approvalStatus === 'approved' &&
+          recipe.status === 'active' &&
+          recipe.isActive,
       )
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name)),

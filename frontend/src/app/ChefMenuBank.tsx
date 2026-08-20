@@ -42,6 +42,7 @@ type Recipe = {
   price: number
   portionSize: number
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: 'pending' | 'approved' | 'rejected'
   reviewedBy?: string
   reviewedByName?: string
@@ -927,7 +928,11 @@ const ChefMenuBank = () => {
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
-                          <span>{statusLabel(recipe.status)}</span>
+                          <span>
+                            {recipe.isActive === false
+                              ? 'Disabled'
+                              : statusLabel(recipe.status)}
+                          </span>
                         </td>
                         <td className="px-5 py-4">
                           <span

@@ -62,6 +62,7 @@ export type Recipe = {
   portionSize: number
   status: RecipeStatus
   approvalStatus: ApprovalStatus
+  isActive: boolean
   ingredients: RecipeIngredient[]
   createdAt: string
   updatedAt?: string
@@ -303,6 +304,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
       : 1,
     status: (item.status ?? 'draft') as RecipeStatus,
     approvalStatus,
+    isActive: item.isActive !== false,
     ingredients: Array.isArray(item.ingredients)
       ? item.ingredients.map((ingredient) => ({
           ingredientType: ingredient.ingredientType,

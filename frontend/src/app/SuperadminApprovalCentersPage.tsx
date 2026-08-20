@@ -57,6 +57,7 @@ type Recipe = {
     resubmissionFeedback?: string
   }>
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: ApprovalStatus
 }
 
@@ -607,7 +608,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                           </td>
                           <td className="px-5 py-4">{recipe.category || '-'}</td>
                           <td className="px-5 py-4">
-                            {recipe.status === 'active' ? 'Active' : 'Draft'}
+                            {recipe.isActive === false
+                              ? 'Disabled'
+                              : recipe.status === 'active'
+                                ? 'Active'
+                                : 'Draft'}
                           </td>
                           <td className="px-5 py-4">
                             <span

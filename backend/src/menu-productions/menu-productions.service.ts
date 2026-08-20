@@ -1580,6 +1580,7 @@ export class MenuProductionsService implements OnModuleInit {
         _id: { $in: normalizedIds },
         approvalStatus: 'approved',
         status: 'active',
+        isActive: true,
       })
       .select({
         recipeCode: 1,
