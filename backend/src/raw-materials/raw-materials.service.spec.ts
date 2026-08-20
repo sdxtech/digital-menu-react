@@ -171,7 +171,7 @@ describe('RawMaterialsService price updates', () => {
     return { rawMaterialModel, rawMaterialVendorPriceModel, service };
   };
 
-  it('keeps raw material imports create-only and normalizes quantity prices', async () => {
+  it('keeps raw material imports create-only and preserves quantity prices', async () => {
     const rawMaterialModel = {
       bulkWrite: jest.fn().mockResolvedValue({
         matchedCount: 1,
@@ -207,7 +207,7 @@ describe('RawMaterialsService price updates', () => {
                 productCodeNormalized: 'it00786_n',
                 name: 'Kemangi',
                 unitOfMeasures: 'KG (KG)',
-                price: 70000,
+                price: 7000,
               },
             },
             upsert: true,

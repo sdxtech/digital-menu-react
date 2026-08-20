@@ -121,9 +121,7 @@ type ChefMenuCycleProps = {
 const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
   const price = Number(option?.price)
   if (!Number.isFinite(price)) return undefined
-  const priceQuantity = Number(option?.priceQuantity)
-  return price /
-    (Number.isFinite(priceQuantity) && priceQuantity > 0 ? priceQuantity : 1)
+  return price
 }
 
 const ChefMenuCycle = ({
