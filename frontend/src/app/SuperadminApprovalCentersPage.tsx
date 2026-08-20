@@ -84,6 +84,7 @@ type StoreRequestMenu = {
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
   reviewedBy?: string
+  salesInputBy?: string
 }
 
 type StoreRequestGroup = {
@@ -815,6 +816,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
                   <th className="px-5 py-4 font-semibold">Chef</th>
+                  <th className="px-5 py-4 font-semibold">Admin</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">
                     Store request status
@@ -825,13 +827,13 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading approval data...
                     </td>
                   </tr>
                 ) : menuGroups.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {selectedSite
                         ? 'No production batches found.'
                         : 'Select a site first.'}
@@ -876,6 +878,9 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                           </td>
                           <td className="px-5 py-4">
                             {getSubmittedByLabel(group.items)}
+                          </td>
+                          <td className="px-5 py-4">
+                            {group.items[0]?.salesInputBy ?? '-'}
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -950,7 +955,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={7} className="px-5 py-5">
+                            <td colSpan={8} className="px-5 py-5">
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-6">
                                   <p className="text-xs text-muted">Menu list</p>

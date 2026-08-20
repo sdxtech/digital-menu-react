@@ -40,6 +40,7 @@ type Menu = {
   sellingPricePerPax?: number;
   sellingQuantity?: number;
   estimatedRevenue?: number;
+  salesInputBy?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
 };
 
@@ -291,6 +292,7 @@ const AdminSiteMenuProductionPage = () => {
                 <th className="px-4 py-3">Production code</th>
                 <th className="px-4 py-3">Client name</th>
                 <th className="px-4 py-3">Chef</th>
+                <th className="px-4 py-3">Admin</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Action</th>
               </tr>
@@ -298,7 +300,7 @@ const AdminSiteMenuProductionPage = () => {
             <tbody>
               {visibleGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={8} className="px-4 py-8 text-center text-muted">
                     No production menus pending sales input.
                   </td>
                 </tr>
@@ -343,6 +345,9 @@ const AdminSiteMenuProductionPage = () => {
                           {group.items[0]?.clientName ?? "-"}
                         </td>
                         <td className="px-4 py-3">{chef}</td>
+                        <td className="px-4 py-3">
+                          {group.items[0]?.salesInputBy ?? "-"}
+                        </td>
                         <td className="px-4 py-3">
                           <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
                             {group.items.length} menu
