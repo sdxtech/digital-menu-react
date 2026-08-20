@@ -60,6 +60,7 @@ export class NotificationsService {
     targetUserRole:
       | 'superadmin'
       | 'unit.manager'
+      | 'corporate-chef'
       | 'admin-site'
       | 'storekeeper'
       | 'chef',

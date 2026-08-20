@@ -19,6 +19,7 @@ export type StoreRequestStatus =
   | 'cancelled'
 
 export type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -304,6 +305,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     approvalStatus,
     ingredients: Array.isArray(item.ingredients)
       ? item.ingredients.map((ingredient) => ({
+          ingredientType: ingredient.ingredientType,
           productCode: ingredient.productCode ?? '',
           name: ingredient.name ?? '',
           unitOfMeasures: ingredient.unitOfMeasures ?? '',

@@ -39,6 +39,7 @@ type RecipeActor = {
   name?: string;
   email?: string;
   site?: string;
+  sites?: string[];
   roles?: AppRole[];
 };
 
@@ -256,15 +257,17 @@ export class RecipesService {
     // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
     if (!isSuperadminActor) {
       try {
-        await this.notificationsService.createHierarchicalNotification(
-          actor?.id || 'system',
-          'New Recipe Pending Approval',
-          `A new recipe "${saved.name}" V${saved.version ?? versionMetadata.version} has been submitted by the Chef and requires review.`,
-          saved.site || 'global',
-          'unit.manager',
-          'RECIPE_APPROVAL_REQUESTS',
-          { recipeId: saved._id?.toString() },
-        );
+        for (const targetRole of ['unit.manager', 'corporate-chef'] as const) {
+          await this.notificationsService.createHierarchicalNotification(
+            actor?.id || 'system',
+            'New Recipe Pending Approval',
+            `A new recipe "${saved.name}" V${saved.version ?? versionMetadata.version} has been submitted by the Chef and requires review.`,
+            saved.site || 'global',
+            targetRole,
+            'RECIPE_APPROVAL_REQUESTS',
+            { recipeId: saved._id?.toString() },
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
@@ -451,7 +454,7 @@ export class RecipesService {
         _id: id,
         ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
-      actor?.site,
+      this.isCorporateChefActor(actor) ? actor?.sites : actor?.site,
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
     const reviewedFields = this.buildActorFields(actor, 'reviewed');
@@ -502,10 +505,13 @@ export class RecipesService {
     // 🚀 INJECTED: Trigger real-time notification upon successful approval
     if (status === 'approved') {
       try {
+        const reviewerLabel = this.isCorporateChefActor(actor)
+          ? 'Corporate Chef'
+          : 'Unit Manager';
         await this.notificationsService.createHierarchicalNotification(
           actor?.id || 'system',
           'New Recipe Approved',
-          `The recipe "${updated.name}" has been approved by the Unit Manager and is ready for raw material staging.`,
+          `The recipe "${updated.name}" has been approved by the ${reviewerLabel} and is ready for raw material staging.`,
           updated.site || 'global',
           'chef', // target role is chef
           'RECIPE_DATA_BANK',
@@ -1633,6 +1639,7 @@ export class RecipesService {
   private normalizeIngredients(
     input?: Array<{
       productCode: string;
+      ingredientType?: 'IT' | 'NMP';
       name: string;
       unitOfMeasures: string;
       qty: number;
@@ -1659,7 +1666,9 @@ export class RecipesService {
       const srUomCode = item.srUomCode?.trim();
       const conversionId = item.conversionId?.trim();
       return {
-        productCode: item.productCode.trim(),
+        ...(item.ingredientType ? { ingredientType: item.ingredientType } : {}),
+        productCode:
+          item.ingredientType === 'NMP' ? 'NMP' : item.productCode.trim(),
         name: item.name.trim(),
         unitOfMeasures: item.unitOfMeasures.trim(),
         qty: item.qty,
@@ -1734,10 +1743,13 @@ export class RecipesService {
         continue;
       }
 
-      const rawMaterial = await this.resolveRawMaterial(
-        ingredient.productCode?.trim() ?? '',
-        rawMaterialCache,
-      );
+      const rawMaterial =
+        ingredient.ingredientType === 'NMP'
+          ? null
+          : await this.resolveRawMaterial(
+              ingredient.productCode?.trim() ?? '',
+              rawMaterialCache,
+            );
       const specificIngredient = this.applySpecificIngredientConversion(
         ingredient,
         rawMaterial,
@@ -2125,6 +2137,10 @@ export class RecipesService {
     return actor?.roles?.includes(AppRole.Superadmin) ?? false;
   }
 
+  private isCorporateChefActor(actor?: RecipeActor) {
+    return actor?.roles?.includes(AppRole.CorporateChef) ?? false;
+  }
+
   private async attachActorNames(items: RecipeAuditFields[]): Promise<void> {
     const ids = new Set<string>();
     items.forEach((item) => {
@@ -2187,7 +2203,11 @@ export class RecipesService {
     return trimmed ? trimmed : undefined;
   }
 
-  private buildSiteFilter(site?: string) {
+  private buildSiteFilter(site?: string | string[]) {
+    if (Array.isArray(site)) {
+      const sites = site.map((item) => this.normalizeSite(item)).filter(Boolean)
+      return sites.length ? { site: { $in: sites } } : {}
+    }
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
     return { site: normalizedSite };
@@ -2208,7 +2228,10 @@ export class RecipesService {
     };
   }
 
-  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+  private withSiteFilter(
+    filter: Record<string, unknown>,
+    site?: string | string[],
+  ) {
     const siteFilter = this.buildSiteFilter(site);
     if (!Object.keys(siteFilter).length) return filter;
     if ('$or' in siteFilter) {

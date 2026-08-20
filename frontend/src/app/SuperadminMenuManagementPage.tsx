@@ -33,6 +33,7 @@ type MenuManagementTab =
   | 'categories'
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode?: string
   name?: string
   unitOfMeasures?: string
@@ -3616,6 +3617,7 @@ const SuperadminMenuManagementPage = () => {
                     <thead className="bg-background">
                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                         <th className="w-16 px-4 py-3 font-semibold">No</th>
+                        <th className="px-4 py-3 font-semibold">Type</th>
                         <th className="px-4 py-3 font-semibold">Product code</th>
                         <th className="px-4 py-3 font-semibold">Ingredient name</th>
                         <th className="px-4 py-3 font-semibold">Qty</th>
@@ -3630,6 +3632,9 @@ const SuperadminMenuManagementPage = () => {
                         >
                           <td className="px-4 py-3 text-sm text-muted">
                             {index + 1}
+                          </td>
+                          <td className="px-4 py-3">
+                            {ingredient.ingredientType || '-'}
                           </td>
                           <td className="px-4 py-3">
                             {ingredient.productCode || '-'}

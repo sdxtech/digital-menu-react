@@ -9,6 +9,7 @@ export type JwtPayload = {
   site?: string;
   siteId?: string;
   siteName?: string;
+  sites?: string[];
   iat?: number;
   exp?: number;
 };

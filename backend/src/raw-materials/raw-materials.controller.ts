@@ -111,7 +111,7 @@ export class RawMaterialsController {
   }
 
   @Get('unit-options')
-  @Roles(AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   listRawMaterialUnitOptions() {
     return this.rawMaterials.findUnitOfMeasuresOptions();
   }

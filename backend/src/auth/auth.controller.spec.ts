@@ -24,6 +24,7 @@ describe('AuthController password reset', () => {
       users as never,
       config as never,
       mail as never,
+      {} as never,
     );
     return { controller, mail, users };
   };
