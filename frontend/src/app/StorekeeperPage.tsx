@@ -481,9 +481,7 @@ const StorekeeperPage = () => {
     `${group.date}__${group.productionCode ?? 'no-code'}`
 
   const toReconciliationRows = (group: StoreRequestGroup): ReconciliationRow[] =>
-    aggregateStoreRequestSummary(group.summary ?? [], {
-      splitByVendor: true,
-    }).map((item) => ({
+    aggregateStoreRequestSummary(group.summary ?? []).map((item) => ({
       id: makeReconciliationRowId(),
       productCode: item.productCode,
       name: item.name,
