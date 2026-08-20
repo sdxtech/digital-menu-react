@@ -135,6 +135,9 @@ export class NotificationsController {
     if (normalized === 'unit-manager' || normalized === 'unit.manager') {
       return 'unit.manager';
     }
+    if (normalized === 'corporatechef' || normalized === 'corporate.chef') {
+      return 'corporate-chef';
+    }
     return normalized;
   }
 }

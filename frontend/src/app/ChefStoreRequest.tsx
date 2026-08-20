@@ -21,6 +21,7 @@ import {
 } from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -201,7 +202,8 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'Recipe Code',
       'Category',
       'Portion',
-      'IT Code',
+      'Product Type',
+      'Product Code',
       'Ingredient Name',
       'Vendor',
       'Planned QTY',
@@ -251,6 +253,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
+          ingredient.ingredientType ?? '',
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
@@ -272,7 +275,8 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
     [
       'Production Date',
       'Site',
-      'IT Code',
+      'Product Type',
+      'Product Code',
       'Ingredient Name',
       'Vendor',
       'QTY',
@@ -286,6 +290,7 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
         toSpreadsheetDate(group.date),
         group.site ?? '',
         group.items[0]?.clientName ?? '',
+        item.ingredientType ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',

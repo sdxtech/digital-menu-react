@@ -175,6 +175,8 @@ const ChefMenuCycle = ({
     useState<Record<string, string>>({})
   const [selectedVendorPriceByIngredientKey, setSelectedVendorPriceByIngredientKey] =
     useState<Record<string, string>>({})
+  const [customPriceByIngredientKey, setCustomPriceByIngredientKey] =
+    useState<Record<string, string>>({})
   const [otherSiteVendorPricesByProductKey, setOtherSiteVendorPricesByProductKey] =
     useState<Record<string, RawMaterialVendorPriceOption[]>>({})
   const [otherSiteVendorPriceLoadedByProductKey, setOtherSiteVendorPriceLoadedByProductKey] =
@@ -383,6 +385,20 @@ const ChefMenuCycle = ({
       return Number(ingredient.foodCost) / Number(ingredient.qty)
     }
     return undefined
+  }
+
+  const getNmpUnitPrice = (
+    _ingredient: Recipe['ingredients'][number],
+    selectionKey: string,
+  ) => {
+    const enteredPrice = customPriceByIngredientKey[selectionKey]
+    if (enteredPrice === undefined || enteredPrice.trim() === '') {
+      return undefined
+    }
+    const parsedPrice = Number(enteredPrice)
+    return Number.isFinite(parsedPrice) && parsedPrice >= 0
+      ? parsedPrice
+      : undefined
   }
 
   const sortedProductionSiteOptions = useMemo(
@@ -1035,17 +1051,65 @@ const ChefMenuCycle = ({
         setInputMessage('')
         return
       }
+
+      for (const [ingredientIndex, ingredient] of recipe.ingredients.entries()) {
+        const ingredientSelectionKey = getIngredientVendorSelectionKey(
+          row.id,
+          ingredientIndex,
+          ingredient.productCode,
+        )
+        const productKey = getVendorPricesProductKey(ingredient.productCode)
+        const useOtherSiteVendor =
+          useOtherSiteVendorByIngredientKey[ingredientSelectionKey] ?? false
+        const vendorOptions = useOtherSiteVendor
+          ? otherSiteVendorPricesByProductKey[productKey] ?? []
+          : vendorPricesByProductKey[productKey] ?? []
+        const selectedVendorKey = useOtherSiteVendor
+          ? getSelectedOtherSiteVendorPriceKey(
+              ingredientSelectionKey,
+              vendorOptions,
+            )
+          : getSelectedVendorPriceKey(ingredientSelectionKey, vendorOptions)
+        const selectedVendor = vendorOptions.find(
+          (option) => option.key === selectedVendorKey,
+        )
+        const price =
+          ingredient.ingredientType === 'NMP'
+            ? getNmpUnitPrice(ingredient, ingredientSelectionKey)
+            : getIngredientUnitPrice(ingredient, selectedVendor)
+        if (price === undefined) {
+          setInputError(
+            `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+          )
+          setInputMessage('')
+          return
+        }
+      }
       const ingredientVendors: MenuProductionIngredientVendorInput[] =
         showIngredientVendorColumn
           ? recipe.ingredients
               .map<MenuProductionIngredientVendorInput | null>(
                 (ingredient, ingredientIndex) => {
-                  const productKey = getVendorPricesProductKey(
-                    ingredient.productCode,
-                  )
                   const vendorSelectionKey = getIngredientVendorSelectionKey(
                     row.id,
                     ingredientIndex,
+                    ingredient.productCode,
+                  )
+                  if (ingredient.ingredientType === 'NMP') {
+                    const nmpPrice = getNmpUnitPrice(
+                      ingredient,
+                      vendorSelectionKey,
+                    )
+                    return {
+                      ingredientIndex,
+                      productCode: ingredient.productCode,
+                      name: ingredient.name,
+                      unitOfMeasures: ingredient.unitOfMeasures,
+                      vendor: 'CUSTOM',
+                      price: nmpPrice,
+                    }
+                  }
+                  const productKey = getVendorPricesProductKey(
                     ingredient.productCode,
                   )
                   const useOtherSiteVendor =
@@ -1468,10 +1532,13 @@ const ChefMenuCycle = ({
                     const selectedVendorPrice = vendorOptions.find(
                       (option) => option.key === selectedVendorKey,
                     )
-                    const unitPrice = getIngredientUnitPrice(
-                      ingredient,
-                      selectedVendorPrice,
-                    )
+                    const unitPrice =
+                      ingredient.ingredientType === 'NMP'
+                        ? getNmpUnitPrice(ingredient, vendorSelectionKey)
+                        : getIngredientUnitPrice(
+                            ingredient,
+                            selectedVendorPrice,
+                          )
                     if (unitPrice === undefined || vendorDataPending) {
                       return {
                         ...summary,
@@ -1664,6 +1731,9 @@ const ChefMenuCycle = ({
                                             No
                                           </th>
                                           <th className="px-4 py-3 font-semibold">
+                                            Type
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
                                             Product code
                                           </th>
                                           <th className="px-4 py-3 font-semibold">
@@ -1752,16 +1822,24 @@ const ChefMenuCycle = ({
                                                 option.key ===
                                                 selectedVendorKey,
                                             )
+                                          const isNmp = ingredient.ingredientType === 'NMP'
+                                          const nmpPrice = isNmp
+                                            ? getNmpUnitPrice(
+                                                ingredient,
+                                                vendorSelectionKey,
+                                              )
+                                            : undefined
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty
                                               : (ingredient.qty * portionForPreview) /
                                                 basePax
-                                          const unitPrice =
-                                            getIngredientUnitPrice(
-                                              ingredient,
-                                              selectedVendorPrice,
-                                            )
+                                          const unitPrice = isNmp
+                                            ? nmpPrice
+                                            : getIngredientUnitPrice(
+                                                ingredient,
+                                                selectedVendorPrice,
+                                              )
                                           const totalCost =
                                             unitPrice === undefined
                                               ? undefined
@@ -1773,6 +1851,9 @@ const ChefMenuCycle = ({
                                             >
                                               <td className="px-4 py-3 text-sm text-muted">
                                                 {idx + 1}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.ingredientType || '-'}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {ingredient.productCode}
@@ -1790,6 +1871,15 @@ const ChefMenuCycle = ({
                                               </td>
                                               {showIngredientVendorColumn ? (
                                                 <td className="min-w-[21rem] px-4 py-3">
+                                                  {isNmp ? (
+                                                    <input
+                                                      type="text"
+                                                      value="CUSTOM"
+                                                      readOnly
+                                                      aria-readonly="true"
+                                                      className="w-[21rem] rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted shadow-sm outline-none"
+                                                    />
+                                                  ) : (
                                                   <select
                                                     value={selectedVendorKey}
                                                     onChange={(event) => {
@@ -1891,12 +1981,41 @@ const ChefMenuCycle = ({
                                                       ),
                                                     )}
                                                   </select>
+                                                  )}
                                                 </td>
                                               ) : null}
                                               {showIngredientCostColumns ? (
                                                 <>
                                                   <td className="px-4 py-3 font-medium">
-                                                    {formatPrice(unitPrice)}
+                                                    {isNmp ? (
+                                                      <input
+                                                        type="number"
+                                                        min={0}
+                                                        step="any"
+                                                        value={
+                                                          customPriceByIngredientKey[
+                                                            vendorSelectionKey
+                                                          ] ??
+                                                          ''
+                                                        }
+                                                        onChange={(event) =>
+                                                          setCustomPriceByIngredientKey(
+                                                            (prev) => ({
+                                                              ...prev,
+                                                              [vendorSelectionKey]:
+                                                                event.target.value,
+                                                            }),
+                                                          )
+                                                        }
+                                                        onWheel={(event) =>
+                                                          event.currentTarget.blur()
+                                                        }
+                                                        placeholder="Price"
+                                                        className="w-36 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                                      />
+                                                    ) : (
+                                                      formatPrice(unitPrice)
+                                                    )}
                                                   </td>
                                                   <td className="px-4 py-3 font-medium">
                                                     {formatPrice(totalCost)}

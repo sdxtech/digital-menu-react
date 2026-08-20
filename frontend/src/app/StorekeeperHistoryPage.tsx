@@ -14,6 +14,7 @@ import {
 } from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -256,6 +257,7 @@ const StorekeeperHistoryPage = () => {
         'Category',
         'Store Request Status',
         'Portions',
+        'Product Type',
         'Product Code',
         'Ingredient Name',
         'Vendor',

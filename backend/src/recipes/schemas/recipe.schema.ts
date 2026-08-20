@@ -7,6 +7,7 @@ export type RecipeStatus = 'draft' | 'active';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP';
   productCode?: string;
   name?: string;
   unitOfMeasures?: string;
@@ -133,6 +134,7 @@ export class Recipe {
   @Prop({
     type: [
       {
+        ingredientType: { type: String, enum: ['IT', 'NMP'] },
         productCode: { type: String, trim: true },
         name: { type: String, trim: true },
         unitOfMeasures: { type: String, trim: true },

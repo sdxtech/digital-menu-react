@@ -1,4 +1,5 @@
 export type StoreRequestSummaryIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -68,6 +69,9 @@ export const aggregateStoreRequestSummary = (
       }
       if (!existing.productCode && productCode) existing.productCode = productCode
       if (!existing.name && name) existing.name = name
+      if (!existing.ingredientType && item.ingredientType) {
+        existing.ingredientType = item.ingredientType
+      }
       if (!existing.unitOfMeasures && unitOfMeasures) {
         existing.unitOfMeasures = unitOfMeasures
       }
@@ -75,6 +79,7 @@ export const aggregateStoreRequestSummary = (
     }
 
     summaryMap.set(key, {
+      ingredientType: item.ingredientType,
       productCode,
       name,
       unitOfMeasures,

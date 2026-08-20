@@ -104,6 +104,9 @@ export class MenuProductionsController {
       query,
       this.resolveQuerySite(req, query.site),
       this.resolveUnitManagerAssignmentScope(req),
+      req.user.roles?.includes(AppRole.UnitManager) ||
+        (req.user.roles?.includes(AppRole.Superadmin) &&
+          query.approvalStatus === 'pending'),
     );
   }
 

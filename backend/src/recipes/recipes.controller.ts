@@ -99,13 +99,13 @@ export class RecipesController {
   }
 
   @Patch(':id/approve')
-  @Roles(AppRole.UnitManager, AppRole.Superadmin)
+  @Roles(AppRole.UnitManager, AppRole.CorporateChef, AppRole.Superadmin)
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.setApprovalStatus(id, 'approved', this.buildActor(req));
   }
 
   @Patch(':id/reject')
-  @Roles(AppRole.UnitManager, AppRole.Superadmin)
+  @Roles(AppRole.UnitManager, AppRole.CorporateChef, AppRole.Superadmin)
   reject(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -200,10 +200,21 @@ export class RecipesController {
       email: req.user.email,
       roles: req.user.roles,
       site: getUserSiteScope(req.user),
+      sites: req.user.sites,
     };
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (req.user.roles?.includes(AppRole.CorporateChef)) {
+      const assignedSites = (req.user.sites ?? []).map((site) =>
+        site.trim().toLowerCase(),
+      )
+      const requested = requestedSite?.trim()
+      if (requested && assignedSites.includes(requested.toLowerCase())) {
+        return requested
+      }
+      return req.user.site?.trim() || undefined
+    }
     const siteScope = getUserSiteScope(req.user);
     if (siteScope) return siteScope;
     return requestedSite?.trim() || undefined;
