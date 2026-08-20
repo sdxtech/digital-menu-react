@@ -781,7 +781,12 @@ const ChefCreateMenu = ({
     value: IngredientRow[K],
   ) => {
     updateIngredientRow(id, field, value)
-    if ((field === 'productCode' || field === 'name') && typeof value === 'string') {
+    const row = ingredientRows.find((item) => item.id === id)
+    if (
+      row?.ingredientType === 'IT' &&
+      (field === 'productCode' || field === 'name') &&
+      typeof value === 'string'
+    ) {
       scheduleRawMaterialSearch(value, { rowId: id, field })
     }
   }
@@ -1572,6 +1577,7 @@ const ChefCreateMenu = ({
                             )
                           }
                           onFocus={() => {
+                            if (row.ingredientType !== 'IT') return
                             setActiveIngredientDropdownId(row.id)
                             const input = document.activeElement
                             if (input instanceof HTMLElement) {
@@ -1595,7 +1601,9 @@ const ChefCreateMenu = ({
                           {row.name}
                         </div>
                       </div>
-                      {activeIngredientDropdownId === row.id && rawMaterialOptions.length > 0 ? (
+                      {row.ingredientType === 'IT' &&
+                      activeIngredientDropdownId === row.id &&
+                      rawMaterialOptions.length > 0 ? (
                         <div
                           className="fixed z-[100] w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
                           style={
