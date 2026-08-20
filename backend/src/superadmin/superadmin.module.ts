@@ -7,6 +7,7 @@ import { UsersModule } from '../users/users.module';
 import { SuperadminController } from './superadmin.controller';
 import { SuperadminSitesController } from './superadmin-sites.controller';
 import { SuperadminUsersController } from './superadmin-users.controller';
+import { ClientsModule } from '../clients/clients.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { SuperadminUsersController } from './superadmin-users.controller';
     MenuProductionsModule,
     SitesModule,
     UsersModule,
+    ClientsModule,
   ],
   controllers: [
     SuperadminController,

@@ -9,6 +9,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 const ITEMS_PER_PAGE = 10
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -37,7 +38,16 @@ type Recipe = {
   updatedByEmail?: string
   portionSize: number
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   ingredients?: RecipeIngredient[]
 }
 
@@ -402,7 +412,11 @@ const UnitManagerRecipeDataPage = () => {
                         </td>
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
-                        <td className="px-5 py-4">{statusLabel(recipe.status)}</td>
+                        <td className="px-5 py-4">
+                          {recipe.isActive === false
+                            ? 'Disabled'
+                            : statusLabel(recipe.status)}
+                        </td>
                         <td className="px-5 py-4">
                           {getApprovalStatusLabel(recipe.approvalStatus)}
                         </td>
@@ -477,6 +491,48 @@ const UnitManagerRecipeDataPage = () => {
               </p>
             </div>
           </div>
+
+          {selectedRecipe.approvalStatus !== 'approved' &&
+          selectedRecipe.approvalHistory?.length ? (
+            <div className="mt-6 rounded-md border border-border bg-background p-4">
+              <h3 className="font-semibold text-foreground">
+                Approval history
+              </h3>
+              <div className="mt-3 space-y-3">
+                {selectedRecipe.approvalHistory.map((entry, index) => (
+                  <div
+                    key={`${entry.rejectedAt ?? 'rejection'}-${index}`}
+                    className="rounded-md border border-border bg-white p-4 text-sm"
+                  >
+                    <p className="font-semibold text-danger">
+                      Rejection {index + 1}
+                    </p>
+                    <p className="mt-2 text-foreground">
+                      {entry.rejectionReason || 'No rejection note.'}
+                    </p>
+                    <p className="mt-2 text-xs text-muted">
+                      By {formatActorLabel(entry.rejectedByName)} |{' '}
+                      {formatTimestamp(entry.rejectedAt)}
+                    </p>
+                    {entry.resubmissionFeedback?.trim() ? (
+                      <div className="mt-3 rounded-md border border-primary/20 bg-primary-soft p-3">
+                        <p className="font-semibold text-primary">
+                          Chef feedback
+                        </p>
+                        <p className="mt-1 text-foreground">
+                          {entry.resubmissionFeedback}
+                        </p>
+                        <p className="mt-2 text-xs text-muted">
+                          By {formatActorLabel(entry.resubmittedByName)} |{' '}
+                          {formatTimestamp(entry.resubmittedAt)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-6">
             <h3 className="font-semibold text-foreground">Ingredients</h3>

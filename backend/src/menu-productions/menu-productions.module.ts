@@ -14,6 +14,7 @@ import {
 import { MenuProductionsController } from './menu-productions.controller';
 import { MenuProductionsService } from './menu-productions.service';
 import { NotificationsModule } from '../notifications/notifications.module'; // 🌟 ADDED IMPORT
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { NotificationsModule } from '../notifications/notifications.module'; // 
     AuthModule,
     UsersModule,
     NotificationsModule, // 🌟 ADDED TO IMPORTS ARRAY
+    MailModule,
   ],
   controllers: [MenuProductionsController],
   providers: [MenuProductionsService],

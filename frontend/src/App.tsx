@@ -19,7 +19,11 @@ import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductionRecordsPage'
 import UnitManagerPage from './app/UnitManagerPage'
+import CorporateChefLayout from './app/CorporateChefLayout'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
+import AdminSiteLayout from './app/AdminSiteLayout'
+import AdminSiteMenuProductionPage from './app/AdminSiteMenuProductionPage'
+import AdminSiteMenuProductionHistoryPage from './app/AdminSiteMenuProductionHistoryPage'
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminApprovalCentersPage from './app/SuperadminApprovalCentersPage'
 import SuperadminDashboardPage from './app/SuperadminDashboardPage'
@@ -28,6 +32,7 @@ import SuperadminMenuManagementPage, {
 } from './app/SuperadminMenuManagementPage'
 import SuperadminSitesPage from './app/SuperadminSitesPage'
 import SuperadminUsersPage from './app/SuperadminUsersPage'
+import SuperadminClientManagementPage from './app/SuperadminClientManagementPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 import SuperadminStoreRequestPage from './app/SuperadminStoreRequestPage'
 import { useRouteDocumentTitle } from './lib/document-title'
@@ -163,6 +168,28 @@ function App() {
           </Route>
         </Route>
 
+        <Route element={<RequireRole role="corporate-chef" />}>
+          <Route path="/corporate-chef" element={<CorporateChefLayout />}>
+            <Route
+              index
+              element={<SuperadminApprovalCentersPage corporateOnly />}
+            />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="security" element={<SecurityView />} />
+            <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
+          </Route>
+        </Route>
+
+        <Route element={<RequireRole role="admin-site" />}>
+          <Route path="/admin-site" element={<AdminSiteLayout />}>
+            <Route index element={<Navigate to="menu-productions" replace />} />
+            <Route path="menu-productions" element={<AdminSiteMenuProductionPage />} />
+            <Route path="menu-production-history" element={<AdminSiteMenuProductionHistoryPage />} />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="security" element={<SecurityView />} />
+          </Route>
+        </Route>
+
         {/* STOREKEEPER SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="storekeeper" />}>
           <Route path="/storekeeper" element={<StorekeeperLayout />}>
@@ -187,6 +214,7 @@ function App() {
             
             <Route path="users" element={<SuperadminUsersPage />} />
             <Route path="sites" element={<SuperadminSitesPage />} />
+            <Route path="clients" element={<SuperadminClientManagementPage />} />
             <Route path="unit-of-measures" element={<SuperadminUnitOfMeasuresPage />} />
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
             <Route

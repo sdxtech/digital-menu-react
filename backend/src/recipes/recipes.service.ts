@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -28,6 +30,7 @@ import { UsersService } from '../users/users.service';
 import { AppRole } from '../auth/roles.constants';
 import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WorkflowMailService } from '../mail/workflow-mail.service';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -36,6 +39,7 @@ type RecipeActor = {
   name?: string;
   email?: string;
   site?: string;
+  sites?: string[];
   roles?: AppRole[];
 };
 
@@ -170,6 +174,8 @@ const RECIPE_CODE_COUNTER_KEY = 'recipe_code';
 
 @Injectable()
 export class RecipesService {
+  private readonly logger = new Logger(RecipesService.name);
+
   constructor(
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
@@ -180,9 +186,23 @@ export class RecipesService {
     private readonly sites: SitesService,
     private readonly unitOfMeasures: UnitOfMeasuresService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED
+    private readonly workflowMail: WorkflowMailService,
   ) {}
 
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
+    const normalizedName = input.name.trim();
+    if (!input.baseRecipeId) {
+      const duplicate = await this.recipeModel.exists({
+        deletedAt: { $exists: false },
+        name: new RegExp(`^${this.escapeRegExp(normalizedName)}$`, 'i'),
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          'A recipe with this name already exists. Please use a different name.',
+        );
+      }
+    }
+
     const ingredients = await this.applyIngredientUomConversions(
       this.normalizeIngredients(input.ingredients),
     );
@@ -237,21 +257,39 @@ export class RecipesService {
     // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
     if (!isSuperadminActor) {
       try {
-        await this.notificationsService.createHierarchicalNotification(
-          actor?.id || 'system',
-          'New Recipe Pending Approval',
-          `A new recipe "${saved.name}" V${saved.version ?? versionMetadata.version} has been submitted by the Chef and requires review.`,
-          saved.site || 'global',
-          'unit.manager',
-          'RECIPE_APPROVAL_REQUESTS',
-          { recipeId: saved._id?.toString() },
-        );
+        for (const targetRole of ['unit.manager', 'corporate-chef'] as const) {
+          await this.notificationsService.createHierarchicalNotification(
+            actor?.id || 'system',
+            'New Recipe Pending Approval',
+            `A new recipe "${saved.name}" V${saved.version ?? versionMetadata.version} has been submitted by the Chef and requires review.`,
+            saved.site || 'global',
+            targetRole,
+            'RECIPE_APPROVAL_REQUESTS',
+            { recipeId: saved._id?.toString() },
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
           `Unit Manager recipe creation notification failed: ${message}`,
         );
       }
+
+      void this.workflowMail
+        .notifyRecipeSubmitted({
+          id: saved._id.toString(),
+          name: saved.name,
+          recipeCode: saved.recipeCode,
+          version: saved.version,
+          site: saved.site,
+          createdBy: saved.createdBy,
+          createdByEmail: saved.createdByEmail,
+        })
+        .catch((error) =>
+          this.logger.error(
+            `Recipe submission email failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
     }
 
     // 3. Return the saved document exactly as the old code did
@@ -416,7 +454,7 @@ export class RecipesService {
         _id: id,
         ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
-      actor?.site,
+      this.isCorporateChefActor(actor) ? actor?.sites : actor?.site,
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
     const reviewedFields = this.buildActorFields(actor, 'reviewed');
@@ -445,6 +483,17 @@ export class RecipesService {
         ...(status === 'rejected' ? { rejectionReason: reason } : {}),
       },
     };
+    if (status === 'rejected') {
+      updatePayload.$push = {
+        approvalHistory: {
+          rejectionReason: reason,
+          rejectedBy: actor?.id,
+          rejectedByName: actor?.name,
+          rejectedByEmail: actor?.email,
+          rejectedAt: new Date(),
+        },
+      };
+    }
     if (status === 'approved') {
       updatePayload.$unset = { rejectionReason: '' };
     }
@@ -453,13 +502,18 @@ export class RecipesService {
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
 
-    // 🚀 INJECTED: Trigger real-time notification to the Store Keeper ONLY upon successful approval
+    // 🚀 INJECTED: Trigger real-time notification upon successful approval
     if (status === 'approved') {
       try {
+        const reviewerLabel = this.isSuperadminActor(actor)
+          ? 'Superadmin'
+          : this.isCorporateChefActor(actor)
+            ? 'Corporate Chef'
+            : 'Unit Manager';
         await this.notificationsService.createHierarchicalNotification(
           actor?.id || 'system',
           'New Recipe Approved',
-          `The recipe "${updated.name}" has been approved by the Unit Manager and is ready for raw material staging.`,
+          `The recipe "${updated.name}" has been approved by the ${reviewerLabel} and is ready for raw material staging.`,
           updated.site || 'global',
           'chef', // target role is chef
           'RECIPE_DATA_BANK',
@@ -469,6 +523,28 @@ export class RecipesService {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`chef recipe approval notification failed: ${message}`);
       }
+    }
+
+    if (status !== 'pending') {
+      void this.workflowMail
+        .notifyRecipeDecision(
+          {
+            id: String(updated._id),
+            name: updated.name,
+            recipeCode: updated.recipeCode,
+            version: updated.version,
+            site: updated.site,
+            createdBy: updated.createdBy,
+            createdByEmail: updated.createdByEmail,
+          },
+          status,
+          reason,
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Recipe decision email failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
     }
 
     return updated;
@@ -560,7 +636,18 @@ export class RecipesService {
     };
   }
 
-  async resubmitRejectedRecipe(id: string, actor?: RecipeActor) {
+  async resubmitRejectedRecipe(
+    id: string,
+    actor?: RecipeActor,
+    feedback?: string,
+  ) {
+    const trimmedFeedback = feedback?.trim();
+    if (!trimmedFeedback) {
+      throw new BadRequestException(
+        'Resubmission feedback is required.',
+      );
+    }
+
     const existing = await this.recipeModel
       .findOne(this.withSiteFilter({ _id: id }, actor?.site))
       .lean();
@@ -572,26 +659,56 @@ export class RecipesService {
     }
 
     const updatedFields = this.buildActorFields(actor, 'updated');
+    const approvalHistory = existing.approvalHistory ?? [];
+    const lastHistoryIndex = approvalHistory.length - 1;
+    const updatePayload: Record<string, unknown> = {
+      $set: {
+        approvalStatus: 'pending',
+        status: 'draft',
+        ...updatedFields,
+      },
+      $unset: {
+        rejectionReason: '',
+        reviewedBy: '',
+        reviewedByName: '',
+        reviewedByEmail: '',
+        reviewedAt: '',
+      },
+    };
+
+    if (lastHistoryIndex >= 0) {
+      Object.assign(updatePayload.$set as Record<string, unknown>, {
+        [`approvalHistory.${lastHistoryIndex}.resubmissionFeedback`]:
+          trimmedFeedback,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedBy`]: actor?.id,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedByName`]: actor?.name,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedByEmail`]: actor?.email,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedAt`]: new Date(),
+      });
+    } else {
+      updatePayload.$push = {
+        approvalHistory: {
+          rejectionReason: existing.rejectionReason?.trim() || 'Rejected',
+          rejectedBy: existing.reviewedBy,
+          rejectedByName: existing.reviewedByName,
+          rejectedByEmail: existing.reviewedByEmail,
+          rejectedAt: existing.reviewedAt ?? new Date(),
+          resubmissionFeedback: trimmedFeedback,
+          resubmittedBy: actor?.id,
+          resubmittedByName: actor?.name,
+          resubmittedByEmail: actor?.email,
+          resubmittedAt: new Date(),
+        },
+      };
+    }
+
     const updated = await this.recipeModel
       .findOneAndUpdate(
         this.withSiteFilter(
           { _id: id, approvalStatus: 'rejected' },
           actor?.site,
         ),
-        {
-          $set: {
-            approvalStatus: 'pending',
-            status: 'draft',
-            ...updatedFields,
-          },
-          $unset: {
-            rejectionReason: '',
-            reviewedBy: '',
-            reviewedByName: '',
-            reviewedByEmail: '',
-            reviewedAt: '',
-          },
-        },
+        updatePayload,
         { new: true },
       )
       .lean();
@@ -613,6 +730,25 @@ export class RecipesService {
       // Catch layout errors cleanly so the core recipe submission state doesn't crash if database updates experience lag
       console.error(`Manager recipe notification failed: ${message}`);
     }
+
+    void this.workflowMail
+      .notifyRecipeSubmitted(
+        {
+          id: String(updated._id),
+          name: updated.name,
+          recipeCode: updated.recipeCode,
+          version: updated.version,
+          site: updated.site,
+          createdBy: updated.createdBy,
+          createdByEmail: updated.createdByEmail,
+        },
+        true,
+      )
+      .catch((error) =>
+        this.logger.error(
+          `Recipe resubmission email failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
 
     return updated;
   }
@@ -1505,6 +1641,7 @@ export class RecipesService {
   private normalizeIngredients(
     input?: Array<{
       productCode: string;
+      ingredientType?: 'IT' | 'NMP';
       name: string;
       unitOfMeasures: string;
       qty: number;
@@ -1531,7 +1668,9 @@ export class RecipesService {
       const srUomCode = item.srUomCode?.trim();
       const conversionId = item.conversionId?.trim();
       return {
-        productCode: item.productCode.trim(),
+        ...(item.ingredientType ? { ingredientType: item.ingredientType } : {}),
+        productCode:
+          item.ingredientType === 'NMP' ? 'NMP' : item.productCode.trim(),
         name: item.name.trim(),
         unitOfMeasures: item.unitOfMeasures.trim(),
         qty: item.qty,
@@ -1606,10 +1745,13 @@ export class RecipesService {
         continue;
       }
 
-      const rawMaterial = await this.resolveRawMaterial(
-        ingredient.productCode?.trim() ?? '',
-        rawMaterialCache,
-      );
+      const rawMaterial =
+        ingredient.ingredientType === 'NMP'
+          ? null
+          : await this.resolveRawMaterial(
+              ingredient.productCode?.trim() ?? '',
+              rawMaterialCache,
+            );
       const specificIngredient = this.applySpecificIngredientConversion(
         ingredient,
         rawMaterial,
@@ -1997,6 +2139,10 @@ export class RecipesService {
     return actor?.roles?.includes(AppRole.Superadmin) ?? false;
   }
 
+  private isCorporateChefActor(actor?: RecipeActor) {
+    return actor?.roles?.includes(AppRole.CorporateChef) ?? false;
+  }
+
   private async attachActorNames(items: RecipeAuditFields[]): Promise<void> {
     const ids = new Set<string>();
     items.forEach((item) => {
@@ -2059,7 +2205,11 @@ export class RecipesService {
     return trimmed ? trimmed : undefined;
   }
 
-  private buildSiteFilter(site?: string) {
+  private buildSiteFilter(site?: string | string[]) {
+    if (Array.isArray(site)) {
+      const sites = site.map((item) => this.normalizeSite(item)).filter(Boolean)
+      return sites.length ? { site: { $in: sites } } : {}
+    }
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
     return { site: normalizedSite };
@@ -2080,7 +2230,10 @@ export class RecipesService {
     };
   }
 
-  private withSiteFilter(filter: Record<string, unknown>, site?: string) {
+  private withSiteFilter(
+    filter: Record<string, unknown>,
+    site?: string | string[],
+  ) {
     const siteFilter = this.buildSiteFilter(site);
     if (!Object.keys(siteFilter).length) return filter;
     if ('$or' in siteFilter) {

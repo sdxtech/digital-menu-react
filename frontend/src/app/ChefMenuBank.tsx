@@ -11,6 +11,7 @@ const ITEMS_PER_PAGE = 10
 const RECIPE_NOTIFICATION_COMPONENT_KEY = 'RECIPE_DATA_BANK'
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -41,12 +42,21 @@ type Recipe = {
   price: number
   portionSize: number
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: 'pending' | 'approved' | 'rejected'
   reviewedBy?: string
   reviewedByName?: string
   reviewedByEmail?: string
   reviewedAt?: string
   rejectionReason?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   ingredients: RecipeIngredient[]
 }
 
@@ -403,6 +413,7 @@ const ChefMenuBank = () => {
           portionSize: recipe.portionSize,
           approvalStatus: recipe.approvalStatus,
           rejectionReason: recipe.rejectionReason ?? '',
+          approvalHistory: recipe.approvalHistory ?? [],
           reviewedByName: recipe.reviewedByName ?? '',
           reviewedByEmail: recipe.reviewedByEmail ?? '',
           reviewedBy: recipe.reviewedBy ?? '',
@@ -917,7 +928,11 @@ const ChefMenuBank = () => {
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
-                          <span>{statusLabel(recipe.status)}</span>
+                          <span>
+                            {recipe.isActive === false
+                              ? 'Disabled'
+                              : statusLabel(recipe.status)}
+                          </span>
                         </td>
                         <td className="px-5 py-4">
                           <span
@@ -1056,11 +1071,42 @@ const ChefMenuBank = () => {
             </div>
           </div>
 
-          {selectedRecipe.approvalStatus === 'rejected' ? (
+          {selectedRecipe.approvalStatus !== 'approved' &&
+          selectedRecipe.approvalHistory?.length ? (
+            <div className="mt-4 rounded-md border border-border bg-background p-4 text-sm">
+              <p className="font-semibold text-foreground">Approval history</p>
+              <div className="mt-3 space-y-3">
+                {selectedRecipe.approvalHistory.map((entry, index) => (
+                  <div
+                    key={`${entry.rejectedAt ?? 'rejection'}-${index}`}
+                    className="rounded-md border border-border bg-white p-3"
+                  >
+                    <p className="font-semibold text-danger">
+                      Rejection {index + 1}
+                    </p>
+                    <p className="mt-1 text-foreground">
+                      {entry.rejectionReason || 'No rejection note.'}
+                    </p>
+                    {entry.resubmissionFeedback?.trim() ? (
+                      <div className="mt-3 rounded-md border border-primary/20 bg-primary-soft p-3">
+                        <p className="font-semibold text-primary">Chef feedback</p>
+                        <p className="mt-1 text-foreground">
+                          {entry.resubmissionFeedback}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              {selectedRecipe.approvalStatus === 'rejected' ? (
+                <p className="mt-3 text-xs text-muted">
+                  Latest review by {reviewedByLabel} | {reviewedAtLabel}
+                </p>
+              ) : null}
+            </div>
+          ) : selectedRecipe.approvalStatus === 'rejected' ? (
             <div className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-4 text-sm">
-              <p className="font-semibold text-danger">
-                Rejected by Unit Manager
-              </p>
+              <p className="font-semibold text-danger">Rejected by Unit Manager</p>
               <p className="mt-2 text-foreground">
                 {selectedRecipe.rejectionReason?.trim() ||
                   'No rejection reason was provided.'}
@@ -1086,6 +1132,7 @@ const ChefMenuBank = () => {
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                       <th className="w-16 px-4 py-3 font-semibold">No</th>
+                      <th className="px-4 py-3 font-semibold">Type</th>
                       <th className="px-4 py-3 font-semibold">Product code</th>
                       <th className="px-4 py-3 font-semibold">Ingredient name</th>
                       <th className="px-4 py-3 font-semibold">Qty</th>
@@ -1113,6 +1160,9 @@ const ChefMenuBank = () => {
                               className={`px-4 py-3 text-sm ${rowHighlightClass} ${missingFields.length > 0 ? 'font-semibold text-danger' : 'text-muted'}`}
                             >
                               {idx + 1}
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              {ingredient.ingredientType || '-'}
                             </td>
                             <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
                               {missingProductCode ? (

@@ -31,6 +31,7 @@ type SiteOption = {
 }
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode?: string
   name?: string
   unitOfMeasures?: string
@@ -51,7 +52,12 @@ type Recipe = {
   createdBy?: string
   createdByName?: string
   createdByEmail?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    resubmissionFeedback?: string
+  }>
   status: 'draft' | 'active'
+  isActive?: boolean
   approvalStatus: ApprovalStatus
 }
 
@@ -78,6 +84,7 @@ type StoreRequestMenu = {
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
   reviewedBy?: string
+  salesInputBy?: string
 }
 
 type StoreRequestGroup = {
@@ -149,8 +156,8 @@ const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
   return names.length ? names.join(', ') : '-'
 }
 
-const SuperadminApprovalCentersPage = () => {
-  const { accessToken } = useAuth()
+const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
+  const { accessToken, user, updateUser } = useAuth()
   const [searchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
@@ -158,7 +165,9 @@ const SuperadminApprovalCentersPage = () => {
   const [activeSection, setActiveSection] = useState<ApprovalSection>(() =>
     isApprovalSection(sectionParam) ? sectionParam : 'recipes',
   )
-  const [approvalFilter, setApprovalFilter] = useState<'' | ApprovalStatus>('')
+  const [approvalFilter, setApprovalFilter] = useState<'' | ApprovalStatus>(
+    corporateOnly ? 'pending' : '',
+  )
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
@@ -173,9 +182,35 @@ const SuperadminApprovalCentersPage = () => {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (!corporateOnly || !accessToken) return
+    apiFetch<{
+      sites?: string[]
+      siteOptions?: Array<{ code: string; name: string }>
+    }>('/auth/me', undefined, accessToken)
+      .then((data) => {
+        if (data.sites?.length) {
+          updateUser({ sites: data.sites, siteOptions: data.siteOptions })
+        }
+      })
+      .catch(() => null)
+  }, [accessToken, corporateOnly, updateUser])
+
   const fetchSites = useCallback(async () => {
     if (!accessToken) {
       setSiteOptions([])
+      return
+    }
+
+    if (corporateOnly) {
+      const assigned = Array.from(
+        new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
+      ).map((code) => ({
+        code,
+        name: user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
+      }))
+      setSiteOptions(assigned)
+      setSelectedSite((current) => current || assigned[0]?.code || '')
       return
     }
 
@@ -194,7 +229,7 @@ const SuperadminApprovalCentersPage = () => {
     } catch {
       setSiteOptions([])
     }
-  }, [accessToken])
+  }, [accessToken, corporateOnly, user?.site, user?.siteOptions, user?.sites])
 
   const fetchApprovals = useCallback(async () => {
     if (!accessToken) {
@@ -221,18 +256,18 @@ const SuperadminApprovalCentersPage = () => {
       menuParams.set('site', selectedSite)
       if (approvalFilter) menuParams.set('approvalStatus', approvalFilter)
 
-      const [recipesData, menusData] = await Promise.all([
-        apiFetch<{ items?: Recipe[] }>(
-          `/recipes?${recipeParams.toString()}`,
-          undefined,
-          accessToken,
-        ),
-        apiFetch<{ items?: StoreRequestGroup[] }>(
-          `/menu-productions/store-requests?${menuParams.toString()}`,
-          undefined,
-          accessToken,
-        ),
-      ])
+      const recipesData = await apiFetch<{ items?: Recipe[] }>(
+        `/recipes?${recipeParams.toString()}`,
+        undefined,
+        accessToken,
+      )
+      const menusData = corporateOnly
+        ? { items: [] as StoreRequestGroup[] }
+        : await apiFetch<{ items?: StoreRequestGroup[] }>(
+            `/menu-productions/store-requests?${menuParams.toString()}`,
+            undefined,
+            accessToken,
+          )
 
       setRecipes(recipesData.items ?? [])
       setMenuGroups(
@@ -251,7 +286,7 @@ const SuperadminApprovalCentersPage = () => {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, approvalFilter, selectedSite])
+  }, [accessToken, approvalFilter, corporateOnly, selectedSite])
 
   useEffect(() => {
     fetchSites().catch(() => null)
@@ -262,11 +297,15 @@ const SuperadminApprovalCentersPage = () => {
   }, [fetchApprovals])
 
   useEffect(() => {
-    const nextSection = isApprovalSection(sectionParam) ? sectionParam : 'recipes'
+    const nextSection = corporateOnly
+      ? 'recipes'
+      : isApprovalSection(sectionParam)
+        ? sectionParam
+        : 'recipes'
     setActiveSection((current) =>
       current === nextSection ? current : nextSection,
     )
-  }, [sectionParam])
+  }, [corporateOnly, sectionParam])
 
   useEffect(() => {
     setRecipePage(1)
@@ -368,7 +407,7 @@ const SuperadminApprovalCentersPage = () => {
       setOverrideError(
         caught instanceof Error
           ? caught.message
-          : `Failed to force ${action} recipe.`,
+          : `Failed to ${action} recipe.`,
       )
     } finally {
       setProcessingKey(null)
@@ -473,7 +512,7 @@ const SuperadminApprovalCentersPage = () => {
               <option value="">Select site</option>
               {siteOptions.map((site) => (
                 <option key={site.code} value={site.code}>
-                  {site.name ? `${site.name} (${site.code})` : site.code}
+                  {site.name || site.code}
                 </option>
               ))}
             </select>
@@ -489,7 +528,7 @@ const SuperadminApprovalCentersPage = () => {
               }
               className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             >
-              <option value="">All status</option>
+              <option value="">{corporateOnly ? 'All status' : 'All status'}</option>
               <option value="pending">Submitted</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
@@ -552,6 +591,9 @@ const SuperadminApprovalCentersPage = () => {
                     const recipeKey = getRecipeKey(recipe)
                     const isExpanded = expandedRecipes.includes(recipeKey)
                     const ingredients = recipe.ingredients ?? []
+                    const canReviewRecipe = corporateOnly
+                      ? recipe.approvalStatus === 'pending'
+                      : true
                     return (
                       <Fragment key={recipeKey}>
                         <tr className="border-t border-border">
@@ -567,7 +609,11 @@ const SuperadminApprovalCentersPage = () => {
                           </td>
                           <td className="px-5 py-4">{recipe.category || '-'}</td>
                           <td className="px-5 py-4">
-                            {recipe.status === 'active' ? 'Active' : 'Draft'}
+                            {recipe.isActive === false
+                              ? 'Disabled'
+                              : recipe.status === 'active'
+                                ? 'Active'
+                                : 'Draft'}
                           </td>
                           <td className="px-5 py-4">
                             <span
@@ -587,30 +633,43 @@ const SuperadminApprovalCentersPage = () => {
                               >
                                 {isExpanded ? 'Hide details' : 'View details'}
                               </button>
-                              <select
-                                value=""
-                                onChange={(event) => {
-                                  const nextStatus = event.target.value as
-                                    | ApprovalStatus
-                                    | ''
-                                  if (!nextStatus) return
-                                  openOverrideAction({
-                                    kind: 'recipe',
-                                    recipe,
-                                    nextStatus,
-                                  })
-                                }}
-                                disabled={processingKey === recipeKey}
-                                className="h-8 w-36 rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <option value="">Select action</option>
-                                {recipe.approvalStatus !== 'approved' ? (
-                                  <option value="approved">Force approve</option>
-                                ) : null}
-                                {recipe.approvalStatus !== 'rejected' ? (
-                                  <option value="rejected">Force reject</option>
-                                ) : null}
-                              </select>
+                              {canReviewRecipe && recipe.approvalStatus !== 'approved' ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                    corporateOnly
+                                      ? void updateRecipeApproval({
+                                          recipe,
+                                          nextStatus: 'approved',
+                                        })
+                                      : openOverrideAction({
+                                          kind: 'recipe',
+                                          recipe,
+                                          nextStatus: 'approved',
+                                        })
+                                  }
+                                  disabled={processingKey === recipeKey}
+                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                                >
+                                  Approve
+                                </button>
+                              ) : null}
+                              {canReviewRecipe && recipe.approvalStatus !== 'rejected' ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openOverrideAction({
+                                      kind: 'recipe',
+                                      recipe,
+                                      nextStatus: 'rejected',
+                                    })
+                                  }
+                                  disabled={processingKey === recipeKey}
+                                  className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger disabled:opacity-60"
+                                >
+                                  Reject
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -620,7 +679,15 @@ const SuperadminApprovalCentersPage = () => {
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
                                   <p className="text-xs text-muted">Recipe details</p>
-                                  <p className="mt-2 text-sm text-foreground">
+                                  <div className="mt-3 h-40 overflow-hidden rounded-md border border-border bg-background">
+                                    {recipe.imageUrl ? (
+                                      <img src={recipe.imageUrl} alt={`${recipe.name} photo`} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center text-xs text-muted">No photo</div>
+                                    )}
+                                  </div>
+                                  <p className="mt-3 text-xs text-muted">Description</p>
+                                  <p className="mt-1 text-sm text-foreground">
                                     {recipe.description?.trim() || 'No description.'}
                                   </p>
                                   <p className="mt-3 text-xs text-muted">
@@ -632,6 +699,25 @@ const SuperadminApprovalCentersPage = () => {
                                       recipe.createdBy?.trim() ||
                                       '-'}
                                   </p>
+                                  {recipe.approvalHistory?.length ? (
+                                    <div className="mt-4 border-t border-border pt-4">
+                                      <p className="text-xs font-semibold text-foreground">Approval history</p>
+                                      <div className="mt-2 space-y-2">
+                                        {recipe.approvalHistory.map((entry, historyIndex) => (
+                                          <div key={historyIndex} className="rounded-md border border-border bg-background p-3 text-xs">
+                                            <p className="font-semibold text-danger">Rejection {historyIndex + 1}</p>
+                                            <p className="mt-1">{entry.rejectionReason || 'No rejection note.'}</p>
+                                            {entry.resubmissionFeedback?.trim() ? (
+                                              <div className="mt-2 rounded-md border border-primary/20 bg-primary-soft p-2">
+                                                <p className="font-semibold text-primary">Chef feedback</p>
+                                                <p className="mt-1">{entry.resubmissionFeedback}</p>
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : null}
                                 </div>
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-8">
                                   <p className="text-xs text-muted">Ingredients</p>
@@ -730,6 +816,7 @@ const SuperadminApprovalCentersPage = () => {
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
                   <th className="px-5 py-4 font-semibold">Chef</th>
+                  <th className="px-5 py-4 font-semibold">Admin</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">
                     Store request status
@@ -740,13 +827,13 @@ const SuperadminApprovalCentersPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading approval data...
                     </td>
                   </tr>
                 ) : menuGroups.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {selectedSite
                         ? 'No production batches found.'
                         : 'Select a site first.'}
@@ -791,6 +878,9 @@ const SuperadminApprovalCentersPage = () => {
                           </td>
                           <td className="px-5 py-4">
                             {getSubmittedByLabel(group.items)}
+                          </td>
+                          <td className="px-5 py-4">
+                            {group.items[0]?.salesInputBy ?? '-'}
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -865,7 +955,7 @@ const SuperadminApprovalCentersPage = () => {
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={7} className="px-5 py-5">
+                            <td colSpan={8} className="px-5 py-5">
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-6">
                                   <p className="text-xs text-muted">Menu list</p>
@@ -1012,13 +1102,22 @@ const SuperadminApprovalCentersPage = () => {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs text-muted">
-                  {overrideAction.kind === 'recipe'
-                    ? 'Recipe approval override'
-                    : 'Menu production approval override'}
+                  {corporateOnly
+                    ? 'Recipe approval'
+                    : overrideAction.kind === 'recipe'
+                      ? 'Recipe approval override'
+                      : 'Menu production approval override'}
                 </p>
                 <h2 className="mt-1 text-lg font-semibold text-foreground">
-                  Force{' '}
-                  {overrideAction.nextStatus === 'approved' ? 'approve' : 'reject'}
+                  {corporateOnly
+                    ? overrideAction.nextStatus === 'approved'
+                      ? 'Approve'
+                      : 'Reject'
+                    : `Force ${
+                        overrideAction.nextStatus === 'approved'
+                          ? 'approve'
+                          : 'reject'
+                      }`}
                 </h2>
                 <p className="mt-2 text-sm text-muted">
                   {getOverrideActionLabel(overrideAction)}
@@ -1063,9 +1162,11 @@ const SuperadminApprovalCentersPage = () => {
             </div>
 
             <div className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
-              {overrideAction.kind === 'recipe'
-                ? 'This changes the recipe approval state outside the normal Unit Manager review flow.'
-                : 'This changes production menu approval outside the normal Unit Manager review flow and resets related store request or actual qty data for affected menus.'}
+              {corporateOnly
+                ? 'This follows the normal recipe review flow used by the Unit Manager.'
+                : overrideAction.kind === 'recipe'
+                  ? 'This changes the recipe approval state outside the normal Unit Manager review flow.'
+                  : 'This changes production menu approval outside the normal Unit Manager review flow and resets related store request or actual qty data for affected menus.'}
             </div>
 
             {overrideAction.kind === 'recipe' &&
@@ -1082,7 +1183,11 @@ const SuperadminApprovalCentersPage = () => {
                   }}
                   rows={4}
                   maxLength={500}
-                  placeholder="Explain why this recipe approval is being overridden."
+                  placeholder={
+                    corporateOnly
+                      ? 'Explain why this recipe is rejected.'
+                      : 'Explain why this recipe approval is being overridden.'
+                  }
                   className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                 />
                 <p className="mt-2 text-xs text-muted">
@@ -1118,9 +1223,13 @@ const SuperadminApprovalCentersPage = () => {
               >
                 {processingKey
                   ? 'Saving...'
-                  : overrideAction.nextStatus === 'approved'
-                    ? 'Confirm approve'
-                    : 'Confirm reject'}
+                  : corporateOnly
+                    ? overrideAction.nextStatus === 'approved'
+                      ? 'Approve'
+                      : 'Reject'
+                    : overrideAction.nextStatus === 'approved'
+                      ? 'Confirm approve'
+                      : 'Confirm reject'}
               </button>
             </div>
           </div>

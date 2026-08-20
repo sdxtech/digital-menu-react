@@ -6,10 +6,7 @@ import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
-import {
-  aggregateStoreRequestSummary,
-  aggregateStoreRequestSummaryByVendor,
-} from '../lib/store-request-summary'
+import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
@@ -25,6 +22,7 @@ const MENU_GROUP_ITEMS_PER_PAGE = 10
 type ApprovalCenterSection = 'recipes' | 'menu-productions'
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode?: string
   name?: string
   unitOfMeasures?: string
@@ -44,11 +42,20 @@ type Recipe = {
   createdBy?: string
   createdByName?: string
   createdByEmail?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   status: 'draft' | 'active'
   approvalStatus: 'pending' | 'approved' | 'rejected'
 }
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -67,11 +74,16 @@ type StoreRequestMenu = {
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   cost?: number
   estimatedCost?: number
   estimatedCostPerPax?: number
+  sellingPricePerPax?: number
+  sellingQuantity?: number
+  estimatedRevenue?: number
+  salesInputBy?: string
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
@@ -116,10 +128,17 @@ const formatPrice = (value?: number) => {
   }).format(value)
 }
 
-const UnitManagerPage = () => {
-  const { accessToken, user } = useAuth()
-  const [searchParams] = useSearchParams()
+const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
+  const { accessToken, user, updateUser } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
+  const requestedSite = searchParams.get('site')
+  const assignedSites = corporateOnly
+    ? Array.from(new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]))
+    : []
+  const selectedSite =
+    assignedSites.find((site) => site.toLowerCase() === requestedSite?.toLowerCase()) ??
+    assignedSites[0]
   const {
     approveRecipe,
     rejectRecipe,
@@ -151,22 +170,38 @@ const UnitManagerPage = () => {
     isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
   )
 
+  useEffect(() => {
+    if (!corporateOnly || !accessToken) return
+    apiFetch<{
+      sites?: string[]
+      siteOptions?: Array<{ code: string; name: string }>
+    }>('/auth/me', undefined, accessToken)
+      .then((data) => {
+        if (data.sites?.length) {
+          updateUser({ sites: data.sites, siteOptions: data.siteOptions })
+        }
+      })
+      .catch(() => null)
+  }, [accessToken, corporateOnly, updateUser])
+
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
     if (!accessToken) return
     try {
-      const [recipesData, menusData] = await Promise.all([
-        apiFetch<{ items: Recipe[] }>(
-          '/recipes?approvalStatus=pending&limit=50',
-          undefined,
-          accessToken,
-        ),
-        apiFetch<{ items: StoreRequestGroup[] }>(
-          '/menu-productions/store-requests?approvalStatus=pending',
-          undefined,
-          accessToken,
-        ),
-      ])
+      const recipeParams = new URLSearchParams({ approvalStatus: 'pending', limit: '50' })
+      if (corporateOnly && selectedSite) recipeParams.set('site', selectedSite)
+      const recipesData = await apiFetch<{ items: Recipe[] }>(
+        `/recipes?${recipeParams.toString()}`,
+        undefined,
+        accessToken,
+      )
+      const menusData = corporateOnly
+        ? { items: [] as StoreRequestGroup[] }
+        : await apiFetch<{ items: StoreRequestGroup[] }>(
+            '/menu-productions/store-requests?approvalStatus=pending',
+            undefined,
+            accessToken,
+          )
       setPendingRecipes(recipesData.items ?? [])
       const sortedGroups = [...(menusData.items ?? [])].sort((a, b) =>
         a.date.localeCompare(b.date),
@@ -177,7 +212,7 @@ const UnitManagerPage = () => {
         error instanceof Error ? error.message : 'Failed to load approvals.'
       setActionError(message)
     }
-  }, [accessToken])
+  }, [accessToken, corporateOnly, selectedSite])
 
   useEffect(() => {
     setActionError('')
@@ -186,13 +221,15 @@ const UnitManagerPage = () => {
   }, [fetchPending])
 
   useEffect(() => {
-    const nextSection = isApprovalCenterSection(sectionParam)
+    const nextSection = corporateOnly
+      ? 'recipes'
+      : isApprovalCenterSection(sectionParam)
       ? sectionParam
       : 'recipes'
     setActiveSection((current) =>
       current === nextSection ? current : nextSection,
     )
-  }, [sectionParam])
+  }, [corporateOnly, sectionParam])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -258,13 +295,15 @@ const UnitManagerPage = () => {
       [
         'No',
         'Production Date',
+        'Client Name',
         'Production Code',
         'Menu Name',
         'Version',
         'Recipe Code',
         'Category',
         'Portion',
-        'IT Code',
+        'Product Type',
+        'Product Code',
         'Ingredient Name',
         'Vendor',
         'QTY',
@@ -279,6 +318,7 @@ const UnitManagerPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -299,12 +339,14 @@ const UnitManagerPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(menu.productionDate ?? group.date),
+          menu.clientName ?? '',
           menu.productionCode ?? group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
+          ingredient.ingredientType ?? '',
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
@@ -316,8 +358,10 @@ const UnitManagerPage = () => {
     })
 
     const summaryRows: SpreadsheetCell[][] = [
-      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ['Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
       ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
+        group.items[0]?.clientName ?? '',
+        item.ingredientType ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',
@@ -484,8 +528,31 @@ const UnitManagerPage = () => {
         <div>
           <h1 className="text-2xl font-semibold">Approval Center</h1>
           <p className="mt-2 text-sm text-muted">
-            Review recipes and production menus from the Chef team.
+            {corporateOnly
+              ? 'Review recipes from your assigned sites.'
+              : 'Review recipes and production menus from the Chef team.'}
           </p>
+          {corporateOnly && assignedSites.length > 0 ? (
+            <label className="mt-4 block max-w-sm text-sm font-medium text-foreground">
+              Site
+              <select
+                value={selectedSite ?? ''}
+                onChange={(event) => {
+                  const next = new URLSearchParams(searchParams)
+                  next.set('section', 'recipes')
+                  next.set('site', event.target.value)
+                  setSearchParams(next)
+                }}
+                className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+              >
+                {assignedSites.map((site) => (
+                  <option key={site} value={site}>
+                    {user?.siteOptions?.find((item) => item.code === site)?.name ?? site}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {actionError ? (
             <p className="mt-2 text-xs font-medium text-red-600">
               {actionError}
@@ -782,6 +849,38 @@ const UnitManagerPage = () => {
                                     <p className="mt-1 text-sm text-foreground">
                                       {description}
                                     </p>
+                                    {item.approvalHistory?.length ? (
+                                      <div className="mt-4 border-t border-border pt-4">
+                                        <p className="text-xs font-semibold text-foreground">
+                                          Approval history
+                                        </p>
+                                        <div className="mt-2 space-y-2">
+                                          {item.approvalHistory.map((entry, historyIndex) => (
+                                            <div
+                                              key={`${entry.rejectedAt ?? 'rejection'}-${historyIndex}`}
+                                              className="rounded-md border border-border bg-background p-3 text-xs"
+                                            >
+                                              <p className="font-semibold text-danger">
+                                                Rejection {historyIndex + 1}
+                                              </p>
+                                              <p className="mt-1 text-foreground">
+                                                {entry.rejectionReason || 'No rejection note.'}
+                                              </p>
+                                              {entry.resubmissionFeedback?.trim() ? (
+                                                <div className="mt-2 rounded-md border border-primary/20 bg-primary-soft p-2">
+                                                  <p className="font-semibold text-primary">
+                                                    Chef feedback
+                                                  </p>
+                                                  <p className="mt-1 text-foreground">
+                                                    {entry.resubmissionFeedback}
+                                                  </p>
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
                                   </div>
 
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-8">
@@ -889,7 +988,14 @@ const UnitManagerPage = () => {
                     <th className="w-16 px-4 py-3 font-semibold">No</th>
                     <th className="px-4 py-3 font-semibold">Production date</th>
                     <th className="px-4 py-3 font-semibold">Production code</th>
+                    <th className="px-4 py-3 font-semibold">Client name</th>
                     <th className="px-4 py-3 font-semibold">Chef</th>
+                    <th className="px-4 py-3 font-semibold">Admin</th>
+                    <th className="px-4 py-3 font-semibold">Total Estimated Cost</th>
+                    <th className="px-4 py-3 font-semibold">Selling Price/Pax</th>
+                    <th className="px-4 py-3 font-semibold">Pax Calculation</th>
+                    <th className="px-4 py-3 font-semibold">Estimated Revenue</th>
+                    <th className="px-4 py-3 font-semibold">Revenue Percentage</th>
                     <th className="px-4 py-3 font-semibold">Approval status</th>
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
@@ -897,7 +1003,7 @@ const UnitManagerPage = () => {
                 <tbody>
                   {menuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
-                      <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={13} className="px-4 py-8 text-center text-muted">
                         No production menus pending approval.
                       </td>
                     </tr>
@@ -905,7 +1011,8 @@ const UnitManagerPage = () => {
                     paginatedMenuGroups.map((group, index) => {
                       const groupKey = getGroupKey(group)
                       const isExpanded = expandedGroups.includes(groupKey)
-                      const summaryItems = aggregateStoreRequestSummary(group.summary)
+                      const summaryItems =
+                        aggregateStoreRequestSummaryByVendor(group)
                       const submittedByNames = Array.from(
                         new Set(
                           group.items
@@ -916,9 +1023,41 @@ const UnitManagerPage = () => {
                       const submittedByLabel = submittedByNames.length
                         ? submittedByNames.join(', ')
                         : '-'
+                      const salesInputByLabel =
+                        group.items[0]?.salesInputBy?.trim() || '-'
                       const pendingMenuCount = group.items.filter(
                         (item) => item.approvalStatus === 'pending',
                       ).length
+                      const totalEstimatedCost = group.items.reduce(
+                        (total, item) =>
+                          total +
+                          (Number.isFinite(Number(item.estimatedCost))
+                            ? Number(item.estimatedCost)
+                            : Number.isFinite(Number(item.cost))
+                              ? Number(item.cost)
+                              : 0),
+                        0,
+                      )
+                      const firstMenu = group.items[0]
+                      const sellingPricePerPax = Number.isFinite(
+                        Number(firstMenu?.sellingPricePerPax),
+                      )
+                        ? Number(firstMenu?.sellingPricePerPax)
+                        : undefined
+                      const sellingQuantity = Number.isFinite(
+                        Number(firstMenu?.sellingQuantity),
+                      )
+                        ? Number(firstMenu?.sellingQuantity)
+                        : undefined
+                      const estimatedRevenue =
+                        sellingPricePerPax !== undefined &&
+                        sellingQuantity !== undefined
+                          ? sellingPricePerPax * sellingQuantity
+                          : undefined
+                      const revenuePercentage =
+                        estimatedRevenue !== undefined && estimatedRevenue > 0
+                          ? (totalEstimatedCost / estimatedRevenue) * 100
+                          : undefined
 
                       return (
                         <Fragment key={groupKey}>
@@ -932,7 +1071,28 @@ const UnitManagerPage = () => {
                             <td className="px-4 py-3 text-xs text-muted">
                               {group.productionCode ?? '-'}
                             </td>
+                            <td className="px-4 py-3">
+                              {group.items[0]?.clientName ?? '-'}
+                            </td>
                             <td className="px-4 py-3">{submittedByLabel}</td>
+                            <td className="px-4 py-3">{salesInputByLabel}</td>
+                            <td className="px-4 py-3 font-medium">
+                              {formatPrice(totalEstimatedCost)}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              {formatPrice(sellingPricePerPax)}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              {sellingQuantity ?? '-'}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              {formatPrice(estimatedRevenue)}
+                            </td>
+                            <td className="px-4 py-3 font-medium">
+                              {revenuePercentage === undefined
+                                ? '-'
+                                : `${revenuePercentage.toFixed(2)}%`}
+                            </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap items-center gap-2 text-sm">
                                 <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
@@ -973,7 +1133,7 @@ const UnitManagerPage = () => {
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={6} className="px-4 py-4">
+                              <td colSpan={12} className="px-4 py-4">
                                 <div className="grid gap-4 lg:grid-cols-12">
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
                                     <p className="text-xs text-muted">Menu list</p>

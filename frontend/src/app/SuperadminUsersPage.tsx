@@ -74,7 +74,7 @@ const SuperadminUsersPage = () => {
   const [filterOpen, setFilterOpen] = useState(false)
   const filterRef = useRef<HTMLDivElement | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', email: '', siteId: '' })
+  const [editForm, setEditForm] = useState({ name: '', email: '', siteIds: [] as string[] })
   const [editError, setEditError] = useState('')
   const [passwordId, setPasswordId] = useState<string | null>(null)
   const [password, setPassword] = useState('')
@@ -91,7 +91,7 @@ const SuperadminUsersPage = () => {
     email: '',
     password: '',
     role: 'chef',
-    siteId: '',
+    siteIds: [] as string[],
   })
   const [createError, setCreateError] = useState('')
 
@@ -230,15 +230,17 @@ const SuperadminUsersPage = () => {
   }, [filterOpen])
 
   const startEdit = (target: SuperadminUser) => {
-    const legacySiteId =
-      target.siteId ??
-      siteOptions.find((site) => site.code === target.sites[0])?.id ??
-      ''
+    const assignedSiteIds = target.sites
+      .map((code) => siteOptions.find((site) => site.code === code)?.id)
+      .filter((id): id is string => Boolean(id))
+    if (!assignedSiteIds.length && target.siteId) {
+      assignedSiteIds.push(target.siteId)
+    }
     setEditingId(target.id)
     setEditForm({
       name: target.name,
       email: target.email,
-      siteId: legacySiteId,
+      siteIds: assignedSiteIds,
     })
     setEditError('')
     setMessage('')
@@ -250,7 +252,7 @@ const SuperadminUsersPage = () => {
   }
 
   const handleEditChange = (
-    field: 'name' | 'email' | 'siteId',
+    field: 'name' | 'email',
     value: string,
   ) => {
     setEditForm((prev) => ({ ...prev, [field]: value }))
@@ -260,14 +262,13 @@ const SuperadminUsersPage = () => {
     if (!editingId) return
     const nextName = editForm.name.trim()
     const nextEmail = editForm.email.trim()
-    const selectedSite =
-      siteOptions.find((site) => site.id === editForm.siteId) ?? null
+    const selectedSites = siteOptions.filter((site) => editForm.siteIds.includes(site.id))
     const target = users.find((item) => item.id === editingId)
     if (!nextName || !nextEmail) {
       setEditError('Please complete name and email before saving.')
       return
     }
-    if (target && userRequiresSite(target.roles) && !selectedSite) {
+    if (target && userRequiresSite(target.roles) && selectedSites.length === 0) {
       setEditError('Please assign a site for operational users.')
       return
     }
@@ -280,8 +281,8 @@ const SuperadminUsersPage = () => {
           body: JSON.stringify({
             name: nextName,
             email: nextEmail,
-            siteId: selectedSite?.id ?? '',
-            sites: selectedSite ? [selectedSite.code] : [],
+            siteId: selectedSites[0]?.id ?? '',
+            sites: selectedSites.map((site) => site.code),
           }),
         },
         accessToken ?? undefined,
@@ -385,11 +386,22 @@ const SuperadminUsersPage = () => {
   }
 
   const formatUserSite = (item: SuperadminUser) => {
-    if (item.siteName?.trim()) return item.siteName
-    const code = item.siteCode ?? item.sites[0]
-    if (!code) return '-'
-    return siteOptions.find((site) => site.code === code)?.name ?? code
+    const codes = item.sites.length
+      ? item.sites
+      : item.siteCode
+        ? [item.siteCode]
+        : []
+    if (codes.length > 3) return `${codes.length} sites assigned`
+    const names = codes.map(
+      (code) => siteOptions.find((site) => site.code === code)?.name ?? code,
+    )
+    if (names.length) return names.join(', ')
+    return item.siteName?.trim() || '-'
   }
+
+  const activeSiteIds = siteOptions
+    .filter((site) => site.isActive)
+    .map((site) => site.id)
 
   const openCreateModal = () => {
     setCreateError('')
@@ -398,7 +410,7 @@ const SuperadminUsersPage = () => {
       email: '',
       password: '',
       role: 'chef',
-      siteId: '',
+      siteIds: [],
     })
     setCreateOpen(true)
   }
@@ -408,7 +420,7 @@ const SuperadminUsersPage = () => {
   }
 
   const handleCreateChange = (
-    field: 'name' | 'email' | 'password' | 'role' | 'siteId',
+    field: 'name' | 'email' | 'password' | 'role',
     value: string,
   ) => {
     setCreateForm((prev) => ({ ...prev, [field]: value }))
@@ -420,8 +432,7 @@ const SuperadminUsersPage = () => {
     const email = createForm.email.trim()
     const password = createForm.password.trim()
     const role = createForm.role.trim()
-    const selectedSite =
-      siteOptions.find((site) => site.id === createForm.siteId) ?? null
+    const selectedSites = siteOptions.filter((site) => createForm.siteIds.includes(site.id))
 
     if (!name || !email || !password) {
       setCreateError('Please complete name, email, and password.')
@@ -431,7 +442,7 @@ const SuperadminUsersPage = () => {
       setCreateError('Password must be at least 6 characters.')
       return
     }
-    if (role !== 'superadmin' && !selectedSite) {
+    if (role !== 'superadmin' && selectedSites.length === 0) {
       setCreateError('Please assign a site for operational users.')
       return
     }
@@ -446,8 +457,8 @@ const SuperadminUsersPage = () => {
             email,
             password,
             roles: role ? [role] : undefined,
-            siteId: selectedSite?.id,
-            sites: selectedSite ? [selectedSite.code] : [],
+            siteId: selectedSites[0]?.id,
+            sites: selectedSites.map((site) => site.code),
           }),
         },
         accessToken,
@@ -616,7 +627,9 @@ const SuperadminUsersPage = () => {
                         className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                       >
                         <option value="chef">chef</option>
+                        <option value="corporate-chef">corporate-chef</option>
                         <option value="unit-manager">unit-manager</option>
+                        <option value="admin-site">admin-site</option>
                         <option value="storekeeper">storekeeper</option>
                         <option value="superadmin">superadmin</option>
                       </select>
@@ -625,28 +638,43 @@ const SuperadminUsersPage = () => {
                       <label className="text-sm font-medium text-foreground">
                         Site
                       </label>
-                      <select
-                        value={createForm.siteId}
-                        onChange={(event) =>
-                          handleCreateChange('siteId', event.target.value)
-                        }
-                        className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                      >
-                        <option value="">
-                          {createForm.role === 'superadmin'
-                            ? 'No site'
-                            : 'Select site'}
-                        </option>
+                      <div className="mt-2 max-h-36 space-y-1 overflow-y-auto rounded-2xl border border-border bg-white p-3">
+                        <label className="flex items-center gap-2 border-b border-border pb-2 text-sm font-semibold">
+                          <input
+                            type="checkbox"
+                            checked={activeSiteIds.length > 0 && activeSiteIds.every((id) => createForm.siteIds.includes(id))}
+                            onChange={() =>
+                              setCreateForm((prev) => ({
+                                ...prev,
+                                siteIds:
+                                  activeSiteIds.length > 0 && activeSiteIds.every((id) => prev.siteIds.includes(id))
+                                    ? prev.siteIds.filter((id) => !activeSiteIds.includes(id))
+                                    : Array.from(new Set([...prev.siteIds, ...activeSiteIds])),
+                              }))
+                            }
+                          />
+                          <span>Select all sites</span>
+                        </label>
                         {siteOptions.map((site) => (
-                          <option
-                            key={site.id}
-                            value={site.id}
-                            disabled={!site.isActive}
-                          >
-                            {formatSiteOption(site)}
-                          </option>
+                          <label key={site.id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={createForm.siteIds.includes(site.id)}
+                              onChange={() =>
+                                setCreateForm((prev) => ({
+                                  ...prev,
+                                  siteIds: prev.siteIds.includes(site.id)
+                                    ? prev.siteIds.filter((id) => id !== site.id)
+                                    : [...prev.siteIds, site.id],
+                                }))
+                              }
+                              disabled={!site.isActive}
+                            />
+                            <span>{formatSiteOption(site)}</span>
+                          </label>
                         ))}
-                      </select>
+                        {siteOptions.length === 0 ? <span className="text-xs text-muted">No site data yet.</span> : null}
+                      </div>
                     </div>
                   </div>
                   {createError ? (
@@ -716,7 +744,7 @@ const SuperadminUsersPage = () => {
                     <li>sites</li>
                   </ul>
                   <p className="mt-3 text-xs text-muted">
-                    roles: superadmin, chef, unit-manager, storekeeper. You can
+                    roles: superadmin, chef, unit-manager, admin-site, storekeeper. You can
                     separate multiple roles with commas.
                   </p>
                   <p className="mt-2 text-xs text-muted">
@@ -972,28 +1000,42 @@ const SuperadminUsersPage = () => {
                       </td>
                       <td className="px-5 py-4">
                         {editingId === item.id ? (
-                          <select
-                            value={editForm.siteId}
-                            onChange={(event) =>
-                              handleEditChange('siteId', event.target.value)
-                            }
-                            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          >
-                            <option value="">
-                              {userRequiresSite(item.roles)
-                                ? 'Select site'
-                                : 'No site'}
-                            </option>
+                          <div className="max-h-32 min-w-48 space-y-1 overflow-y-auto rounded-xl border border-border bg-white p-2">
+                            <label className="flex items-center gap-2 border-b border-border pb-2 text-xs font-semibold">
+                              <input
+                                type="checkbox"
+                                checked={activeSiteIds.length > 0 && activeSiteIds.every((id) => editForm.siteIds.includes(id))}
+                                onChange={() =>
+                                  setEditForm((prev) => ({
+                                    ...prev,
+                                    siteIds:
+                                      activeSiteIds.length > 0 && activeSiteIds.every((id) => prev.siteIds.includes(id))
+                                        ? prev.siteIds.filter((id) => !activeSiteIds.includes(id))
+                                        : Array.from(new Set([...prev.siteIds, ...activeSiteIds])),
+                                  }))
+                                }
+                              />
+                              <span>Select all sites</span>
+                            </label>
                             {siteOptions.map((site) => (
-                              <option
-                                key={site.id}
-                                value={site.id}
-                                disabled={!site.isActive}
-                              >
-                                {formatSiteOption(site)}
-                              </option>
+                              <label key={site.id} className="flex items-center gap-2 text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={editForm.siteIds.includes(site.id)}
+                                  onChange={() =>
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      siteIds: prev.siteIds.includes(site.id)
+                                        ? prev.siteIds.filter((id) => id !== site.id)
+                                        : [...prev.siteIds, site.id],
+                                    }))
+                                  }
+                                  disabled={!site.isActive}
+                                />
+                                <span>{formatSiteOption(site)}</span>
+                              </label>
                             ))}
-                          </select>
+                          </div>
                         ) : item.siteName || item.siteCode || item.sites.length ? (
                           formatUserSite(item)
                         ) : (

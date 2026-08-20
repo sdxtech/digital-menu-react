@@ -9,6 +9,7 @@ export type RawMaterialPriceUpdateInput = {
   unitOfMeasures?: string;
   minimumQuantity?: number;
   priceQuantity?: number;
+  startDate?: string;
 };
 
 export type RawMaterialPriceUpdateMode = 'master' | 'vendor' | 'mixed';

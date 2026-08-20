@@ -27,6 +27,7 @@ import { getUploadDir } from '../common/upload-dir';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
+import { ResubmitRecipeDto } from './dto/resubmit-recipe.dto';
 import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
@@ -98,13 +99,13 @@ export class RecipesController {
   }
 
   @Patch(':id/approve')
-  @Roles(AppRole.UnitManager, AppRole.Superadmin)
+  @Roles(AppRole.UnitManager, AppRole.CorporateChef, AppRole.Superadmin)
   approve(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.setApprovalStatus(id, 'approved', this.buildActor(req));
   }
 
   @Patch(':id/reject')
-  @Roles(AppRole.UnitManager, AppRole.Superadmin)
+  @Roles(AppRole.UnitManager, AppRole.CorporateChef, AppRole.Superadmin)
   reject(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -120,8 +121,16 @@ export class RecipesController {
 
   @Patch(':id/resubmit')
   @Roles(AppRole.Chef, AppRole.Superadmin)
-  resubmit(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.recipes.resubmitRejectedRecipe(id, this.buildActor(req));
+  resubmit(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ResubmitRecipeDto,
+  ) {
+    return this.recipes.resubmitRejectedRecipe(
+      id,
+      this.buildActor(req),
+      dto.feedback,
+    );
   }
 
   @Patch(':id/photo')
@@ -191,10 +200,21 @@ export class RecipesController {
       email: req.user.email,
       roles: req.user.roles,
       site: getUserSiteScope(req.user),
+      sites: req.user.sites,
     };
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (req.user.roles?.includes(AppRole.CorporateChef)) {
+      const assignedSites = (req.user.sites ?? []).map((site) =>
+        site.trim().toLowerCase(),
+      )
+      const requested = requestedSite?.trim()
+      if (requested && assignedSites.includes(requested.toLowerCase())) {
+        return requested
+      }
+      return req.user.site?.trim() || undefined
+    }
     const siteScope = getUserSiteScope(req.user);
     if (siteScope) return siteScope;
     return requestedSite?.trim() || undefined;

@@ -24,6 +24,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Client Management',
+    to: '/superadmin/clients',
+    icon: (className: string) => (
+      <i className={`bi bi-person-vcard ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'UOM Management',
     to: '/superadmin/unit-of-measures',
     icon: (className: string) => (

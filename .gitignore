@@ -31,3 +31,6 @@ Thumbs.db
 # Uploads
 uploads/
 backend/uploads/
+
+# Local deployment notes
+docs/deployment-migration.md

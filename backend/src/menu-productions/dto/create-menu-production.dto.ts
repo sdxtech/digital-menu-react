@@ -81,6 +81,14 @@ export class CreateMenuProductionDto {
   site?: string;
 
   @IsString()
+  @IsOptional()
+  clientId?: string;
+
+  @IsString()
+  @IsOptional()
+  clientName?: string;
+
+  @IsString()
   @IsMongoId()
   @IsOptional()
   chefId?: string;

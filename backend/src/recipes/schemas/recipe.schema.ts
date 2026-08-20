@@ -7,6 +7,7 @@ export type RecipeStatus = 'draft' | 'active';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP';
   productCode?: string;
   name?: string;
   unitOfMeasures?: string;
@@ -20,6 +21,19 @@ export type RecipeIngredient = {
   conversionMultiplier?: number;
   priceUom?: number;
   foodCost?: number;
+};
+
+export type RecipeApprovalHistoryEntry = {
+  rejectionReason: string;
+  rejectedBy?: string;
+  rejectedByName?: string;
+  rejectedByEmail?: string;
+  rejectedAt: Date;
+  resubmissionFeedback?: string;
+  resubmittedBy?: string;
+  resubmittedByName?: string;
+  resubmittedByEmail?: string;
+  resubmittedAt?: Date;
 };
 
 @Schema({ timestamps: true })
@@ -100,6 +114,27 @@ export class Recipe {
   @Prop({
     type: [
       {
+        _id: false,
+        rejectionReason: { type: String, required: true, trim: true },
+        rejectedBy: { type: String, index: true },
+        rejectedByName: { type: String, trim: true },
+        rejectedByEmail: { type: String, trim: true, lowercase: true },
+        rejectedAt: { type: Date, required: true },
+        resubmissionFeedback: { type: String, trim: true },
+        resubmittedBy: { type: String, index: true },
+        resubmittedByName: { type: String, trim: true },
+        resubmittedByEmail: { type: String, trim: true, lowercase: true },
+        resubmittedAt: { type: Date },
+      },
+    ],
+    default: [],
+  })
+  approvalHistory: RecipeApprovalHistoryEntry[];
+
+  @Prop({
+    type: [
+      {
+        ingredientType: { type: String, enum: ['IT', 'NMP'] },
         productCode: { type: String, trim: true },
         name: { type: String, trim: true },
         unitOfMeasures: { type: String, trim: true },

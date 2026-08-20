@@ -28,8 +28,11 @@ export class User {
   lastActivityAt?: Date;
 
   // 🌟 NEW FIELD: Allows Mongoose to persist your secure recovery tokens safely
-  @Prop({ type: String, default: null })
-  resetToken?: string | null;
+  @Prop({ type: String, select: false, index: true })
+  resetTokenHash?: string;
+
+  @Prop({ type: Date, select: false, index: true })
+  resetTokenExpiresAt?: Date;
 
   @Prop({
     type: [String],
@@ -37,7 +40,8 @@ export class User {
     required: true,
     default: undefined,
     validate: {
-      validator: (roles?: AppRole[]) => Array.isArray(roles) && roles.length > 0,
+      validator: (roles?: AppRole[]) =>
+        Array.isArray(roles) && roles.length > 0,
       message: 'User role is required',
     },
     index: true,

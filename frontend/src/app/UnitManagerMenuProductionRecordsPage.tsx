@@ -63,9 +63,12 @@ type StoreRequestMenu = {
   productionCode?: string
   submittedByName?: string
   reviewedBy?: string
+  salesInputBy?: string
+  approvedAt?: string
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   estimatedCost?: number
@@ -155,7 +158,11 @@ const buildIngredientKey = (
   return `${baseKey}__${normalizedVendor}__${vendorSite?.trim().toLowerCase() ?? ''}`
 }
 
-const UnitManagerMenuProductionRecordsPage = () => {
+const UnitManagerMenuProductionRecordsPage = ({
+  hideFulfillmentColumns = false,
+}: {
+  hideFulfillmentColumns?: boolean
+}) => {
   const { accessToken } = useAuth()
   const [records, setRecords] = useState<StoreRequestGroup[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -225,6 +232,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
       [
         'No',
         'Production Date',
+        'Client Name',
         'Production Code',
         'Menu Name',
         'Version',
@@ -275,6 +283,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -319,6 +328,7 @@ const UnitManagerMenuProductionRecordsPage = () => {
         rows.push([
           rowNumber,
           toSpreadsheetDate(group.date),
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -348,8 +358,9 @@ const UnitManagerMenuProductionRecordsPage = () => {
     })
 
     const summaryRows: SpreadsheetCell[][] = [
-      ['IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
       ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
+        group.items[0]?.clientName ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',
@@ -422,6 +433,8 @@ const UnitManagerMenuProductionRecordsPage = () => {
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
+                  <th className="px-5 py-4 font-semibold">Client name</th>
+                  <th className="px-5 py-4 font-semibold">Admin</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
                   <th className="px-5 py-4 font-semibold">Reviewed by</th>
                   <th className="px-5 py-4 font-semibold">Total menu</th>
@@ -433,13 +446,13 @@ const UnitManagerMenuProductionRecordsPage = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
                       Loading production records...
                     </td>
                   </tr>
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
                         : 'No approved, rejected, completed, or cancelled production batches yet.'}
@@ -510,10 +523,14 @@ const UnitManagerMenuProductionRecordsPage = () => {
                             {(page - 1) * RECORD_ITEMS_PER_PAGE + index + 1}
                           </td>
                           <td className="px-5 py-4">{group.date}</td>
-                          <td className="px-5 py-4 text-xs text-muted">
-                            {group.productionCode ?? '-'}
-                          </td>
-                          <td className="px-5 py-4">
+                      <td className="px-5 py-4 text-xs text-muted">
+                        {group.productionCode ?? '-'}
+                      </td>
+                      <td className="px-5 py-4">{group.items[0]?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {group.items[0]?.salesInputBy ?? '-'}
+                      </td>
+                      <td className="px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-sm">
                               {hasPendingReview ? (
                                 <span className="text-muted">Submitted</span>
@@ -688,14 +705,22 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                           <th className="px-4 py-3 font-semibold">Vendor</th>
                                           <th className="px-4 py-3 font-semibold">Price</th>
                                           <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
-                                          <th className="px-4 py-3 font-semibold">Planned</th>
-                                          <th className="px-4 py-3 font-semibold">Actual</th>
-                                          <th className="px-4 py-3 font-semibold">Variance</th>
-                                          <th className="px-4 py-3 font-semibold">Planned Price/Unit</th>
-                                          <th className="px-4 py-3 font-semibold">Actual Price/Unit</th>
-                                          <th className="px-4 py-3 font-semibold">Price Variance</th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            {hideFulfillmentColumns ? 'QTY' : 'Planned'}
+                                          </th>
+                                          {!hideFulfillmentColumns ? (
+                                            <>
+                                              <th className="px-4 py-3 font-semibold">Actual</th>
+                                              <th className="px-4 py-3 font-semibold">Variance</th>
+                                              <th className="px-4 py-3 font-semibold">Planned Price/Unit</th>
+                                              <th className="px-4 py-3 font-semibold">Actual Price/Unit</th>
+                                              <th className="px-4 py-3 font-semibold">Price Variance</th>
+                                            </>
+                                          ) : null}
                                           <th className="px-4 py-3 font-semibold">Unit</th>
-                                          <th className="px-4 py-3 font-semibold">Reason</th>
+                                          {!hideFulfillmentColumns ? (
+                                            <th className="px-4 py-3 font-semibold">Reason</th>
+                                          ) : null}
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -723,31 +748,37 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               <td className="px-4 py-3">
                                                 {formatQuantity(item.plannedQty)}
                                               </td>
-                                              <td className="px-4 py-3">
-                                                {formatQuantity(item.actualQty)}
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                {formatQuantity(item.varianceQty)}
-                                              </td>
-                                              <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.plannedPrice)}
-                                              </td>
-                                              <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.actualPrice)}
-                                              </td>
-                                              <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.variancePrice)}
-                                              </td>
+                                              {!hideFulfillmentColumns ? (
+                                                <>
+                                                  <td className="px-4 py-3">
+                                                    {formatQuantity(item.actualQty)}
+                                                  </td>
+                                                  <td className="px-4 py-3">
+                                                    {formatQuantity(item.varianceQty)}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(item.plannedPrice)}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(item.actualPrice)}
+                                                  </td>
+                                                  <td className="px-4 py-3 font-medium">
+                                                    {formatPrice(item.variancePrice)}
+                                                  </td>
+                                                </>
+                                              ) : null}
                                               <td className="px-4 py-3">
                                                 {formatUnitLabel(item.unitOfMeasures)}
                                               </td>
-                                              <td className="px-4 py-3">{item.reason ?? '-'}</td>
+                                              {!hideFulfillmentColumns ? (
+                                                <td className="px-4 py-3">{item.reason ?? '-'}</td>
+                                              ) : null}
                                             </tr>
                                           ))
                                         ) : summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={14}
+                                              colSpan={hideFulfillmentColumns ? 8 : 14}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to display.
@@ -776,16 +807,22 @@ const UnitManagerMenuProductionRecordsPage = () => {
                                               <td className="px-4 py-3">
                                                 {formatQuantity(item.qty)}
                                               </td>
-                                              <td className="px-4 py-3">-</td>
-                                              <td className="px-4 py-3">-</td>
-                                              <td className="px-4 py-3">-</td>
-                                              <td className="px-4 py-3">-</td>
-                                              <td className="px-4 py-3">-</td>
-                                              <td className="px-4 py-3">-</td>
+                                              {!hideFulfillmentColumns ? (
+                                                <>
+                                                  <td className="px-4 py-3">-</td>
+                                                  <td className="px-4 py-3">-</td>
+                                                  <td className="px-4 py-3">-</td>
+                                                  <td className="px-4 py-3">-</td>
+                                                  <td className="px-4 py-3">-</td>
+                                                  <td className="px-4 py-3">-</td>
+                                                </>
+                                              ) : null}
                                               <td className="px-4 py-3">
                                                 {formatUnitLabel(item.unitOfMeasures)}
                                               </td>
-                                              <td className="px-4 py-3">-</td>
+                                              {!hideFulfillmentColumns ? (
+                                                <td className="px-4 py-3">-</td>
+                                              ) : null}
                                             </tr>
                                           ))
                                         )}

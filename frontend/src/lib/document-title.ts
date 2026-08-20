@@ -80,6 +80,14 @@ const titleMatchers: TitleMatcher[] = [
     path: '/unit-manager',
     getPageTitle: () => 'Approval Center',
   },
+  {
+    path: '/corporate-chef',
+    getPageTitle: () => 'Recipe Approval',
+  },
+  {
+    path: '/corporate-chef/recipe-data',
+    getPageTitle: () => 'Recipe Data',
+  },
 
   // ➕ Added Profile Tab Title configuration mapping for Unit Manager Workspace
   {
@@ -109,6 +117,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/storekeeper/history',
     getPageTitle: () => 'Issuance History',
+  },
+  {
+    path: '/admin-site/menu-production-history',
+    getPageTitle: () => 'Menu Production History',
   },
   {
     path: '/superadmin',

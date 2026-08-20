@@ -8,6 +8,7 @@ type RecipeUpdatePayload = {
   $set: Record<string, unknown> & {
     ingredients?: TestIngredient[];
   };
+  $push?: Record<string, unknown>;
 };
 
 type RecipeCreatePayload = {
@@ -20,6 +21,7 @@ describe('RecipesService site visibility', () => {
       create: jest.fn(),
       find: jest.fn(),
       countDocuments: jest.fn().mockResolvedValue(0),
+      exists: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn(),
       updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
       findOne: jest.fn(),
@@ -45,6 +47,10 @@ describe('RecipesService site visibility', () => {
     const notifications = {
       createHierarchicalNotification: jest.fn().mockResolvedValue(null),
     };
+    const workflowMail = {
+      notifyRecipeSubmitted: jest.fn().mockResolvedValue(undefined),
+      notifyRecipeDecision: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
@@ -54,6 +60,7 @@ describe('RecipesService site visibility', () => {
       sites as never,
       unitOfMeasures as never,
       notifications as never,
+      workflowMail as never,
     );
     jest
       .spyOn(
@@ -184,6 +191,22 @@ describe('RecipesService site visibility', () => {
     );
   });
 
+  it('rejects a new recipe when the name already exists', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.exists.mockResolvedValueOnce({ _id: 'existing-recipe' });
+
+    await expect(
+      service.create({
+        name: 'Classic Cheesecake',
+        category: 'Dessert',
+        ingredients: [],
+      }),
+    ).rejects.toThrow(
+      'A recipe with this name already exists. Please use a different name.',
+    );
+    expect(recipeModel.create).not.toHaveBeenCalled();
+  });
+
   it('exposes legacy recipes without version metadata as version 1', async () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel, [
@@ -272,6 +295,72 @@ describe('RecipesService site visibility', () => {
       expect.objectContaining({
         approvalStatus: 'approved',
         status: 'active',
+      }),
+    );
+  });
+
+  it('records a rejection history entry for the reviewing actor', async () => {
+    const { recipeModel, service } = makeService();
+    const lean = jest.fn().mockResolvedValue({
+      _id: 'recipe-a',
+      approvalStatus: 'rejected',
+    });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await service.setApprovalStatus(
+      'recipe-a',
+      'rejected',
+      { id: 'manager-a', name: 'Manager A', email: 'manager@example.com', site: 'SITE-002' },
+      'Adjust the salt quantity.',
+    );
+
+    expect(getUpdatePayload(recipeModel).$push).toEqual({
+      approvalHistory: expect.objectContaining({
+        rejectionReason: 'Adjust the salt quantity.',
+        rejectedBy: 'manager-a',
+        rejectedByName: 'Manager A',
+        rejectedByEmail: 'manager@example.com',
+      }),
+    });
+  });
+
+  it('requires feedback and records it on the matching rejection cycle', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'recipe-a',
+        approvalStatus: 'rejected',
+        approvalHistory: [
+          {
+            rejectionReason: 'Adjust the salt quantity.',
+            rejectedAt: new Date('2026-08-19T00:00:00.000Z'),
+          },
+        ],
+      }),
+    });
+    const lean = jest.fn().mockResolvedValue({
+      _id: 'recipe-a',
+      approvalStatus: 'pending',
+    });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await expect(
+      service.resubmitRejectedRecipe('recipe-a', { site: 'SITE-002' }),
+    ).rejects.toThrow('Resubmission feedback is required.');
+
+    await service.resubmitRejectedRecipe(
+      'recipe-a',
+      { id: 'chef-a', name: 'Chef A', email: 'chef@example.com', site: 'SITE-002' },
+      'Reduced salt from 10 g to 7 g.',
+    );
+
+    const updatePayload = getUpdatePayload(recipeModel);
+    expect(updatePayload.$set).toEqual(
+      expect.objectContaining({
+        approvalStatus: 'pending',
+        'approvalHistory.0.resubmissionFeedback':
+          'Reduced salt from 10 g to 7 g.',
+        'approvalHistory.0.resubmittedBy': 'chef-a',
       }),
     );
   });

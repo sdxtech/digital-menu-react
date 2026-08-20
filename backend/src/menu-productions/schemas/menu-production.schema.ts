@@ -69,6 +69,12 @@ export class MenuProduction {
   @Prop({ type: String, trim: true, index: true })
   site?: string;
 
+  @Prop({ type: String, trim: true, index: true })
+  clientId?: string;
+
+  @Prop({ type: String, trim: true })
+  clientName?: string;
+
   @Prop({ type: Number, required: true })
   portion: number;
 
@@ -80,6 +86,18 @@ export class MenuProduction {
 
   @Prop({ type: Number, min: 0 })
   estimatedCostPerPax?: number;
+
+  @Prop({ type: Number, min: 0 })
+  sellingPricePerPax?: number;
+
+  @Prop({ type: Number, min: 0 })
+  sellingQuantity?: number;
+
+  @Prop({ type: Number, min: 0 })
+  estimatedRevenue?: number;
+
+  @Prop({ type: String, trim: true })
+  salesInputBy?: string;
 
   @Prop({
     type: [
@@ -112,6 +130,9 @@ export class MenuProduction {
 
   @Prop({ type: String, trim: true })
   reviewedBy?: string;
+
+  @Prop({ type: Date })
+  approvedAt?: Date;
 
   @Prop({ type: String, trim: true })
   rejectionReason?: string;

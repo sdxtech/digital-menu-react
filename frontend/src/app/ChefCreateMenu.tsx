@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
 import {
@@ -16,7 +16,7 @@ import {
 } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
-const INGREDIENT_ROWS_PER_PAGE = 8
+const INGREDIENT_ROWS_PER_PAGE = 30
 
 type RecipeForm = {
   name: string
@@ -27,6 +27,7 @@ type RecipeForm = {
 
 type IngredientRow = {
   id: string
+  ingredientType: '' | 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -62,6 +63,12 @@ type UnitOfMeasureOption = {
   name: string
 }
 
+type PaginatedApiResponse<T> = {
+  items?: T[]
+  total?: number
+  totalPages?: number
+}
+
 type UnitConversion = {
   id: string
   prodUomCode: string
@@ -91,6 +98,14 @@ export type BaseRecipe = {
   reviewedBy?: string
   reviewedByName?: string
   reviewedByEmail?: string
+  approvalHistory?: Array<{
+    rejectionReason: string
+    rejectedByName?: string
+    rejectedAt?: string
+    resubmissionFeedback?: string
+    resubmittedByName?: string
+    resubmittedAt?: string
+  }>
   ingredients?: RecipeIngredient[]
 }
 
@@ -98,6 +113,7 @@ const createIngredientRow = (
   values: Partial<IngredientRow> = {},
 ): IngredientRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  ingredientType: values.ingredientType ?? '',
   productCode: values.productCode ?? '',
   name: values.name ?? '',
   unitOfMeasures: values.unitOfMeasures ?? '',
@@ -134,6 +150,7 @@ const ChefCreateMenu = ({
   onSaved,
 }: ChefCreateMenuProps) => {
   const location = useLocation()
+  const navigate = useNavigate()
   const {
     createRecipe,
     updateRecipe,
@@ -156,6 +173,8 @@ const ChefCreateMenu = ({
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
+  const [resubmitFeedback, setResubmitFeedback] = useState('')
+  const [resubmitModalOpen, setResubmitModalOpen] = useState(false)
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -172,6 +191,11 @@ const ChefCreateMenu = ({
   const [categoriesLoading, setCategoriesLoading] = useState(false)
   const [categoriesError, setCategoriesError] = useState('')
   const [ingredientPage, setIngredientPage] = useState(1)
+  const [activeIngredientDropdownId, setActiveIngredientDropdownId] = useState<string | null>(null)
+  const [ingredientDropdownPosition, setIngredientDropdownPosition] = useState<{
+    left: number
+    top: number
+  } | null>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
@@ -216,6 +240,7 @@ const ChefCreateMenu = ({
       baseIngredients.length
         ? baseIngredients.map((ingredient) =>
             createIngredientRow({
+              ingredientType: ingredient.ingredientType ?? '',
               productCode: ingredient.productCode ?? '',
               name: ingredient.name ?? '',
               unitOfMeasures: ingredient.unitOfMeasures ?? '',
@@ -241,6 +266,8 @@ const ChefCreateMenu = ({
         : [createIngredientRow()],
     )
     setIngredientPage(1)
+    setResubmitFeedback('')
+    setResubmitModalOpen(false)
     setSubmitError('')
     setSubmitMessage('')
   }, [baseRecipe, enableIngredientUomConversion])
@@ -307,28 +334,49 @@ const ChefCreateMenu = ({
     }
 
     let cancelled = false
+    const fetchAllPages = async <T,>(path: string) => {
+      const items: T[] = []
+      const limit = 100
+      let page = 1
+      let total = 0
+
+      do {
+        const separator = path.includes('?') ? '&' : '?'
+        const data = await apiFetch<PaginatedApiResponse<T>>(
+          `${path}${separator}page=${page}&limit=${limit}`,
+          undefined,
+          accessToken,
+        )
+        const pageItems = data.items ?? []
+        items.push(...pageItems)
+        total = data.total ?? items.length
+        if (pageItems.length < limit) break
+        page += 1
+      } while (items.length < total)
+
+      return items
+    }
+
     const fetchUomData = async () => {
-      try {
-        const [unitsData, srUnitsData, conversionsData] = await Promise.all([
-          apiFetch<{ items?: UnitOfMeasureApi[] }>(
-            '/unit-of-measures?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
+      const [unitsResult, srUnitsResult, conversionsResult] =
+        await Promise.allSettled([
+          fetchAllPages<UnitOfMeasureApi>(
+            '/unit-of-measures?isActive=true',
           ),
           apiFetch<string[]>(
             '/raw-materials/unit-options',
             undefined,
             accessToken,
           ),
-          apiFetch<{ items?: UnitConversionApi[] }>(
-            '/unit-of-measures/conversions?page=1&limit=100&isActive=true',
-            undefined,
-            accessToken,
+          fetchAllPages<UnitConversionApi>(
+            '/unit-of-measures/conversions?isActive=true',
           ),
         ])
-        if (cancelled) return
+      if (cancelled) return
+
+      if (unitsResult.status === 'fulfilled') {
         setUomOptions(
-          (unitsData.items ?? [])
+          unitsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.code ?? '',
               code: item.code ?? '',
@@ -336,9 +384,19 @@ const ChefCreateMenu = ({
             }))
             .filter((item) => item.id && item.code),
         )
-        setSrUomOptions((srUnitsData ?? []).filter(Boolean))
+      } else {
+        setUomOptions([])
+      }
+
+      if (srUnitsResult.status === 'fulfilled') {
+        setSrUomOptions(srUnitsResult.value.filter(Boolean))
+      } else {
+        setSrUomOptions([])
+      }
+
+      if (conversionsResult.status === 'fulfilled') {
         setUnitConversions(
-          (conversionsData.items ?? [])
+          conversionsResult.value
             .map((item) => ({
               id: item.id ?? item._id ?? item.conversionId ?? '',
               prodUomCode: item.prodUomCode ?? '',
@@ -355,10 +413,7 @@ const ChefCreateMenu = ({
                 item.multiplier > 0,
             ),
         )
-      } catch {
-        if (cancelled) return
-        setUomOptions([])
-        setSrUomOptions([])
+      } else {
         setUnitConversions([])
       }
     }
@@ -368,7 +423,7 @@ const ChefCreateMenu = ({
     return () => {
       cancelled = true
     }
-  }, [accessToken, enableIngredientUomConversion])
+  }, [accessToken, enableIngredientUomConversion, lockSrUomToRawMaterial])
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
@@ -583,6 +638,15 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'ingredientType') {
+          if (value === 'NMP') {
+            next.productCode = 'NMP'
+          } else if (value === 'IT' && row.ingredientType === 'NMP') {
+            next.productCode = ''
+            next.name = ''
+            next.unitOfMeasures = ''
+          }
+        }
         if (
           (field === 'productCode' ||
             field === 'name' ||
@@ -670,7 +734,7 @@ const ChefCreateMenu = ({
     const trimmed = query.trim()
     const targetMeta = trimmed && target ? { ...target } : null
     const delay = trimmed ? 200 : 0
-    const fetchLimit = trimmed ? 40 : 5
+    const fetchLimit = trimmed ? 40 : 10
 
     searchTimeoutRef.current = window.setTimeout(async () => {
       try {
@@ -680,7 +744,7 @@ const ChefCreateMenu = ({
         }
         cacheRawMaterials(results)
         const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
-        setRawMaterialOptions(ranked.slice(0, 5))
+        setRawMaterialOptions(ranked.slice(0, 10))
 
         if (targetMeta) {
           setIngredientRows((prev) =>
@@ -717,13 +781,45 @@ const ChefCreateMenu = ({
     value: IngredientRow[K],
   ) => {
     updateIngredientRow(id, field, value)
-    if ((field === 'productCode' || field === 'name') && typeof value === 'string') {
+    const row = ingredientRows.find((item) => item.id === id)
+    if (
+      row?.ingredientType === 'IT' &&
+      (field === 'productCode' || field === 'name') &&
+      typeof value === 'string'
+    ) {
       scheduleRawMaterialSearch(value, { rowId: id, field })
     }
   }
 
   const handleRawMaterialFocus = () => {
     scheduleRawMaterialSearch('')
+  }
+
+  const positionIngredientDropdown = (input: HTMLElement) => {
+    const bounds = input.getBoundingClientRect()
+    const dropdownWidth = Math.min(576, window.innerWidth - 32)
+    const dropdownHeight = Math.min(296, window.innerHeight - 32)
+    const gap = 4
+    const canOpenBelow = bounds.bottom + gap + dropdownHeight <= window.innerHeight
+    const top = canOpenBelow
+      ? bounds.bottom + gap
+      : Math.max(16, bounds.top - dropdownHeight - gap)
+    const left = Math.min(
+      Math.max(16, bounds.left),
+      Math.max(16, window.innerWidth - dropdownWidth - 16),
+    )
+
+    setIngredientDropdownPosition({ left, top })
+  }
+
+  const selectRawMaterialForRow = (rowId: string, material: RawMaterial) => {
+    setIngredientRows((prev) =>
+      prev.map((row) => (
+        row.id === rowId ? applyRawMaterialToRow(row, material) : row
+      )),
+    )
+    setActiveIngredientDropdownId(null)
+    setIngredientDropdownPosition(null)
   }
 
   const handleAddIngredientRow = () => {
@@ -805,6 +901,13 @@ const ChefCreateMenu = ({
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
+    const nextResubmitFeedback = resubmitFeedback.trim()
+
+    if (options.resubmit && !nextResubmitFeedback) {
+      setSubmitError('Feedback is required before resubmitting the recipe.')
+      setSubmitMessage('')
+      return
+    }
     const portionRaw = recipeForm.portionSize.trim()
 
     if (!nextName || !nextCategory) {
@@ -814,12 +917,12 @@ const ChefCreateMenu = ({
     }
 
     if (
-      isCreateFromRecipe &&
+      isCreateFromTemplate &&
       baseRecipe?.name?.trim() &&
-      normalizeValue(nextName) !== normalizeValue(baseRecipe.name)
+      normalizeValue(nextName) === normalizeValue(baseRecipe.name)
     ) {
       setSubmitError(
-        'The recipe name must stay the same as the base recipe.',
+        'Change the recipe name before creating a recipe from this recipe.',
       )
       setSubmitMessage('')
       return
@@ -850,6 +953,11 @@ const ChefCreateMenu = ({
 
     const parsedIngredients: RecipeIngredient[] = []
     for (const sourceRow of usedRows) {
+      if (!sourceRow.ingredientType) {
+        setSubmitError('Select IT or NMP for each ingredient row.')
+        setSubmitMessage('')
+        return
+      }
       const enteredProductCode = sourceRow.productCode.trim()
       if (!enteredProductCode) {
         setSubmitError('Select a valid raw material for each ingredient row.')
@@ -857,9 +965,10 @@ const ChefCreateMenu = ({
         return
       }
 
-      const matchedRawMaterial =
-        await resolveRawMaterialByProductCode(enteredProductCode)
-      if (!matchedRawMaterial) {
+      const matchedRawMaterial = sourceRow.ingredientType === 'IT'
+        ? await resolveRawMaterialByProductCode(enteredProductCode)
+        : null
+      if (sourceRow.ingredientType === 'IT' && !matchedRawMaterial) {
         setSubmitError(
           `Raw material ${enteredProductCode} was not found. Select an IT code from raw material data.`,
         )
@@ -867,7 +976,9 @@ const ChefCreateMenu = ({
         return
       }
 
-      const row = applyRawMaterialToRow(sourceRow, matchedRawMaterial)
+      const row = matchedRawMaterial
+        ? applyRawMaterialToRow(sourceRow, matchedRawMaterial)
+        : sourceRow
       if (
         row.productCode !== sourceRow.productCode ||
         row.name !== sourceRow.name ||
@@ -925,6 +1036,7 @@ const ChefCreateMenu = ({
         }
         const srQtyManual = row.srQtyManual || !conversionResult
         parsedIngredients.push({
+          ...(row.ingredientType ? { ingredientType: row.ingredientType } : {}),
           productCode,
           name,
           unitOfMeasures,
@@ -943,6 +1055,7 @@ const ChefCreateMenu = ({
         })
       } else {
         parsedIngredients.push({
+          ...(row.ingredientType ? { ingredientType: row.ingredientType } : {}),
           productCode,
           name,
           unitOfMeasures,
@@ -965,8 +1078,11 @@ const ChefCreateMenu = ({
       if (isEditMode && editingRecipeId) {
         await updateRecipe(editingRecipeId, basePayload)
         if (options.resubmit) {
-          await resubmitRecipe(editingRecipeId)
+          await resubmitRecipe(editingRecipeId, nextResubmitFeedback)
           setCurrentApprovalStatus('pending')
+          onSaved?.()
+          navigate('/chef/menu-bank', { replace: true })
+          return
         }
         onSaved?.()
       } else {
@@ -1025,6 +1141,73 @@ const ChefCreateMenu = ({
 
   return (
     <div className="space-y-6">
+      {resubmitModalOpen && isRejectedRecipe ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resubmit-feedback-title"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id="resubmit-feedback-title"
+                  className="font-semibold text-foreground"
+                >
+                  Resubmit recipe
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Explain what you changed before sending this recipe back to
+                  the Unit Manager.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResubmitModalOpen(false)}
+                className="dm-x-button"
+                aria-label="Close resubmit feedback"
+              >
+                <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
+              </button>
+            </div>
+            <label className="mt-5 block text-sm font-medium text-foreground">
+              Feedback <span className="text-danger">*</span>
+              <textarea
+                autoFocus
+                value={resubmitFeedback}
+                onChange={(event) => setResubmitFeedback(event.target.value)}
+                rows={5}
+                maxLength={1000}
+                placeholder="Example: Reduced salt from 10 g to 7 g."
+                className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                This feedback will be recorded in the approval history.
+              </span>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <ActionButton
+                action="cancel"
+                onClick={() => setResubmitModalOpen(false)}
+                size="sm"
+              />
+              <ActionButton
+                action="submit"
+                onClick={() => {
+                  if (!resubmitFeedback.trim()) {
+                    setSubmitError('Feedback is required before resubmitting the recipe.')
+                    return
+                  }
+                  setResubmitModalOpen(false)
+                  handleSaveRecipe({ resubmit: true }).catch(() => null)
+                }}
+                size="sm"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1181,6 +1364,11 @@ const ChefCreateMenu = ({
                   : 'bg-white focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20'
               }`}
             />
+            {isCreateFromTemplate ? (
+              <p className="mt-2 text-xs text-muted">
+                The new recipe name must be different from the source recipe.
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="text-sm font-medium text-foreground">Category</label>
@@ -1272,15 +1460,6 @@ const ChefCreateMenu = ({
                 />
               ))}
             </datalist>
-            <datalist id="raw-material-name-options">
-              {rawMaterialOptions.map((item) => (
-                <option
-                  key={`name-${item.id}`}
-                  value={item.name}
-                  label={item.productCode}
-                />
-              ))}
-            </datalist>
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -1288,10 +1467,13 @@ const ChefCreateMenu = ({
                   <th className="w-14 px-2 py-3 font-semibold text-center">
                     No
                   </th>
+                  <th className="px-3 py-3 font-semibold w-[120px]">
+                    Type
+                  </th>
                   <th className="px-4 py-3 font-semibold w-[160px]">
                     Product code
                   </th>
-                  <th className="px-4 py-3 font-semibold min-w-[260px]">
+                  <th className="px-4 py-3 font-semibold min-w-[390px]">
                     Name
                   </th>
                   <th className="px-4 py-3 font-semibold w-[120px]">
@@ -1340,10 +1522,30 @@ const ChefCreateMenu = ({
                     <td className="px-2 py-3 text-center text-sm text-muted">
                       {(ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE + index + 1}
                     </td>
+                    <td className="px-3 py-3">
+                      <select
+                        value={row.ingredientType}
+                        onChange={(event) =>
+                          updateIngredientRow(
+                            row.id,
+                            'ingredientType',
+                            event.target.value as IngredientRow['ingredientType'],
+                          )
+                        }
+                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        aria-label={`Ingredient type for row ${index + 1}`}
+                      >
+                        <option value="">Select</option>
+                        <option value="IT">IT</option>
+                        <option value="NMP">NMP</option>
+                      </select>
+                    </td>
                     <td className="px-4 py-3">
                       <input
                         type="text"
                         value={row.productCode}
+                        readOnly={row.ingredientType === 'NMP'}
+                        aria-readonly={row.ingredientType === 'NMP'}
                         onChange={(event) =>
                           handleIngredientInputChange(
                             row.id,
@@ -1351,14 +1553,18 @@ const ChefCreateMenu = ({
                             event.target.value,
                           )
                         }
-                        onFocus={handleRawMaterialFocus}
+                        onFocus={
+                          row.ingredientType === 'NMP'
+                            ? undefined
+                            : handleRawMaterialFocus
+                        }
                         autoComplete="off"
-                        placeholder="PRD-001"
+                        placeholder={row.ingredientType === 'NMP' ? 'NMP' : 'PRD-001'}
                         list="raw-material-code-options"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        className={`w-full rounded-xl border border-border px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 ${row.ingredientType === 'NMP' ? 'bg-slate-200 text-muted' : 'bg-white'}`}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="relative px-4 py-3">
                       <div className="grid">
                         <input
                           type="text"
@@ -1370,16 +1576,65 @@ const ChefCreateMenu = ({
                               event.target.value,
                             )
                           }
-                          onFocus={handleRawMaterialFocus}
+                          onFocus={() => {
+                            if (row.ingredientType !== 'IT') return
+                            setActiveIngredientDropdownId(row.id)
+                            const input = document.activeElement
+                            if (input instanceof HTMLElement) {
+                              positionIngredientDropdown(input)
+                            }
+                            handleRawMaterialFocus()
+                          }}
+                          onBlur={() => {
+                            window.setTimeout(() => {
+                              setActiveIngredientDropdownId((current) =>
+                                current === row.id ? null : current,
+                              )
+                              setIngredientDropdownPosition(null)
+                            }, 150)
+                          }}
                           autoComplete="off"
                           placeholder="Oat Milk"
-                          list="raw-material-name-options"
                           className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
                         />
                         <div className="col-start-1 row-start-1 pointer-events-none whitespace-pre-wrap break-words px-3 py-2 text-sm leading-5 text-foreground peer-focus:opacity-0">
                           {row.name}
                         </div>
                       </div>
+                      {row.ingredientType === 'IT' &&
+                      activeIngredientDropdownId === row.id &&
+                      rawMaterialOptions.length > 0 ? (
+                        <div
+                          className="fixed z-[100] w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
+                          style={
+                            ingredientDropdownPosition
+                              ? {
+                                  left: ingredientDropdownPosition.left,
+                                  top: ingredientDropdownPosition.top,
+                                }
+                              : undefined
+                          }
+                        >
+                          <div className="max-h-72 overflow-y-auto py-1">
+                            {rawMaterialOptions.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => selectRawMaterialForRow(row.id, item)}
+                                className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-primary-soft"
+                              >
+                                <span className="block truncate text-sm font-semibold text-foreground">
+                                  {item.name}
+                                </span>
+                                <span className="mt-1 block text-xs text-muted">
+                                  {item.productCode}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -1441,7 +1696,7 @@ const ChefCreateMenu = ({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          {lockSrUomToRawMaterial ? (
+                          {lockSrUomToRawMaterial && row.ingredientType !== 'NMP' ? (
                             <input
                               type="text"
                               value={
@@ -1545,7 +1800,11 @@ const ChefCreateMenu = ({
             ) : null}
             <ActionButton
               action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
-              onClick={() => handleSaveRecipe({ resubmit: isRejectedRecipe })}
+              onClick={() =>
+                isRejectedRecipe
+                  ? setResubmitModalOpen(true)
+                  : handleSaveRecipe()
+              }
             />
           </div>
         </div>

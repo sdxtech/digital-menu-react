@@ -21,6 +21,7 @@ import {
 } from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -54,6 +55,7 @@ type StoreRequestMenu = {
   recipeCode?: string
   recipeVersion?: number
   menuName: string
+  clientName?: string
   category: string
   portion: number
   estimatedCost?: number
@@ -193,13 +195,15 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'No',
       'Production Date',
       'Site',
+      'Client Name',
       'Production Code',
       'Menu Name',
       'Version',
       'Recipe Code',
       'Category',
       'Portion',
-      'IT Code',
+      'Product Type',
+      'Product Code',
       'Ingredient Name',
       'Vendor',
       'Planned QTY',
@@ -218,6 +222,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           rowNumber,
           toSpreadsheetDate(group.date),
           group.site ?? '',
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
@@ -241,12 +246,14 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           rowNumber,
           toSpreadsheetDate(group.date),
           group.site ?? '',
+          menu.clientName ?? '',
           group.productionCode ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
           menu.category,
           menu.portion,
+          ingredient.ingredientType ?? '',
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
@@ -268,7 +275,8 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
     [
       'Production Date',
       'Site',
-      'IT Code',
+      'Product Type',
+      'Product Code',
       'Ingredient Name',
       'Vendor',
       'QTY',
@@ -281,6 +289,8 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
       rows.push([
         toSpreadsheetDate(group.date),
         group.site ?? '',
+        group.items[0]?.clientName ?? '',
+        item.ingredientType ?? '',
         item.productCode,
         item.name,
         item.vendor ?? '',
@@ -298,6 +308,7 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
     [
       'Production Date',
       'Site',
+      'Client Name',
       'Menu Name',
       'Version',
       'Category',
@@ -319,9 +330,10 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
           : undefined
 
       rows.push([
-        toSpreadsheetDate(group.date),
-        group.site ?? '',
-        menu.menuName,
+      toSpreadsheetDate(group.date),
+      group.site ?? '',
+      menu.clientName ?? '',
+      menu.menuName,
         formatRecipeVersion(menu.recipeVersion),
         menu.category,
         menu.portion,
@@ -1088,6 +1100,7 @@ const ChefStoreRequest = ({
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Production code</th>
+                <th className="px-5 py-4 font-semibold">Client name</th>
                 <th className="px-5 py-4 font-semibold">Reviewed by</th>
                 <th className="px-5 py-4 font-semibold">Total menu</th>
                 <th className="px-5 py-4 font-semibold">Storekeeper</th>
@@ -1097,13 +1110,13 @@ const ChefStoreRequest = ({
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     No production batches submitted yet.
                   </td>
                 </tr>
@@ -1173,6 +1186,7 @@ const ChefStoreRequest = ({
                       <td className="px-5 py-4 text-xs text-muted">
                         {group.productionCode ?? '-'}
                       </td>
+                      <td className="px-5 py-4">{items[0]?.clientName ?? '-'}</td>
                       <td className="px-5 py-4 text-sm text-muted">
                         {reviewedByLabel}
                       </td>
