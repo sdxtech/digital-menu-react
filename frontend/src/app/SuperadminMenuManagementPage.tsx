@@ -338,11 +338,7 @@ const mapRawMaterialVendorPriceOption = (
 
 const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
   if (!Number.isFinite(Number(option?.price))) return undefined
-  const priceQuantity = Number(option?.priceQuantity)
-  return (
-    Number(option?.price) /
-    (Number.isFinite(priceQuantity) && priceQuantity > 0 ? priceQuantity : 1)
-  )
+  return Number(option?.price)
 }
 
 const formatVendorOptionLabel = (option: RawMaterialVendorPriceOption) =>
@@ -2492,7 +2488,7 @@ const SuperadminMenuManagementPage = () => {
         ? ` Removed ${result.vendorPriceDuplicateRemovedCount} stale duplicate vendor records.`
         : ''
       const quantityText = result.priceQuantityAdjustedCount
-        ? ` Applied price quantities on ${result.priceQuantityAdjustedCount} rows when calculating unit prices.`
+        ? ` Read price quantities on ${result.priceQuantityAdjustedCount} rows without changing the imported prices.`
         : ''
       const conflictText = result.conflictingVendorPriceCount
         ? ` Resolved ${result.conflictingVendorPriceCount} repeated vendor prices in this file using the highest unit price.`
