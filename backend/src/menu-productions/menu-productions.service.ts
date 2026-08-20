@@ -34,6 +34,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { WorkflowMailService } from '../mail/workflow-mail.service';
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP';
   productCode: string;
   name: string;
   unitOfMeasures: string;
@@ -1480,6 +1481,7 @@ export class MenuProductionsService implements OnModuleInit {
     query: ListMenuProductionsQueryDto,
     site?: string,
     unitManagerId?: string,
+    approvalReady = false,
   ) {
     await this.backfillMissingMenuProductionCodes();
     const requestedSite = this.normalizeSite(site);
@@ -1505,6 +1507,13 @@ export class MenuProductionsService implements OnModuleInit {
       });
     }
     if (andFilters.length) {
+      filter.$and = andFilters;
+    }
+    if (approvalReady) {
+      andFilters.push({
+        sellingPricePerPax: { $type: 'number', $gte: 0 },
+        sellingQuantity: { $type: 'number', $gte: 0 },
+      });
       filter.$and = andFilters;
     }
     const requestedApprovalStatus = query.approvalStatus;
@@ -1596,6 +1605,7 @@ export class MenuProductionsService implements OnModuleInit {
         category: recipe.category?.trim() ?? '',
         portionSize: Number(recipe.portionSize),
         ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
+          ingredientType: ingredient.ingredientType,
           productCode: ingredient.productCode?.trim() ?? '',
           name: ingredient.name?.trim() ?? '',
           unitOfMeasures: ingredient.unitOfMeasures?.trim() ?? '',
@@ -2080,6 +2090,7 @@ export class MenuProductionsService implements OnModuleInit {
           }
 
           return {
+            ingredientType: ingredient.ingredientType,
             productCode,
             name,
             unitOfMeasures,

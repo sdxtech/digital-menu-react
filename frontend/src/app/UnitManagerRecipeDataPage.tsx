@@ -9,6 +9,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 const ITEMS_PER_PAGE = 10
 
 type RecipeIngredient = {
+  ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string

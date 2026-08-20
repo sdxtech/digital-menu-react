@@ -12,7 +12,7 @@ import {
   AUTH_TOKEN_REFRESHED_EVENT,
 } from './api' /* Fungsi untuk melakukan fetch API dengan penanganan token dan error yang sesuai. */
 
-export type Role = 'chef' | 'unit-manager' | 'admin-site' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
+export type Role = 'chef' | 'corporate-chef' | 'unit-manager' | 'admin-site' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
 
 export type User = {
   id?: string
@@ -23,6 +23,8 @@ export type User = {
   site?: string
   siteId?: string
   siteName?: string
+  sites?: string[]
+  siteOptions?: Array<{ code: string; name: string }>
 }/* Tipe data untuk informasi pengguna yang disimpan dalam konteks autentikasi. */
 
 type AuthContextValue = {
@@ -39,13 +41,14 @@ const REFRESH_TOKEN_KEY = 'dm-auth-refresh-token'/* Kunci untuk menyimpan token 
 
 const rolePaths: Record<Role, string> = {
   chef: '/chef',
+  'corporate-chef': '/corporate-chef',
   'unit-manager': '/unit-manager',
   'admin-site': '/admin-site',
   storekeeper: '/storekeeper',
   superadmin: '/superadmin',
 }/* Pemetaan peran pengguna ke path dashboard yang sesuai. */
 
-const rolePriority: Role[] = ['superadmin', 'unit-manager', 'admin-site', 'storekeeper', 'chef']
+const rolePriority: Role[] = ['superadmin', 'corporate-chef', 'unit-manager', 'admin-site', 'storekeeper', 'chef']
 
 const isRole = (value?: string): value is Role => {
   return Boolean(value && value in rolePaths)
@@ -202,6 +205,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       site?: string
       siteId?: string
       siteName?: string
+      sites?: string[]
+      siteOptions?: Array<{ code: string; name: string }>
     } | null = null
     // FRONTEND AUTH: role and site scope are verified by backend (/auth/me).
     me = await apiFetch<{
@@ -213,6 +218,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       site?: string
       siteId?: string
       siteName?: string
+      sites?: string[]
+      siteOptions?: Array<{ code: string; name: string }>
     }>('/auth/me', undefined, nextAccessToken)
     nextRole = resolveRole(me?.appRole, me?.roles)
 
@@ -233,6 +240,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       site: me?.site,
       siteId: me?.siteId,
       siteName: me?.siteName,
+      sites: me?.sites,
+      siteOptions: me?.siteOptions,
     }/* Buat objek User berdasarkan informasi yang diterima dari endpoint /auth/me dan hasil validasi peran. */
     setUser(nextUser)/* Simpan informasi pengguna ke state. */
     writeSessionStorage(USER_KEY, JSON.stringify(nextUser))/* Simpan informasi pengguna ke sessionStorage. */

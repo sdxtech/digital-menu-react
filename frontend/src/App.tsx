@@ -19,6 +19,7 @@ import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductionRecordsPage'
 import UnitManagerPage from './app/UnitManagerPage'
+import CorporateChefLayout from './app/CorporateChefLayout'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import AdminSiteLayout from './app/AdminSiteLayout'
 import AdminSiteMenuProductionPage from './app/AdminSiteMenuProductionPage'
@@ -163,6 +164,18 @@ function App() {
               path="menu-production-records"
               element={<UnitManagerMenuProductionRecordsPage />}
             />
+            <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
+          </Route>
+        </Route>
+
+        <Route element={<RequireRole role="corporate-chef" />}>
+          <Route path="/corporate-chef" element={<CorporateChefLayout />}>
+            <Route
+              index
+              element={<SuperadminApprovalCentersPage corporateOnly />}
+            />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="security" element={<SecurityView />} />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
           </Route>
         </Route>

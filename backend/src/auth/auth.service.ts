@@ -21,6 +21,7 @@ type AuthSiteContext = {
   site?: string;
   siteId?: string;
   siteName?: string;
+  sites?: string[];
 };
 
 @Injectable()
@@ -137,6 +138,7 @@ export class AuthService {
   private resolveAppRole(roles: AppRole[] = []) {
     if (roles.includes(AppRole.Superadmin)) return 'superadmin';
     if (roles.includes(AppRole.UnitManager)) return 'unit-manager';
+    if (roles.includes(AppRole.CorporateChef)) return 'corporate-chef';
     if (roles.includes(AppRole.AdminSite)) return 'admin-site';
     if (roles.includes(AppRole.Storekeeper)) return 'storekeeper';
     if (roles.includes(AppRole.Chef)) return 'chef';
@@ -149,6 +151,9 @@ export class AuthService {
     }
 
     const siteId = user.siteId ? String(user.siteId) : undefined;
+    const assignedSites = (user.sites ?? [])
+      .map((site) => site.trim())
+      .filter(Boolean);
     if (siteId) {
       const site = await this.sites.findSummaryById(siteId);
       if (site) {
@@ -156,13 +161,12 @@ export class AuthService {
           site: site.code,
           siteId: site.id,
           siteName: site.name,
+          sites: Array.from(new Set([site.code, ...assignedSites])),
         };
       }
     }
 
-    const legacySite = (user.sites ?? [])
-      .map((site) => site.trim())
-      .filter(Boolean)[0];
+    const legacySite = assignedSites[0];
     if (legacySite) {
       const site = Array.from(
         (await this.sites.findSummariesByCodes([legacySite])).values(),
@@ -172,12 +176,14 @@ export class AuthService {
           site: site.code,
           siteId: site.id,
           siteName: site.name,
+          sites: assignedSites,
         };
       }
 
       return {
         site: legacySite,
         siteName: legacySite,
+        sites: assignedSites,
       };
     }
 
@@ -213,6 +219,7 @@ export class AuthService {
         site: siteContext.site,
         siteId: siteContext.siteId,
         siteName: siteContext.siteName,
+        sites: siteContext.sites,
       },
       { expiresIn: accessExpiresIn },
     );

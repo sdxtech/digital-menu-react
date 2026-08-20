@@ -28,6 +28,7 @@ import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SitesService } from '../sites/sites.service';
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 
@@ -40,6 +41,7 @@ export class AuthController {
     private readonly users: UsersService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly sites: SitesService,
   ) {}
 
   @Post('register')
@@ -106,10 +108,42 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@Req() req: AuthenticatedRequest) {
-    const { sub, name, email, roles, appRole, site, siteId, siteName } =
+  async me(@Req() req: AuthenticatedRequest) {
+    const { sub, name, email, roles, appRole, site, siteId, siteName, sites } =
       req.user;
-    return { id: sub, name, email, roles, appRole, site, siteId, siteName };
+    const storedUser = await this.users.findById(sub);
+    const storedPrimarySite = storedUser?.siteId
+      ? await this.sites.findById(String(storedUser.siteId))
+      : null;
+    const primarySummary = storedPrimarySite
+      ? this.sites.toSummary(storedPrimarySite)
+      : undefined;
+    const effectiveSite = primarySummary?.code ?? site;
+    const assignedSites = Array.from(
+      new Set([
+        ...(effectiveSite ? [effectiveSite] : []),
+        ...(storedUser?.sites?.length ? storedUser.sites : sites ?? []),
+      ]),
+    );
+    const siteSummaries = assignedSites?.length
+      ? await this.sites.findSummariesByCodes(assignedSites)
+      : new Map();
+    const siteOptions = (assignedSites ?? []).map((code) => {
+      const summary = siteSummaries.get(code);
+      return { code, name: summary?.name ?? code };
+    });
+    return {
+      id: sub,
+      name,
+      email,
+      roles,
+      appRole,
+      site: effectiveSite,
+      siteId: primarySummary?.id ?? siteId,
+      siteName: primarySummary?.name ?? siteName,
+      sites: assignedSites,
+      siteOptions,
+    };
   }
 
   @Patch('profile')

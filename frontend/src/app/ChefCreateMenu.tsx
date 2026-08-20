@@ -27,6 +27,7 @@ type RecipeForm = {
 
 type IngredientRow = {
   id: string
+  ingredientType: '' | 'IT' | 'NMP'
   productCode: string
   name: string
   unitOfMeasures: string
@@ -112,6 +113,7 @@ const createIngredientRow = (
   values: Partial<IngredientRow> = {},
 ): IngredientRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  ingredientType: values.ingredientType ?? '',
   productCode: values.productCode ?? '',
   name: values.name ?? '',
   unitOfMeasures: values.unitOfMeasures ?? '',
@@ -238,6 +240,7 @@ const ChefCreateMenu = ({
       baseIngredients.length
         ? baseIngredients.map((ingredient) =>
             createIngredientRow({
+              ingredientType: ingredient.ingredientType ?? '',
               productCode: ingredient.productCode ?? '',
               name: ingredient.name ?? '',
               unitOfMeasures: ingredient.unitOfMeasures ?? '',
@@ -360,13 +363,11 @@ const ChefCreateMenu = ({
           fetchAllPages<UnitOfMeasureApi>(
             '/unit-of-measures?isActive=true',
           ),
-          lockSrUomToRawMaterial
-            ? Promise.resolve<string[]>([])
-            : apiFetch<string[]>(
-                '/raw-materials/unit-options',
-                undefined,
-                accessToken,
-              ),
+          apiFetch<string[]>(
+            '/raw-materials/unit-options',
+            undefined,
+            accessToken,
+          ),
           fetchAllPages<UnitConversionApi>(
             '/unit-of-measures/conversions?isActive=true',
           ),
@@ -637,6 +638,15 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'ingredientType') {
+          if (value === 'NMP') {
+            next.productCode = 'NMP'
+          } else if (value === 'IT' && row.ingredientType === 'NMP') {
+            next.productCode = ''
+            next.name = ''
+            next.unitOfMeasures = ''
+          }
+        }
         if (
           (field === 'productCode' ||
             field === 'name' ||
@@ -938,6 +948,11 @@ const ChefCreateMenu = ({
 
     const parsedIngredients: RecipeIngredient[] = []
     for (const sourceRow of usedRows) {
+      if (!sourceRow.ingredientType) {
+        setSubmitError('Select IT or NMP for each ingredient row.')
+        setSubmitMessage('')
+        return
+      }
       const enteredProductCode = sourceRow.productCode.trim()
       if (!enteredProductCode) {
         setSubmitError('Select a valid raw material for each ingredient row.')
@@ -945,9 +960,10 @@ const ChefCreateMenu = ({
         return
       }
 
-      const matchedRawMaterial =
-        await resolveRawMaterialByProductCode(enteredProductCode)
-      if (!matchedRawMaterial) {
+      const matchedRawMaterial = sourceRow.ingredientType === 'IT'
+        ? await resolveRawMaterialByProductCode(enteredProductCode)
+        : null
+      if (sourceRow.ingredientType === 'IT' && !matchedRawMaterial) {
         setSubmitError(
           `Raw material ${enteredProductCode} was not found. Select an IT code from raw material data.`,
         )
@@ -955,7 +971,9 @@ const ChefCreateMenu = ({
         return
       }
 
-      const row = applyRawMaterialToRow(sourceRow, matchedRawMaterial)
+      const row = matchedRawMaterial
+        ? applyRawMaterialToRow(sourceRow, matchedRawMaterial)
+        : sourceRow
       if (
         row.productCode !== sourceRow.productCode ||
         row.name !== sourceRow.name ||
@@ -1013,6 +1031,7 @@ const ChefCreateMenu = ({
         }
         const srQtyManual = row.srQtyManual || !conversionResult
         parsedIngredients.push({
+          ...(row.ingredientType ? { ingredientType: row.ingredientType } : {}),
           productCode,
           name,
           unitOfMeasures,
@@ -1031,6 +1050,7 @@ const ChefCreateMenu = ({
         })
       } else {
         parsedIngredients.push({
+          ...(row.ingredientType ? { ingredientType: row.ingredientType } : {}),
           productCode,
           name,
           unitOfMeasures,
@@ -1442,6 +1462,9 @@ const ChefCreateMenu = ({
                   <th className="w-14 px-2 py-3 font-semibold text-center">
                     No
                   </th>
+                  <th className="px-3 py-3 font-semibold w-[120px]">
+                    Type
+                  </th>
                   <th className="px-4 py-3 font-semibold w-[160px]">
                     Product code
                   </th>
@@ -1494,10 +1517,30 @@ const ChefCreateMenu = ({
                     <td className="px-2 py-3 text-center text-sm text-muted">
                       {(ingredientPage - 1) * INGREDIENT_ROWS_PER_PAGE + index + 1}
                     </td>
+                    <td className="px-3 py-3">
+                      <select
+                        value={row.ingredientType}
+                        onChange={(event) =>
+                          updateIngredientRow(
+                            row.id,
+                            'ingredientType',
+                            event.target.value as IngredientRow['ingredientType'],
+                          )
+                        }
+                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        aria-label={`Ingredient type for row ${index + 1}`}
+                      >
+                        <option value="">Select</option>
+                        <option value="IT">IT</option>
+                        <option value="NMP">NMP</option>
+                      </select>
+                    </td>
                     <td className="px-4 py-3">
                       <input
                         type="text"
                         value={row.productCode}
+                        readOnly={row.ingredientType === 'NMP'}
+                        aria-readonly={row.ingredientType === 'NMP'}
                         onChange={(event) =>
                           handleIngredientInputChange(
                             row.id,
@@ -1505,11 +1548,15 @@ const ChefCreateMenu = ({
                             event.target.value,
                           )
                         }
-                        onFocus={handleRawMaterialFocus}
+                        onFocus={
+                          row.ingredientType === 'NMP'
+                            ? undefined
+                            : handleRawMaterialFocus
+                        }
                         autoComplete="off"
-                        placeholder="PRD-001"
+                        placeholder={row.ingredientType === 'NMP' ? 'NMP' : 'PRD-001'}
                         list="raw-material-code-options"
-                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                        className={`w-full rounded-xl border border-border px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 ${row.ingredientType === 'NMP' ? 'bg-slate-200 text-muted' : 'bg-white'}`}
                       />
                     </td>
                     <td className="relative px-4 py-3">
@@ -1641,7 +1688,7 @@ const ChefCreateMenu = ({
                           />
                         </td>
                         <td className="px-4 py-3">
-                          {lockSrUomToRawMaterial ? (
+                          {lockSrUomToRawMaterial && row.ingredientType !== 'NMP' ? (
                             <input
                               type="text"
                               value={

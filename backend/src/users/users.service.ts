@@ -423,7 +423,7 @@ export class UsersService {
     createMissingSites = false,
   ) {
     const normalizedSiteId = siteId?.trim();
-    if (normalizedSiteId) {
+    if (normalizedSiteId && this.normalizeSites(sites).length === 0) {
       const site = await this.sites.findById(normalizedSiteId);
       const summary = this.sites.toSummary(site);
       return {
@@ -469,9 +469,18 @@ export class UsersService {
       throw new BadRequestException(`Site not found: ${primarySiteCode}`);
     }
 
+    const missingCodes = siteCodes.filter((code) => !siteByCode.has(code));
+    if (missingCodes.length && !createMissingSites) {
+      throw new BadRequestException(`Site not found: ${missingCodes.join(', ')}`);
+    }
+
     return {
       siteId: new Types.ObjectId(site.id),
-      sites: [site.code],
+      sites: Array.from(
+        new Set(
+          siteCodes.map((code) => siteByCode.get(code)?.code ?? code),
+        ),
+      ),
     };
   }
 
@@ -500,7 +509,7 @@ export class UsersService {
       siteId: site?.id ?? siteId,
       siteName: site?.name ?? primarySiteCode,
       siteCode: primarySiteCode,
-      sites: primarySiteCode ? [primarySiteCode] : [],
+      sites: this.normalizeSites(item.sites),
       site,
     };
   }
@@ -525,8 +534,7 @@ export class UsersService {
     if (!Array.isArray(sites)) return [];
     return sites
       .map((site) => site.trim())
-      .filter(Boolean)
-      .slice(0, 1);
+      .filter(Boolean);
   }
 
   private normalizeSiteCode(site: string) {

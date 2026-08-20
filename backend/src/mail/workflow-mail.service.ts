@@ -41,7 +41,7 @@ export class WorkflowMailService {
       return;
     }
     const recipients = await this.users.findActiveEmailRecipients({
-      roles: [AppRole.UnitManager],
+      roles: [AppRole.UnitManager, AppRole.CorporateChef],
       site: recipe.site,
     });
     const title = resubmitted
