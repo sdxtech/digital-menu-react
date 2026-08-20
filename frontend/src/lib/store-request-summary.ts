@@ -11,10 +11,6 @@ export type StoreRequestSummaryIngredient = {
   plannedIngredientCost?: number
 }
 
-type AggregateStoreRequestSummaryOptions = {
-  splitByVendor?: boolean
-}
-
 type StoreRequestSummaryGroup = {
   items?: Array<{
     ingredients?: StoreRequestSummaryIngredient[]
@@ -24,12 +20,23 @@ type StoreRequestSummaryGroup = {
 
 export const aggregateStoreRequestSummary = (
   items: StoreRequestSummaryIngredient[] = [],
-  options: AggregateStoreRequestSummaryOptions = {},
 ): StoreRequestSummaryIngredient[] => {
   const summaryMap = new Map<string, StoreRequestSummaryIngredient>()
+  const nonSummarizedItems: StoreRequestSummaryIngredient[] = []
 
   items.forEach((item) => {
+    // NMP rows must stay separate even when they share the NMP product code.
+    // Only IT ingredients with a non-NMP product code are eligible for
+    // quantity/cost aggregation.
     const productCode = String(item.productCode ?? '').trim()
+    if (
+      item.ingredientType !== 'IT' ||
+      productCode.toUpperCase() === 'NMP'
+    ) {
+      nonSummarizedItems.push({ ...item })
+      return
+    }
+
     const name = String(item.name ?? '').trim()
     const unitOfMeasures = String(item.unitOfMeasures ?? '').trim()
     const vendor = String(item.vendor ?? '').trim()
@@ -38,12 +45,10 @@ export const aggregateStoreRequestSummary = (
     const normalizedUnit = unitOfMeasures.toLowerCase()
     if (!identity || !normalizedUnit) return
 
-    // Keep this identity in sync with the backend store-request key. A product
-    // can legitimately be requested in more than one unit of measure.
+    // Keep this identity in sync with the backend store-request key. IT
+    // ingredients with different vendors must remain separate summaries.
     const keyBase = `${identity}__${normalizedUnit}`
-    const key = options.splitByVendor
-      ? `${keyBase}__${vendor.toLowerCase()}__${vendorSite.toLowerCase()}`
-      : keyBase
+    const key = `${keyBase}__${vendor.toLowerCase()}__${vendorSite.toLowerCase()}`
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
     const existing = summaryMap.get(key)
@@ -58,10 +63,10 @@ export const aggregateStoreRequestSummary = (
           (existing.plannedIngredientCost ?? 0) +
           Number(item.plannedIngredientCost)
       }
-      if (!options.splitByVendor && (existing.vendor ?? '') !== vendor) {
+      if ((existing.vendor ?? '') !== vendor) {
         existing.vendor = existing.vendor ? 'Multiple' : vendor || undefined
       }
-      if (!options.splitByVendor && existing.vendorSite !== item.vendorSite) {
+      if (existing.vendorSite !== item.vendorSite) {
         existing.vendorSite = undefined
       }
       if (existing.price !== item.price) {
@@ -98,7 +103,7 @@ export const aggregateStoreRequestSummary = (
     })
   })
 
-  return Array.from(summaryMap.values())
+  return [...Array.from(summaryMap.values()), ...nonSummarizedItems]
 }
 
 export const aggregateStoreRequestSummaryByVendor = (
@@ -108,5 +113,5 @@ export const aggregateStoreRequestSummaryByVendor = (
     group.items?.flatMap((item) => item.ingredients ?? []) ?? []
   const sourceItems = ingredientRows.length ? ingredientRows : group.summary ?? []
 
-  return aggregateStoreRequestSummary(sourceItems, { splitByVendor: true })
+  return aggregateStoreRequestSummary(sourceItems)
 }
