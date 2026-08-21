@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole } from '../auth/roles.constants';
+import { getUserSiteScope } from '../auth/site-scope';
 import { getUploadDir } from '../common/upload-dir';
 import { CreateRawMaterialDto } from './dto/create-raw-material.dto';
 import { BulkUpdateSpecificConversionsDto } from './dto/bulk-update-specific-conversions.dto';
@@ -98,20 +99,26 @@ export class RawMaterialsController {
   @Get()
   @Roles(
     AppRole.Chef,
+    AppRole.CorporateChef,
     AppRole.Superadmin,
     AppRole.UnitManager,
     AppRole.Storekeeper,
   )
-  list(@Query() query: ListRawMaterialsQueryDto) {
+  list(
+    @Query() query: ListRawMaterialsQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const site = this.resolveRawMaterialSite(req, query.site);
     return this.rawMaterials.findAll({
       page: query.page ?? 1,
       limit: query.limit ?? 20,
       search: query.search,
+      site,
     });
   }
 
   @Get('unit-options')
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   listRawMaterialUnitOptions() {
     return this.rawMaterials.findUnitOfMeasuresOptions();
   }
@@ -119,16 +126,31 @@ export class RawMaterialsController {
   @Get(':productCode/vendor-prices')
   @Roles(
     AppRole.Chef,
+    AppRole.CorporateChef,
     AppRole.Superadmin,
     AppRole.UnitManager,
     AppRole.Storekeeper,
   )
   listVendorPrices(
+    @Req() req: AuthenticatedRequest,
     @Param('productCode') productCode: string,
     @Query('site') site?: string,
     @Query('vendor') vendor?: string,
   ) {
-    return this.rawMaterials.findVendorPrices({ productCode, site, vendor });
+    const resolvedSite = this.resolveRawMaterialSite(req, site);
+    return this.rawMaterials.findVendorPrices({
+      productCode,
+      site: resolvedSite,
+      vendor,
+    });
+  }
+
+  private resolveRawMaterialSite(
+    req: AuthenticatedRequest,
+    requestedSite?: string,
+  ) {
+    if (req.user.roles?.includes(AppRole.CorporateChef)) return undefined;
+    return getUserSiteScope(req.user) ?? requestedSite;
   }
 
   @Post('prices/upload')

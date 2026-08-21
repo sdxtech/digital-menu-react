@@ -626,7 +626,12 @@ export class MenuProductionsService implements OnModuleInit {
   ) {
     if (status === 'approved') {
       const salesDetails = await this.menuProductionModel
-        .findOne(this.withUnitManagerFilter(this.withSiteFilter({ _id: id }, site), unitManagerId))
+        .findOne(
+          this.withUnitManagerFilter(
+            this.withSiteFilter({ _id: id }, site),
+            unitManagerId,
+          ),
+        )
         .select({ sellingPricePerPax: 1, sellingQuantity: 1 })
         .lean();
       if (
@@ -762,11 +767,17 @@ export class MenuProductionsService implements OnModuleInit {
   ) {
     const sellingPricePerPax = Number(input.sellingPricePerPax);
     const sellingQuantity = Number(input.sellingQuantity);
+    const actor = salesInputBy?.trim();
     if (
       !Number.isFinite(sellingPricePerPax) ||
       !Number.isFinite(sellingQuantity)
     ) {
       throw new BadRequestException('Sales details must be valid numbers.');
+    }
+    if (!actor) {
+      throw new BadRequestException(
+        'Admin identity is required for sales input.',
+      );
     }
 
     const updated = await this.menuProductionModel.findOneAndUpdate(
@@ -783,7 +794,7 @@ export class MenuProductionsService implements OnModuleInit {
           estimatedRevenue: this.roundQuantity(
             sellingPricePerPax * sellingQuantity,
           ),
-          salesInputBy: salesInputBy?.trim() || undefined,
+          salesInputBy: actor,
         },
         $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
       },
@@ -806,12 +817,27 @@ export class MenuProductionsService implements OnModuleInit {
     const normalizedCode = productionCode?.trim();
     const sellingPricePerPax = Number(input.sellingPricePerPax);
     const sellingQuantity = Number(input.sellingQuantity);
-    if (!normalizedCode || !Number.isFinite(sellingPricePerPax) || !Number.isFinite(sellingQuantity)) {
-      throw new BadRequestException('Production batch sales details are invalid.');
+    const actor = salesInputBy?.trim();
+    if (
+      !normalizedCode ||
+      !Number.isFinite(sellingPricePerPax) ||
+      !Number.isFinite(sellingQuantity)
+    ) {
+      throw new BadRequestException(
+        'Production batch sales details are invalid.',
+      );
+    }
+    if (!actor) {
+      throw new BadRequestException(
+        'Admin identity is required for sales input.',
+      );
     }
 
     const filter = this.withSiteFilter(
-      { productionCode: normalizedCode, approvalStatus: { $in: ['pending', 'rejected'] } },
+      {
+        productionCode: normalizedCode,
+        approvalStatus: { $in: ['pending', 'rejected'] },
+      },
       site,
     );
     const result = await this.menuProductionModel.updateMany(filter, {
@@ -820,13 +846,17 @@ export class MenuProductionsService implements OnModuleInit {
         storeRequestStatus: 'not-requested',
         sellingPricePerPax,
         sellingQuantity,
-        estimatedRevenue: this.roundQuantity(sellingPricePerPax * sellingQuantity),
-        salesInputBy: salesInputBy?.trim() || undefined,
+        estimatedRevenue: this.roundQuantity(
+          sellingPricePerPax * sellingQuantity,
+        ),
+        salesInputBy: actor,
       },
       $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
     });
     if (!result.matchedCount) {
-      throw new NotFoundException('Pending production batch not found for this site.');
+      throw new NotFoundException(
+        'Pending production batch not found for this site.',
+      );
     }
     const updatedItems = await this.menuProductionModel.find(filter).lean();
     const firstItem = updatedItems[0];

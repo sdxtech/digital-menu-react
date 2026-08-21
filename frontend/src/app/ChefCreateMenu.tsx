@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
@@ -137,6 +138,7 @@ type ChefCreateMenuProps = {
   baseRecipe?: BaseRecipe
   enableIngredientUomConversion?: boolean
   lockSrUomToRawMaterial?: boolean
+  showImport?: boolean
   onClose?: () => void
   onSaved?: () => void
 }
@@ -146,6 +148,7 @@ const ChefCreateMenu = ({
   baseRecipe: baseRecipeProp,
   enableIngredientUomConversion = false,
   lockSrUomToRawMaterial = false,
+  showImport = true,
   onClose,
   onSaved,
 }: ChefCreateMenuProps) => {
@@ -158,7 +161,7 @@ const ChefCreateMenu = ({
     importRecipesFromExcel,
     searchRawMaterials,
   } = useChefData()
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
 
   const baseRecipe =
     baseRecipeProp ??
@@ -192,10 +195,8 @@ const ChefCreateMenu = ({
   const [categoriesError, setCategoriesError] = useState('')
   const [ingredientPage, setIngredientPage] = useState(1)
   const [activeIngredientDropdownId, setActiveIngredientDropdownId] = useState<string | null>(null)
-  const [ingredientDropdownPosition, setIngredientDropdownPosition] = useState<{
-    left: number
-    top: number
-  } | null>(null)
+  const ingredientInputRef = useRef<HTMLInputElement | null>(null)
+  const ingredientDropdownRef = useRef<HTMLDivElement | null>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
   const [importMessage, setImportMessage] = useState('')
@@ -427,7 +428,7 @@ const ChefCreateMenu = ({
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
-    searchRawMaterials('', 5)
+    searchRawMaterials('', 5, user?.site)
       .then((results) => {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
@@ -441,7 +442,7 @@ const ChefCreateMenu = ({
         }
         setRawMaterialOptions([])
       })
-  }, [searchRawMaterials])
+  }, [searchRawMaterials, user?.site])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -608,7 +609,7 @@ const ChefCreateMenu = ({
     if (cached) return cached
 
     try {
-      const results = await searchRawMaterials(productCode, 40)
+      const results = await searchRawMaterials(productCode, 40, user?.site)
       cacheRawMaterials(results)
       return results.find(
         (item) => normalizeValue(item.productCode) === normalizedCode,
@@ -738,7 +739,7 @@ const ChefCreateMenu = ({
 
     searchTimeoutRef.current = window.setTimeout(async () => {
       try {
-        const results = await searchRawMaterials(trimmed, fetchLimit)
+        const results = await searchRawMaterials(trimmed, fetchLimit, user?.site)
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
@@ -795,22 +796,63 @@ const ChefCreateMenu = ({
     scheduleRawMaterialSearch('')
   }
 
-  const positionIngredientDropdown = (input: HTMLElement) => {
+  const updateIngredientDropdownPosition = useCallback(() => {
+    const input = ingredientInputRef.current
+    const dropdown = ingredientDropdownRef.current
+    if (!input || !dropdown) return
+
     const bounds = input.getBoundingClientRect()
-    const dropdownWidth = Math.min(576, window.innerWidth - 32)
-    const dropdownHeight = Math.min(296, window.innerHeight - 32)
     const gap = 4
-    const canOpenBelow = bounds.bottom + gap + dropdownHeight <= window.innerHeight
-    const top = canOpenBelow
-      ? bounds.bottom + gap
-      : Math.max(16, bounds.top - dropdownHeight - gap)
+    const availableBelow = window.innerHeight - bounds.bottom - 20
+    const availableAbove = bounds.top - 20
+    const naturalHeight = Math.min(280, dropdown.scrollHeight)
+    const placement =
+      availableBelow >= Math.min(naturalHeight, 160) ? 'below' : 'above'
+    const maxHeight = Math.max(
+      100,
+      Math.min(280, placement === 'below' ? availableBelow : availableAbove),
+    )
+    const dropdownWidth = Math.min(
+      Math.max(bounds.width, 420),
+      window.innerWidth - 32,
+    )
     const left = Math.min(
       Math.max(16, bounds.left),
-      Math.max(16, window.innerWidth - dropdownWidth - 16),
+      window.innerWidth - dropdownWidth - 16,
     )
+    const renderedHeight = Math.min(naturalHeight, maxHeight)
 
-    setIngredientDropdownPosition({ left, top })
-  }
+    dropdown.style.left = `${left}px`
+    dropdown.style.top = `${
+      placement === 'below'
+        ? bounds.bottom + gap
+        : Math.max(8, bounds.top - renderedHeight - gap)
+    }px`
+    dropdown.style.width = `${dropdownWidth}px`
+    dropdown.style.maxHeight = `${maxHeight}px`
+    dropdown.style.borderRadius =
+      placement === 'below' ? '0 0 0.75rem 0.75rem' : '0.75rem 0.75rem 0 0'
+    dropdown.style.visibility = 'visible'
+  }, [])
+
+  useEffect(() => {
+    if (!activeIngredientDropdownId) return
+
+    let animationFrame = 0
+    const syncPosition = () => {
+      updateIngredientDropdownPosition()
+      animationFrame = window.requestAnimationFrame(syncPosition)
+    }
+    animationFrame = window.requestAnimationFrame(syncPosition)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+    }
+  }, [
+    activeIngredientDropdownId,
+    rawMaterialOptions,
+    updateIngredientDropdownPosition,
+  ])
 
   const selectRawMaterialForRow = (rowId: string, material: RawMaterial) => {
     setIngredientRows((prev) =>
@@ -819,7 +861,8 @@ const ChefCreateMenu = ({
       )),
     )
     setActiveIngredientDropdownId(null)
-    setIngredientDropdownPosition(null)
+    ingredientInputRef.current = null
+    ingredientDropdownRef.current = null
   }
 
   const handleAddIngredientRow = () => {
@@ -1222,12 +1265,14 @@ const ChefCreateMenu = ({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ActionButton
-              action="import"
-              onClick={openImportModal}
-              iconClassName="bi bi-upload text-base"
-              size="sm"
-            />
+            {showImport ? (
+              <ActionButton
+                action="import"
+                onClick={openImportModal}
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
+            ) : null}
             {embedded && onClose ? (
               <button
                 type="button"
@@ -1576,13 +1621,10 @@ const ChefCreateMenu = ({
                               event.target.value,
                             )
                           }
-                          onFocus={() => {
+                          onFocus={(event) => {
                             if (row.ingredientType !== 'IT') return
                             setActiveIngredientDropdownId(row.id)
-                            const input = document.activeElement
-                            if (input instanceof HTMLElement) {
-                              positionIngredientDropdown(input)
-                            }
+                            ingredientInputRef.current = event.currentTarget
                             handleRawMaterialFocus()
                           }}
                           onBlur={() => {
@@ -1590,7 +1632,8 @@ const ChefCreateMenu = ({
                               setActiveIngredientDropdownId((current) =>
                                 current === row.id ? null : current,
                               )
-                              setIngredientDropdownPosition(null)
+                              ingredientInputRef.current = null
+                              ingredientDropdownRef.current = null
                             }, 150)
                           }}
                           autoComplete="off"
@@ -1604,36 +1647,33 @@ const ChefCreateMenu = ({
                       {row.ingredientType === 'IT' &&
                       activeIngredientDropdownId === row.id &&
                       rawMaterialOptions.length > 0 ? (
-                        <div
-                          className="fixed z-[100] w-[36rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
-                          style={
-                            ingredientDropdownPosition
-                              ? {
-                                  left: ingredientDropdownPosition.left,
-                                  top: ingredientDropdownPosition.top,
-                                }
-                              : undefined
-                          }
-                        >
-                          <div className="max-h-72 overflow-y-auto py-1">
-                            {rawMaterialOptions.map((item) => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => selectRawMaterialForRow(row.id, item)}
-                                className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-primary-soft"
-                              >
-                                <span className="block truncate text-sm font-semibold text-foreground">
-                                  {item.name}
-                                </span>
-                                <span className="mt-1 block text-xs text-muted">
-                                  {item.productCode}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        createPortal(
+                          <div
+                            ref={ingredientDropdownRef}
+                            className="fixed z-[100] overflow-y-auto border border-border bg-white shadow-xl"
+                            style={{ visibility: 'hidden' }}
+                          >
+                            <div className="py-1">
+                              {rawMaterialOptions.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => selectRawMaterialForRow(row.id, item)}
+                                  className="block w-full border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-primary-soft"
+                                >
+                                  <span className="block truncate text-sm font-semibold text-foreground">
+                                    {item.name}
+                                  </span>
+                                  <span className="mt-1 block text-xs text-muted">
+                                    {item.productCode}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>,
+                          document.body,
+                        )
                       ) : null}
                     </td>
                     <td className="px-4 py-3">

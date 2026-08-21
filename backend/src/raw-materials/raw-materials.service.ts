@@ -45,6 +45,7 @@ type ListRawMaterialsQuery = {
   page: number;
   limit: number;
   search?: string;
+  site?: string;
 };
 
 type ListRawMaterialVendorPricesQuery = {
@@ -297,12 +298,29 @@ export class RawMaterialsService {
 
   async findAll(query: ListRawMaterialsQuery) {
     const filter: Record<string, unknown> = {};
+    const hasSiteScope = Boolean(query.site?.trim());
+    const siteNormalizedValues = hasSiteScope
+      ? await this.resolveSiteNormalizedValues(query.site)
+      : [];
+    if (hasSiteScope) filter.productCode = /^IT/i;
     if (query.search?.trim()) {
       const text = query.search.trim();
       filter.$or = [
         { name: new RegExp(this.escapeRegExp(text), 'i') },
         { productCode: new RegExp(this.escapeRegExp(text), 'i') },
       ];
+    }
+    if (hasSiteScope) {
+      const siteMaterials = siteNormalizedValues.length
+        ? await this.rawMaterialVendorPriceModel.distinct(
+            'productCodeNormalized',
+            {
+              siteNormalized: { $in: siteNormalizedValues },
+              productCodeNormalized: /^it/i,
+            },
+          )
+        : [];
+      filter.productCodeNormalized = { $in: siteMaterials };
     }
 
     const skip = (query.page - 1) * query.limit;
@@ -1120,7 +1138,9 @@ export class RawMaterialsService {
   ) {
     const nextHasStartDate = Boolean(next.startDate);
     const currentHasStartDate = Boolean(current.startDate);
-    const nextEligible = Boolean(next.startDate && next.startDate <= updateDate);
+    const nextEligible = Boolean(
+      next.startDate && next.startDate <= updateDate,
+    );
     const currentEligible = Boolean(
       current.startDate && current.startDate <= updateDate,
     );
@@ -1142,20 +1162,21 @@ export class RawMaterialsService {
 
   private daysSinceStartDate(startDate: string, updateDate: string) {
     return (
-      Date.parse(`${updateDate}T00:00:00Z`) -
-      Date.parse(`${startDate}T00:00:00Z`)
-    ) / 86_400_000;
+      (Date.parse(`${updateDate}T00:00:00Z`) -
+        Date.parse(`${startDate}T00:00:00Z`)) /
+      86_400_000
+    );
   }
 
   private getDateOnly(date: Date) {
-    return `${date.getFullYear().toString().padStart(4, '0')}-${(date.getMonth() + 1)
+    return `${date.getFullYear().toString().padStart(4, '0')}-${(
+      date.getMonth() + 1
+    )
       .toString()
       .padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
   }
 
-  private getUnitPrice(input: {
-    price?: number;
-  }): number | undefined {
+  private getUnitPrice(input: { price?: number }): number | undefined {
     const price = this.normalizeOptionalNumber(input.price);
     if (price === undefined) return undefined;
 

@@ -216,7 +216,7 @@ export class MenuProductionsController {
       dto.productionCode,
       dto,
       getUserSiteScope(req.user),
-      req.user.name || req.user.email,
+      this.resolveSalesInputActor(req),
     );
   }
 
@@ -231,7 +231,13 @@ export class MenuProductionsController {
       id,
       dto,
       getUserSiteScope(req.user),
-      req.user.name || req.user.email,
+      this.resolveSalesInputActor(req),
+    );
+  }
+
+  private resolveSalesInputActor(req: AuthenticatedRequest) {
+    return (
+      req.user.name?.trim() || req.user.email?.trim() || req.user.sub?.trim()
     );
   }
 
@@ -273,7 +279,10 @@ export class MenuProductionsController {
     return normalizedSite;
   }
 
-  private resolveCreateChef(req: AuthenticatedRequest, requestedChefId?: string) {
+  private resolveCreateChef(
+    req: AuthenticatedRequest,
+    requestedChefId?: string,
+  ) {
     const siteScope = getUserSiteScope(req.user);
     if (siteScope) return req.user.sub;
 
@@ -297,9 +306,7 @@ export class MenuProductionsController {
     if (siteScope) return;
 
     if (!requestedUnitManagerId?.trim()) {
-      throw new BadRequestException(
-        'Menu production requires a unit manager.',
-      );
+      throw new BadRequestException('Menu production requires a unit manager.');
     }
   }
 
