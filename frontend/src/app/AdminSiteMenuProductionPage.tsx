@@ -60,6 +60,12 @@ const formatPrice = (value?: number) =>
         maximumFractionDigits: 0,
       }).format(value);
 
+const normalizeIntegerInput = (value: string) =>
+  value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+
+const formatIntegerInput = (value: string) =>
+  normalizeIntegerInput(value).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
 const totalOf = (items: Menu[], selector: (item: Menu) => number | undefined) =>
   items.reduce((total, item) => {
     const value = selector(item);
@@ -462,19 +468,22 @@ const AdminSiteMenuProductionPage = () => {
                                         </td>
                                         <td colSpan={2} className="px-4 py-3">
                                           <input
-                                            type="number"
-                                            min="0"
-                                            value={batchValues(group).price}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatIntegerInput(
+                                              batchValues(group).price,
+                                            )}
                                             onChange={(event) =>
                                               setValues((prev) => ({
                                                 ...prev,
                                                 [key]: {
                                                   ...batchValues(group),
-                                                  price: event.target.value,
+                                                  price: normalizeIntegerInput(
+                                                    event.target.value,
+                                                  ),
                                                 },
                                               }))
                                             }
-                                            onWheel={(event) => event.currentTarget.blur()}
                                             className="w-full rounded-md border border-border bg-white px-2 py-2 text-sm"
                                           />
                                         </td>
@@ -488,19 +497,22 @@ const AdminSiteMenuProductionPage = () => {
                                         </td>
                                         <td colSpan={2} className="px-4 py-3">
                                           <input
-                                            type="number"
-                                            min="0"
-                                            value={batchValues(group).quantity}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatIntegerInput(
+                                              batchValues(group).quantity,
+                                            )}
                                             onChange={(event) =>
                                               setValues((prev) => ({
                                                 ...prev,
                                                 [key]: {
                                                   ...batchValues(group),
-                                                  quantity: event.target.value,
+                                                  quantity: normalizeIntegerInput(
+                                                    event.target.value,
+                                                  ),
                                                 },
                                               }))
                                             }
-                                            onWheel={(event) => event.currentTarget.blur()}
                                             className="w-full rounded-md border border-border bg-white px-2 py-2 text-sm"
                                           />
                                         </td>

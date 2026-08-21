@@ -11,6 +11,7 @@ import {
   getStoreRequestStatusLabel,
 } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type ApprovalSection = 'recipes' | 'menu-productions'
@@ -48,6 +49,7 @@ type Recipe = {
   site?: string
   description?: string
   imageUrl?: string
+  portionSize?: number
   ingredients?: RecipeIngredient[]
   createdBy?: string
   createdByName?: string
@@ -181,6 +183,30 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   const [overrideError, setOverrideError] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [editingRecipe, setEditingRecipe] = useState<BaseRecipe | null>(null)
+
+  const openCorporateRecipeEdit = (recipe: Recipe) => {
+    const recipeId = recipe.id ?? recipe._id
+    if (!corporateOnly || recipe.approvalStatus !== 'pending' || !recipeId) return
+
+    setEditingRecipe({
+      id: recipeId,
+      recipeCode: recipe.recipeCode,
+      version: recipe.version,
+      name: recipe.name,
+      category: recipe.category,
+      description: recipe.description ?? '',
+      portionSize: recipe.portionSize ?? 1,
+      approvalStatus: recipe.approvalStatus,
+      ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
+        ...ingredient,
+        productCode: ingredient.productCode ?? '',
+        name: ingredient.name ?? '',
+        unitOfMeasures: ingredient.unitOfMeasures ?? '',
+        qty: Number(ingredient.qty) || 0,
+      })),
+    })
+  }
 
   useEffect(() => {
     if (!corporateOnly || !accessToken) return
@@ -499,6 +525,28 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
 
   return (
     <div className="space-y-6">
+      {editingRecipe ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4">
+          <div className="mx-auto min-h-full max-w-6xl rounded-md border border-border bg-background p-4 shadow-xl sm:p-6">
+            <ChefCreateMenu
+              embedded
+              baseRecipe={editingRecipe}
+              enableIngredientUomConversion
+              lockSrUomToRawMaterial
+              showImport={false}
+              onClose={() => setEditingRecipe(null)}
+              onSaved={() => {
+                setEditingRecipe(null)
+                setError('')
+                setMessage(
+                  'Recipe updated and automatically approved. It is now available in Recipe Data.',
+                )
+                fetchApprovals().catch(() => null)
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold">Approval Centers</h1>
         <div className="flex flex-wrap items-end gap-3">
@@ -633,6 +681,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                               >
                                 {isExpanded ? 'Hide details' : 'View details'}
                               </button>
+                              {corporateOnly && recipe.approvalStatus === 'pending' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openCorporateRecipeEdit(recipe)}
+                                  disabled={processingKey === recipeKey}
+                                  className="rounded-md border border-primary bg-white px-3 py-2 text-xs font-semibold text-primary disabled:opacity-60"
+                                >
+                                  Edit recipe
+                                </button>
+                              ) : null}
                               {canReviewRecipe && recipe.approvalStatus !== 'approved' ? (
                               <button
                                 type="button"

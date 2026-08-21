@@ -42,7 +42,7 @@ describe('WorkflowMailService', () => {
     expect(mail.enqueue).not.toHaveBeenCalled();
   });
 
-  it('emails active Unit Managers for a recipe submission', async () => {
+  it('emails active Unit Managers and Corporate Chefs for a recipe submission', async () => {
     const { mail, service, users } = makeService();
 
     await service.notifyRecipeSubmitted({
@@ -54,7 +54,7 @@ describe('WorkflowMailService', () => {
     });
 
     expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
-      roles: ['unit-manager'],
+      roles: ['unit-manager', 'corporate-chef'],
       site: 'S001',
     });
     expect(mail.enqueue).toHaveBeenCalledWith(

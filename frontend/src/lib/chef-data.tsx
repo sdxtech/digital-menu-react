@@ -228,6 +228,10 @@ type SiteScopedFetchOptions = {
   site?: string
 }
 
+type RecipeSearchOptions = SiteScopedFetchOptions & {
+  limit?: number
+}
+
 type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<Recipe>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
@@ -249,7 +253,7 @@ type ChefDataContextValue = ChefDataState & {
   rejectMenuProduction: (id: string, reason: string) => Promise<void>
   rawMaterialsMeta: RawMaterialsMeta
   fetchRawMaterials: (page?: number, limit?: number, search?: string) => Promise<void>
-  searchRawMaterials: (search: string, limit?: number) => Promise<RawMaterial[]>
+  searchRawMaterials: (search: string, limit?: number, site?: string) => Promise<RawMaterial[]>
   addRawMaterial: (input: AddRawMaterialInput) => Promise<void>
   updateRawMaterial: (id: string, input: UpdateRawMaterialInput) => Promise<void>
   importRawMaterialsFromExcel: (file: File) => Promise<string>
@@ -261,6 +265,7 @@ type ChefDataContextValue = ChefDataState & {
     input: CancelPendingMenuProductionBatchInput,
   ) => Promise<void>
   fetchRecipes: (options?: SiteScopedFetchOptions) => Promise<Recipe[]>
+  searchRecipes: (search: string, options?: RecipeSearchOptions) => Promise<Recipe[]>
   fetchMenuProductions: (
     options?: SiteScopedFetchOptions,
   ) => Promise<MenuProduction[]>
@@ -455,6 +460,27 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       recipes: mapped,
     }))
     return mapped
+  }, [accessToken])
+
+  const searchRecipes = useCallback(async (
+    search: string,
+    options?: RecipeSearchOptions,
+  ) => {
+    if (!accessToken || !search.trim()) return []
+
+    const params = new URLSearchParams({
+      search: search.trim(),
+      limit: String(options?.limit ?? 20),
+    })
+    if (options?.site?.trim()) params.set('site', options.site.trim())
+
+    const data = await apiFetch<{ items: RecipeApi[] } | RecipeApi[]>(
+      `/recipes?${params.toString()}`,
+      undefined,
+      accessToken,
+    )
+    const items = Array.isArray(data) ? data : data.items ?? []
+    return items.map(mapRecipe)
   }, [accessToken])
 
   const fetchMenuProductions = useCallback(async (options?: SiteScopedFetchOptions) => {
@@ -822,6 +848,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         params.set('page', String(page))
         params.set('limit', String(safeLimit))
         if (search?.trim()) params.set('search', search.trim())
+        if (user?.site?.trim()) params.set('site', user.site.trim())
 
         const data = await apiFetch<{
           items: Array<RawMaterial & { _id?: string }>
@@ -857,11 +884,11 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
         }))
       }
     },
-    [accessToken],
+    [accessToken, user?.site],
   )
 
   const searchRawMaterials = useCallback(
-    async (search: string, limit = 5) => {
+    async (search: string, limit = 5, site?: string) => {
       const token = accessToken ?? readStoredToken()
       if (!token) return []
 
@@ -870,6 +897,8 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       params.set('page', '1')
       params.set('limit', String(safeLimit))
       if (search?.trim()) params.set('search', search.trim())
+      const effectiveSite = site?.trim() || user?.site?.trim()
+      if (effectiveSite) params.set('site', effectiveSite)
 
       const data = await apiFetch<{
         items: Array<RawMaterial & { _id?: string }>
@@ -881,7 +910,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
       return (data.items ?? []).map(mapRawMaterial)
     },
-    [accessToken],
+    [accessToken, user?.site],
   )
 
   const markStoreRequested = async (menuProductionId: string) => {
@@ -995,6 +1024,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     cancelStoreRequestBatch,
     cancelPendingMenuProductionBatch,
     fetchRecipes,
+    searchRecipes,
     fetchMenuProductions,
   }
 

@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
@@ -9,7 +10,6 @@ import { formatVersionedRecipeName } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
-const USE_OTHER_SITE_VENDOR_OPTION = '__use_other_site_vendor__'
 
 type ProductionSiteOption = {
   code: string
@@ -144,6 +144,7 @@ const ChefMenuCycle = ({
     menuProductions,
     addMenuProductionsBulk,
     fetchRecipes,
+    searchRecipes,
   } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
   const [productionSite, setProductionSite] = useState('')
   const [productionClientId, setProductionClientId] = useState('')
@@ -161,6 +162,9 @@ const ChefMenuCycle = ({
   const [productionUnitManagerId, setProductionUnitManagerId] = useState('')
   const [siteDataLoading, setSiteDataLoading] = useState(false)
   const [siteDataError, setSiteDataError] = useState('')
+  const [recipeSearchResults, setRecipeSearchResults] = useState<Recipe[]>([])
+  const recipeInputRef = useRef<HTMLInputElement | null>(null)
+  const recipeDropdownRef = useRef<HTMLDivElement | null>(null)
   const [costSyncLoading, setCostSyncLoading] = useState(false)
   const [costSyncMessage, setCostSyncMessage] = useState('')
   const [costSyncError, setCostSyncError] = useState('')
@@ -175,18 +179,6 @@ const ChefMenuCycle = ({
     useState<Record<string, string>>({})
   const [customPriceByIngredientKey, setCustomPriceByIngredientKey] =
     useState<Record<string, string>>({})
-  const [otherSiteVendorPricesByProductKey, setOtherSiteVendorPricesByProductKey] =
-    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
-  const [otherSiteVendorPriceLoadedByProductKey, setOtherSiteVendorPriceLoadedByProductKey] =
-    useState<Record<string, boolean>>({})
-  const [
-    otherSiteVendorPriceLoadingByProductKey,
-    setOtherSiteVendorPriceLoadingByProductKey,
-  ] = useState<Record<string, boolean>>({})
-  const [otherSiteVendorPriceErrorByProductKey, setOtherSiteVendorPriceErrorByProductKey] =
-    useState<Record<string, string>>({})
-  const [useOtherSiteVendorByIngredientKey, setUseOtherSiteVendorByIngredientKey] =
-    useState<Record<string, boolean>>({})
   const [productionDate, setProductionDate] = useState('')/* Menyimpan tanggal produksi yang dipilih oleh pengguna untuk input menu */
   const [menuRows, setMenuRows] = useState<MenuInputRow[]>([createMenuInputRow()])/* Menyimpan daftar baris input menu yang sedang diedit oleh pengguna, dengan nilai awal satu baris kosong */
   const [inputError, setInputError] = useState('')/* Menyimpan pesan error yang terkait dengan input menu, seperti validasi atau kesalahan saat submit */
@@ -194,10 +186,6 @@ const ChefMenuCycle = ({
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])/* Menyimpan daftar baris menu yang diperluas untuk menampilkan detail */
   const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
   const [activeRecipeDropdownId, setActiveRecipeDropdownId] = useState<string | null>(null)
-  const [recipeDropdownPosition, setRecipeDropdownPosition] = useState<{
-    left: number
-    top: number
-  } | null>(null)
 
   const normalizeText = useCallback(
     (value?: string) => value?.trim().toLowerCase() ?? '',
@@ -325,46 +313,6 @@ const ChefMenuCycle = ({
     return pickDefaultVendorPriceOption(options)?.key ?? ''
   }
 
-  const getSelectedOtherSiteVendorPriceKey = (
-    selectionKey: string,
-    options: RawMaterialVendorPriceOption[],
-  ) => {
-    const selectedKey = selectedVendorPriceByIngredientKey[selectionKey]
-    if (selectedKey && options.some((option) => option.key === selectedKey)) {
-      return selectedKey
-    }
-    return ''
-  }
-
-  const dedupeVendorPricesByVendor = useCallback(
-    (options: RawMaterialVendorPriceOption[]) => {
-      const byVendor = new Map<string, RawMaterialVendorPriceOption>()
-      options.forEach((option) => {
-        const vendorKey = normalizeText(option.vendor)
-        if (!vendorKey) return
-
-        const existing = byVendor.get(vendorKey)
-        if (!existing) {
-          byVendor.set(vendorKey, option)
-          return
-        }
-
-        const existingPrice = Number(getVendorUnitPrice(existing))
-        const optionPrice = Number(getVendorUnitPrice(option))
-        const existingHasPrice = Number.isFinite(existingPrice)
-        const optionHasPrice = Number.isFinite(optionPrice)
-        if (
-          optionHasPrice &&
-          (!existingHasPrice || optionPrice > existingPrice)
-        ) {
-          byVendor.set(vendorKey, option)
-        }
-      })
-      return sortVendorPriceOptions(Array.from(byVendor.values()))
-    },
-    [normalizeText, sortVendorPriceOptions],
-  )
-
   const getIngredientUnitPrice = (
     ingredient: Recipe['ingredients'][number],
     vendorPrice?: RawMaterialVendorPriceOption,
@@ -385,10 +333,7 @@ const ChefMenuCycle = ({
     return undefined
   }
 
-  const getNmpUnitPrice = (
-    _ingredient: Recipe['ingredients'][number],
-    selectionKey: string,
-  ) => {
+  const getManualUnitPrice = (selectionKey: string) => {
     const enteredPrice = customPriceByIngredientKey[selectionKey]
     if (enteredPrice === undefined || enteredPrice.trim() === '') {
       return undefined
@@ -438,74 +383,102 @@ const ChefMenuCycle = ({
     siteMenuProductions,
   ])
 
-  const loadOtherSiteVendorPrices = useCallback(
-    async (productCode?: string) => {
-      const trimmedProductCode = productCode?.trim()
-      if (!trimmedProductCode || !accessToken) return
-
-      const productKey = getVendorPricesProductKey(trimmedProductCode)
-      if (
-        otherSiteVendorPriceLoadedByProductKey[productKey] ||
-        otherSiteVendorPriceLoadingByProductKey[productKey]
-      ) {
-        return
-      }
-
-      setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
-        ...prev,
-        [productKey]: true,
-      }))
-      setOtherSiteVendorPriceErrorByProductKey((prev) => ({
-        ...prev,
-        [productKey]: '',
-      }))
-
-      try {
-        const items = await apiFetch<RawMaterialVendorPriceApi[]>(
-          `/raw-materials/${encodeURIComponent(trimmedProductCode)}/vendor-prices`,
-          undefined,
-          accessToken,
-        )
-        const options = dedupeVendorPricesByVendor(
-          items
-            .map(mapVendorPriceOption)
-            .filter(
-              (option): option is RawMaterialVendorPriceOption =>
-                Boolean(option),
-            ),
-        )
-        setOtherSiteVendorPricesByProductKey((prev) => ({
-          ...prev,
-          [productKey]: options,
-        }))
-        setOtherSiteVendorPriceLoadedByProductKey((prev) => ({
-          ...prev,
-          [productKey]: true,
-        }))
-      } catch (error) {
-        setOtherSiteVendorPriceErrorByProductKey((prev) => ({
-          ...prev,
-          [productKey]:
-            error instanceof Error
-              ? error.message
-              : 'Failed to load other site vendors.',
-        }))
-      } finally {
-        setOtherSiteVendorPriceLoadingByProductKey((prev) => ({
-          ...prev,
-          [productKey]: false,
-        }))
-      }
-    },
-    [
-      accessToken,
-      dedupeVendorPricesByVendor,
-      getVendorPricesProductKey,
-      mapVendorPriceOption,
-      otherSiteVendorPriceLoadedByProductKey,
-      otherSiteVendorPriceLoadingByProductKey,
-    ],
+  const activeRecipeQuery = useMemo(
+    () => menuRows.find((row) => row.id === activeRecipeDropdownId)?.recipeQuery.trim() ?? '',
+    [activeRecipeDropdownId, menuRows],
   )
+
+  const updateRecipeDropdownPosition = useCallback(() => {
+    const input = recipeInputRef.current
+    const dropdown = recipeDropdownRef.current
+    if (!input || !dropdown) return
+
+    const bounds = input.getBoundingClientRect()
+    const gap = 4
+    const availableBelow = window.innerHeight - bounds.bottom - 20
+    const availableAbove = bounds.top - 20
+    const naturalHeight = Math.min(280, dropdown.scrollHeight)
+    const placement =
+      availableBelow >= Math.min(naturalHeight, 160) ? 'below' : 'above'
+    const maxHeight = Math.max(
+      100,
+      Math.min(280, placement === 'below' ? availableBelow : availableAbove),
+    )
+    const dropdownWidth = Math.min(
+      Math.max(bounds.width, 420),
+      window.innerWidth - 32,
+    )
+    const left = Math.min(
+      Math.max(16, bounds.left),
+      window.innerWidth - dropdownWidth - 16,
+    )
+    const renderedHeight = Math.min(naturalHeight, maxHeight)
+
+    dropdown.style.left = `${left}px`
+    dropdown.style.top = `${
+      placement === 'below'
+        ? bounds.bottom + gap
+        : Math.max(8, bounds.top - renderedHeight - gap)
+    }px`
+    dropdown.style.width = `${dropdownWidth}px`
+    dropdown.style.maxHeight = `${maxHeight}px`
+    dropdown.style.borderRadius = placement === 'below' ? '0 0 0.75rem 0.75rem' : '0.75rem 0.75rem 0 0'
+    dropdown.style.visibility = 'visible'
+  }, [])
+
+  useEffect(() => {
+    if (!activeRecipeDropdownId) return
+
+    let animationFrame = 0
+    const syncPosition = () => {
+      updateRecipeDropdownPosition()
+      animationFrame = window.requestAnimationFrame(syncPosition)
+    }
+    animationFrame = window.requestAnimationFrame(syncPosition)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+    }
+  }, [
+    activeRecipeDropdownId,
+    activeRecipeQuery,
+    recipeSearchResults,
+    updateRecipeDropdownPosition,
+  ])
+
+  useEffect(() => {
+    if (activeRecipeQuery.length < 2) {
+      setRecipeSearchResults([])
+      return
+    }
+    if (requireProductionSite && !siteDataReady) return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      searchRecipes(activeRecipeQuery, {
+        limit: 20,
+        ...(requireProductionSite && productionSite ? { site: productionSite } : {}),
+      })
+        .then((results) => {
+          if (!cancelled) setRecipeSearchResults(results)
+        })
+        .catch(() => {
+          if (!cancelled) setRecipeSearchResults([])
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    activeRecipeQuery,
+    productionSite,
+    requireProductionSite,
+    searchRecipes,
+    siteDataReady,
+  ])
+
   const chefOptions = useMemo(
     () =>
       siteUsers
@@ -531,15 +504,19 @@ const ChefMenuCycle = ({
 
   const availableRecipes = useMemo(
     () =>
-      scopedRecipes.filter(
+      [...scopedRecipes, ...recipeSearchResults]
+        .filter((recipe, index, recipes) =>
+          recipes.findIndex((candidate) => candidate.id === recipe.id) === index,
+        )
+        .filter(
         (recipe) =>
           recipe.approvalStatus === 'approved' &&
           recipe.status === 'active' &&
           recipe.isActive,
-      )
+        )
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [scopedRecipes],
+    [recipeSearchResults, scopedRecipes],
   )/* Menghitung daftar resep yang tersedia untuk dipilih dalam input menu, yaitu resep yang sudah disetujui oleh Unit Manager dan berstatus aktif. Hasilnya diurutkan berdasarkan nama resep. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */
 
   const recipeById = useMemo(() => {
@@ -801,33 +778,6 @@ const ChefMenuCycle = ({
     vendorPricesByProductKey,
   ])
 
-  useEffect(() => {
-    if (!showIngredientVendorColumn || !accessToken) return
-
-    expandedMenuRows.forEach((rowId) => {
-      const row = menuRows.find((item) => item.id === rowId)
-      const recipe = row ? recipeById[row.recipeId] : undefined
-      ;(recipe?.ingredients ?? []).forEach((ingredient, idx) => {
-        const vendorSelectionKey = getIngredientVendorSelectionKey(
-          rowId,
-          idx,
-          ingredient.productCode,
-        )
-        if (!useOtherSiteVendorByIngredientKey[vendorSelectionKey]) return
-        loadOtherSiteVendorPrices(ingredient.productCode).catch(() => null)
-      })
-    })
-  }, [
-    accessToken,
-    expandedMenuRows,
-    getIngredientVendorSelectionKey,
-    loadOtherSiteVendorPrices,
-    menuRows,
-    recipeById,
-    showIngredientVendorColumn,
-    useOtherSiteVendorByIngredientKey,
-  ])
-
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
@@ -880,25 +830,20 @@ const ChefMenuCycle = ({
             .join(' ')
           return normalizeText(searchable).includes(normalized)
         })
-    return filtered.slice(0, 20)
+    return filtered
+      .slice()
+      .sort((a, b) => {
+        const score = (recipe: Recipe) => {
+          const name = normalizeText(recipe.name)
+          const code = normalizeText(recipe.recipeCode)
+          if (name === normalized || code === normalized) return 0
+          if (name.startsWith(normalized) || code.startsWith(normalized)) return 1
+          return 2
+        }
+        return score(a) - score(b) || a.name.localeCompare(b.name)
+      })
+      .slice(0, 20)
   }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial berdasarkan kode, nama, kategori, dan site. */
-
-  const positionRecipeDropdown = (input: HTMLElement) => {
-    const bounds = input.getBoundingClientRect()
-    const dropdownWidth = Math.min(420, window.innerWidth - 32)
-    const dropdownHeight = Math.min(360, window.innerHeight - 32)
-    const gap = 4
-    const canOpenBelow = bounds.bottom + gap + dropdownHeight <= window.innerHeight
-    const top = canOpenBelow
-      ? bounds.bottom + gap
-      : Math.max(16, bounds.top - dropdownHeight - gap)
-    const left = Math.min(
-      Math.max(16, bounds.left),
-      Math.max(16, window.innerWidth - dropdownWidth - 16),
-    )
-
-    setRecipeDropdownPosition({ left, top })
-  }
 
   const updateRowMenuQuery = (id: string, value: string) => {
     const matchedRecipe = findRecipeByExactQuery(value)
@@ -1059,24 +1004,45 @@ const ChefMenuCycle = ({
           ingredient.productCode,
         )
         const productKey = getVendorPricesProductKey(ingredient.productCode)
-        const useOtherSiteVendor =
-          useOtherSiteVendorByIngredientKey[ingredientSelectionKey] ?? false
-        const vendorOptions = useOtherSiteVendor
-          ? otherSiteVendorPricesByProductKey[productKey] ?? []
-          : vendorPricesByProductKey[productKey] ?? []
-        const selectedVendorKey = useOtherSiteVendor
-          ? getSelectedOtherSiteVendorPriceKey(
-              ingredientSelectionKey,
-              vendorOptions,
-            )
-          : getSelectedVendorPriceKey(ingredientSelectionKey, vendorOptions)
+        const vendorOptions = vendorPricesByProductKey[productKey] ?? []
+        const vendorDataLoaded = Object.prototype.hasOwnProperty.call(
+          vendorPricesByProductKey,
+          productKey,
+        )
+        const vendorLoading = vendorPriceLoadingByProductKey[productKey] ?? false
+        const vendorError = vendorPriceErrorByProductKey[productKey] ?? ''
+        const isNmp = ingredient.ingredientType === 'NMP'
+        if (
+          showIngredientVendorColumn &&
+          !isNmp &&
+          (vendorLoading || !vendorDataLoaded)
+        ) {
+          setInputError(
+            `Vendor data is still loading for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+          )
+          setInputMessage('')
+          return
+        }
+        if (showIngredientVendorColumn && !isNmp && vendorError) {
+          setInputError(
+            `Failed to load vendor for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}: ${vendorError}`,
+          )
+          setInputMessage('')
+          return
+        }
+        const selectedVendorKey = getSelectedVendorPriceKey(
+          ingredientSelectionKey,
+          vendorOptions,
+        )
         const selectedVendor = vendorOptions.find(
           (option) => option.key === selectedVendorKey,
         )
-        const price =
-          ingredient.ingredientType === 'NMP'
-            ? getNmpUnitPrice(ingredient, ingredientSelectionKey)
-            : getIngredientUnitPrice(ingredient, selectedVendor)
+        const requiresManualPrice =
+          isNmp ||
+          (showIngredientVendorColumn && vendorDataLoaded && vendorOptions.length === 0)
+        const price = requiresManualPrice
+          ? getManualUnitPrice(ingredientSelectionKey)
+          : getIngredientUnitPrice(ingredient, selectedVendor)
         if (price === undefined) {
           setInputError(
             `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
@@ -1096,10 +1062,7 @@ const ChefMenuCycle = ({
                     ingredient.productCode,
                   )
                   if (ingredient.ingredientType === 'NMP') {
-                    const nmpPrice = getNmpUnitPrice(
-                      ingredient,
-                      vendorSelectionKey,
-                    )
+                    const nmpPrice = getManualUnitPrice(vendorSelectionKey)
                     return {
                       ingredientIndex,
                       productCode: ingredient.productCode,
@@ -1112,21 +1075,20 @@ const ChefMenuCycle = ({
                   const productKey = getVendorPricesProductKey(
                     ingredient.productCode,
                   )
-                  const useOtherSiteVendor =
-                    useOtherSiteVendorByIngredientKey[vendorSelectionKey] ??
-                    false
-                  const vendorOptions = useOtherSiteVendor
-                    ? otherSiteVendorPricesByProductKey[productKey] ?? []
-                    : vendorPricesByProductKey[productKey] ?? []
-                  const selectedVendorKey = useOtherSiteVendor
-                    ? getSelectedOtherSiteVendorPriceKey(
-                        vendorSelectionKey,
-                        vendorOptions,
-                      )
-                    : getSelectedVendorPriceKey(
-                        vendorSelectionKey,
-                        vendorOptions,
-                      )
+                  const vendorOptions = vendorPricesByProductKey[productKey] ?? []
+                  if (vendorOptions.length === 0) {
+                    return {
+                      ingredientIndex,
+                      productCode: ingredient.productCode,
+                      name: ingredient.name,
+                      unitOfMeasures: ingredient.unitOfMeasures,
+                      price: getManualUnitPrice(vendorSelectionKey),
+                    }
+                  }
+                  const selectedVendorKey = getSelectedVendorPriceKey(
+                    vendorSelectionKey,
+                    vendorOptions,
+                  )
                   const selectedVendor = vendorOptions.find(
                     (option) => option.key === selectedVendorKey,
                   )
@@ -1496,9 +1458,6 @@ const ChefMenuCycle = ({
                       ingredientIndex,
                       ingredient.productCode,
                     )
-                    const useOtherSiteVendor =
-                      useOtherSiteVendorByIngredientKey[vendorSelectionKey] ??
-                      false
                     const siteVendorOptions =
                       vendorPricesByProductKey[productKey] ?? []
                     const hasSiteVendorResult =
@@ -1515,26 +1474,19 @@ const ChefMenuCycle = ({
                       Boolean(ingredient.productCode?.trim()) &&
                       (vendorLoading ||
                         (!hasSiteVendorResult && !vendorError))
-                    const otherSiteVendorOptions =
-                      otherSiteVendorPricesByProductKey[productKey] ?? []
-                    const vendorOptions = useOtherSiteVendor
-                      ? otherSiteVendorOptions
-                      : siteVendorOptions
-                    const selectedVendorKey = useOtherSiteVendor
-                      ? getSelectedOtherSiteVendorPriceKey(
-                          vendorSelectionKey,
-                          vendorOptions,
-                        )
-                      : getSelectedVendorPriceKey(
-                          vendorSelectionKey,
-                          vendorOptions,
-                        )
-                    const selectedVendorPrice = vendorOptions.find(
+                    const selectedVendorKey = getSelectedVendorPriceKey(
+                      vendorSelectionKey,
+                      siteVendorOptions,
+                    )
+                    const selectedVendorPrice = siteVendorOptions.find(
                       (option) => option.key === selectedVendorKey,
                     )
+                    const requiresManualPrice =
+                      ingredient.ingredientType === 'NMP' ||
+                      (hasSiteVendorResult && siteVendorOptions.length === 0)
                     const unitPrice =
-                      ingredient.ingredientType === 'NMP'
-                        ? getNmpUnitPrice(ingredient, vendorSelectionKey)
+                      requiresManualPrice
+                        ? getManualUnitPrice(vendorSelectionKey)
                         : getIngredientUnitPrice(
                             ingredient,
                             selectedVendorPrice,
@@ -1564,6 +1516,10 @@ const ChefMenuCycle = ({
                       : estimatedTotalCost / basePax
                     : undefined
                 const recipeSuggestions = getRecipeSuggestions(row.recipeQuery)
+                const menuInputWidth = Math.min(
+                  48,
+                  Math.max(22, row.recipeQuery.length + 3),
+                )
                 return (
                   <Fragment key={row.id}>
                     <tr className="border-t border-border">
@@ -1595,14 +1551,15 @@ const ChefMenuCycle = ({
                           }
                           onFocus={(event) => {
                             setActiveRecipeDropdownId(row.id)
-                            positionRecipeDropdown(event.currentTarget)
+                            recipeInputRef.current = event.currentTarget
                           }}
                           onBlur={() => {
                             window.setTimeout(() => {
                               setActiveRecipeDropdownId((current) =>
                                 current === row.id ? null : current,
                               )
-                              setRecipeDropdownPosition(null)
+                              recipeInputRef.current = null
+                              recipeDropdownRef.current = null
                             }, 150)
                           }}
                           placeholder={
@@ -1610,47 +1567,46 @@ const ChefMenuCycle = ({
                               ? 'No approved menu available'
                               : 'Search menu'
                           }
-                          className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          style={{ width: `${menuInputWidth}ch` }}
+                          className="max-w-[32rem] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none transition-[width] duration-150 focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         />
                         {activeRecipeDropdownId === row.id &&
                         recipeSuggestions.length > 0 ? (
-                          <div
-                            className="fixed z-[100] w-[26rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-white shadow-xl"
-                            style={
-                              recipeDropdownPosition
-                                ? {
-                                    left: recipeDropdownPosition.left,
-                                    top: recipeDropdownPosition.top,
-                                  }
-                                : undefined
-                            }
-                          >
-                            <div className="max-h-[22.5rem] overflow-y-auto py-1">
-                              {recipeSuggestions.map((recipe) => (
-                                <button
-                                  key={recipe.id}
-                                  type="button"
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() => {
-                                    updateRowMenuQuery(
-                                      row.id,
-                                      formatVersionedRecipeName(recipe),
-                                    )
-                                    setActiveRecipeDropdownId(null)
-                                    setRecipeDropdownPosition(null)
-                                  }}
-                                  className="block w-full border-b border-border px-4 py-3 text-left last:border-b-0 hover:bg-primary-soft"
-                                >
-                                  <span className="block truncate text-sm font-semibold text-foreground">
-                                    {formatVersionedRecipeName(recipe)}
-                                  </span>
-                                  <span className="mt-1 block text-xs text-muted">
-                                    {recipe.category || '-'} | {getRecipeSiteText(recipe)}
-                                  </span>
-                                </button>
-                              ))}
+                          createPortal(
+                            <div
+                              ref={recipeDropdownRef}
+                              className="fixed z-[100] overflow-y-auto border border-border bg-white shadow-xl"
+                              style={{ visibility: 'hidden' }}
+                            >
+                              <div className="py-1">
+                                {recipeSuggestions.map((recipe) => (
+                                  <button
+                                    key={recipe.id}
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                      updateRowMenuQuery(
+                                        row.id,
+                                        formatVersionedRecipeName(recipe),
+                                      )
+                                      setActiveRecipeDropdownId(null)
+                                      recipeInputRef.current = null
+                                      recipeDropdownRef.current = null
+                                    }}
+                                    className="block w-full border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-primary-soft"
+                                  >
+                                    <span className="block truncate text-sm font-semibold text-foreground">
+                                      {formatVersionedRecipeName(recipe)}
+                                    </span>
+                                    <span className="mt-1 block text-xs text-muted">
+                                      {recipe.category || '-'} | {getRecipeSiteText(recipe)}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
+                            , document.body,
+                          )
                         ) : null}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
@@ -1786,56 +1742,36 @@ const ChefMenuCycle = ({
                                               idx,
                                               ingredient.productCode,
                                             )
-                                          const useOtherSiteVendor =
-                                            useOtherSiteVendorByIngredientKey[
-                                              vendorSelectionKey
-                                            ] ?? false
-                                          const otherSiteVendorOptions =
-                                            otherSiteVendorPricesByProductKey[
-                                              productKey
-                                            ] ?? []
-                                          const otherSiteVendorLoading =
-                                            otherSiteVendorPriceLoadingByProductKey[
-                                              productKey
-                                            ] ?? false
-                                          const otherSiteVendorError =
-                                            otherSiteVendorPriceErrorByProductKey[
-                                              productKey
-                                            ] ?? ''
-                                          const vendorOptions =
-                                            useOtherSiteVendor
-                                              ? otherSiteVendorOptions
-                                              : siteVendorOptions
+                                          const hasSiteVendorResult =
+                                            Object.prototype.hasOwnProperty.call(
+                                              vendorPricesByProductKey,
+                                              productKey,
+                                            )
                                           const selectedVendorKey =
-                                            useOtherSiteVendor
-                                              ? getSelectedOtherSiteVendorPriceKey(
-                                                  vendorSelectionKey,
-                                                  vendorOptions,
-                                                )
-                                              : getSelectedVendorPriceKey(
-                                                  vendorSelectionKey,
-                                                  vendorOptions,
-                                                )
+                                            getSelectedVendorPriceKey(
+                                              vendorSelectionKey,
+                                              siteVendorOptions,
+                                            )
                                           const selectedVendorPrice =
-                                            vendorOptions.find(
+                                            siteVendorOptions.find(
                                               (option) =>
                                                 option.key ===
                                                 selectedVendorKey,
                                             )
                                           const isNmp = ingredient.ingredientType === 'NMP'
-                                          const nmpPrice = isNmp
-                                            ? getNmpUnitPrice(
-                                                ingredient,
-                                                vendorSelectionKey,
-                                              )
-                                            : undefined
+                                          const requiresManualPrice =
+                                            isNmp ||
+                                            (hasSiteVendorResult &&
+                                              siteVendorOptions.length === 0)
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty
                                               : (ingredient.qty * portionForPreview) /
                                                 basePax
-                                          const unitPrice = isNmp
-                                            ? nmpPrice
+                                          const unitPrice = requiresManualPrice
+                                            ? getManualUnitPrice(
+                                                vendorSelectionKey,
+                                              )
                                             : getIngredientUnitPrice(
                                                 ingredient,
                                                 selectedVendorPrice,
@@ -1882,46 +1818,18 @@ const ChefMenuCycle = ({
                                                   ) : (
                                                   <select
                                                     value={selectedVendorKey}
-                                                    onChange={(event) => {
-                                                      const nextValue =
-                                                        event.target.value
-                                                      if (
-                                                        nextValue ===
-                                                        USE_OTHER_SITE_VENDOR_OPTION
-                                                      ) {
-                                                        setUseOtherSiteVendorByIngredientKey(
-                                                          (prev) => ({
-                                                            ...prev,
-                                                            [vendorSelectionKey]:
-                                                              true,
-                                                          }),
-                                                        )
-                                                        setSelectedVendorPriceByIngredientKey(
-                                                          (prev) => ({
-                                                            ...prev,
-                                                            [vendorSelectionKey]:
-                                                              '',
-                                                          }),
-                                                        )
-                                                        loadOtherSiteVendorPrices(
-                                                          ingredient.productCode,
-                                                        ).catch(() => null)
-                                                        return
-                                                      }
+                                                    onChange={(event) =>
                                                       setSelectedVendorPriceByIngredientKey(
                                                         (prev) => ({
                                                           ...prev,
                                                           [vendorSelectionKey]:
-                                                            nextValue,
+                                                            event.target.value,
                                                         }),
                                                       )
-                                                    }}
-                                                    disabled={
-                                                      vendorLoading ||
-                                                      otherSiteVendorLoading
                                                     }
+                                                    disabled={vendorLoading}
                                                     className={`w-[21rem] rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${
-                                                      vendorOptions.length > 1
+                                                      siteVendorOptions.length > 1
                                                         ? 'border-amber-400 bg-amber-100'
                                                         : 'border-border bg-white'
                                                     }`}
@@ -1931,44 +1839,13 @@ const ChefMenuCycle = ({
                                                         Loading vendors...
                                                       </option>
                                                     ) : siteVendorOptions.length ===
-                                                        0 &&
-                                                      !useOtherSiteVendor ? (
-                                                      <>
-                                                        <option value="">
-                                                          {vendorError ||
-                                                            'No vendor for this site'}
-                                                        </option>
-                                                        <option
-                                                          value={
-                                                            USE_OTHER_SITE_VENDOR_OPTION
-                                                          }
-                                                        >
-                                                          Use vendor from other site
-                                                        </option>
-                                                      </>
-                                                    ) : otherSiteVendorLoading ? (
-                                                      <option value="">
-                                                        Loading vendors...
-                                                      </option>
-                                                    ) : useOtherSiteVendor &&
-                                                      vendorOptions.length ===
-                                                        0 ? (
-                                                      <option value="">
-                                                        {otherSiteVendorError ||
-                                                          'No vendor from other site'}
-                                                      </option>
-                                                    ) : useOtherSiteVendor ? (
-                                                      <option value="">
-                                                        Select vendor
-                                                      </option>
-                                                    ) : vendorOptions.length ===
                                                       0 ? (
                                                       <option value="">
                                                         {vendorError ||
-                                                          'No vendor'}
+                                                          'No vendor for this site'}
                                                       </option>
                                                     ) : null}
-                                                    {vendorOptions.map(
+                                                    {siteVendorOptions.map(
                                                       (option) => (
                                                         <option
                                                           key={option.key}
@@ -1987,7 +1864,7 @@ const ChefMenuCycle = ({
                                               {showIngredientCostColumns ? (
                                                 <>
                                                   <td className="px-4 py-3 font-medium">
-                                                    {isNmp ? (
+                                                    {requiresManualPrice ? (
                                                       <input
                                                         type="number"
                                                         min={0}

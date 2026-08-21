@@ -18,4 +18,8 @@ export class ListRawMaterialsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  site?: string;
 }
