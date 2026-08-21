@@ -163,6 +163,9 @@ const ChefMenuCycle = ({
   const [siteDataLoading, setSiteDataLoading] = useState(false)
   const [siteDataError, setSiteDataError] = useState('')
   const [recipeSearchResults, setRecipeSearchResults] = useState<Recipe[]>([])
+  const [selectedRecipesById, setSelectedRecipesById] = useState<
+    Record<string, Recipe>
+  >({})
   const recipeInputRef = useRef<HTMLInputElement | null>(null)
   const recipeDropdownRef = useRef<HTMLDivElement | null>(null)
   const [costSyncLoading, setCostSyncLoading] = useState(false)
@@ -504,7 +507,11 @@ const ChefMenuCycle = ({
 
   const availableRecipes = useMemo(
     () =>
-      [...scopedRecipes, ...recipeSearchResults]
+      [
+        ...scopedRecipes,
+        ...recipeSearchResults,
+        ...Object.values(selectedRecipesById),
+      ]
         .filter((recipe, index, recipes) =>
           recipes.findIndex((candidate) => candidate.id === recipe.id) === index,
         )
@@ -516,7 +523,7 @@ const ChefMenuCycle = ({
         )
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [recipeSearchResults, scopedRecipes],
+    [recipeSearchResults, scopedRecipes, selectedRecipesById],
   )/* Menghitung daftar resep yang tersedia untuk dipilih dalam input menu, yaitu resep yang sudah disetujui oleh Unit Manager dan berstatus aktif. Hasilnya diurutkan berdasarkan nama resep. Digunakan useMemo untuk menghindari perhitungan ulang yang tidak perlu saat render. */
 
   const recipeById = useMemo(() => {
@@ -558,6 +565,7 @@ const ChefMenuCycle = ({
   useEffect(() => {
     if (!requireProductionSite) return
     setMenuRows([createMenuInputRow()])
+    setSelectedRecipesById({})
     setExpandedMenuRows([])
     setInputPage(1)
     setInputError('')
@@ -859,6 +867,24 @@ const ChefMenuCycle = ({
       ),
     )
   }/* Fungsi untuk memperbarui query menu dan id resep yang terkait dalam baris input menu saat pengguna mengetik. Fungsi ini mencari apakah query yang dimasukkan cocok dengan salah satu resep yang tersedia secara tepat, dan jika cocok, id resep akan disimpan di state. Jika tidak cocok, id resep akan dikosongkan. Digunakan sebagai onChange handler untuk input menu. */
+
+  const selectRowRecipe = (id: string, recipe: Recipe) => {
+    setSelectedRecipesById((current) => ({
+      ...current,
+      [recipe.id]: recipe,
+    }))
+    setMenuRows((current) =>
+      current.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              recipeQuery: formatVersionedRecipeName(recipe),
+              recipeId: recipe.id,
+            }
+          : row,
+      ),
+    )
+  }
 
   const updateRowPortion = (id: string, value: string) => {
     const digitsOnly = value.replace(/\D/g, '')
@@ -1585,10 +1611,7 @@ const ChefMenuCycle = ({
                                     type="button"
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => {
-                                      updateRowMenuQuery(
-                                        row.id,
-                                        formatVersionedRecipeName(recipe),
-                                      )
+                                      selectRowRecipe(row.id, recipe)
                                       setActiveRecipeDropdownId(null)
                                       recipeInputRef.current = null
                                       recipeDropdownRef.current = null
