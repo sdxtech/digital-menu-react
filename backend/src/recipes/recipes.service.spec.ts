@@ -1,4 +1,5 @@
 import { RecipesService } from './recipes.service';
+import { AppRole } from '../auth/roles.constants';
 
 type TestIngredient = Record<string, unknown> & {
   conversionMultiplier?: number;
@@ -310,7 +311,12 @@ describe('RecipesService site visibility', () => {
     await service.setApprovalStatus(
       'recipe-a',
       'rejected',
-      { id: 'manager-a', name: 'Manager A', email: 'manager@example.com', site: 'SITE-002' },
+      {
+        id: 'manager-a',
+        name: 'Manager A',
+        email: 'manager@example.com',
+        site: 'SITE-002',
+      },
       'Adjust the salt quantity.',
     );
 
@@ -350,7 +356,12 @@ describe('RecipesService site visibility', () => {
 
     await service.resubmitRejectedRecipe(
       'recipe-a',
-      { id: 'chef-a', name: 'Chef A', email: 'chef@example.com', site: 'SITE-002' },
+      {
+        id: 'chef-a',
+        name: 'Chef A',
+        email: 'chef@example.com',
+        site: 'SITE-002',
+      },
       'Reduced salt from 10 g to 7 g.',
     );
 
@@ -363,6 +374,65 @@ describe('RecipesService site visibility', () => {
         'approvalHistory.0.resubmittedBy': 'chef-a',
       }),
     );
+  });
+
+  it('automatically approves a pending recipe edited by a corporate chef', async () => {
+    const { recipeModel, service } = makeService();
+    const lean = jest.fn().mockResolvedValue({
+      _id: 'recipe-a',
+      approvalStatus: 'approved',
+      status: 'active',
+    });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await service.updateById(
+      'recipe-a',
+      { name: 'Updated Recipe' },
+      {
+        id: 'corporate-chef-a',
+        name: 'Corporate Chef A',
+        email: 'corporate@example.com',
+        roles: [AppRole.CorporateChef],
+        site: 'SITE-001',
+        sites: ['SITE-001', 'SITE-002'],
+      },
+    );
+
+    expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: 'recipe-a',
+        approvalStatus: 'pending',
+        site: { $in: ['SITE-001', 'SITE-002'] },
+      },
+      expect.any(Object),
+      { new: true },
+    );
+    expect(getUpdatePayload(recipeModel).$set).toEqual(
+      expect.objectContaining({
+        name: 'Updated Recipe',
+        approvalStatus: 'approved',
+        status: 'active',
+        reviewedBy: 'corporate-chef-a',
+        reviewedByName: 'Corporate Chef A',
+        reviewedByEmail: 'corporate@example.com',
+        reviewedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it('does not allow a corporate chef without an assigned site to edit recipes', async () => {
+    const { recipeModel, service } = makeService();
+
+    await expect(
+      service.updateById(
+        'recipe-a',
+        { name: 'Updated Recipe' },
+        { roles: [AppRole.CorporateChef] },
+      ),
+    ).rejects.toThrow(
+      'Corporate Chef must be assigned to a site before editing recipes.',
+    );
+    expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('uses raw material specific conversion when no global conversion exists', async () => {

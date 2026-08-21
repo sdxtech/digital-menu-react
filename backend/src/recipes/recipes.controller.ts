@@ -73,7 +73,7 @@ export class RecipesController {
   }
 
   @Patch(':id')
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -208,12 +208,12 @@ export class RecipesController {
     if (req.user.roles?.includes(AppRole.CorporateChef)) {
       const assignedSites = (req.user.sites ?? []).map((site) =>
         site.trim().toLowerCase(),
-      )
-      const requested = requestedSite?.trim()
+      );
+      const requested = requestedSite?.trim();
       if (requested && assignedSites.includes(requested.toLowerCase())) {
-        return requested
+        return requested;
       }
-      return req.user.site?.trim() || undefined
+      return req.user.site?.trim() || undefined;
     }
     const siteScope = getUserSiteScope(req.user);
     if (siteScope) return siteScope;

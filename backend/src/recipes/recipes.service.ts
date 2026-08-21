@@ -643,9 +643,7 @@ export class RecipesService {
   ) {
     const trimmedFeedback = feedback?.trim();
     if (!trimmedFeedback) {
-      throw new BadRequestException(
-        'Resubmission feedback is required.',
-      );
+      throw new BadRequestException('Resubmission feedback is required.');
     }
 
     const existing = await this.recipeModel
@@ -682,7 +680,8 @@ export class RecipesService {
           trimmedFeedback,
         [`approvalHistory.${lastHistoryIndex}.resubmittedBy`]: actor?.id,
         [`approvalHistory.${lastHistoryIndex}.resubmittedByName`]: actor?.name,
-        [`approvalHistory.${lastHistoryIndex}.resubmittedByEmail`]: actor?.email,
+        [`approvalHistory.${lastHistoryIndex}.resubmittedByEmail`]:
+          actor?.email,
         [`approvalHistory.${lastHistoryIndex}.resubmittedAt`]: new Date(),
       });
     } else {
@@ -822,11 +821,29 @@ export class RecipesService {
       throw new BadRequestException('No fields to update.');
     }
 
+    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    const corporateSiteScope = actor?.sites?.length ? actor.sites : actor?.site;
+    if (isCorporateChefActor && !corporateSiteScope) {
+      throw new BadRequestException(
+        'Corporate Chef must be assigned to a site before editing recipes.',
+      );
+    }
     const updatedFields = this.buildActorFields(actor, 'updated');
+    const reviewedFields = isCorporateChefActor
+      ? this.buildActorFields(actor, 'reviewed')
+      : {};
     const updatePayload: Record<string, unknown> = {
       $set: {
         ...$set,
         ...updatedFields,
+        ...(isCorporateChefActor
+          ? {
+              approvalStatus: 'approved',
+              status: 'active',
+              reviewedAt: new Date(),
+              ...reviewedFields,
+            }
+          : {}),
       },
     };
 
@@ -836,7 +853,13 @@ export class RecipesService {
 
     const updated = await this.recipeModel
       .findOneAndUpdate(
-        this.withSiteFilter({ _id: id }, actor?.site),
+        this.withSiteFilter(
+          {
+            _id: id,
+            ...(isCorporateChefActor ? { approvalStatus: 'pending' } : {}),
+          },
+          isCorporateChefActor ? corporateSiteScope : actor?.site,
+        ),
         updatePayload,
         {
           new: true,
@@ -2207,8 +2230,10 @@ export class RecipesService {
 
   private buildSiteFilter(site?: string | string[]) {
     if (Array.isArray(site)) {
-      const sites = site.map((item) => this.normalizeSite(item)).filter(Boolean)
-      return sites.length ? { site: { $in: sites } } : {}
+      const sites = site
+        .map((item) => this.normalizeSite(item))
+        .filter(Boolean);
+      return sites.length ? { site: { $in: sites } } : {};
     }
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
