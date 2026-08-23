@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -149,7 +150,25 @@ export class RawMaterialsController {
     req: AuthenticatedRequest,
     requestedSite?: string,
   ) {
-    if (req.user.roles?.includes(AppRole.CorporateChef)) return undefined;
+    if (req.user.roles?.includes(AppRole.CorporateChef)) {
+      const requested = requestedSite?.trim();
+      const assignedSites = Array.from(
+        new Set([req.user.site, ...(req.user.sites ?? [])]),
+      )
+        .map((site) => site?.trim())
+        .filter((site): site is string => Boolean(site));
+      const resolvedSite = requested
+        ? assignedSites.find(
+            (site) => site.toLowerCase() === requested.toLowerCase(),
+          )
+        : req.user.site?.trim();
+      if (!resolvedSite) {
+        throw new ForbiddenException(
+          'The selected site is not assigned to this Corporate Chef.',
+        );
+      }
+      return resolvedSite;
+    }
     return getUserSiteScope(req.user) ?? requestedSite;
   }
 

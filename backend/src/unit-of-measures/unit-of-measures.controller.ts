@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,7 +27,7 @@ export class UnitOfMeasuresController {
   constructor(private readonly unitOfMeasures: UnitOfMeasuresService) {}
 
   @Get()
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   listUnits(@Query() query: ListUnitOfMeasuresQueryDto) {
     return this.unitOfMeasures.listUnits({
       page: query.page ?? 1,
@@ -44,7 +54,7 @@ export class UnitOfMeasuresController {
   }
 
   @Get('conversions')
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   listConversions(@Query() query: ListUnitOfMeasuresQueryDto) {
     return this.unitOfMeasures.listConversions({
       page: query.page ?? 1,

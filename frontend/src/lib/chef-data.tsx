@@ -137,6 +137,7 @@ type ChefDataState = {
 }
 
 type CreateRecipeInput = {
+  site?: string
   baseRecipeId?: string
   name: string
   category: string

@@ -176,6 +176,16 @@ function App() {
             />
             <Route path="profile" element={<ProfileView />} />
             <Route path="security" element={<SecurityView />} />
+            <Route
+              path="menu-create"
+              element={
+                <ChefCreateMenu
+                  enableIngredientUomConversion
+                  lockSrUomToRawMaterial
+                  showImport={false}
+                />
+              }
+            />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
           </Route>
         </Route>
