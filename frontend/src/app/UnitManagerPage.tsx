@@ -981,21 +981,22 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionGroups.length} production batches`}
               className="mt-4"
             />
-            <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
-              <table className="dm-table min-w-full bg-white text-sm">
+            <div className="mt-4 overflow-hidden rounded-md border border-border">
+              <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                <colgroup>
+                  <col className="w-[5%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[23%]" />
+                </colgroup>
                 <thead className="bg-background">
                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                    <th className="w-16 px-4 py-3 font-semibold">No</th>
+                    <th className="px-4 py-3 font-semibold">No</th>
                     <th className="px-4 py-3 font-semibold">Production date</th>
                     <th className="px-4 py-3 font-semibold">Production code</th>
                     <th className="px-4 py-3 font-semibold">Client name</th>
-                    <th className="px-4 py-3 font-semibold">Chef</th>
-                    <th className="px-4 py-3 font-semibold">Admin</th>
-                    <th className="px-4 py-3 font-semibold">Total Estimated Cost</th>
-                    <th className="px-4 py-3 font-semibold">Selling Price/Pax</th>
-                    <th className="px-4 py-3 font-semibold">Pax Calculation</th>
-                    <th className="px-4 py-3 font-semibold">Estimated Revenue</th>
-                    <th className="px-4 py-3 font-semibold">Revenue Percentage</th>
                     <th className="px-4 py-3 font-semibold">Approval status</th>
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
@@ -1003,7 +1004,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 <tbody>
                   {menuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
-                      <td colSpan={13} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted">
                         No production menus pending approval.
                       </td>
                     </tr>
@@ -1036,6 +1037,26 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                             : Number.isFinite(Number(item.cost))
                               ? Number(item.cost)
                               : 0),
+                        0,
+                      )
+                      const totalEstimatedCostPerPax = group.items.reduce(
+                        (total, item) => {
+                          const estimatedCost = Number.isFinite(
+                            Number(item.estimatedCost),
+                          )
+                            ? Number(item.estimatedCost)
+                            : Number.isFinite(Number(item.cost))
+                              ? Number(item.cost)
+                              : undefined
+                          const costPerPax = Number.isFinite(
+                            Number(item.estimatedCostPerPax),
+                          )
+                            ? Number(item.estimatedCostPerPax)
+                            : estimatedCost !== undefined && item.portion > 0
+                              ? estimatedCost / item.portion
+                              : 0
+                          return total + costPerPax
+                        },
                         0,
                       )
                       const firstMenu = group.items[0]
@@ -1074,42 +1095,23 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                             <td className="px-4 py-3">
                               {group.items[0]?.clientName ?? '-'}
                             </td>
-                            <td className="px-4 py-3">{submittedByLabel}</td>
-                            <td className="px-4 py-3">{salesInputByLabel}</td>
-                            <td className="px-4 py-3 font-medium">
-                              {formatPrice(totalEstimatedCost)}
-                            </td>
-                            <td className="px-4 py-3 font-medium">
-                              {formatPrice(sellingPricePerPax)}
-                            </td>
-                            <td className="px-4 py-3 font-medium">
-                              {sellingQuantity ?? '-'}
-                            </td>
-                            <td className="px-4 py-3 font-medium">
-                              {formatPrice(estimatedRevenue)}
-                            </td>
-                            <td className="px-4 py-3 font-medium">
-                              {revenuePercentage === undefined
-                                ? '-'
-                                : `${revenuePercentage.toFixed(2)}%`}
-                            </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-wrap items-center gap-2 text-sm">
-                                <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                              <div className="flex flex-nowrap items-center gap-1.5">
+                                <span className="whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-0.5 text-[11px] font-semibold text-primary">
                                   {getApprovalStatusLabel('pending')}
                                 </span>
-                                <span className="text-muted">
+                                <span className="whitespace-nowrap text-[11px] text-muted">
                                   {pendingMenuCount} of {group.items.length} menus
                                   pending
                                 </span>
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-nowrap items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => toggleExpandedDate(groupKey)}
-                                  className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                                  className="whitespace-nowrap rounded-md border border-primary bg-primary-soft px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                                 >
                                   {isExpanded ? 'Hide details' : 'View details'}
                                 </button>
@@ -1118,9 +1120,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                   onClick={() =>
                                     handleExportMenuProductionGroup(group)
                                   }
-                                  className="rounded-md border border-success bg-white px-3 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
+                                  className="whitespace-nowrap rounded-md border border-success bg-white px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
                                 >
-                                  <span className="flex items-center gap-2">
+                                  <span className="flex items-center gap-1.5">
                                     <i
                                       className="bi bi-download text-sm"
                                       aria-hidden="true"
@@ -1133,39 +1135,68 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={12} className="px-4 py-4">
-                                <div className="grid gap-4 lg:grid-cols-12">
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
-                                    <p className="text-xs text-muted">Menu list</p>
-                                    <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
-                                      <table className="dm-table min-w-full text-sm">
+                              <td colSpan={6} className="px-4 py-4">
+                                <div className="space-y-4">
+                                  <section className="border-b border-border pb-4">
+                                    <h3 className="text-sm font-semibold text-foreground">
+                                      Production information
+                                    </h3>
+                                    <dl className="mt-3 space-y-2 text-sm">
+                                      <div className="flex gap-2">
+                                        <dt className="w-16 font-medium text-muted">
+                                          Chef
+                                        </dt>
+                                        <dd className="font-semibold text-foreground">
+                                          : {submittedByLabel}
+                                        </dd>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <dt className="w-16 font-medium text-muted">
+                                          Admin
+                                        </dt>
+                                        <dd className="font-semibold text-foreground">
+                                          : {salesInputByLabel}
+                                        </dd>
+                                      </div>
+                                    </dl>
+                                  </section>
+
+                                  <section>
+                                    <h3 className="text-sm font-semibold text-foreground">
+                                      Menu list
+                                    </h3>
+                                    <div className="mt-3 overflow-hidden rounded-md border border-border bg-white">
+                                      <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                                        <colgroup>
+                                          <col className="w-[5%]" />
+                                          <col className="w-[30%]" />
+                                          <col className="w-[8%]" />
+                                          <col className="w-[14%]" />
+                                          <col className="w-[11%]" />
+                                          <col className="w-[14%]" />
+                                          <col className="w-[18%]" />
+                                        </colgroup>
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                            <th className="w-12 px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               No
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Menu ID
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Menu
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Category
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Portion
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Estimated Cost
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Cost/Pax
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Approval Status
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Action
                                             </th>
                                           </tr>
@@ -1174,7 +1205,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                           {group.items.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={9}
+                                                colSpan={7}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No menus pending in this group.
@@ -1204,30 +1235,33 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                   key={item.id}
                                                   className="border-t border-border"
                                                 >
-                                                  <td className="px-4 py-3 text-sm text-muted">
+                                                  <td className="px-3 py-3 text-sm text-muted">
                                                     {itemIndex + 1}
                                                   </td>
-                                                  <td className="px-4 py-3 font-medium">
-                                                    {item.recipeCode ?? '-'}
+                                                  <td className="px-3 py-3">
+                                                    <p
+                                                      className="truncate !whitespace-nowrap font-semibold text-foreground"
+                                                      title={item.menuName}
+                                                    >
+                                                      {item.menuName}
+                                                    </p>
+                                                    <p className="mt-1 truncate !whitespace-nowrap text-xs text-muted">
+                                                      {item.recipeCode ?? '-'} ·{' '}
+                                                      {item.category}
+                                                    </p>
                                                   </td>
-                                                  <td className="px-4 py-3">
-                                                    {item.menuName}
-                                                  </td>
-                                                  <td className="px-4 py-3">
-                                                    {item.category}
-                                                  </td>
-                                                  <td className="px-4 py-3">
+                                                  <td className="px-3 py-3">
                                                     {item.portion}
                                                   </td>
-                                                  <td className="px-4 py-3 font-medium">
+                                                  <td className="px-3 py-3 font-medium">
                                                     {formatPrice(estimatedCost)}
                                                   </td>
-                                                  <td className="px-4 py-3 font-medium">
+                                                  <td className="px-3 py-3 font-medium">
                                                     {formatPrice(
                                                       estimatedCostPerPax,
                                                     )}
                                                   </td>
-                                                  <td className="px-4 py-3">
+                                                  <td className="px-3 py-3">
                                                     <span
                                                       className={`rounded-full px-2 py-1 text-xs font-semibold ${
                                                         item.approvalStatus ===
@@ -1244,10 +1278,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                       )}
                                                     </span>
                                                   </td>
-                                                  <td className="px-4 py-3">
+                                                  <td className="px-3 py-3">
                                                     {item.approvalStatus ===
                                                     'pending' ? (
-                                                      <div className="flex flex-wrap gap-2">
+                                                      <div className="flex flex-nowrap items-center gap-1.5">
                                                         <button
                                                           type="button"
                                                           onClick={() =>
@@ -1255,7 +1289,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                               item,
                                                             )
                                                           }
-                                                          className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white"
+                                                          className="whitespace-nowrap rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white"
                                                         >
                                                           Approve
                                                         </button>
@@ -1266,7 +1300,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                               item,
                                                             )
                                                           }
-                                                          className="rounded-md border border-danger bg-white px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10"
+                                                          className="whitespace-nowrap rounded-md border border-danger bg-white px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10"
                                                         >
                                                           Reject
                                                         </button>
@@ -1282,6 +1316,71 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             })
                                           )}
                                         </tbody>
+                                        <tfoot className="bg-background">
+                                          <tr className="border-t-2 border-primary">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Total
+                                            </td>
+                                            <td className="px-3 py-3 font-bold">
+                                              {formatPrice(totalEstimatedCost)}
+                                            </td>
+                                            <td className="px-3 py-3 font-bold">
+                                              {formatPrice(
+                                                totalEstimatedCostPerPax,
+                                              )}
+                                            </td>
+                                            <td colSpan={2} />
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Selling Price/Pax
+                                            </td>
+                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                              {formatPrice(sellingPricePerPax)}
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Pax Calculation
+                                            </td>
+                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                              {sellingQuantity ?? '-'}
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Estimated Revenue
+                                            </td>
+                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                              {formatPrice(estimatedRevenue)}
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Revenue Percentage
+                                            </td>
+                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                              {revenuePercentage === undefined
+                                                ? '-'
+                                                : `${revenuePercentage.toFixed(2)}%`}
+                                            </td>
+                                          </tr>
+                                        </tfoot>
                                       </table>
                                     </div>
                                     {group.missingRecipes.length > 0 ? (
@@ -1290,38 +1389,136 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                         {group.missingRecipes.join(', ')}
                                       </p>
                                     ) : null}
-                                  </div>
+                                  </section>
 
-                                  <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
-                                    <p className="text-xs text-muted">
+                                  <section>
+                                    <h3 className="text-sm font-semibold text-foreground">
+                                      Ingredient requirements per menu
+                                    </h3>
+                                    <div className="mt-3 space-y-3">
+                                      {group.items.map((item) => (
+                                        <article key={`ingredients-${item.id}`}>
+                                          <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                                            <div>
+                                              <p className="font-semibold text-foreground">
+                                                {item.menuName}
+                                              </p>
+                                              <p className="mt-1 text-xs text-muted">
+                                                {item.recipeCode ?? '-'} ·{' '}
+                                                {item.category} · {item.portion} pax
+                                              </p>
+                                            </div>
+                                            <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                                              {item.ingredients.length} ingredients
+                                            </span>
+                                          </div>
+                                          <div className="overflow-hidden rounded-md border border-border bg-white">
+                                            <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                                              <colgroup>
+                                                <col className="w-[5%]" />
+                                                <col className="w-[13%]" />
+                                                <col className="w-[39%]" />
+                                                <col className="w-[8%]" />
+                                                <col className="w-[8%]" />
+                                                <col className="w-[27%]" />
+                                              </colgroup>
+                                              <thead className="bg-background">
+                                              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                                <th className="px-3 py-3 font-semibold">No</th>
+                                                <th className="px-3 py-3 font-semibold">
+                                                  Product code
+                                                </th>
+                                                <th className="px-3 py-3 font-semibold">
+                                                  Ingredient name
+                                                </th>
+                                                <th className="px-3 py-3 font-semibold">Qty</th>
+                                                <th className="px-3 py-3 font-semibold">Unit</th>
+                                                <th className="px-3 py-3 font-semibold">
+                                                  Vendor
+                                                </th>
+                                              </tr>
+                                              </thead>
+                                              <tbody>
+                                              {item.ingredients.length === 0 ? (
+                                                <tr className="border-t border-border">
+                                                  <td
+                                                    colSpan={6}
+                                                    className="px-4 py-5 text-center text-muted"
+                                                  >
+                                                    No ingredients available.
+                                                  </td>
+                                                </tr>
+                                              ) : (
+                                                item.ingredients.map(
+                                                  (ingredient, ingredientIndex) => (
+                                                    <tr
+                                                      key={`${item.id}-${ingredient.productCode}-${ingredientIndex}`}
+                                                      className="border-t border-border"
+                                                    >
+                                                      <td className="px-3 py-3 text-muted">
+                                                        {ingredientIndex + 1}
+                                                      </td>
+                                                      <td className="break-all px-3 py-3">
+                                                        {ingredient.productCode || '-'}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3 font-medium">
+                                                        {ingredient.name || '-'}
+                                                      </td>
+                                                      <td className="px-3 py-3">
+                                                        {formatQuantity(ingredient.qty)}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3">
+                                                        {formatUnitLabel(
+                                                          ingredient.unitOfMeasures,
+                                                        )}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3">
+                                                        {ingredient.vendor ?? '-'}
+                                                      </td>
+                                                    </tr>
+                                                  ),
+                                                )
+                                              )}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </article>
+                                      ))}
+                                    </div>
+                                  </section>
+
+                                  <section>
+                                    <h3 className="text-sm font-semibold text-foreground">
                                       Ingredient summary
-                                    </p>
-                                    <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
-                                      <table className="dm-table min-w-full text-sm">
+                                    </h3>
+                                    <div className="mt-3 overflow-hidden rounded-md border border-border bg-white">
+                                      <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                                        <colgroup>
+                                          <col className="w-[5%]" />
+                                          <col className="w-[12%]" />
+                                          <col className="w-[30%]" />
+                                          <col className="w-[7%]" />
+                                          <col className="w-[7%]" />
+                                          <col className="w-[18%]" />
+                                          <col className="w-[10%]" />
+                                          <col className="w-[11%]" />
+                                        </colgroup>
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                            <th className="w-12 px-4 py-3 font-semibold">
-                                              No
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">No</th>
+                                            <th className="px-3 py-3 font-semibold">
                                               Product code
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">
                                               Ingredient name
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Qty
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Unit
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">Qty</th>
+                                            <th className="px-3 py-3 font-semibold">Unit</th>
+                                            <th className="px-3 py-3 font-semibold">
                                               Vendor
                                             </th>
-                                            <th className="px-4 py-3 font-semibold">
-                                              Price
-                                            </th>
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="px-3 py-3 font-semibold">Price</th>
+                                            <th className="px-3 py-3 font-semibold">
                                               Ingredient Cost
                                             </th>
                                           </tr>
@@ -1333,8 +1530,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 colSpan={8}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
-                                                No ingredients available to
-                                                calculate.
+                                                No ingredients available to calculate.
                                               </td>
                                             </tr>
                                           ) : (
@@ -1343,33 +1539,29 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 key={`${item.productCode}-${item.unitOfMeasures}-${itemIndex}`}
                                                 className="border-t border-border"
                                               >
-                                                <td className="px-4 py-3 text-sm text-muted">
+                                                <td className="px-3 py-3 text-muted">
                                                   {itemIndex + 1}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="break-all px-3 py-3">
                                                   {item.productCode}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="break-words px-3 py-3 font-medium">
                                                   {item.name}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-3 py-3">
                                                   {formatQuantity(item.qty)}
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                  {formatUnitLabel(
-                                                    item.unitOfMeasures,
-                                                  )}
+                                                <td className="break-words px-3 py-3">
+                                                  {formatUnitLabel(item.unitOfMeasures)}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="break-words px-3 py-3">
                                                   {item.vendor ?? '-'}
                                                 </td>
-                                                <td className="px-4 py-3 font-medium">
+                                                <td className="break-words px-3 py-3 font-medium">
                                                   {formatPrice(item.price)}
                                                 </td>
-                                                <td className="px-4 py-3 font-medium">
-                                                  {formatPrice(
-                                                    item.ingredientCost,
-                                                  )}
+                                                <td className="break-words px-3 py-3 font-medium">
+                                                  {formatPrice(item.ingredientCost)}
                                                 </td>
                                               </tr>
                                             ))
@@ -1377,7 +1569,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                         </tbody>
                                       </table>
                                     </div>
-                                  </div>
+                                  </section>
                                 </div>
                               </td>
                             </tr>

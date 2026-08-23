@@ -26,12 +26,16 @@ export const aggregateStoreRequestSummary = (
 
   items.forEach((item) => {
     // NMP rows must stay separate even when they share the NMP product code.
-    // Only IT ingredients with a non-NMP product code are eligible for
-    // quantity/cost aggregation.
+    // Older IT recipes may not have ingredientType, so infer it from the IT
+    // product-code prefix when needed.
     const productCode = String(item.productCode ?? '').trim()
+    const isNmpProductCode = productCode.toUpperCase() === 'NMP'
+    const isItIngredient =
+      item.ingredientType === 'IT' ||
+      (!item.ingredientType && productCode.toUpperCase().startsWith('IT'))
     if (
-      item.ingredientType !== 'IT' ||
-      productCode.toUpperCase() === 'NMP'
+      !isItIngredient ||
+      isNmpProductCode
     ) {
       nonSummarizedItems.push({ ...item })
       return
@@ -40,15 +44,14 @@ export const aggregateStoreRequestSummary = (
     const name = String(item.name ?? '').trim()
     const unitOfMeasures = String(item.unitOfMeasures ?? '').trim()
     const vendor = String(item.vendor ?? '').trim()
-    const vendorSite = String(item.vendorSite ?? '').trim()
     const identity = (productCode || name).toLowerCase()
     const normalizedUnit = unitOfMeasures.toLowerCase()
     if (!identity || !normalizedUnit) return
 
-    // Keep this identity in sync with the backend store-request key. IT
-    // ingredients with different vendors must remain separate summaries.
+    // Recipe ingredients are already site-scoped. Summaries therefore group
+    // by IT identity, UOM, and vendor; vendorSite must not split equal vendors.
     const keyBase = `${identity}__${normalizedUnit}`
-    const key = `${keyBase}__${vendor.toLowerCase()}__${vendorSite.toLowerCase()}`
+    const key = `${keyBase}__${vendor.toLowerCase()}`
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
     const existing = summaryMap.get(key)
@@ -84,7 +87,7 @@ export const aggregateStoreRequestSummary = (
     }
 
     summaryMap.set(key, {
-      ingredientType: item.ingredientType,
+      ingredientType: isItIngredient ? 'IT' : item.ingredientType,
       productCode,
       name,
       unitOfMeasures,
