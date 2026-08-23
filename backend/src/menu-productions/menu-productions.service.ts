@@ -2091,13 +2091,25 @@ export class MenuProductionsService implements OnModuleInit {
             selectedVendor?.vendor,
             selectedVendor?.site,
           );
-          // IT ingredients can be summarized. NMP ingredients must remain as
-          // separate rows because the product code is shared by different raw
-          // materials.
+          // Recipe ingredients are already site-scoped. Aggregate IT rows by
+          // product/UOM/vendor only; vendorSite must not split equal vendors.
+          // Older IT recipes may not have ingredientType, so infer it from the
+          // IT product-code prefix. NMP ingredients must remain separate.
           const isNmpProductCode = productCode.toUpperCase() === 'NMP';
+          const isItIngredient =
+            ingredient.ingredientType === 'IT' ||
+            (!ingredient.ingredientType &&
+              productCode.toUpperCase().startsWith('IT'));
+          const summaryIngredientKey = this.buildStoreIngredientKey(
+            productCode,
+            name,
+            unitOfMeasures,
+          );
           const summaryKey =
-            ingredient.ingredientType === 'IT' && !isNmpProductCode
-              ? normalizedKey
+            isItIngredient && !isNmpProductCode
+              ? `${summaryIngredientKey}__${this.normalizeName(
+                  selectedVendor?.vendor || '',
+                )}`
               : `nmp__${group.summaryMap.size}__${normalizedKey}`;
           const existing = group.summaryMap.get(summaryKey);
           if (existing) {
@@ -2121,7 +2133,7 @@ export class MenuProductionsService implements OnModuleInit {
             }
           } else {
             group.summaryMap.set(summaryKey, {
-              ingredientType: ingredient.ingredientType,
+              ingredientType: isItIngredient ? 'IT' : ingredient.ingredientType,
               productCode,
               name,
               unitOfMeasures,
@@ -2135,7 +2147,7 @@ export class MenuProductionsService implements OnModuleInit {
           }
 
           return {
-            ingredientType: ingredient.ingredientType,
+            ingredientType: isItIngredient ? 'IT' : ingredient.ingredientType,
             productCode,
             name,
             unitOfMeasures,
