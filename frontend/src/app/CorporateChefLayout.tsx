@@ -10,6 +10,14 @@ const navItems = [
     componentKey: 'RECIPE_APPROVAL_REQUESTS',
   },
   {
+    label: 'Create New Recipe',
+    to: '/corporate-chef/menu-create',
+    icon: (className: string) => (
+      <i className={`bi bi-journal-plus ${className}`} aria-hidden="true" />
+    ),
+    componentKey: 'CREATE_RECIPE_FLOW',
+  },
+  {
     label: 'Recipe Data',
     to: '/corporate-chef/recipe-data',
     icon: (className: string) => (

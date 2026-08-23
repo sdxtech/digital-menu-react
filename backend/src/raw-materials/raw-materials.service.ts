@@ -198,6 +198,28 @@ export class RawMaterialsService {
       .lean<RawMaterialLookup[]>();
   }
 
+  async findAvailableNormalizedCodesForSite(
+    productCodes: string[],
+    site: string,
+  ) {
+    const normalizedCodes = Array.from(
+      new Set(
+        productCodes
+          .map((productCode) => this.normalizeProductCode(productCode))
+          .filter(Boolean),
+      ),
+    );
+    if (normalizedCodes.length === 0) return [];
+
+    const siteNormalizedValues = await this.resolveSiteNormalizedValues(site);
+    if (siteNormalizedValues.length === 0) return [];
+
+    return this.rawMaterialVendorPriceModel.distinct('productCodeNormalized', {
+      siteNormalized: { $in: siteNormalizedValues },
+      productCodeNormalized: { $in: normalizedCodes },
+    });
+  }
+
   async updateById(id: string, input: RawMaterialUpsertInput) {
     const item = await this.rawMaterialModel.findById(id);
     if (!item) throw new NotFoundException('Raw material not found');

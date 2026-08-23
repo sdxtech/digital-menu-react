@@ -88,6 +88,10 @@ const titleMatchers: TitleMatcher[] = [
     path: '/corporate-chef/recipe-data',
     getPageTitle: () => 'Recipe Data',
   },
+  {
+    path: '/corporate-chef/menu-create',
+    getPageTitle: () => 'Create New Recipe',
+  },
 
   // ➕ Added Profile Tab Title configuration mapping for Unit Manager Workspace
   {

@@ -206,6 +206,8 @@ export class RecipesService {
     const ingredients = await this.applyIngredientUomConversions(
       this.normalizeIngredients(input.ingredients),
     );
+    const normalizedSite = this.normalizeSite(actor?.site);
+    await this.validateSiteScopedIngredients(ingredients, normalizedSite);
     const costFields = await this.buildIngredientCostUpdate(ingredients);
     const inputFoodCostRecipe = this.normalizeOptionalNumber(
       input.foodCostRecipe,
@@ -217,11 +219,12 @@ export class RecipesService {
       recipeCode,
     );
 
-    const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
     const updatedFields = this.buildActorFields(actor, 'updated');
     const isSuperadminActor = this.isSuperadminActor(actor);
-    const reviewedFields = isSuperadminActor
+    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    const isApproverActor = isSuperadminActor || isCorporateChefActor;
+    const reviewedFields = isApproverActor
       ? this.buildActorFields(actor, 'reviewed')
       : {};
 
@@ -244,9 +247,9 @@ export class RecipesService {
         : 'foodCostRecipe' in costFields
           ? { foodCostRecipe: costFields.foodCostRecipe }
           : {}),
-      status: isSuperadminActor ? 'active' : (input.status ?? 'draft'),
-      approvalStatus: isSuperadminActor ? 'approved' : 'pending',
-      ...(isSuperadminActor ? { reviewedAt: new Date() } : {}),
+      status: isApproverActor ? 'active' : (input.status ?? 'draft'),
+      approvalStatus: isApproverActor ? 'approved' : 'pending',
+      ...(isApproverActor ? { reviewedAt: new Date() } : {}),
       ingredients: costFields.ingredients,
       ...createdFields,
       ...updatedFields,
@@ -255,7 +258,7 @@ export class RecipesService {
     });
 
     // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
-    if (!isSuperadminActor) {
+    if (!isApproverActor) {
       try {
         for (const targetRole of ['unit.manager', 'corporate-chef'] as const) {
           await this.notificationsService.createHierarchicalNotification(
@@ -294,6 +297,40 @@ export class RecipesService {
 
     // 3. Return the saved document exactly as the old code did
     return saved;
+  }
+
+  private async validateSiteScopedIngredients(
+    ingredients: RecipeIngredient[],
+    site?: string,
+  ) {
+    if (!site) return;
+
+    const itProductCodes = Array.from(
+      new Set(
+        ingredients
+          .filter((ingredient) => ingredient.ingredientType === 'IT')
+          .map((ingredient) => ingredient.productCode?.trim())
+          .filter((code): code is string => Boolean(code)),
+      ),
+    );
+    if (itProductCodes.length === 0) return;
+
+    const availableCodes = new Set(
+      (
+        await this.rawMaterials.findAvailableNormalizedCodesForSite(
+          itProductCodes,
+          site,
+        )
+      ).map((code) => String(code).trim().toLowerCase()),
+    );
+    const unavailableCodes = itProductCodes.filter(
+      (code) => !availableCodes.has(code.toLowerCase()),
+    );
+    if (unavailableCodes.length) {
+      throw new BadRequestException(
+        `Raw material ${unavailableCodes.join(', ')} is not available for site ${site}.`,
+      );
+    }
   }
 
   async findAll(query: ListRecipesQueryDto, site?: string) {

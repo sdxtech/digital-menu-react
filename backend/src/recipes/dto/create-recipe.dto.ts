@@ -84,6 +84,11 @@ export class CreateRecipeDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  site?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
   baseRecipeId?: string;
 
   @IsString()
