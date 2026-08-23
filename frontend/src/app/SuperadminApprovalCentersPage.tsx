@@ -197,6 +197,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       category: recipe.category,
       description: recipe.description ?? '',
       portionSize: recipe.portionSize ?? 1,
+      site: recipe.site,
       approvalStatus: recipe.approvalStatus,
       ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
         ...ingredient,

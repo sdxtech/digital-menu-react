@@ -12,6 +12,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
@@ -48,9 +49,9 @@ export class RecipesController {
   constructor(private readonly recipes: RecipesService) {}
 
   @Post()
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateRecipeDto) {
-    return this.recipes.create(dto, this.buildActor(req));
+    return this.recipes.create(dto, this.buildActor(req, dto.site, true));
   }
 
   // BACKEND LOGIC: provide category options for recipe filters.
@@ -193,15 +194,57 @@ export class RecipesController {
     }
   }
 
-  private buildActor(req: AuthenticatedRequest) {
+  private buildActor(
+    req: AuthenticatedRequest,
+    requestedSite?: string,
+    requireCorporateSite = false,
+  ) {
+    const site = this.resolveMutationSite(
+      req,
+      requestedSite,
+      requireCorporateSite,
+    );
     return {
       id: req.user.sub,
       name: req.user.name,
       email: req.user.email,
       roles: req.user.roles,
-      site: getUserSiteScope(req.user),
+      site,
       sites: req.user.sites,
     };
+  }
+
+  private resolveMutationSite(
+    req: AuthenticatedRequest,
+    requestedSite?: string,
+    required = false,
+  ) {
+    if (!req.user.roles?.includes(AppRole.CorporateChef)) {
+      return getUserSiteScope(req.user);
+    }
+
+    const requested = requestedSite?.trim();
+    if (!requested) {
+      if (!required) return getUserSiteScope(req.user);
+      throw new BadRequestException(
+        'Select a site before creating the recipe.',
+      );
+    }
+
+    const assignedSites = Array.from(
+      new Set([req.user.site, ...(req.user.sites ?? [])]),
+    )
+      .map((site) => site?.trim())
+      .filter((site): site is string => Boolean(site));
+    const assignedSite = assignedSites.find(
+      (site) => site.toLowerCase() === requested.toLowerCase(),
+    );
+    if (!assignedSite) {
+      throw new ForbiddenException(
+        'The selected site is not assigned to this Corporate Chef.',
+      );
+    }
+    return assignedSite;
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {

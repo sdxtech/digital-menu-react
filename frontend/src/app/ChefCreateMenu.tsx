@@ -94,6 +94,7 @@ export type BaseRecipe = {
   category: string
   description?: string
   portionSize?: number
+  site?: string
   approvalStatus?: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
   reviewedBy?: string
@@ -173,6 +174,25 @@ const ChefCreateMenu = ({
     baseRecipe && !isEditMode && !baseRecipe.sourceRecipeId,
   )
   const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
+  const isCorporateChef = user?.role === 'corporate-chef'
+  const assignedSiteOptions = Array.from(
+    new Map(
+      [...(user?.site ? [user.site] : []), ...(user?.sites ?? [])].map(
+        (code) => [
+          code.toLowerCase(),
+          {
+            code,
+            name:
+              user?.siteOptions?.find(
+                (site) => site.code.toLowerCase() === code.toLowerCase(),
+              )?.name ?? code,
+          },
+        ],
+      ),
+    ).values(),
+  )
+  const [selectedSite, setSelectedSite] = useState(baseRecipe?.site ?? '')
+  const rawMaterialSite = isCorporateChef ? selectedSite : user?.site
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -426,9 +446,27 @@ const ChefCreateMenu = ({
     }
   }, [accessToken, enableIngredientUomConversion, lockSrUomToRawMaterial])
 
+  const cacheRawMaterials = useCallback((items: RawMaterial[]) => {
+    items.forEach((item) => {
+      const keys = [
+        item.productCode
+          ? `code:${item.productCode.trim().toLowerCase()}`
+          : '',
+        item.name ? `name:${item.name.trim().toLowerCase()}` : '',
+      ].filter(Boolean)
+      keys.forEach((key) => {
+        rawMaterialCacheRef.current.set(key, item)
+      })
+    })
+  }, [])
+
   useEffect(() => {
     const requestId = ++searchRequestRef.current
-    searchRawMaterials('', 5, user?.site)
+    if (isCorporateChef && !selectedSite) {
+      setRawMaterialOptions([])
+      return
+    }
+    searchRawMaterials('', 5, rawMaterialSite)
       .then((results) => {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
@@ -442,7 +480,13 @@ const ChefCreateMenu = ({
         }
         setRawMaterialOptions([])
       })
-  }, [searchRawMaterials, user?.site])
+  }, [
+    cacheRawMaterials,
+    isCorporateChef,
+    rawMaterialSite,
+    searchRawMaterials,
+    selectedSite,
+  ])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -454,18 +498,6 @@ const ChefCreateMenu = ({
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
   const normalizeUomCode = (value: string) => value.trim().toUpperCase()
-  const getRawMaterialCacheKeys = (item: RawMaterial) =>
-    [
-      item.productCode ? `code:${normalizeValue(item.productCode)}` : '',
-      item.name ? `name:${normalizeValue(item.name)}` : '',
-    ].filter(Boolean)
-  const cacheRawMaterials = (items: RawMaterial[]) => {
-    items.forEach((item) => {
-      getRawMaterialCacheKeys(item).forEach((key) => {
-        rawMaterialCacheRef.current.set(key, item)
-      })
-    })
-  }
   const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
     const prod = normalizeUomCode(prodUomCode)
     const sr = normalizeUomCode(srUomCode)
@@ -609,7 +641,7 @@ const ChefCreateMenu = ({
     if (cached) return cached
 
     try {
-      const results = await searchRawMaterials(productCode, 40, user?.site)
+      const results = await searchRawMaterials(productCode, 40, rawMaterialSite)
       cacheRawMaterials(results)
       return results.find(
         (item) => normalizeValue(item.productCode) === normalizedCode,
@@ -627,6 +659,29 @@ const ChefCreateMenu = ({
       ...prev,
       [field]: value,
     }))
+  }
+
+  const handleSiteChange = (site: string) => {
+    setSelectedSite(site)
+    rawMaterialCacheRef.current.clear()
+    setRawMaterialOptions([])
+    setActiveIngredientDropdownId(null)
+    setIngredientRows((current) =>
+      current.map((row) =>
+        row.ingredientType === 'IT'
+          ? {
+              ...row,
+              productCode: '',
+              name: '',
+              unitOfMeasures: '',
+              srQty: '',
+              srQtyManual: false,
+              baseUnitOfMeasures: undefined,
+              conversionFactor: undefined,
+            }
+          : row,
+      ),
+    )
   }
 
   const updateIngredientRow = <K extends keyof IngredientRow>(
@@ -739,7 +794,11 @@ const ChefCreateMenu = ({
 
     searchTimeoutRef.current = window.setTimeout(async () => {
       try {
-        const results = await searchRawMaterials(trimmed, fetchLimit, user?.site)
+        const results = await searchRawMaterials(
+          trimmed,
+          fetchLimit,
+          rawMaterialSite,
+        )
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
@@ -946,6 +1005,12 @@ const ChefCreateMenu = ({
     const nextDescription = recipeForm.description.trim()
     const nextResubmitFeedback = resubmitFeedback.trim()
 
+    if (isCorporateChef && !selectedSite) {
+      setSubmitError('Select a site before creating the recipe.')
+      setSubmitMessage('')
+      return
+    }
+
     if (options.resubmit && !nextResubmitFeedback) {
       setSubmitError('Feedback is required before resubmitting the recipe.')
       setSubmitMessage('')
@@ -1131,6 +1196,7 @@ const ChefCreateMenu = ({
       } else {
         const createdRecipe = await createRecipe({
           ...basePayload,
+          ...(isCorporateChef ? { site: selectedSite } : {}),
           ...(isCreateFromRecipe && baseRecipe?.sourceRecipeId
             ? { baseRecipeId: baseRecipe.sourceRecipeId }
             : {}),
@@ -1154,6 +1220,8 @@ const ChefCreateMenu = ({
               ? `Recipe ${formatRecipeVersion(createdRecipeVersion)} saved without changing the base recipe.`
               : isCreateFromTemplate
                 ? `New recipe ${formatRecipeVersion(createdRecipeVersion)} created from the template.`
+                : isCorporateChef
+                  ? 'Recipe created and approved successfully.'
                 : 'Recipe saved and submitted to the Unit Manager.',
       )
     } catch (error) {
@@ -1392,6 +1460,35 @@ const ChefCreateMenu = ({
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <h3 className="font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          {isCorporateChef ? (
+            <div className="sm:col-span-2">
+              <label className="text-sm font-medium text-foreground">
+                Site <span className="text-danger">*</span>
+              </label>
+              <select
+                value={selectedSite}
+                onChange={(event) => handleSiteChange(event.target.value)}
+                disabled={isEditMode}
+                className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:bg-slate-200 disabled:text-muted"
+              >
+                <option value="">Select site</option>
+                {assignedSiteOptions.map((site) => (
+                  <option key={site.code} value={site.code}>
+                    {site.code} - {site.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-muted">
+                IT raw materials are limited to the selected site. Changing the
+                site clears previously selected IT ingredients.
+              </p>
+              {assignedSiteOptions.length === 0 ? (
+                <p className="mt-2 text-xs text-red-600">
+                  No site is assigned to this Corporate Chef account.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div>
             <label className="text-sm font-medium text-foreground">
               Recipe name

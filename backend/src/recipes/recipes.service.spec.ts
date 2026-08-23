@@ -41,6 +41,7 @@ describe('RecipesService site visibility', () => {
     const rawMaterials = {
       findLookupByNormalizedCode: jest.fn().mockResolvedValue(null),
       findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
+      findAvailableNormalizedCodesForSite: jest.fn().mockResolvedValue([]),
     };
     const unitOfMeasures = {
       findActiveConversion: jest.fn().mockResolvedValue(null),
@@ -204,6 +205,72 @@ describe('RecipesService site visibility', () => {
       }),
     ).rejects.toThrow(
       'A recipe with this name already exists. Please use a different name.',
+    );
+    expect(recipeModel.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a corporate chef recipe as approved for the selected site', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.create.mockImplementation((payload: object) =>
+      Promise.resolve({ _id: 'recipe-corporate', ...payload }),
+    );
+
+    await service.create(
+      {
+        site: 'SITE-002',
+        name: 'Corporate Recipe',
+        category: 'Main Course',
+        ingredients: [],
+      },
+      {
+        id: 'corporate-chef-a',
+        name: 'Corporate Chef A',
+        email: 'corporate@example.com',
+        roles: [AppRole.CorporateChef],
+        site: 'SITE-002',
+        sites: ['SITE-001', 'SITE-002'],
+      },
+    );
+
+    expect(recipeModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'SITE-002',
+        status: 'active',
+        approvalStatus: 'approved',
+        reviewedBy: 'corporate-chef-a',
+        reviewedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it('rejects IT raw material outside the selected site scope', async () => {
+    const { rawMaterials, recipeModel, service } = makeService();
+    rawMaterials.findAvailableNormalizedCodesForSite.mockResolvedValue([]);
+
+    await expect(
+      service.create(
+        {
+          site: 'SITE-002',
+          name: 'Corporate Recipe',
+          category: 'Main Course',
+          ingredients: [
+            {
+              ingredientType: 'IT',
+              productCode: 'IT99999',
+              name: 'Unavailable Material',
+              unitOfMeasures: 'KG',
+              qty: 1,
+            },
+          ],
+        },
+        {
+          roles: [AppRole.CorporateChef],
+          site: 'SITE-002',
+          sites: ['SITE-001', 'SITE-002'],
+        },
+      ),
+    ).rejects.toThrow(
+      'Raw material IT99999 is not available for site SITE-002.',
     );
     expect(recipeModel.create).not.toHaveBeenCalled();
   });

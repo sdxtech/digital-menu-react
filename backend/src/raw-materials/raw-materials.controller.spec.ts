@@ -95,7 +95,7 @@ describe('RawMaterialsController site scope', () => {
     });
   });
 
-  it('gives corporate chefs a global raw material list', async () => {
+  it('scopes corporate chef raw material lists to the selected assigned site', async () => {
     const { controller, rawMaterials } = makeController();
 
     await controller.list(
@@ -107,11 +107,11 @@ describe('RawMaterialsController site scope', () => {
       page: 1,
       limit: 20,
       search: 'chicken',
-      site: undefined,
+      site: 'SITE-001',
     });
   });
 
-  it('gives corporate chefs global raw material vendor prices', async () => {
+  it('scopes corporate chef vendor prices to the selected assigned site', async () => {
     const { controller, rawMaterials } = makeController();
 
     await controller.listVendorPrices(
@@ -123,9 +123,20 @@ describe('RawMaterialsController site scope', () => {
 
     expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
       productCode: 'IT00001',
-      site: undefined,
+      site: 'SITE-001',
       vendor: 'Vendor A',
     });
+  });
+
+  it('rejects a corporate chef site outside their assignments', () => {
+    const { controller } = makeController();
+
+    expect(() =>
+      controller.list(
+        { page: 1, limit: 20, site: 'OTHER-SITE' },
+        corporateChefRequest as never,
+      ),
+    ).toThrow(ForbiddenException);
   });
 
   it('rejects non-superadmin users without a site', () => {
