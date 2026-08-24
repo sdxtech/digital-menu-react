@@ -330,6 +330,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
           '',
           '',
           '',
+          '',
         ])
         rowNumber += 1
         return
