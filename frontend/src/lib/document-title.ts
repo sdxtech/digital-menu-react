@@ -21,6 +21,18 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Login',
   },
   {
+    path: '/maintenance',
+    getPageTitle: () => 'Maintenance',
+  },
+  {
+    path: '/forgot-password',
+    getPageTitle: () => 'Forgot Password',
+  },
+  {
+    path: '/reset-password',
+    getPageTitle: () => 'Reset Password',
+  },
+  {
     path: '/chef',
     getPageTitle: () => 'Chef Workspace',
   },
@@ -33,6 +45,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/chef/profile',
     getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/chef/security',
+    getPageTitle: () => 'Security & Password',
   },
 
   {
@@ -89,6 +105,14 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Recipe Data',
   },
   {
+    path: '/corporate-chef/profile',
+    getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/corporate-chef/security',
+    getPageTitle: () => 'Security & Password',
+  },
+  {
     path: '/corporate-chef/menu-create',
     getPageTitle: () => 'Create New Recipe',
   },
@@ -97,6 +121,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/unit-manager/profile',
     getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/unit-manager/security',
+    getPageTitle: () => 'Security & Password',
   },
 
   {
@@ -117,6 +145,10 @@ const titleMatchers: TitleMatcher[] = [
     path: '/storekeeper/profile',
     getPageTitle: () => 'My Profile',
   },
+  {
+    path: '/storekeeper/security',
+    getPageTitle: () => 'Security & Password',
+  },
 
   {
     path: '/storekeeper/history',
@@ -125,6 +157,22 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/admin-site/menu-production-history',
     getPageTitle: () => 'Menu Production History',
+  },
+  {
+    path: '/admin-site',
+    getPageTitle: () => 'Admin Site Workspace',
+  },
+  {
+    path: '/admin-site/menu-productions',
+    getPageTitle: () => 'Menu Production Sales Input',
+  },
+  {
+    path: '/admin-site/profile',
+    getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/admin-site/security',
+    getPageTitle: () => 'Security & Password',
   },
   {
     path: '/superadmin',
@@ -136,6 +184,10 @@ const titleMatchers: TitleMatcher[] = [
     path: '/superadmin/profile',
     getPageTitle: () => 'My Profile',
   },
+  {
+    path: '/superadmin/security',
+    getPageTitle: () => 'Security & Password',
+  },
 
   {
     path: '/superadmin/users',
@@ -144,6 +196,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/superadmin/sites',
     getPageTitle: () => 'Site Management',
+  },
+  {
+    path: '/superadmin/clients',
+    getPageTitle: () => 'Client Management',
   },
   {
     path: '/superadmin/unit-of-measures',
@@ -164,10 +220,6 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/superadmin/store-request-export',
     getPageTitle: () => 'Store Request Export',
-  },
-  {
-    path: '/superadmin/sites',
-    getPageTitle: () => 'Site Management',
   },
 ]
 
