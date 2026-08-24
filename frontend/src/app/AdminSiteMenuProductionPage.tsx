@@ -95,17 +95,13 @@ const AdminSiteMenuProductionPage = () => {
   const fetchGroups = useCallback(async () => {
     if (!accessToken) return;
     const data = await apiFetch<{ items?: Group[] }>(
-      "/menu-productions/store-requests",
+      "/menu-productions/store-requests?approvalStatus=pending",
       undefined,
       accessToken,
     );
     setGroups(
       [...(data.items ?? [])]
-        .filter(
-          (group) =>
-            !isSubmittedGroup(group) ||
-            group.items.some((item) => item.approvalStatus === "rejected"),
-        )
+        .filter((group) => !isSubmittedGroup(group))
         .sort((a, b) => a.date.localeCompare(b.date)),
     );
   }, [accessToken]);

@@ -236,6 +236,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           '',
           '',
           '',
+          '',
         ])
         rowNumber += 1
         return
@@ -275,6 +276,7 @@ const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
     [
       'Production Date',
       'Site',
+      'Client Name',
       'Product Type',
       'Product Code',
       'Ingredient Name',

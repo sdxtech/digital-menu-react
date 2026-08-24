@@ -781,10 +781,7 @@ export class MenuProductionsService implements OnModuleInit {
     }
 
     const updated = await this.menuProductionModel.findOneAndUpdate(
-      this.withSiteFilter(
-        { _id: id, approvalStatus: { $in: ['pending', 'rejected'] } },
-        site,
-      ),
+      this.withSiteFilter({ _id: id, approvalStatus: 'pending' }, site),
       {
         $set: {
           approvalStatus: 'pending',
@@ -836,7 +833,7 @@ export class MenuProductionsService implements OnModuleInit {
     const filter = this.withSiteFilter(
       {
         productionCode: normalizedCode,
-        approvalStatus: { $in: ['pending', 'rejected'] },
+        approvalStatus: 'pending',
       },
       site,
     );
