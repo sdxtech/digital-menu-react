@@ -1076,7 +1076,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                         sellingQuantity !== undefined
                           ? sellingPricePerPax * sellingQuantity
                           : undefined
-                      const revenuePercentage =
+                      const foodCostPercentage =
                         estimatedRevenue !== undefined && estimatedRevenue > 0
                           ? (totalEstimatedCost / estimatedRevenue) * 100
                           : undefined
@@ -1373,12 +1373,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               colSpan={3}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
-                                              Revenue Percentage
+                                              Food Cost Percentage
                                             </td>
                                             <td colSpan={4} className="px-3 py-3 font-bold">
-                                              {revenuePercentage === undefined
+                                              {foodCostPercentage === undefined
                                                 ? '-'
-                                                : `${revenuePercentage.toFixed(2)}%`}
+                                                : `${foodCostPercentage.toFixed(2)}%`}
                                             </td>
                                           </tr>
                                         </tfoot>
