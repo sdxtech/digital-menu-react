@@ -329,7 +329,7 @@ const AdminSiteMenuProductionPage = () => {
                   const sellingPrice = Number(batchValues(group).price);
                   const sellingQuantity = Number(batchValues(group).quantity);
                   const estimatedRevenue = sellingPrice * sellingQuantity;
-                  const revenuePercentage =
+                  const foodCostPercentage =
                     estimatedRevenue > 0
                       ? (estimatedTotal / estimatedRevenue) * 100
                       : undefined;
@@ -537,15 +537,15 @@ const AdminSiteMenuProductionPage = () => {
                                           colSpan={5}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
-                                          Revenue Percentage
+                                          Food Cost Percentage
                                         </td>
                                         <td
                                           colSpan={2}
                                           className="px-4 py-3 text-center font-bold"
                                         >
-                                          {revenuePercentage === undefined
+                                          {foodCostPercentage === undefined
                                             ? "-"
-                                            : `${revenuePercentage.toFixed(2)}%`}
+                                            : `${foodCostPercentage.toFixed(2)}%`}
                                         </td>
                                       </tr>
                                       <tr className="border-t border-border">
