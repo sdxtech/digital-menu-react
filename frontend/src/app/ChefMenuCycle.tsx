@@ -9,7 +9,7 @@ import { formatQuantity } from '../lib/quantity'
 import { formatVersionedRecipeName } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
-const INPUT_ROWS_PER_PAGE = 8 /* Jumlah baris input menu yang ditampilkan per halaman */
+const INPUT_ROWS_PER_PAGE = 30 /* Jumlah baris input menu yang ditampilkan per halaman */
 
 type ProductionSiteOption = {
   code: string
