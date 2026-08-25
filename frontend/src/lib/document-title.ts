@@ -56,12 +56,20 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Menu Production',
   },
   {
+    path: '/chef/menu-production-drafts',
+    getPageTitle: () => 'Menu Production Drafts',
+  },
+  {
     path: '/chef/recipe-calculator',
     getPageTitle: () => 'Calculator Recipe',
   },
   {
     path: '/chef/menu-bank',
     getPageTitle: () => 'Recipe Data',
+  },
+  {
+    path: '/chef/recipe-drafts',
+    getPageTitle: () => 'Recipe Drafts',
   },
   {
     path: '/chef/menu-create',
@@ -115,6 +123,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/corporate-chef/menu-create',
     getPageTitle: () => 'Create New Recipe',
+  },
+  {
+    path: '/corporate-chef/recipe-drafts',
+    getPageTitle: () => 'Recipe Drafts',
   },
 
   // ➕ Added Profile Tab Title configuration mapping for Unit Manager Workspace

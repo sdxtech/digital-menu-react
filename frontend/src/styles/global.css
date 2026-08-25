@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  --dm-ui-scale: 0.9;
   --dm-background: #f7f9fc;
   --dm-surface: #ffffff;
   --dm-border: #e5eaf2;
@@ -20,6 +21,25 @@
   --dm-success: #16a34a;
   --dm-warning: #f59e0b;
   --dm-danger: #ef4444;
+}
+
+#root {
+  zoom: var(--dm-ui-scale);
+}
+
+#root .min-h-screen {
+  min-height: calc(100vh / var(--dm-ui-scale));
+}
+
+.dm-role-sidebar {
+  height: calc((100vh / var(--dm-ui-scale)) - 56px);
+}
+
+@media (min-width: 768px) {
+  .dm-role-sidebar {
+    height: auto;
+    min-height: calc((100vh / var(--dm-ui-scale)) - 56px);
+  }
 }
 
 body {

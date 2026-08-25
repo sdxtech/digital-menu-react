@@ -90,6 +90,9 @@ export class Recipe {
   })
   approvalStatus: ApprovalStatus;
 
+  @Prop({ type: Boolean, default: false, index: true })
+  isDraft: boolean;
+
   @Prop({ default: true, index: true })
   isActive: boolean;
 

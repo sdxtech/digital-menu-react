@@ -96,6 +96,7 @@ export type BaseRecipe = {
   portionSize?: number
   site?: string
   approvalStatus?: 'pending' | 'approved' | 'rejected'
+  isDraft?: boolean
   rejectionReason?: string
   reviewedBy?: string
   reviewedByName?: string
@@ -158,6 +159,7 @@ const ChefCreateMenu = ({
   const {
     createRecipe,
     updateRecipe,
+    submitRecipeDraft,
     resubmitRecipe,
     importRecipesFromExcel,
     searchRawMaterials,
@@ -169,12 +171,19 @@ const ChefCreateMenu = ({
     (location.state as { baseRecipe?: BaseRecipe } | null)?.baseRecipe
   const editingRecipeId = baseRecipe?.id ?? ''
   const isEditMode = Boolean(editingRecipeId)
+  const isDraftRecipe = isEditMode && baseRecipe?.isDraft === true
   const isCreateFromRecipe = Boolean(baseRecipe?.sourceRecipeId && !isEditMode)
   const isCreateFromTemplate = Boolean(
     baseRecipe && !isEditMode && !baseRecipe.sourceRecipeId,
   )
   const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
   const isCorporateChef = user?.role === 'corporate-chef'
+  const recipeDraftsPath = isCorporateChef
+    ? '/corporate-chef/recipe-drafts'
+    : '/chef/recipe-drafts'
+  const recipeDataPath = isCorporateChef
+    ? '/corporate-chef/recipe-data'
+    : '/chef/menu-bank'
   const assignedSiteOptions = Array.from(
     new Map(
       [...(user?.site ? [user.site] : []), ...(user?.sites ?? [])].map(
@@ -999,7 +1008,9 @@ const ChefCreateMenu = ({
     }
   }
 
-  const handleSaveRecipe = async (options: { resubmit?: boolean } = {}) => {
+  const handleSaveRecipe = async (
+    options: { resubmit?: boolean; saveAsDraft?: boolean } = {},
+  ) => {
     const nextName = recipeForm.name.trim()
     const nextCategory = recipeForm.category.trim()
     const nextDescription = recipeForm.description.trim()
@@ -1053,7 +1064,7 @@ const ChefCreateMenu = ({
       )
     })
 
-    if (usedRows.length === 0) {
+    if (usedRows.length === 0 && !options.saveAsDraft) {
       setSubmitError('Add at least 1 ingredient before submitting the recipe.')
       setSubmitMessage('')
       return
@@ -1184,12 +1195,21 @@ const ChefCreateMenu = ({
       let createdRecipeVersion: number | undefined
 
       if (isEditMode && editingRecipeId) {
-        await updateRecipe(editingRecipeId, basePayload)
+        await updateRecipe(editingRecipeId, {
+          ...basePayload,
+          ...(isDraftRecipe ? { saveAsDraft: true } : {}),
+        })
+        if (isDraftRecipe && !options.saveAsDraft) {
+          await submitRecipeDraft(editingRecipeId)
+          onSaved?.()
+          navigate(recipeDataPath, { replace: true })
+          return
+        }
         if (options.resubmit) {
           await resubmitRecipe(editingRecipeId, nextResubmitFeedback)
           setCurrentApprovalStatus('pending')
           onSaved?.()
-          navigate('/chef/menu-bank', { replace: true })
+          navigate(recipeDataPath, { replace: true })
           return
         }
         onSaved?.()
@@ -1201,18 +1221,25 @@ const ChefCreateMenu = ({
             ? { baseRecipeId: baseRecipe.sourceRecipeId }
             : {}),
           status: 'draft',
+          saveAsDraft: options.saveAsDraft === true,
         })
         createdRecipeVersion = createdRecipe.version
         setRecipeForm(initialRecipeForm)
         setIngredientRows([createIngredientRow()])
         onSaved?.()
+        if (options.saveAsDraft) {
+          navigate(recipeDraftsPath, { replace: true })
+          return
+        }
       }
 
       setSubmitError('')
       setSubmitMessage(
         options.resubmit
           ? 'Recipe updated and resubmitted to the Unit Manager.'
-          : isRejectedRecipe
+          : isDraftRecipe && options.saveAsDraft
+            ? 'Recipe draft updated successfully.'
+            : isRejectedRecipe
             ? 'Recipe draft saved. Resubmit when ready.'
           : isEditMode
             ? 'Recipe updated successfully.'
@@ -1935,8 +1962,19 @@ const ChefCreateMenu = ({
                 onClick={() => handleSaveRecipe()}
               />
             ) : null}
+            {!isEditMode || isDraftRecipe ? (
+              <button
+                type="button"
+                onClick={() => handleSaveRecipe({ saveAsDraft: true })}
+                className="inline-flex items-center justify-center rounded-md border border-primary bg-white px-4 py-3 text-sm font-semibold text-primary hover:bg-primary-soft"
+              >
+                Save Draft
+              </button>
+            ) : null}
             <ActionButton
-              action={isEditMode && !isRejectedRecipe ? 'update' : 'submit'}
+              action={
+                isEditMode && !isRejectedRecipe && !isDraftRecipe ? 'update' : 'submit'
+              }
               onClick={() =>
                 isRejectedRecipe
                   ? setResubmitModalOpen(true)

@@ -62,6 +62,7 @@ export type Recipe = {
   portionSize: number
   status: RecipeStatus
   approvalStatus: ApprovalStatus
+  isDraft: boolean
   isActive: boolean
   ingredients: RecipeIngredient[]
   createdAt: string
@@ -90,6 +91,7 @@ export type MenuProduction = {
   recipeVersion?: number
   menuName: string
   category: string
+  group?: string
   site?: string
   clientId?: string
   clientName?: string
@@ -104,9 +106,23 @@ export type MenuProduction = {
   estimatedRevenue?: number
   productionDate: string
   approvalStatus: ApprovalStatus
+  isDraft: boolean
   rejectionReason?: string
   storeRequestStatus: StoreRequestStatus
   createdAt: string
+  updatedAt?: string
+  ingredientVendors?: Array<{
+    ingredientIndex?: number
+    productCode?: string
+    name?: string
+    unitOfMeasures?: string
+    vendor?: string
+    site?: string
+    currency?: string
+    minimumQuantity?: number
+    price?: number
+    ingredientCost?: number
+  }>
 }
 
 export type RawMaterial = {
@@ -146,10 +162,12 @@ type CreateRecipeInput = {
   price: number
   portionSize: number
   status: RecipeStatus
+  saveAsDraft?: boolean
   ingredients: RecipeIngredient[]
 }
 
 type UpdateRecipeInput = {
+  saveAsDraft?: boolean
   name?: string
   category?: string
   description?: string
@@ -163,6 +181,7 @@ type AddMenuProductionInput = {
   recipeId: string
   menuName: string
   category: string
+  group?: string
   site?: string
   clientId?: string
   clientName?: string
@@ -182,6 +201,7 @@ type AddMenuProductionInput = {
     price?: number
   }>
   productionDate: string
+  saveAsDraft?: boolean
 }
 
 type AddRawMaterialInput = {
@@ -236,12 +256,18 @@ type RecipeSearchOptions = SiteScopedFetchOptions & {
 type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<Recipe>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
+  submitRecipeDraft: (id: string) => Promise<Recipe>
   importRecipesFromExcel: (file: File) => Promise<number>
   approveRecipe: (id: string) => Promise<void>
   rejectRecipe: (id: string, reason: string) => Promise<void>
   resubmitRecipe: (id: string, feedback: string) => Promise<void>
   addMenuProduction: (input: AddMenuProductionInput) => Promise<void>
-  addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<void>
+  addMenuProductionsBulk: (inputs: AddMenuProductionInput[]) => Promise<MenuProduction[]>
+  replaceMenuProductionDraft: (
+    productionCode: string,
+    inputs: AddMenuProductionInput[],
+  ) => Promise<MenuProduction[]>
+  submitMenuProductionDraft: (productionCode: string) => Promise<MenuProduction[]>
   updateMenuProductionSalesDetails: (
     id: string,
     input: { sellingPricePerPax: number; sellingQuantity: number },
@@ -310,6 +336,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
       : 1,
     status: (item.status ?? 'draft') as RecipeStatus,
     approvalStatus,
+    isDraft: item.isDraft === true,
     isActive: item.isActive !== false,
     ingredients: Array.isArray(item.ingredients)
       ? item.ingredients.map((ingredient) => ({
@@ -368,7 +395,10 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
   recipeVersion: getRecipeVersion(item.recipeVersion),
   menuName: item.menuName ?? '',
   category: item.category ?? '',
+  group: item.group ?? undefined,
   site: item.site ?? undefined,
+  clientId: item.clientId ?? undefined,
+  clientName: item.clientName ?? undefined,
   unitManagerId: item.unitManagerId ?? undefined,
   assistedBy: item.assistedBy ?? undefined,
   portion: Number.isFinite(Number(item.portion)) ? Number(item.portion) : 0,
@@ -390,9 +420,14 @@ const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
     : undefined,
   productionDate: item.productionDate ?? '',
   approvalStatus: item.approvalStatus ?? 'pending',
+  isDraft: item.isDraft === true,
   rejectionReason: item.rejectionReason ?? undefined,
   storeRequestStatus: item.storeRequestStatus ?? 'not-requested',
   createdAt: item.createdAt ?? new Date().toISOString(),
+  updatedAt: item.updatedAt ?? undefined,
+  ingredientVendors: Array.isArray(item.ingredientVendors)
+    ? item.ingredientVendors
+    : [],
 })
 
 const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
@@ -533,7 +568,9 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     const mapped = mapRecipe(created)
     setState((prev) => ({
       ...prev,
-      recipes: upsertById(prev.recipes, mapped),
+      recipes: mapped.isDraft
+        ? prev.recipes.filter((item) => item.id !== mapped.id)
+        : upsertById(prev.recipes, mapped),
     }))
     return mapped
   }
@@ -556,6 +593,26 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       ...prev,
       recipes: upsertById(prev.recipes, mapped),
     }))
+  }
+
+  const submitRecipeDraft = async (id: string) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to submit the recipe draft.')
+    }
+
+    const updated = await apiFetch<RecipeApi>(
+      `/recipes/${id}/submit-draft`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mapped = mapRecipe(updated)
+    setState((prev) => ({
+      ...prev,
+      recipes: mapped.isDraft
+        ? prev.recipes.filter((item) => item.id !== mapped.id)
+        : upsertById(prev.recipes, mapped),
+    }))
+    return mapped
   }
 
   const importRecipesFromExcel = async (file: File) => {
@@ -655,7 +712,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
-    if (!inputs.length) return
+    if (!inputs.length) return []
 
     const created = await apiFetch<
       MenuProductionApi[] | { items?: MenuProductionApi[] }
@@ -673,13 +730,54 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     setState((prev) => {
       let nextMenuProductions = prev.menuProductions
       mappedItems.forEach((item) => {
-        nextMenuProductions = upsertById(nextMenuProductions, item)
+        if (!item.isDraft) {
+          nextMenuProductions = upsertById(nextMenuProductions, item)
+        }
       })
       return {
         ...prev,
         menuProductions: nextMenuProductions,
       }
     })
+    return mappedItems
+  }
+
+  const replaceMenuProductionDraft = async (
+    productionCode: string,
+    inputs: AddMenuProductionInput[],
+  ) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to save the menu production draft.')
+    }
+    const updated = await apiFetch<MenuProductionApi[]>(
+      `/menu-productions/drafts/${encodeURIComponent(productionCode)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ items: inputs }),
+      },
+      accessToken,
+    )
+    return updated.map(mapMenuProduction)
+  }
+
+  const submitMenuProductionDraft = async (productionCode: string) => {
+    if (!accessToken) {
+      throw new Error('Please log in first to submit the menu production draft.')
+    }
+    const submitted = await apiFetch<MenuProductionApi[]>(
+      `/menu-productions/drafts/${encodeURIComponent(productionCode)}/submit`,
+      { method: 'PATCH' },
+      accessToken,
+    )
+    const mappedItems = submitted.map(mapMenuProduction)
+    setState((prev) => {
+      let nextMenuProductions = prev.menuProductions
+      mappedItems.forEach((item) => {
+        nextMenuProductions = upsertById(nextMenuProductions, item)
+      })
+      return { ...prev, menuProductions: nextMenuProductions }
+    })
+    return mappedItems
   }
 
   const approveMenuProduction = async (id: string) => {
@@ -1005,12 +1103,15 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     updateRawMaterial,
     createRecipe,
     updateRecipe,
+    submitRecipeDraft,
     importRecipesFromExcel,
     approveRecipe,
     rejectRecipe,
     resubmitRecipe,
     addMenuProduction,
     addMenuProductionsBulk,
+    replaceMenuProductionDraft,
+    submitMenuProductionDraft,
     updateMenuProductionSalesDetails,
     updateMenuProductionBatchSalesDetails,
     approveMenuProduction,

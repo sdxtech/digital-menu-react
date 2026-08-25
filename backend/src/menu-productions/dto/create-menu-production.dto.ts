@@ -1,6 +1,7 @@
 import {
   IsInt,
   IsArray,
+  IsBoolean,
   IsMongoId,
   IsNotEmpty,
   IsNumber,
@@ -63,6 +64,10 @@ export class CreateMenuProductionIngredientVendorDto {
 }
 
 export class CreateMenuProductionDto {
+  @IsBoolean()
+  @IsOptional()
+  saveAsDraft?: boolean;
+
   @IsString()
   @IsNotEmpty()
   @IsMongoId()
@@ -75,6 +80,10 @@ export class CreateMenuProductionDto {
   @IsString()
   @IsOptional()
   category?: string;
+
+  @IsString()
+  @IsOptional()
+  group?: string;
 
   @IsString()
   @IsOptional()
