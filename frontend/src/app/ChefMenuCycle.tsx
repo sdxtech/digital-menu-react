@@ -72,10 +72,11 @@ type RawMaterialVendorPriceOption = {
 
 type MenuInputRow = {
   id: string
+  group: string
   recipeId: string
   recipeQuery: string
   portion: number | ''
-}/* Tipe data untuk menyimpan informasi setiap baris input menu, termasuk id unik, id resep yang dipilih, query teks untuk pencarian resep, dan jumlah porsi */
+}/* Tipe data untuk menyimpan informasi setiap baris input menu, termasuk id unik, grup, id resep yang dipilih, query teks untuk pencarian resep, dan jumlah porsi */
 
 type MenuProductionIngredientVendorInput = {
   ingredientIndex: number
@@ -91,6 +92,7 @@ type MenuProductionIngredientVendorInput = {
 
 const createMenuInputRow = (): MenuInputRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  group: '',
   recipeId: '',
   recipeQuery: '',
   portion: '',
@@ -900,6 +902,12 @@ const ChefMenuCycle = ({
     )
   }/* Fungsi untuk memperbarui nilai porsi dalam baris input menu saat pengguna mengetik. Fungsi ini memastikan bahwa hanya angka yang diterima, dan jika input kosong, nilai porsi akan disimpan sebagai string kosong. Digunakan sebagai onChange handler untuk input porsi. */
 
+  const updateRowGroup = (id: string, value: string) => {
+    setMenuRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, group: value } : row)),
+    )
+  }
+
   const validateProductionActors = () => {
     if (!requireProductionActors) return true
     if (!productionUnitManagerId) {
@@ -1222,7 +1230,7 @@ const ChefMenuCycle = ({
     (inputPage - 1) * INPUT_ROWS_PER_PAGE,
     inputPage * INPUT_ROWS_PER_PAGE,
   )/* Menghitung total halaman untuk paginasi berdasarkan jumlah baris menu dan jumlah baris per halaman. Kemudian, menghitung daftar baris menu yang akan ditampilkan pada halaman saat ini dengan melakukan slicing pada menuRows. Digunakan untuk menampilkan hanya sebagian baris menu sesuai dengan halaman yang dipilih oleh pengguna. */
-  const inputTableColumnCount = showEstimatedCostColumns ? 9 : 7
+  const inputTableColumnCount = showEstimatedCostColumns ? 10 : 8
 
   return (
     <div className="space-y-6">
@@ -1437,8 +1445,9 @@ const ChefMenuCycle = ({
           <table className="dm-table min-w-full bg-white text-sm">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                <th className="w-20 px-2 py-3 font-semibold" />
-                <th className="w-14 px-2 py-3 font-semibold text-center">No</th>
+                <th className="w-[48px] px-2 py-3 font-semibold" />
+                <th className="w-[48px] px-2 py-3 font-semibold text-center">No</th>
+                <th className="px-4 py-3 font-semibold">Group</th>
                 <th className="px-4 py-3 font-semibold">Recipe ID</th>
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
@@ -1451,7 +1460,7 @@ const ChefMenuCycle = ({
                     <th className="px-4 py-3 font-semibold">Cost/Pax</th>
                   </>
                 ) : null}
-                <th className="px-4 py-3 font-semibold">Recipe details</th>
+                <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -1564,6 +1573,18 @@ const ChefMenuCycle = ({
                       </td>
                       <td className="px-2 py-3 text-center text-sm text-muted">
                         {(inputPage - 1) * INPUT_ROWS_PER_PAGE + index + 1}
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={row.group}
+                          onChange={(event) =>
+                            updateRowGroup(row.id, event.target.value)
+                          }
+                          className="w-[120px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          aria-label={`Group for menu row ${index + 1}`}
+                        >
+                          <option value="">Select group</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
                         {selectedRecipe?.recipeCode ?? '-'}
@@ -1706,35 +1727,35 @@ const ChefMenuCycle = ({
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
+                                          <th className="w-[40px] px-2 py-3 font-semibold">
                                             No
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="w-[48px] px-2 py-3 font-semibold">
                                             Type
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="w-[64px] px-1 py-3 font-semibold">
                                             Product code
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="min-w-[312px] px-4 py-3 font-semibold">
                                             Ingredient name
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="w-[56px] px-2 py-3 font-semibold">
                                             Qty
                                           </th>
-                                          <th className="px-4 py-3 font-semibold">
+                                          <th className="w-[56px] px-2 py-3 font-semibold">
                                             Unit
                                           </th>
                                           {showIngredientVendorColumn ? (
-                                            <th className="px-4 py-3 font-semibold">
+                                            <th className="w-[216px] px-4 py-3 font-semibold">
                                               Vendor
                                             </th>
                                           ) : null}
                                           {showIngredientCostColumns ? (
                                             <>
-                                              <th className="px-4 py-3 font-semibold">
+                                              <th className="w-[112px] px-4 py-3 font-semibold">
                                                 Price
                                               </th>
-                                              <th className="px-4 py-3 font-semibold">
+                                              <th className="w-[112px] px-4 py-3 font-semibold">
                                                 Ingredient Cost
                                               </th>
                                             </>
@@ -1808,35 +1829,35 @@ const ChefMenuCycle = ({
                                               key={`${ingredient.productCode}-${idx}`}
                                               className="border-t border-border"
                                             >
-                                              <td className="px-4 py-3 text-sm text-muted">
+                                              <td className="px-2 py-3 text-sm text-muted">
                                                 {idx + 1}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-2 py-3">
                                                 {ingredient.ingredientType || '-'}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-1 py-3">
                                                 {ingredient.productCode}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {ingredient.name}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-2 py-3">
                                                 {formatQuantity(scaledQty)}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-2 py-3">
                                                 {formatUnitLabel(
                                                   ingredient.unitOfMeasures,
                                                 )}
                                               </td>
                                               {showIngredientVendorColumn ? (
-                                                <td className="min-w-[21rem] px-4 py-3">
+                                                <td className="w-[216px] min-w-[216px] px-4 py-3">
                                                   {isNmp ? (
                                                     <input
                                                       type="text"
                                                       value="CUSTOM"
                                                       readOnly
                                                       aria-readonly="true"
-                                                      className="w-[21rem] rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted shadow-sm outline-none"
+                                                      className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted shadow-sm outline-none"
                                                     />
                                                   ) : (
                                                   <select
@@ -1851,7 +1872,7 @@ const ChefMenuCycle = ({
                                                       )
                                                     }
                                                     disabled={vendorLoading}
-                                                    className={`w-[21rem] rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${
+                                                    className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${
                                                       siteVendorOptions.length > 1
                                                         ? 'border-amber-400 bg-amber-100'
                                                         : 'border-border bg-white'
@@ -1911,7 +1932,7 @@ const ChefMenuCycle = ({
                                                           event.currentTarget.blur()
                                                         }
                                                         placeholder="Price"
-                                                        className="w-36 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                                                        className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                                                       />
                                                     ) : (
                                                       formatPrice(unitPrice)
