@@ -1605,31 +1605,31 @@ const ChefCreateMenu = ({
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                  <th className="w-20 px-2 py-3 font-semibold" />
-                  <th className="w-14 px-2 py-3 font-semibold text-center">
+                  <th className="w-[50px] px-2 py-3 font-semibold" />
+                  <th className="w-[30px] px-2 py-3 font-semibold text-center">
                     No
                   </th>
-                  <th className="px-3 py-3 font-semibold w-[120px]">
+                  <th className="px-3 py-3 font-semibold w-[100px]">
                     Type
                   </th>
-                  <th className="px-4 py-3 font-semibold w-[160px]">
+                  <th className="px-4 py-3 font-semibold w-[120px]">
                     Product code
                   </th>
                   <th className="px-4 py-3 font-semibold min-w-[390px]">
                     Name
                   </th>
-                  <th className="px-4 py-3 font-semibold w-[120px]">
+                  <th className="px-4 py-3 font-semibold w-[100px]">
                     {enableIngredientUomConversion ? 'Prod Qty' : 'Qty'}
                   </th>
                   {enableIngredientUomConversion ? (
                     <>
-                      <th className="px-4 py-3 font-semibold w-[160px]">
+                      <th className="px-4 py-3 font-semibold w-[100px]">
                         Prod UOM
                       </th>
-                      <th className="px-4 py-3 font-semibold w-[140px]">
+                      <th className="px-4 py-3 font-semibold w-[100px]">
                         SR Qty
                       </th>
-                      <th className="px-4 py-3 font-semibold w-[160px]">
+                      <th className="px-4 py-3 font-semibold w-[100px]">
                         SR UOM
                       </th>
                     </>
