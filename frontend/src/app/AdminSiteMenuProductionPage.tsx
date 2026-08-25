@@ -42,6 +42,7 @@ type Menu = {
   estimatedRevenue?: number;
   salesInputBy?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
+  ingredients?: Ingredient[];
 };
 
 type Group = {
@@ -387,9 +388,9 @@ const AdminSiteMenuProductionPage = () => {
                       </tr>
                       {expanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={7} className="px-4 py-4">
-                            <div className="grid gap-4 lg:grid-cols-12">
-                              <div className="rounded-md border border-border bg-surface p-4 lg:col-span-5">
+                          <td colSpan={8} className="max-w-0 px-4 py-4">
+                            <div className="space-y-4">
+                              <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs text-muted">Menu list</p>
                                 <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
                                   <table className="dm-table min-w-full text-sm">
@@ -567,7 +568,122 @@ const AdminSiteMenuProductionPage = () => {
                                   </table>
                                 </div>
                               </div>
-                              <div className="rounded-md border border-border bg-surface p-4 lg:col-span-7">
+                              <div className="rounded-md border border-border bg-surface p-4">
+                                <p className="text-xs text-muted">
+                                  Ingredients per menu
+                                </p>
+                                <div className="mt-3 space-y-4">
+                                  {group.items.map((menu) => {
+                                    const ingredients = menu.ingredients ?? [];
+                                    return (
+                                      <article key={`ingredients-${menu.id}`}>
+                                        <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                                          <div>
+                                            <p className="font-semibold text-foreground">
+                                              {menu.menuName}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted">
+                                              {menu.recipeCode ?? "-"} ·{" "}
+                                              {menu.category} · {menu.portion} pax
+                                            </p>
+                                          </div>
+                                          <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                                            {ingredients.length} ingredient
+                                            {ingredients.length === 1 ? "" : "s"}
+                                          </span>
+                                        </div>
+                                        <div className="overflow-hidden rounded-md border border-border bg-white">
+                                          <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                                            <colgroup>
+                                              <col className="w-[5%]" />
+                                              <col className="w-[12%]" />
+                                              <col className="w-[30%]" />
+                                              <col className="w-[8%]" />
+                                              <col className="w-[9%]" />
+                                              <col className="w-[16%]" />
+                                              <col className="w-[10%]" />
+                                              <col className="w-[10%]" />
+                                            </colgroup>
+                                            <thead className="bg-background">
+                                              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                                <th className="px-3 py-3">No</th>
+                                                <th className="px-3 py-3">
+                                                  Product code
+                                                </th>
+                                                <th className="px-3 py-3">
+                                                  Ingredient name
+                                                </th>
+                                                <th className="px-3 py-3">Qty</th>
+                                                <th className="px-3 py-3">Unit</th>
+                                                <th className="px-3 py-3">Vendor</th>
+                                                <th className="px-3 py-3">Price</th>
+                                                <th className="px-3 py-3">
+                                                  Ingredient Cost
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {ingredients.length === 0 ? (
+                                                <tr className="border-t border-border">
+                                                  <td
+                                                    colSpan={8}
+                                                    className="px-4 py-5 text-center text-muted"
+                                                  >
+                                                    No ingredients available.
+                                                  </td>
+                                                </tr>
+                                              ) : (
+                                                ingredients.map(
+                                                  (ingredient, ingredientIndex) => (
+                                                    <tr
+                                                      key={`${menu.id}-${ingredient.productCode}-${ingredientIndex}`}
+                                                      className="border-t border-border"
+                                                    >
+                                                      <td className="px-3 py-3 text-muted">
+                                                        {ingredientIndex + 1}
+                                                      </td>
+                                                      <td className="break-all px-3 py-3">
+                                                        {ingredient.productCode || "-"}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3 font-medium">
+                                                        {ingredient.name || "-"}
+                                                      </td>
+                                                      <td className="px-3 py-3">
+                                                        {formatQuantity(
+                                                          ingredient.qty,
+                                                        )}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3">
+                                                        {formatUnitLabel(
+                                                          ingredient.unitOfMeasures,
+                                                        )}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3">
+                                                        {ingredient.vendor ?? "-"}
+                                                      </td>
+                                                      <td className="px-3 py-3">
+                                                        {formatPrice(
+                                                          ingredient.price,
+                                                        )}
+                                                      </td>
+                                                      <td className="px-3 py-3">
+                                                        {formatPrice(
+                                                          ingredient.ingredientCost,
+                                                        )}
+                                                      </td>
+                                                    </tr>
+                                                  ),
+                                                )
+                                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </article>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs text-muted">
                                   Ingredient summary
                                 </p>
