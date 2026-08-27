@@ -26,6 +26,7 @@ import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { SitesModule } from './sites/sites.module';
 import { JwtModule } from '@nestjs/jwt';
+import { MenuGroupsModule } from './menu-groups/menu-groups.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { JwtModule } from '@nestjs/jwt';
     CategoriesModule,
     RecipesModule,
     MenuProductionsModule,
+    MenuGroupsModule,
     SitesModule,
     NotificationsModule,
     FilesModule,
