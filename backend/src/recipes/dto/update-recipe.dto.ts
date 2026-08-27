@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -12,6 +13,10 @@ import { Type } from 'class-transformer';
 import { RecipeIngredientDto } from './create-recipe.dto';
 
 export class UpdateRecipeDto {
+  @IsOptional()
+  @IsBoolean()
+  saveAsDraft?: boolean;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

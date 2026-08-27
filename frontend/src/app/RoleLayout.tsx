@@ -203,7 +203,10 @@ const RoleLayout = ({
       .filter(
         (item) =>
           item.children?.length &&
-          location.pathname === getTarget(item.to).pathname,
+          (location.pathname === getTarget(item.to).pathname ||
+            item.children.some(
+              (child) => location.pathname === getTarget(child.to).pathname,
+            )),
       )
       .map((item) => item.to)
 
@@ -560,7 +563,7 @@ const RoleLayout = ({
         {/* WORKSPACE SIDEBAR & CONTENTS */}
         <div className="relative flex w-full items-stretch">
           <aside
-            className={`fixed left-0 top-14 z-20 flex h-[calc(100vh-56px)] shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all md:static md:h-auto md:min-h-[calc(100vh-56px)] ${
+            className={`dm-role-sidebar fixed left-0 top-14 z-20 flex shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all md:static ${
               sidebarOpen ? 'w-max min-w-40 max-w-64' : 'w-12'
             }`}
           >

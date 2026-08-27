@@ -66,6 +66,9 @@ export class MenuProduction {
   @Prop({ required: true, trim: true })
   category: string;
 
+  @Prop({ type: String, trim: true })
+  group?: string;
+
   @Prop({ type: String, trim: true, index: true })
   site?: string;
 
@@ -127,6 +130,9 @@ export class MenuProduction {
     index: true,
   })
   approvalStatus: ApprovalStatus;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  isDraft: boolean;
 
   @Prop({ type: String, trim: true })
   reviewedBy?: string;

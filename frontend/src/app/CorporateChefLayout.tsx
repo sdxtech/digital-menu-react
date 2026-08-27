@@ -18,6 +18,14 @@ const navItems = [
     componentKey: 'CREATE_RECIPE_FLOW',
   },
   {
+    label: 'Recipe Drafts',
+    to: '/corporate-chef/recipe-drafts',
+    icon: (className: string) => (
+      <i className={`bi bi-file-earmark-text ${className}`} aria-hidden="true" />
+    ),
+    componentKey: 'CREATE_RECIPE_FLOW',
+  },
+  {
     label: 'Recipe Data',
     to: '/corporate-chef/recipe-data',
     icon: (className: string) => (

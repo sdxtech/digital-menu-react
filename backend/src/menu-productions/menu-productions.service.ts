@@ -438,6 +438,7 @@ export class MenuProductionsService implements OnModuleInit {
       recipeVersion: recipe.version,
       menuName: menuSnapshot.menuName,
       category: menuSnapshot.category,
+      group: input.group?.trim() || undefined,
       clientId: input.clientId?.trim(),
       clientName: input.clientName?.trim(),
       portion: input.portion,
@@ -447,13 +448,16 @@ export class MenuProductionsService implements OnModuleInit {
       ingredientVendors: costSnapshot.ingredientVendors,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
+      isDraft: input.saveAsDraft === true,
       storeRequestStatus: 'not-requested',
       createdBy,
       unitManagerId: normalizedUnitManagerId,
       assistedBy,
       site: normalizedSite,
     });
-    this.dispatchMenuProductionSubmissionNotifications([created]);
+    if (!created.isDraft) {
+      this.dispatchMenuProductionSubmissionNotifications([created]);
+    }
     return created;
   }
 
@@ -469,6 +473,15 @@ export class MenuProductionsService implements OnModuleInit {
       recipeId: this.normalizeRecipeId(input.recipeId),
       productionDate: input.productionDate.trim(),
     }));
+    const draftValues = new Set(
+      normalizedInputs.map((input) => input.saveAsDraft === true),
+    );
+    if (draftValues.size > 1) {
+      throw new BadRequestException(
+        'Bulk menu production cannot mix draft and submitted menus.',
+      );
+    }
+    const saveAsDraft = normalizedInputs[0]?.saveAsDraft === true;
     const recipeById = await this.findEligibleRecipesById(
       normalizedInputs.map((item) => item.recipeId),
     );
@@ -503,6 +516,7 @@ export class MenuProductionsService implements OnModuleInit {
         recipeVersion: recipe.version,
         menuName: menuSnapshot.menuName,
         category: menuSnapshot.category,
+        group: input.group?.trim() || undefined,
         clientId: input.clientId?.trim(),
         clientName: input.clientName?.trim(),
         portion: input.portion,
@@ -512,6 +526,7 @@ export class MenuProductionsService implements OnModuleInit {
         ingredientVendors: costSnapshot.ingredientVendors,
         productionDate: input.productionDate,
         approvalStatus: 'pending',
+        isDraft: saveAsDraft,
         storeRequestStatus: 'not-requested',
         createdBy,
         unitManagerId: this.normalizeOptionalUserId(
@@ -528,11 +543,95 @@ export class MenuProductionsService implements OnModuleInit {
       ordered: false,
     });
 
-    if (createdDocs.length > 0) {
+    if (createdDocs.length > 0 && !saveAsDraft) {
       this.dispatchMenuProductionSubmissionNotifications(createdDocs);
     }
 
     return createdDocs;
+  }
+
+  async findDrafts(createdBy?: string, site?: string) {
+    const chefId = createdBy?.trim();
+    if (!chefId) {
+      throw new BadRequestException(
+        'Chef identity is required to load menu production drafts.',
+      );
+    }
+
+    const items = await this.menuProductionModel
+      .find(this.withSiteFilter({ createdBy: chefId, isDraft: true }, site))
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    return { items, total: items.length };
+  }
+
+  async replaceDraft(
+    productionCode: string,
+    inputs: CreateMenuProductionDto[],
+    createdBy?: string,
+    site?: string,
+    assistedBy?: string,
+  ) {
+    const normalizedCode = productionCode?.trim();
+    const chefId = createdBy?.trim();
+    if (!normalizedCode || !chefId) {
+      throw new BadRequestException('Menu production draft is invalid.');
+    }
+
+    const draftFilter = this.withSiteFilter(
+      { productionCode: normalizedCode, createdBy: chefId, isDraft: true },
+      site,
+    );
+    const existingDraft = await this.menuProductionModel.exists(draftFilter);
+    if (!existingDraft) {
+      throw new NotFoundException('Menu production draft not found.');
+    }
+
+    const created = await this.createMany(
+      inputs.map((input) => ({ ...input, saveAsDraft: true })),
+      chefId,
+      site,
+      assistedBy,
+    );
+    await this.menuProductionModel.deleteMany(draftFilter);
+    return created;
+  }
+
+  async submitDraftBatch(
+    productionCode: string,
+    createdBy?: string,
+    site?: string,
+  ) {
+    const normalizedCode = productionCode?.trim();
+    const chefId = createdBy?.trim();
+    if (!normalizedCode || !chefId) {
+      throw new BadRequestException('Menu production draft is invalid.');
+    }
+
+    const draftFilter = this.withSiteFilter(
+      { productionCode: normalizedCode, createdBy: chefId, isDraft: true },
+      site,
+    );
+    const result = await this.menuProductionModel.updateMany(draftFilter, {
+      $set: { isDraft: false },
+    });
+    if (!result.matchedCount) {
+      throw new NotFoundException('Menu production draft not found.');
+    }
+
+    const submitted = await this.menuProductionModel
+      .find(
+        this.withSiteFilter(
+          { productionCode: normalizedCode, createdBy: chefId, isDraft: false },
+          site,
+        ),
+      )
+      .lean();
+    if (submitted.length > 0) {
+      this.dispatchMenuProductionSubmissionNotifications(submitted);
+    }
+    return submitted;
   }
 
   async findAll(
@@ -542,7 +641,7 @@ export class MenuProductionsService implements OnModuleInit {
   ) {
     await this.backfillMissingMenuProductionCodes();
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { isDraft: { $ne: true } };
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
@@ -653,7 +752,7 @@ export class MenuProductionsService implements OnModuleInit {
       throw new BadRequestException('Rejection reason is required.');
     }
     const filter = this.withUnitManagerFilter(
-      this.withSiteFilter({ _id: id }, site),
+      this.withSiteFilter({ _id: id, isDraft: { $ne: true } }, site),
       unitManagerId,
     );
     const updated = await this.menuProductionModel
@@ -781,7 +880,10 @@ export class MenuProductionsService implements OnModuleInit {
     }
 
     const updated = await this.menuProductionModel.findOneAndUpdate(
-      this.withSiteFilter({ _id: id, approvalStatus: 'pending' }, site),
+      this.withSiteFilter(
+        { _id: id, approvalStatus: 'pending', isDraft: { $ne: true } },
+        site,
+      ),
       {
         $set: {
           approvalStatus: 'pending',
@@ -834,6 +936,7 @@ export class MenuProductionsService implements OnModuleInit {
       {
         productionCode: normalizedCode,
         approvalStatus: 'pending',
+        isDraft: { $ne: true },
       },
       site,
     );
@@ -1375,7 +1478,7 @@ export class MenuProductionsService implements OnModuleInit {
   ) {
     await this.backfillMissingMenuProductionCodes();
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { isDraft: { $ne: true } };
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
@@ -1518,7 +1621,7 @@ export class MenuProductionsService implements OnModuleInit {
     await this.backfillMissingMenuProductionCodes();
     const requestedSite = this.normalizeSite(site);
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { isDraft: { $ne: true } };
     const andFilters: Record<string, unknown>[] = [];
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {

@@ -26,7 +26,11 @@ describe('MenuProductionsService sales input', () => {
     ).rejects.toThrow(NotFoundException);
 
     expect(findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: 'menu-id', approvalStatus: 'pending' },
+      {
+        _id: 'menu-id',
+        approvalStatus: 'pending',
+        isDraft: { $ne: true },
+      },
       expect.any(Object),
       { new: true },
     );
@@ -39,15 +43,38 @@ describe('MenuProductionsService sales input', () => {
     await expect(
       service.updateBatchSalesDetails(
         'MPR0038',
-        { sellingPricePerPax: 15000, sellingQuantity: 100 },
+        {
+          productionCode: 'MPR0038',
+          sellingPricePerPax: 15000,
+          sellingQuantity: 100,
+        },
         undefined,
         'Admin Site',
       ),
     ).rejects.toThrow(NotFoundException);
 
     expect(updateMany).toHaveBeenCalledWith(
-      { productionCode: 'MPR0038', approvalStatus: 'pending' },
+      {
+        productionCode: 'MPR0038',
+        approvalStatus: 'pending',
+        isDraft: { $ne: true },
+      },
       expect.any(Object),
     );
+  });
+
+  it('only lists menu production drafts owned by the chef', async () => {
+    const lean = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ lean });
+    const find = jest.fn().mockReturnValue({ sort });
+    const service = createService({ find });
+
+    await service.findDrafts('chef-1', 'SITE-001');
+
+    expect(find).toHaveBeenCalledWith({
+      createdBy: 'chef-1',
+      isDraft: true,
+      site: 'SITE-001',
+    });
   });
 });

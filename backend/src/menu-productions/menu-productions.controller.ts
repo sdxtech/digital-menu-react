@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   UseGuards,
+  Put,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -90,6 +91,44 @@ export class MenuProductionsController {
       this.resolveCreateChef(req, requestedChefIds[0]),
       this.resolveCreateSite(req, requestedSites[0]),
       this.resolveAssistedBy(req),
+    );
+  }
+
+  @Get('drafts')
+  @Roles(AppRole.Chef)
+  drafts(@Req() req: AuthenticatedRequest) {
+    return this.menuProductions.findDrafts(
+      req.user.sub,
+      getUserSiteScope(req.user),
+    );
+  }
+
+  @Put('drafts/:productionCode')
+  @Roles(AppRole.Chef)
+  replaceDraft(
+    @Req() req: AuthenticatedRequest,
+    @Param('productionCode') productionCode: string,
+    @Body() dto: CreateMenuProductionBulkDto,
+  ) {
+    return this.menuProductions.replaceDraft(
+      productionCode,
+      dto.items ?? [],
+      req.user.sub,
+      getUserSiteScope(req.user),
+      this.resolveAssistedBy(req),
+    );
+  }
+
+  @Patch('drafts/:productionCode/submit')
+  @Roles(AppRole.Chef)
+  submitDraft(
+    @Req() req: AuthenticatedRequest,
+    @Param('productionCode') productionCode: string,
+  ) {
+    return this.menuProductions.submitDraftBatch(
+      productionCode,
+      req.user.sub,
+      getUserSiteScope(req.user),
     );
   }
 

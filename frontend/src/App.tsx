@@ -7,6 +7,8 @@ import ForgotPasswordPage from './app/ForgotPasswordPage'
 import ResetPasswordPage from './app/ResetPasswordPage'
 import ChefLayout from './app/ChefLayout'
 import ChefCreateMenu from './app/ChefCreateMenu'
+import ChefRecipeDrafts from './app/ChefRecipeDrafts'
+import ChefMenuProductionDrafts from './app/ChefMenuProductionDrafts'
 import ChefAddRawMaterial from './app/ChefAddRawMaterial'
 import ChefDashboard from './app/ChefDashboard'
 import ChefMenuBank from './app/ChefMenuBank'
@@ -130,8 +132,13 @@ function App() {
                 />
               }
             />
+            <Route
+              path="menu-production-drafts"
+              element={<ChefMenuProductionDrafts />}
+            />
             <Route path="recipe-calculator" element={<RecipeCalculator />} />
             <Route path="menu-bank" element={<ChefMenuBank />} />
+            <Route path="recipe-drafts" element={<ChefRecipeDrafts />} />
             <Route
               path="menu-create"
               element={
@@ -186,6 +193,7 @@ function App() {
                 />
               }
             />
+            <Route path="recipe-drafts" element={<ChefRecipeDrafts />} />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
           </Route>
         </Route>

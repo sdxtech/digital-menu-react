@@ -224,7 +224,9 @@ export class RecipesService {
     const isSuperadminActor = this.isSuperadminActor(actor);
     const isCorporateChefActor = this.isCorporateChefActor(actor);
     const isApproverActor = isSuperadminActor || isCorporateChefActor;
-    const reviewedFields = isApproverActor
+    const saveAsDraft = !isSuperadminActor && input.saveAsDraft === true;
+    const autoApprove = isApproverActor && !saveAsDraft;
+    const reviewedFields = autoApprove
       ? this.buildActorFields(actor, 'reviewed')
       : {};
 
@@ -247,9 +249,10 @@ export class RecipesService {
         : 'foodCostRecipe' in costFields
           ? { foodCostRecipe: costFields.foodCostRecipe }
           : {}),
-      status: isApproverActor ? 'active' : (input.status ?? 'draft'),
-      approvalStatus: isApproverActor ? 'approved' : 'pending',
-      ...(isApproverActor ? { reviewedAt: new Date() } : {}),
+      status: autoApprove ? 'active' : (input.status ?? 'draft'),
+      approvalStatus: autoApprove ? 'approved' : 'pending',
+      isDraft: saveAsDraft,
+      ...(autoApprove ? { reviewedAt: new Date() } : {}),
       ingredients: costFields.ingredients,
       ...createdFields,
       ...updatedFields,
@@ -258,7 +261,7 @@ export class RecipesService {
     });
 
     // 2. 🚀 Trigger real-time notification to the UNIT MANAGER
-    if (!isApproverActor) {
+    if (!isApproverActor && !saveAsDraft) {
       try {
         for (const targetRole of ['unit.manager', 'corporate-chef'] as const) {
           await this.notificationsService.createHierarchicalNotification(
@@ -336,6 +339,7 @@ export class RecipesService {
   async findAll(query: ListRecipesQueryDto, site?: string) {
     const filter: Record<string, unknown> = {
       deletedAt: { $exists: false },
+      isDraft: { $ne: true },
     };
     const andFilters: Record<string, unknown>[] = [];
     const visibilityFilter =
@@ -428,6 +432,123 @@ export class RecipesService {
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  async findDrafts(actor?: RecipeActor) {
+    if (!actor?.id) {
+      throw new BadRequestException(
+        'Recipe author identity is required to load drafts.',
+      );
+    }
+
+    const items = await this.recipeModel
+      .find(
+        this.withSiteFilter(
+          {
+            createdBy: actor.id,
+            isDraft: true,
+            deletedAt: { $exists: false },
+          },
+          this.getActorSiteScope(actor),
+        ),
+      )
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    await this.attachActorNames(items);
+    await this.attachSiteNames(items);
+    return { items, total: items.length };
+  }
+
+  async submitDraft(id: string, actor?: RecipeActor) {
+    if (!actor?.id) {
+      throw new BadRequestException(
+        'Recipe author identity is required to submit a draft.',
+      );
+    }
+
+    const filter = this.withSiteFilter(
+      {
+        _id: id,
+        createdBy: actor.id,
+        isDraft: true,
+        deletedAt: { $exists: false },
+      },
+      this.getActorSiteScope(actor),
+    );
+    const existing = await this.recipeModel.findOne(filter).lean();
+    if (!existing) throw new NotFoundException('Recipe draft not found');
+    if (!existing.name?.trim() || !existing.category?.trim()) {
+      throw new BadRequestException('Recipe name and category are required.');
+    }
+    if (!existing.ingredients?.length) {
+      throw new BadRequestException(
+        'Add at least 1 ingredient before submitting the recipe.',
+      );
+    }
+
+    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    const reviewedFields = isCorporateChefActor
+      ? this.buildActorFields(actor, 'reviewed')
+      : {};
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        filter,
+        {
+          $set: {
+            isDraft: false,
+            status: isCorporateChefActor ? 'active' : 'draft',
+            approvalStatus: isCorporateChefActor ? 'approved' : 'pending',
+            ...this.buildActorFields(actor, 'updated'),
+            ...(isCorporateChefActor
+              ? { reviewedAt: new Date(), ...reviewedFields }
+              : {}),
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe draft not found');
+
+    if (!isCorporateChefActor) {
+      try {
+        for (const targetRole of ['unit.manager', 'corporate-chef'] as const) {
+          await this.notificationsService.createHierarchicalNotification(
+            actor.id,
+            'New Recipe Pending Approval',
+            `A new recipe "${updated.name}" V${updated.version ?? 1} has been submitted by the Chef and requires review.`,
+            updated.site || 'global',
+            targetRole,
+            'RECIPE_APPROVAL_REQUESTS',
+            { recipeId: updated._id?.toString() },
+          );
+        }
+      } catch (error) {
+        this.logger.error(
+          `Recipe draft submission notification failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    if (!isCorporateChefActor) {
+      void this.workflowMail
+        .notifyRecipeSubmitted({
+          id: updated._id.toString(),
+          name: updated.name,
+          recipeCode: updated.recipeCode,
+          version: updated.version,
+          site: updated.site,
+          createdBy: updated.createdBy,
+          createdByEmail: updated.createdByEmail,
+        })
+        .catch((error) =>
+          this.logger.error(
+            `Recipe draft submission email failed: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+    }
+
+    return updated;
   }
 
   async setActive(id: string, isActive: boolean, actor?: RecipeActor) {
@@ -859,21 +980,23 @@ export class RecipesService {
     }
 
     const isCorporateChefActor = this.isCorporateChefActor(actor);
-    const corporateSiteScope = actor?.sites?.length ? actor.sites : actor?.site;
+    const corporateSiteScope = this.getActorSiteScope(actor);
     if (isCorporateChefActor && !corporateSiteScope) {
       throw new BadRequestException(
         'Corporate Chef must be assigned to a site before editing recipes.',
       );
     }
     const updatedFields = this.buildActorFields(actor, 'updated');
-    const reviewedFields = isCorporateChefActor
+    const preserveDraft = input.saveAsDraft === true;
+    const autoApprove = isCorporateChefActor && !preserveDraft;
+    const reviewedFields = autoApprove
       ? this.buildActorFields(actor, 'reviewed')
       : {};
     const updatePayload: Record<string, unknown> = {
       $set: {
         ...$set,
         ...updatedFields,
-        ...(isCorporateChefActor
+        ...(autoApprove
           ? {
               approvalStatus: 'approved',
               status: 'active',
@@ -893,7 +1016,16 @@ export class RecipesService {
         this.withSiteFilter(
           {
             _id: id,
-            ...(isCorporateChefActor ? { approvalStatus: 'pending' } : {}),
+            ...(isCorporateChefActor
+              ? preserveDraft
+                ? { isDraft: true, createdBy: actor?.id }
+                : { approvalStatus: 'pending' }
+              : {}),
+            ...(actor?.roles?.includes(AppRole.Chef)
+              ? {
+                  $or: [{ isDraft: { $ne: true } }, { createdBy: actor.id }],
+                }
+              : {}),
           },
           isCorporateChefActor ? corporateSiteScope : actor?.site,
         ),
@@ -2201,6 +2333,20 @@ export class RecipesService {
 
   private isCorporateChefActor(actor?: RecipeActor) {
     return actor?.roles?.includes(AppRole.CorporateChef) ?? false;
+  }
+
+  private getActorSiteScope(
+    actor?: RecipeActor,
+  ): string | string[] | undefined {
+    if (!this.isCorporateChefActor(actor)) return actor?.site;
+    const assignedSites = Array.from(
+      new Set(
+        [actor?.site, ...(actor?.sites ?? [])].filter((site): site is string =>
+          Boolean(site),
+        ),
+      ),
+    );
+    return assignedSites.length ? assignedSites : undefined;
   }
 
   private async attachActorNames(items: RecipeAuditFields[]): Promise<void> {

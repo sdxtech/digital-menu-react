@@ -61,6 +61,12 @@ export class RecipesController {
     return this.recipes.listCategories(getUserSiteScope(req.user));
   }
 
+  @Get('drafts')
+  @Roles(AppRole.Chef, AppRole.CorporateChef)
+  listDrafts(@Req() req: AuthenticatedRequest) {
+    return this.recipes.findDrafts(this.buildActor(req));
+  }
+
   @Get()
   @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
@@ -81,6 +87,12 @@ export class RecipesController {
     @Body() dto: UpdateRecipeDto,
   ) {
     return this.recipes.updateById(id, dto, this.buildActor(req));
+  }
+
+  @Patch(':id/submit-draft')
+  @Roles(AppRole.Chef, AppRole.CorporateChef)
+  submitDraft(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.submitDraft(id, this.buildActor(req));
   }
 
   @Patch(':id/active')

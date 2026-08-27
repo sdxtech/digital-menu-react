@@ -73,7 +73,14 @@ describe('RecipesService site visibility', () => {
       )
       .mockResolvedValue(undefined);
 
-    return { rawMaterials, recipeModel, service, unitOfMeasures };
+    return {
+      notifications,
+      rawMaterials,
+      recipeModel,
+      service,
+      unitOfMeasures,
+      workflowMail,
+    };
   };
 
   const getUpdatePayload = (
@@ -143,6 +150,37 @@ describe('RecipesService site visibility', () => {
       [RecipeCreatePayload]
     >;
     expect(createCalls[0]?.[0].parentRecipeId).toBeUndefined();
+  });
+
+  it('stores a chef draft without notifying approvers', async () => {
+    const { notifications, recipeModel, service, workflowMail } = makeService();
+    recipeModel.create.mockImplementation((payload: object) =>
+      Promise.resolve({ _id: 'recipe-draft', ...payload }),
+    );
+
+    await service.create(
+      {
+        name: 'Half Finished Recipe',
+        category: 'Main Course',
+        ingredients: [],
+        saveAsDraft: true,
+      },
+      {
+        id: 'chef-1',
+        site: 'SITE-001',
+        roles: [AppRole.Chef],
+      },
+    );
+
+    expect(recipeModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalStatus: 'pending',
+        isDraft: true,
+        status: 'draft',
+      }),
+    );
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
   });
 
   it('creates the next version without changing the base recipe name', async () => {
@@ -243,6 +281,46 @@ describe('RecipesService site visibility', () => {
     );
   });
 
+  it('stores a corporate chef recipe as a private draft when requested', async () => {
+    const { notifications, recipeModel, service, workflowMail } = makeService();
+    recipeModel.create.mockImplementation((payload: object) =>
+      Promise.resolve({ _id: 'corporate-draft', ...payload }),
+    );
+
+    await service.create(
+      {
+        site: 'SITE-002',
+        name: 'Corporate Draft',
+        category: 'Main Course',
+        ingredients: [],
+        saveAsDraft: true,
+      },
+      {
+        id: 'corporate-chef-a',
+        roles: [AppRole.CorporateChef],
+        site: 'SITE-002',
+        sites: ['SITE-001', 'SITE-002'],
+      },
+    );
+
+    expect(recipeModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'SITE-002',
+        status: 'draft',
+        approvalStatus: 'pending',
+        isDraft: true,
+      }),
+    );
+    const createCalls = recipeModel.create.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    const payload = createCalls[0]?.[0] ?? {};
+    expect(payload.reviewedAt).toBeUndefined();
+    expect(payload.reviewedBy).toBeUndefined();
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+  });
+
   it('rejects IT raw material outside the selected site scope', async () => {
     const { rawMaterials, recipeModel, service } = makeService();
     rawMaterials.findAvailableNormalizedCodesForSite.mockResolvedValue([]);
@@ -307,6 +385,7 @@ describe('RecipesService site visibility', () => {
       $and: [{ site: 'SITE-001' }],
       approvalStatus: 'pending',
       deletedAt: { $exists: false },
+      isDraft: { $ne: true },
     });
   });
 
@@ -319,6 +398,7 @@ describe('RecipesService site visibility', () => {
     expect(recipeModel.find).toHaveBeenCalledWith({
       approvalStatus: 'approved',
       deletedAt: { $exists: false },
+      isDraft: { $ne: true },
     });
   });
 
@@ -335,6 +415,7 @@ describe('RecipesService site visibility', () => {
         },
       ],
       deletedAt: { $exists: false },
+      isDraft: { $ne: true },
     });
   });
 
@@ -485,6 +566,83 @@ describe('RecipesService site visibility', () => {
         reviewedAt: expect.any(Date),
       }),
     );
+  });
+
+  it('keeps a corporate chef draft private while it is being edited', async () => {
+    const { recipeModel, service } = makeService();
+    const lean = jest.fn().mockResolvedValue({
+      _id: 'recipe-draft',
+      isDraft: true,
+      approvalStatus: 'pending',
+      status: 'draft',
+    });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await service.updateById(
+      'recipe-draft',
+      { name: 'Updated Draft', saveAsDraft: true },
+      {
+        id: 'corporate-chef-a',
+        roles: [AppRole.CorporateChef],
+        site: 'SITE-001',
+        sites: ['SITE-001', 'SITE-002'],
+      },
+    );
+
+    expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: 'recipe-draft',
+        isDraft: true,
+        createdBy: 'corporate-chef-a',
+        site: { $in: ['SITE-001', 'SITE-002'] },
+      },
+      expect.any(Object),
+      { new: true },
+    );
+    const update = getUpdatePayload(recipeModel).$set;
+    expect(update.name).toBe('Updated Draft');
+    expect(update.approvalStatus).toBeUndefined();
+    expect(update.status).toBeUndefined();
+    expect(update.reviewedAt).toBeUndefined();
+  });
+
+  it('activates a corporate chef draft without notifying approvers', async () => {
+    const { notifications, recipeModel, service, workflowMail } = makeService();
+    recipeModel.findOne.mockReturnValue(
+      mockRecipeQuery({
+        _id: 'recipe-draft',
+        name: 'Ready Recipe',
+        category: 'Main Course',
+        ingredients: [{ name: 'Ingredient' }],
+      }),
+    );
+    const lean = jest.fn().mockResolvedValue({
+      _id: 'recipe-draft',
+      name: 'Ready Recipe',
+      category: 'Main Course',
+      ingredients: [{ name: 'Ingredient' }],
+    });
+    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+    await service.submitDraft('recipe-draft', {
+      id: 'corporate-chef-a',
+      name: 'Corporate Chef A',
+      roles: [AppRole.CorporateChef],
+      site: 'SITE-001',
+      sites: ['SITE-001', 'SITE-002'],
+    });
+
+    expect(getUpdatePayload(recipeModel).$set).toEqual(
+      expect.objectContaining({
+        isDraft: false,
+        approvalStatus: 'approved',
+        status: 'active',
+        reviewedBy: 'corporate-chef-a',
+        reviewedAt: expect.any(Date),
+      }),
+    );
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
   });
 
   it('does not allow a corporate chef without an assigned site to edit recipes', async () => {
