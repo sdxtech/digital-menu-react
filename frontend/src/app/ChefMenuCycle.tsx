@@ -37,6 +37,17 @@ type ProductionClientApi = {
   clientId?: string
 }
 
+type MenuGroupApi = {
+  id?: string
+  _id?: string
+  name?: string
+}
+
+type MenuGroupOption = {
+  id: string
+  name: string
+}
+
 type ProductionUserApi = {
   id?: string
   _id?: string
@@ -159,6 +170,9 @@ const ChefMenuCycle = ({
     ProductionClientOption[]
   >([])
   const [productionClientLoading, setProductionClientLoading] = useState(false)
+  const [menuGroupOptions, setMenuGroupOptions] = useState<MenuGroupOption[]>([])
+  const [menuGroupLoading, setMenuGroupLoading] = useState(false)
+  const [menuGroupError, setMenuGroupError] = useState('')
   const [loadedProductionSite, setLoadedProductionSite] = useState('')
   const [siteRecipes, setSiteRecipes] = useState<Recipe[]>([])
   const [siteMenuProductions, setSiteMenuProductions] = useState<
@@ -212,6 +226,49 @@ const ChefMenuCycle = ({
     (value?: string) => value?.trim().toLowerCase() ?? '',
     [],
   )/* Fungsi untuk menormalisasi teks dengan menghapus spasi di awal dan akhir, serta mengubah ke huruf kecil. Digunakan untuk pencarian resep agar lebih fleksibel. */
+
+  useEffect(() => {
+    if (!accessToken) {
+      setMenuGroupOptions([])
+      return
+    }
+
+    let cancelled = false
+    setMenuGroupLoading(true)
+    setMenuGroupError('')
+    apiFetch<{ items?: MenuGroupApi[] }>(
+      '/menu-groups?limit=100&isActive=true',
+      undefined,
+      accessToken,
+    )
+      .then((data) => {
+        if (cancelled) return
+        setMenuGroupOptions(
+          (data.items ?? [])
+            .map((item) => ({
+              id: item.id ?? item._id ?? '',
+              name: item.name?.trim() ?? '',
+            }))
+            .filter((item) => item.id && item.name),
+        )
+      })
+      .catch((reason) => {
+        if (cancelled) return
+        setMenuGroupOptions([])
+        setMenuGroupError(
+          reason instanceof Error
+            ? reason.message
+            : 'Failed to load Group By options.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setMenuGroupLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken])
   const chefProductionSite = useMemo(() => {
     if (requireProductionSite) return ''
     return user?.siteName?.trim() || user?.site?.trim() || ''
@@ -1606,7 +1663,7 @@ const ChefMenuCycle = ({
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-[48px] px-2 py-3 font-semibold" />
                 <th className="w-[48px] px-2 py-3 font-semibold text-center">No</th>
-                <th className="px-4 py-3 font-semibold">Group</th>
+                <th className="px-4 py-3 font-semibold">Group By</th>
                 <th className="px-4 py-3 font-semibold">Recipe ID</th>
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
@@ -1739,10 +1796,28 @@ const ChefMenuCycle = ({
                           onChange={(event) =>
                             updateRowGroup(row.id, event.target.value)
                           }
-                          className="w-[120px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                          aria-label={`Group for menu row ${index + 1}`}
+                          className="w-[160px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                          aria-label={`Group By for menu row ${index + 1}`}
+                          title={menuGroupError || undefined}
                         >
-                          <option value="">Select group</option>
+                          <option value="">
+                            {menuGroupLoading
+                              ? 'Loading groups...'
+                              : menuGroupOptions.length === 0
+                                ? 'No groups configured'
+                                : 'Select group'}
+                          </option>
+                          {row.group &&
+                          !menuGroupOptions.some(
+                            (option) => option.name === row.group,
+                          ) ? (
+                            <option value={row.group}>{row.group} (inactive)</option>
+                          ) : null}
+                          {menuGroupOptions.map((option) => (
+                            <option key={option.id} value={option.name}>
+                              {option.name}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">

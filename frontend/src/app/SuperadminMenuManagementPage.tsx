@@ -20,6 +20,7 @@ import {
 } from '../lib/recipe-version'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
+import SuperadminGroupByManagement from './SuperadminGroupByManagement'
 
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -31,6 +32,7 @@ type MenuManagementTab =
   | 'recipes'
   | 'raw-materials'
   | 'categories'
+  | 'group-by'
 
 type RecipeIngredient = {
   ingredientType?: 'IT' | 'NMP'
@@ -220,6 +222,7 @@ const menuManagementTabs: Array<{
   { id: 'recipes', label: 'Recipe Data', icon: 'bi-journal-text' },
   { id: 'raw-materials', label: 'Raw Material Data', icon: 'bi-box-seam' },
   { id: 'categories', label: 'Categories', icon: 'bi-tags' },
+  { id: 'group-by', label: 'Group By', icon: 'bi-collection' },
 ]
 
 const isMenuManagementTab = (value: string | null): value is MenuManagementTab =>
@@ -4187,6 +4190,8 @@ const SuperadminMenuManagementPage = () => {
           ) : null}
         </section>
         ) : null}
+
+        {activeTab === 'group-by' ? <SuperadminGroupByManagement /> : null}
       </div>
     </div>
   )

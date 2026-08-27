@@ -86,6 +86,13 @@ const navItems = [
           <i className={`bi bi-tags ${className}`} aria-hidden="true" />
         ),
       },
+      {
+        label: 'Group By',
+        to: '/superadmin/menu-management?tab=group-by',
+        icon: (className: string) => (
+          <i className={`bi bi-collection ${className}`} aria-hidden="true" />
+        ),
+      },
     ],
   },
   {
