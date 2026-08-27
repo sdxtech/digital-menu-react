@@ -16,6 +16,24 @@ const navItems = [
       <i className={`bi bi-calendar2-week ${className}`} aria-hidden="true" />
     ),
     componentKey: 'MENU_PRODUCTION_RECORDS',
+    children: [
+      {
+        label: 'Create Menu Production',
+        to: '/chef/menu-cycle',
+        icon: (className: string) => (
+          <i className={`bi bi-calendar2-plus ${className}`} aria-hidden="true" />
+        ),
+        componentKey: 'MENU_PRODUCTION_RECORDS',
+      },
+      {
+        label: 'Production Drafts',
+        to: '/chef/menu-production-drafts',
+        icon: (className: string) => (
+          <i className={`bi bi-file-earmark-text ${className}`} aria-hidden="true" />
+        ),
+        componentKey: 'MENU_PRODUCTION_RECORDS',
+      },
+    ],
   },
   {
     label: 'Calculator Recipe',
@@ -34,12 +52,30 @@ const navItems = [
     componentKey: 'RECIPE_DATA_BANK',
   },
   {
-    label: 'Create New Recipe',
+    label: 'Create Recipe',
     to: '/chef/menu-create',
     icon: (className: string) => (
       <i className={`bi bi-plus-circle ${className}`} aria-hidden="true" />
     ),
     componentKey: 'CREATE_RECIPE_FLOW',
+    children: [
+      {
+        label: 'Create New Recipe',
+        to: '/chef/menu-create',
+        icon: (className: string) => (
+          <i className={`bi bi-plus-circle ${className}`} aria-hidden="true" />
+        ),
+        componentKey: 'CREATE_RECIPE_FLOW',
+      },
+      {
+        label: 'Recipe Drafts',
+        to: '/chef/recipe-drafts',
+        icon: (className: string) => (
+          <i className={`bi bi-file-earmark-text ${className}`} aria-hidden="true" />
+        ),
+        componentKey: 'CREATE_RECIPE_FLOW',
+      },
+    ],
   },
   {
     label: 'Add Raw Material',

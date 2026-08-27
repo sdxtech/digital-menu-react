@@ -82,6 +82,10 @@ export class RecipeIngredientDto {
 
 export class CreateRecipeDto {
   @IsOptional()
+  @IsBoolean()
+  saveAsDraft?: boolean;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   site?: string;

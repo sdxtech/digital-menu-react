@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
@@ -90,12 +91,12 @@ type MenuProductionIngredientVendorInput = {
   price?: number
 }
 
-const createMenuInputRow = (): MenuInputRow => ({
+const createMenuInputRow = (values: Partial<MenuInputRow> = {}): MenuInputRow => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  group: '',
-  recipeId: '',
-  recipeQuery: '',
-  portion: '',
+  group: values.group ?? '',
+  recipeId: values.recipeId ?? '',
+  recipeQuery: values.recipeQuery ?? '',
+  portion: values.portion ?? '',
 })/* Fungsi untuk membuat baris input menu baru dengan id unik dan nilai default kosong */
 
 const mapProductionUser = (item: ProductionUserApi): ProductionUserOption => ({
@@ -140,11 +141,15 @@ const ChefMenuCycle = ({
   showIngredientVendorColumn = false,
   allowIngredientCostSync = false,
 }: ChefMenuCycleProps = {}) => {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { accessToken, user } = useAuth()
   const {
     recipes,
     menuProductions,
     addMenuProductionsBulk,
+    replaceMenuProductionDraft,
+    submitMenuProductionDraft,
     fetchRecipes,
     searchRecipes,
   } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
@@ -191,6 +196,17 @@ const ChefMenuCycle = ({
   const [expandedMenuRows, setExpandedMenuRows] = useState<string[]>([])/* Menyimpan daftar baris menu yang diperluas untuk menampilkan detail */
   const [inputPage, setInputPage] = useState(1)/* Menyimpan halaman saat ini untuk paginasi baris input menu, dengan nilai awal halaman 1 */
   const [activeRecipeDropdownId, setActiveRecipeDropdownId] = useState<string | null>(null)
+  const draftState = (
+    location.state as {
+      menuProductionDraft?: {
+        productionCode: string
+        menus: MenuProduction[]
+      }
+    } | null
+  )?.menuProductionDraft
+  const draftProductionCode = draftState?.productionCode?.trim() ?? ''
+  const hydratedDraftRef = useRef('')
+  const restoredDraftVendorsRef = useRef('')
 
   const normalizeText = useCallback(
     (value?: string) => value?.trim().toLowerCase() ?? '',
@@ -212,6 +228,44 @@ const ChefMenuCycle = ({
       `${rowId}::${index}::${normalizeText(productCode)}`,
     [normalizeText],
   )
+
+  useEffect(() => {
+    if (!draftProductionCode || hydratedDraftRef.current === draftProductionCode) {
+      return
+    }
+    const draftMenus = draftState?.menus ?? []
+    if (!draftMenus.length) return
+
+    hydratedDraftRef.current = draftProductionCode
+    setProductionDate(draftMenus[0]?.productionDate ?? '')
+    setMenuRows(
+      draftMenus.map((menu) =>
+        createMenuInputRow({
+          group: menu.group ?? '',
+          recipeId: menu.recipeId ?? '',
+          recipeQuery: menu.menuName,
+          portion: menu.portion > 0 ? menu.portion : '',
+        }),
+      ),
+    )
+    setInputPage(1)
+    setInputError('')
+    setInputMessage(`Continuing draft ${draftProductionCode}.`)
+  }, [draftProductionCode, draftState?.menus])
+
+  useEffect(() => {
+    const draftClientCode = draftState?.menus?.[0]?.clientId?.trim()
+    if (!draftClientCode || productionClientId || !productionClients.length) return
+    const client = productionClients.find(
+      (item) => normalizeText(item.clientId) === normalizeText(draftClientCode),
+    )
+    if (client) setProductionClientId(client.id)
+  }, [
+    draftState?.menus,
+    normalizeText,
+    productionClientId,
+    productionClients,
+  ])
 
   const formatPrice = (value?: number) => {
     if (value === undefined || value === null || !Number.isFinite(value)) {
@@ -788,6 +842,83 @@ const ChefMenuCycle = ({
     vendorPricesByProductKey,
   ])
 
+  useEffect(() => {
+    if (
+      !draftProductionCode ||
+      restoredDraftVendorsRef.current === draftProductionCode ||
+      !showIngredientVendorColumn
+    ) {
+      return
+    }
+
+    const draftMenus = draftState?.menus ?? []
+    const rowsWithRecipes = menuRows.map((row, rowIndex) => ({
+      row,
+      recipe: recipeById[row.recipeId],
+      draftMenu: draftMenus[rowIndex],
+    }))
+    if (rowsWithRecipes.some(({ recipe }) => !recipe)) return
+
+    const allVendorDataLoaded = rowsWithRecipes.every(({ recipe }) =>
+      (recipe?.ingredients ?? []).every((ingredient) => {
+        if (ingredient.ingredientType === 'NMP') return true
+        const productKey = getVendorPricesProductKey(ingredient.productCode)
+        return Object.prototype.hasOwnProperty.call(
+          vendorPricesByProductKey,
+          productKey,
+        )
+      }),
+    )
+    if (!allVendorDataLoaded) return
+
+    const nextSelectedVendors: Record<string, string> = {}
+    const nextCustomPrices: Record<string, string> = {}
+    rowsWithRecipes.forEach(({ row, recipe, draftMenu }) => {
+      recipe?.ingredients.forEach((ingredient, ingredientIndex) => {
+        const savedVendor = draftMenu?.ingredientVendors?.find(
+          (item) => item.ingredientIndex === ingredientIndex,
+        )
+        if (!savedVendor) return
+        const selectionKey = getIngredientVendorSelectionKey(
+          row.id,
+          ingredientIndex,
+          ingredient.productCode,
+        )
+        if (
+          ingredient.ingredientType === 'NMP' ||
+          normalizeText(savedVendor.vendor) === 'custom'
+        ) {
+          if (Number.isFinite(Number(savedVendor.price))) {
+            nextCustomPrices[selectionKey] = String(savedVendor.price)
+          }
+          return
+        }
+
+        const productKey = getVendorPricesProductKey(ingredient.productCode)
+        const option = (vendorPricesByProductKey[productKey] ?? []).find(
+          (item) =>
+            normalizeText(item.vendor) === normalizeText(savedVendor.vendor) &&
+            normalizeText(item.site) === normalizeText(savedVendor.site),
+        )
+        if (option) nextSelectedVendors[selectionKey] = option.key
+      })
+    })
+
+    restoredDraftVendorsRef.current = draftProductionCode
+    setSelectedVendorPriceByIngredientKey(nextSelectedVendors)
+    setCustomPriceByIngredientKey(nextCustomPrices)
+  }, [
+    draftProductionCode,
+    draftState?.menus,
+    getIngredientVendorSelectionKey,
+    getVendorPricesProductKey,
+    menuRows,
+    normalizeText,
+    recipeById,
+    showIngredientVendorColumn,
+    vendorPricesByProductKey,
+  ])
+
   const toggleMenuRowDetails = (id: string) => {
     setExpandedMenuRows((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
@@ -961,7 +1092,9 @@ const ChefMenuCycle = ({
     setInputMessage('Menu row removed.')
   }/* Fungsi untuk menghapus baris input menu dari daftar menuRows berdasarkan id saat pengguna mengklik tombol "X" pada baris tersebut. Setelah menghapus, fungsi ini juga memeriksa apakah daftar menuRows menjadi kosong, dan jika ya, akan menambahkan satu baris input menu kosong sebagai gantinya. Digunakan sebagai onClick handler untuk tombol "X" pada setiap baris menu. */
 
-  const handleSubmitToTimeline = async () => {
+  const handleSubmitToTimeline = async (
+    options: { saveAsDraft?: boolean } = {},
+  ) => {
     if (requireProductionSite && !productionSite) {
       setInputError(emptySiteMessage)
       setInputMessage('')
@@ -997,6 +1130,7 @@ const ChefMenuCycle = ({
       recipeId: string
       menuName: string
       category: string
+      group?: string
       site?: string
       clientId?: string
       clientName?: string
@@ -1006,6 +1140,7 @@ const ChefMenuCycle = ({
       cost: number
       ingredientVendors?: MenuProductionIngredientVendorInput[]
       productionDate: string
+      saveAsDraft?: boolean
     }> = []
 
     for (const row of usedRows) {
@@ -1047,6 +1182,7 @@ const ChefMenuCycle = ({
         const vendorError = vendorPriceErrorByProductKey[productKey] ?? ''
         const isNmp = ingredient.ingredientType === 'NMP'
         if (
+          !options.saveAsDraft &&
           showIngredientVendorColumn &&
           !isNmp &&
           (vendorLoading || !vendorDataLoaded)
@@ -1057,7 +1193,7 @@ const ChefMenuCycle = ({
           setInputMessage('')
           return
         }
-        if (showIngredientVendorColumn && !isNmp && vendorError) {
+        if (!options.saveAsDraft && showIngredientVendorColumn && !isNmp && vendorError) {
           setInputError(
             `Failed to load vendor for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}: ${vendorError}`,
           )
@@ -1077,7 +1213,7 @@ const ChefMenuCycle = ({
         const price = requiresManualPrice
           ? getManualUnitPrice(ingredientSelectionKey)
           : getIngredientUnitPrice(ingredient, selectedVendor)
-        if (price === undefined) {
+        if (!options.saveAsDraft && price === undefined) {
           setInputError(
             `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
           )
@@ -1151,6 +1287,7 @@ const ChefMenuCycle = ({
         recipeId: recipe.id,
         menuName: recipe.name,
         category: recipe.category,
+        ...(row.group.trim() ? { group: row.group.trim() } : {}),
         ...(requireProductionSite ? { site: productionSite } : {}),
         clientId: selectedClient.clientId,
         clientName: selectedClient.name,
@@ -1164,13 +1301,35 @@ const ChefMenuCycle = ({
         cost: 0,
         ...(ingredientVendors.length > 0 ? { ingredientVendors } : {}),
         productionDate,
+        ...(options.saveAsDraft ? { saveAsDraft: true } : {}),
       })
     }
 
     try {
-      await addMenuProductionsBulk(payload)
+      if (draftProductionCode) {
+        const updatedDraft = await replaceMenuProductionDraft(
+          draftProductionCode,
+          payload.map((item) => ({ ...item, saveAsDraft: true })),
+        )
+        const nextProductionCode = updatedDraft[0]?.productionCode
+        if (!options.saveAsDraft) {
+          if (!nextProductionCode) {
+            throw new Error('Updated menu production draft has no production code.')
+          }
+          await submitMenuProductionDraft(nextProductionCode)
+        }
+      } else {
+        await addMenuProductionsBulk(payload)
+      }
       setMenuRows([createMenuInputRow()])
       setInputError('')
+      if (options.saveAsDraft) {
+        navigate('/chef/menu-production-drafts', { replace: true })
+        return
+      }
+      if (draftProductionCode) {
+        navigate('/chef/menu-cycle', { replace: true, state: null })
+      }
       setInputMessage(
         `${payload.length} menus submitted for ${productionDate}. The record is now available in Store Request.`,
       )
@@ -2019,13 +2178,24 @@ const ChefMenuCycle = ({
               <p className="text-xs font-medium text-primary">{inputMessage}</p>
             ) : null}
           </div>
-          <ActionButton
-            action="submit"
-            onClick={handleSubmitToTimeline}
-            size="sm"
-            aria-label={submitLabel}
-            title={submitLabel}
-          />
+          <div className="flex items-center gap-3">
+            {!embedded ? (
+              <button
+                type="button"
+                onClick={() => handleSubmitToTimeline({ saveAsDraft: true })}
+                className="rounded-md border border-primary bg-white px-4 py-2 text-xs font-semibold text-primary hover:bg-primary-soft"
+              >
+                Save Draft
+              </button>
+            ) : null}
+            <ActionButton
+              action="submit"
+              onClick={() => handleSubmitToTimeline()}
+              size="sm"
+              aria-label={submitLabel}
+              title={submitLabel}
+            />
+          </div>
         </div>
       </div>
     </div>
