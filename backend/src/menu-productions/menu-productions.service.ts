@@ -977,6 +977,15 @@ export class MenuProductionsService implements OnModuleInit {
           ),
         );
     }
+    void this.workflowMail
+      .notifyMenuProductionsReadyForApproval(
+        updatedItems.map((item) => this.toMailRecord(item)),
+      )
+      .catch((error) =>
+        this.logger.error(
+          `Unit Manager sales submission email failed: ${this.errorMessage(error)}`,
+        ),
+      );
     return updatedItems;
   }
 

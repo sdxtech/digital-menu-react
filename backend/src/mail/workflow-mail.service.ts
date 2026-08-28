@@ -136,6 +136,50 @@ export class WorkflowMailService {
     }
   }
 
+  async notifyMenuProductionsReadyForApproval(
+    records: MenuProductionMailRecord[],
+  ) {
+    if (!this.isEnabled()) return;
+    const groups = this.groupMenuRecords(records);
+    for (const group of groups.values()) {
+      const first = group[0];
+      if (!first || !this.hasSite(first.site, 'menu production approval')) {
+        continue;
+      }
+      const assignedManagerIds = Array.from(
+        new Set(group.map((item) => item.unitManagerId).filter(Boolean)),
+      ) as string[];
+      let recipients = await this.users.findActiveEmailRecipients({
+        roles: [AppRole.UnitManager],
+        site: first.site,
+        ...(assignedManagerIds.length ? { userIds: assignedManagerIds } : {}),
+      });
+      if (!recipients.length && assignedManagerIds.length) {
+        this.logger.warn(
+          `Assigned Unit Manager has no active email for ${first.productionCode}; falling back to active managers at the site.`,
+        );
+        recipients = await this.users.findActiveEmailRecipients({
+          roles: [AppRole.UnitManager],
+          site: first.site,
+        });
+      }
+      await this.enqueueForRecipients(recipients, {
+        subject: `Menu Production Awaiting Approval: ${first.productionCode}`,
+        title: 'Menu Production Awaiting Approval',
+        message: `${group.length} menu item(s) have completed sales input and require review.`,
+        details: [
+          ['Production code', first.productionCode],
+          ['Production date', first.productionDate ?? '-'],
+          ['Site', first.site ?? '-'],
+        ],
+        path: '/unit-manager?section=menu-productions',
+        actionLabel: 'Review Menu Production',
+        category: 'menu-production-awaiting-approval',
+        deduplicationPrefix: `menu-production-awaiting-approval-${first.productionCode}`,
+      });
+    }
+  }
+
   async notifyMenuProductionBatchReviewed(records: MenuProductionMailRecord[]) {
     if (!this.isEnabled() || !records.length) return;
     const first = records[0];

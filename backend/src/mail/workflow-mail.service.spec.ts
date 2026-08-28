@@ -101,6 +101,35 @@ describe('WorkflowMailService', () => {
     },
   );
 
+  it('emails the assigned Unit Manager after Admin Site completes sales input', async () => {
+    const { mail, service, users } = makeService();
+
+    await service.notifyMenuProductionsReadyForApproval([
+      {
+        id: 'menu-1',
+        productionCode: 'MPR0001',
+        menuName: 'Soup',
+        productionDate: '2026-08-28',
+        site: 'S001',
+        unitManagerId: '507f1f77bcf86cd799439011',
+        approvalStatus: 'pending',
+      },
+    ]);
+
+    expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
+      roles: ['unit-manager'],
+      site: 'S001',
+      userIds: ['507f1f77bcf86cd799439011'],
+    });
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'manager@example.com',
+        html: expect.stringContaining('/unit-manager?section=menu-productions'),
+        deduplicationKey: 'menu-production-awaiting-approval-MPR0001-manager-1',
+      }),
+    );
+  });
+
   it('waits until every menu in a production batch has been reviewed', async () => {
     const { mail, service, users } = makeService();
 
@@ -157,7 +186,14 @@ describe('WorkflowMailService', () => {
       expect.objectContaining({
         to: 'store@example.com',
         html: expect.stringContaining('/storekeeper'),
+        deduplicationKey: expect.stringContaining(
+          'menu-production-reviewed-storekeeper-MPR0001-',
+        ),
       }),
     );
+    expect(users.findActiveEmailRecipients).toHaveBeenNthCalledWith(2, {
+      roles: ['storekeeper'],
+      site: 'S001',
+    });
   });
 });
