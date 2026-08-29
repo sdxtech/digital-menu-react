@@ -659,15 +659,15 @@ export class RecipesService {
       .findOneAndUpdate(filter, updatePayload, { new: true })
       .lean();
     if (!updated) throw new NotFoundException('Recipe not found');
+    const reviewerLabel = this.isSuperadminActor(actor)
+      ? 'Superadmin'
+      : this.isCorporateChefActor(actor)
+        ? 'Corporate Chef'
+        : 'Unit Manager';
 
     // 🚀 INJECTED: Trigger real-time notification upon successful approval
     if (status === 'approved') {
       try {
-        const reviewerLabel = this.isSuperadminActor(actor)
-          ? 'Superadmin'
-          : this.isCorporateChefActor(actor)
-            ? 'Corporate Chef'
-            : 'Unit Manager';
         await this.notificationsService.createHierarchicalNotification(
           actor?.id || 'system',
           'New Recipe Approved',
@@ -697,6 +697,7 @@ export class RecipesService {
           },
           status,
           reason,
+          reviewerLabel,
         )
         .catch((error) =>
           this.logger.error(
