@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
+import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
@@ -1103,6 +1104,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                         estimatedRevenue !== undefined && estimatedRevenue > 0
                           ? (totalEstimatedCost / estimatedRevenue) * 100
                           : undefined
+                      const portionSummary = summarizePortionsByGroup(
+                        group.items,
+                      )
 
                       return (
                         <Fragment key={groupKey}>
@@ -1367,6 +1371,36 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               )}
                                             </td>
                                             <td colSpan={2} />
+                                          </tr>
+                                          {portionSummary.groups.map((item) => (
+                                            <tr
+                                              key={`group-portion-${item.name}`}
+                                              className="border-t border-border"
+                                            >
+                                              <td
+                                                colSpan={3}
+                                                className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em]"
+                                              >
+                                                {item.name} Qty
+                                              </td>
+                                              <td
+                                                colSpan={4}
+                                                className="px-3 py-3 font-semibold"
+                                              >
+                                                {formatQuantity(item.portion)}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                          <tr className="border-t border-border">
+                                            <td
+                                              colSpan={3}
+                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                            >
+                                              Total Qty
+                                            </td>
+                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                              {formatQuantity(portionSummary.total)}
+                                            </td>
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
