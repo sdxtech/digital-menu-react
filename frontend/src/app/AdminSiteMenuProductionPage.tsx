@@ -470,7 +470,7 @@ const AdminSiteMenuProductionPage = () => {
                                         </tr>
                                       ))}
                                     </tbody>
-                                    <tfoot className="bg-background">
+                                    <tfoot className="bg-[#ccd9ec]">
                                       <tr className="border-t-2 border-primary">
                                         <td
                                           colSpan={6}
