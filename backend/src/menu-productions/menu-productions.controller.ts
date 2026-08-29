@@ -19,6 +19,7 @@ import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
+import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
@@ -225,6 +226,21 @@ export class MenuProductionsController {
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
       this.resolveUnitManagerAssignmentScope(req),
+    );
+  }
+
+  @Patch(':id/change-rejected-menu')
+  @Roles(AppRole.Chef)
+  changeRejectedMenu(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: ChangeRejectedMenuProductionDto,
+  ) {
+    return this.menuProductions.changeRejectedMenu(
+      id,
+      dto,
+      req.user.sub,
+      getUserSiteScope(req.user),
     );
   }
 

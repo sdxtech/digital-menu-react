@@ -61,6 +61,7 @@ type StoreRequestMenu = {
   recipeId?: string
   recipeCode?: string
   recipeVersion?: number
+  submittedAt?: string
   approvedAt?: string
   menuName: string
   clientName?: string
@@ -122,7 +123,9 @@ const matchesDateRange = (
 }
 
 const getGroupCreatedDate = (group: StoreRequestGroup) =>
-  group.items.find((item) => item.approvedAt)?.approvedAt?.slice(0, 10) ?? ''
+  group.items.find((item) => item.submittedAt)?.submittedAt?.slice(0, 10) ??
+  group.items.find((item) => item.approvedAt)?.approvedAt?.slice(0, 10) ??
+  ''
 
 const getStoreRequestGroupKey = (group: {
   date: string
@@ -426,7 +429,7 @@ const StorekeeperPage = () => {
   const filteredGroups = groups.filter((group) => {
     const matchesCreatedDate = group.items.some((item) =>
       matchesDateRange(
-        item.approvedAt,
+        item.submittedAt ?? item.approvedAt,
         createdFilterStartDate,
         createdFilterEndDate,
       ),
@@ -1236,7 +1239,10 @@ const StorekeeperPage = () => {
                         </td>
                         <td className="px-3 py-1.5 text-sm text-muted">
                           {formatCreatedDate(
-                            group.items.find((item) => item.approvedAt)?.approvedAt,
+                            group.items.find((item) => item.submittedAt)
+                              ?.submittedAt ??
+                              group.items.find((item) => item.approvedAt)
+                                ?.approvedAt,
                           )}
                         </td>
                         <td className="px-3 py-1.5">{group.date}</td>
