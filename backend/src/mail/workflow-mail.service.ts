@@ -40,14 +40,25 @@ export class WorkflowMailService {
     if (!this.isEnabled() || !this.hasSite(recipe.site, 'recipe submission')) {
       return;
     }
-    const recipients = await this.users.findActiveEmailRecipients({
-      roles: [AppRole.UnitManager, AppRole.CorporateChef],
+    const unitManagers = await this.users.findActiveEmailRecipients({
+      roles: [AppRole.UnitManager],
+      site: recipe.site,
+    });
+    const corporateChefs = await this.users.findActiveEmailRecipients({
+      roles: [AppRole.CorporateChef],
       site: recipe.site,
     });
     const title = resubmitted
       ? 'Recipe Resubmitted For Approval'
       : 'New Recipe Awaiting Approval';
-    await this.enqueueForRecipients(recipients, {
+    const sharedMessage: {
+      subject: string;
+      title: string;
+      message: string;
+      details: Array<[string, string]>;
+      actionLabel: string;
+      category: string;
+    } = {
       subject: `${title}: ${recipe.name}`,
       title,
       message: `${recipe.name} has been submitted by the Chef and requires review.`,
@@ -56,17 +67,35 @@ export class WorkflowMailService {
         ['Version', recipe.version ? `V${recipe.version}` : '-'],
         ['Site', recipe.site ?? '-'],
       ],
-      path: '/unit-manager?section=recipes',
       actionLabel: 'Review Recipe',
       category: 'recipe-submitted',
-      deduplicationPrefix: `recipe-${resubmitted ? 'resubmitted' : 'submitted'}-${recipe.id}`,
+    };
+    await this.enqueueForRecipients(unitManagers, {
+      ...sharedMessage,
+      path: '/unit-manager?section=recipes',
+      deduplicationPrefix: `recipe-${resubmitted ? 'resubmitted' : 'submitted'}-unit-manager-${recipe.id}`,
     });
+    const unitManagerEmails = new Set(
+      unitManagers.map((recipient) => recipient.email.trim().toLowerCase()),
+    );
+    await this.enqueueForRecipients(
+      corporateChefs.filter(
+        (recipient) =>
+          !unitManagerEmails.has(recipient.email.trim().toLowerCase()),
+      ),
+      {
+        ...sharedMessage,
+        path: '/corporate-chef?section=recipes',
+        deduplicationPrefix: `recipe-${resubmitted ? 'resubmitted' : 'submitted'}-corporate-chef-${recipe.id}`,
+      },
+    );
   }
 
   async notifyRecipeDecision(
     recipe: RecipeMailRecord,
     status: 'approved' | 'rejected',
     rejectionReason?: string,
+    reviewerLabel = 'Unit Manager',
   ) {
     if (!this.isEnabled() || !this.hasSite(recipe.site, 'recipe decision')) {
       return;
@@ -87,8 +116,8 @@ export class WorkflowMailService {
       title,
       message:
         status === 'approved'
-          ? `${recipe.name} has been Approved by the Unit Manager.`
-          : `${recipe.name} was Rejected by the Unit Manager.`,
+          ? `${recipe.name} has been Approved by the ${reviewerLabel}.`
+          : `${recipe.name} was Rejected by the ${reviewerLabel}.`,
       details: [
         ['Recipe code', recipe.recipeCode ?? '-'],
         ['Version', recipe.version ? `V${recipe.version}` : '-'],
