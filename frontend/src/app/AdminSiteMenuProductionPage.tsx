@@ -660,11 +660,11 @@ const AdminSiteMenuProductionPage = () => {
                                               <col className="w-[5%]" />
                                               <col className="w-[12%]" />
                                               <col className="w-[30%]" />
-                                              <col className="w-[8%]" />
-                                              <col className="w-[9%]" />
-                                              <col className="w-[16%]" />
+                                              <col className="w-[7%]" />
+                                              <col className="w-[7%]" />
+                                              <col className="w-[18%]" />
                                               <col className="w-[10%]" />
-                                              <col className="w-[10%]" />
+                                              <col className="w-[11%]" />
                                             </colgroup>
                                             <thead className="bg-background">
                                               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -723,12 +723,12 @@ const AdminSiteMenuProductionPage = () => {
                                                       <td className="break-words px-3 py-3">
                                                         {ingredient.vendor ?? "-"}
                                                       </td>
-                                                      <td className="px-3 py-3">
+                                                      <td className="break-words px-3 py-3 font-medium">
                                                         {formatPrice(
                                                           ingredient.price,
                                                         )}
                                                       </td>
-                                                      <td className="px-3 py-3">
+                                                      <td className="break-words px-3 py-3 font-medium">
                                                         {formatPrice(
                                                           ingredient.ingredientCost,
                                                         )}
