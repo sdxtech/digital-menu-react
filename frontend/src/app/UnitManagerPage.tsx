@@ -70,12 +70,14 @@ type StoreRequestMenu = {
   id: string
   productionCode?: string
   submittedByName?: string
+  submittedAt?: string
   recipeId?: string
   recipeCode?: string
   recipeVersion?: number
   menuName: string
   clientName?: string
   category: string
+  group?: string
   portion: number
   cost?: number
   estimatedCost?: number
@@ -99,6 +101,19 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
+}
+
+const getGroupSubmittedAt = (group: StoreRequestGroup) =>
+  group.items.find((item) => item.submittedAt)?.submittedAt
+
+const formatCreatedDate = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 const approvalCenterSections: Array<{
@@ -294,9 +309,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     const rows: SpreadsheetCell[][] = [
       [
         'No',
+        'Created Date',
         'Production Date',
         'Client Name',
         'Production Code',
+        'Group By',
         'Menu Name',
         'Version',
         'Recipe Code',
@@ -317,9 +334,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
       if (ingredients.length === 0) {
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(group.date),
           menu.clientName ?? '',
           group.productionCode ?? '',
+          menu.group ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
@@ -339,9 +358,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
       ingredients.forEach((ingredient) => {
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(menu.productionDate ?? group.date),
           menu.clientName ?? '',
           menu.productionCode ?? group.productionCode ?? '',
+          menu.group ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.recipeCode ?? menu.recipeId ?? '',
@@ -986,15 +1007,17 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                 <colgroup>
                   <col className="w-[5%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[16%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[17%]" />
                   <col className="w-[18%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[23%]" />
                 </colgroup>
                 <thead className="bg-background">
                   <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                     <th className="px-4 py-3 font-semibold">No</th>
+                    <th className="px-4 py-3 font-semibold">Created date</th>
                     <th className="px-4 py-3 font-semibold">Production date</th>
                     <th className="px-4 py-3 font-semibold">Production code</th>
                     <th className="px-4 py-3 font-semibold">Client name</th>
@@ -1005,7 +1028,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 <tbody>
                   {menuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
-                      <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={7} className="px-4 py-8 text-center text-muted">
                         No production menus pending approval.
                       </td>
                     </tr>
@@ -1089,6 +1112,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                 index +
                                 1}
                             </td>
+                            <td className="px-4 py-3 text-sm text-muted">
+                              {formatCreatedDate(getGroupSubmittedAt(group))}
+                            </td>
                             <td className="px-4 py-3">{group.date}</td>
                             <td className="px-4 py-3 text-xs text-muted">
                               {group.productionCode ?? '-'}
@@ -1136,7 +1162,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={6} className="px-4 py-4">
+                              <td colSpan={7} className="px-4 py-4">
                                 <div className="space-y-4">
                                   <section className="border-b border-border pb-4">
                                     <h3 className="text-sm font-semibold text-foreground">
@@ -1170,17 +1196,21 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                       <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                         <colgroup>
                                           <col className="w-[5%]" />
-                                          <col className="w-[30%]" />
+                                          <col className="w-[12%]" />
+                                          <col className="w-[23%]" />
                                           <col className="w-[8%]" />
-                                          <col className="w-[14%]" />
-                                          <col className="w-[11%]" />
-                                          <col className="w-[14%]" />
-                                          <col className="w-[18%]" />
+                                          <col className="w-[13%]" />
+                                          <col className="w-[10%]" />
+                                          <col className="w-[13%]" />
+                                          <col className="w-[16%]" />
                                         </colgroup>
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                             <th className="px-3 py-3 font-semibold">
                                               No
+                                            </th>
+                                            <th className="px-3 py-3 font-semibold">
+                                              Group By
                                             </th>
                                             <th className="px-3 py-3 font-semibold">
                                               Menu
@@ -1206,7 +1236,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                           {group.items.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={7}
+                                                colSpan={8}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No menus pending in this group.
@@ -1238,6 +1268,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 >
                                                   <td className="px-3 py-3 text-sm text-muted">
                                                     {itemIndex + 1}
+                                                  </td>
+                                                  <td className="px-3 py-3">
+                                                    {item.group ?? '-'}
                                                   </td>
                                                   <td className="px-3 py-3">
                                                     <p

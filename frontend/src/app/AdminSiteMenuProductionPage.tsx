@@ -27,12 +27,14 @@ type Menu = {
   id: string;
   productionCode?: string;
   submittedByName?: string;
+  submittedAt?: string;
   recipeId?: string;
   recipeCode?: string;
   recipeVersion?: number;
   menuName: string;
   clientName?: string;
   category: string;
+  group?: string;
   portion: number;
   cost?: number;
   estimatedCost?: number;
@@ -50,6 +52,19 @@ type Group = {
   productionCode?: string;
   items: Menu[];
   summary: Ingredient[];
+};
+
+const getGroupSubmittedAt = (group: Group) =>
+  group.items.find((item) => item.submittedAt)?.submittedAt;
+
+const formatCreatedDate = (value?: string) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 };
 
 const formatPrice = (value?: number) =>
@@ -126,7 +141,7 @@ const AdminSiteMenuProductionPage = () => {
     `${group.date}__${group.productionCode ?? "no-code"}`;
   const batchValues = (group: Group) => {
     const key = groupKey(group);
-    const saved = group.items[0];
+    const saved = isSubmittedGroup(group) ? group.items[0] : undefined;
     return (
       values[key] ?? {
         price:
@@ -190,9 +205,11 @@ const AdminSiteMenuProductionPage = () => {
     const menuRows: SpreadsheetCell[][] = [
       [
         "No",
+        "Created Date",
         "Production Date",
         "Client Name",
         "Production Code",
+        "Group By",
         "Menu Name",
         "Version",
         "Recipe Code",
@@ -206,9 +223,11 @@ const AdminSiteMenuProductionPage = () => {
       ],
       ...group.items.map((menu, index) => [
         index + 1,
+        formatCreatedDate(menu.submittedAt),
         group.date,
         menu.clientName ?? "",
         group.productionCode ?? "",
+        menu.group ?? "",
         menu.menuName,
         formatRecipeVersion(menu.recipeVersion),
         menu.recipeCode ?? menu.recipeId ?? "",
@@ -291,6 +310,7 @@ const AdminSiteMenuProductionPage = () => {
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-4 py-3">No</th>
+                <th className="px-4 py-3">Created date</th>
                 <th className="px-4 py-3">Production date</th>
                 <th className="px-4 py-3">Production code</th>
                 <th className="px-4 py-3">Client name</th>
@@ -303,7 +323,7 @@ const AdminSiteMenuProductionPage = () => {
             <tbody>
               {visibleGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted">
                     No production menus pending sales input.
                   </td>
                 </tr>
@@ -339,6 +359,9 @@ const AdminSiteMenuProductionPage = () => {
                       <tr className="border-t border-border">
                         <td className="px-4 py-3 text-muted">
                           {(page - 1) * GROUPS_PER_PAGE + index + 1}
+                        </td>
+                        <td className="px-4 py-3 text-muted">
+                          {formatCreatedDate(getGroupSubmittedAt(group))}
                         </td>
                         <td className="px-4 py-3">{group.date}</td>
                         <td className="px-4 py-3 text-xs text-muted">
@@ -388,7 +411,7 @@ const AdminSiteMenuProductionPage = () => {
                       </tr>
                       {expanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={8} className="max-w-0 px-4 py-4">
+                          <td colSpan={9} className="max-w-0 px-4 py-4">
                             <div className="space-y-4">
                               <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs text-muted">Menu list</p>
@@ -397,6 +420,7 @@ const AdminSiteMenuProductionPage = () => {
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                         <th className="px-4 py-3">No</th>
+                                        <th className="px-4 py-3">Group By</th>
                                         <th className="px-4 py-3">Menu ID</th>
                                         <th className="px-4 py-3">Menu</th>
                                         <th className="px-4 py-3">Category</th>
@@ -415,6 +439,9 @@ const AdminSiteMenuProductionPage = () => {
                                         >
                                           <td className="px-4 py-3 text-muted">
                                             {menuIndex + 1}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {menu.group ?? "-"}
                                           </td>
                                           <td className="px-4 py-3 font-medium">
                                             {menu.recipeCode ?? "-"}
@@ -444,7 +471,7 @@ const AdminSiteMenuProductionPage = () => {
                                     <tfoot className="bg-background">
                                       <tr className="border-t-2 border-primary">
                                         <td
-                                          colSpan={5}
+                                          colSpan={6}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Total
@@ -458,7 +485,7 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={5}
+                                          colSpan={6}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Selling Price/Pax
@@ -487,7 +514,7 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={5}
+                                          colSpan={6}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Pax Calculation
@@ -516,7 +543,7 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={5}
+                                          colSpan={6}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Estimated Revenue
@@ -535,7 +562,7 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={5}
+                                          colSpan={6}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Food Cost Percentage
@@ -550,7 +577,7 @@ const AdminSiteMenuProductionPage = () => {
                                         </td>
                                       </tr>
                                       <tr className="border-t border-border">
-                                        <td colSpan={5} />
+                                        <td colSpan={6} />
                                         <td colSpan={2} className="px-4 py-3">
                                           <button
                                             type="button"

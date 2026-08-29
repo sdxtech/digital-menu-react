@@ -64,12 +64,14 @@ type StoreRequestMenu = {
   submittedByName?: string
   reviewedBy?: string
   salesInputBy?: string
+  submittedAt?: string
   approvedAt?: string
   recipeCode?: string
   recipeVersion?: number
   menuName: string
   clientName?: string
   category: string
+  group?: string
   portion: number
   estimatedCost?: number
   estimatedCostPerPax?: number
@@ -91,6 +93,19 @@ type StoreRequestGroup = {
 const getGroupKey = (group: StoreRequestGroup) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
 
+const getGroupSubmittedAt = (group: StoreRequestGroup) =>
+  group.items.find((item) => item.submittedAt)?.submittedAt
+
+const formatCreatedDate = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
 type RecordStatus = 'requested' | 'fulfilled' | 'cancelled' | 'rejected'
 
 const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => {
@@ -103,8 +118,7 @@ const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => 
   const hasRequested = group.items.some(
     (item) =>
       item.approvalStatus === 'approved' &&
-      (item.storeRequestStatus === 'requested' ||
-        item.storeRequestStatus === 'not-requested'),
+      item.storeRequestStatus === 'requested',
   )
   const hasRejected = group.items.some((item) => item.approvalStatus === 'rejected')
 
@@ -114,11 +128,11 @@ const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => 
   if (group.fulfillment?.status === 'fulfilled' || hasFulfilled) {
     return 'fulfilled'
   }
-  if (hasRequested) {
-    return 'requested'
-  }
   if (hasRejected) {
     return 'rejected'
+  }
+  if (hasRequested) {
+    return 'requested'
   }
 
   return null
@@ -126,7 +140,7 @@ const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => 
 
 const getRecordStatusLabel = (status: RecordStatus) => {
   if (status === 'requested') return 'Waiting for Storekeeper'
-  if (status === 'rejected') return getApprovalStatusLabel('rejected')
+  if (status === 'rejected') return 'Returned to Chef'
   return getStoreRequestStatusLabel(status)
 }
 
@@ -231,9 +245,11 @@ const UnitManagerMenuProductionRecordsPage = ({
     const rows: SpreadsheetCell[][] = [
       [
         'No',
+        'Created Date',
         'Production Date',
         'Client Name',
         'Production Code',
+        'Group By',
         'Menu Name',
         'Version',
         'Category',
@@ -282,9 +298,11 @@ const UnitManagerMenuProductionRecordsPage = ({
       if (menuIngredients.length === 0) {
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(group.date),
           menu.clientName ?? '',
           group.productionCode ?? '',
+          menu.group ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.category,
@@ -327,9 +345,11 @@ const UnitManagerMenuProductionRecordsPage = ({
           )
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(group.date),
           menu.clientName ?? '',
           group.productionCode ?? '',
+          menu.group ?? '',
           menu.menuName,
           formatRecipeVersion(menu.recipeVersion),
           menu.category,
@@ -431,6 +451,7 @@ const UnitManagerMenuProductionRecordsPage = ({
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
+                  <th className="px-5 py-4 font-semibold">Created date</th>
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
                   <th className="px-5 py-4 font-semibold">Client name</th>
@@ -446,13 +467,13 @@ const UnitManagerMenuProductionRecordsPage = ({
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
                       Loading production records...
                     </td>
                   </tr>
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
                         : 'No approved, rejected, completed, or cancelled production batches yet.'}
@@ -522,6 +543,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                           <td className="px-5 py-4 text-sm text-muted">
                             {(page - 1) * RECORD_ITEMS_PER_PAGE + index + 1}
                           </td>
+                          <td className="px-5 py-4 text-sm text-muted">
+                            {formatCreatedDate(getGroupSubmittedAt(group))}
+                          </td>
                           <td className="px-5 py-4">{group.date}</td>
                       <td className="px-5 py-4 text-xs text-muted">
                         {group.productionCode ?? '-'}
@@ -539,7 +563,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                 <span className="text-primary">Approved</span>
                               ) : null}
                               {hasRejected ? (
-                                <span className="text-danger">Rejected</span>
+                                <span className="text-danger">
+                                  Returned to Chef
+                                </span>
                               ) : null}
                             </div>
                           </td>
@@ -601,7 +627,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={9} className="px-5 py-5">
+                            <td colSpan={12} className="px-5 py-5">
                               <div className="space-y-4">
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">Menu list</p>
@@ -610,6 +636,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                           <th className="w-12 px-4 py-3 font-semibold">No</th>
+                                          <th className="px-4 py-3 font-semibold">Group By</th>
                                           <th className="px-4 py-3 font-semibold">Recipe code</th>
                                           <th className="px-4 py-3 font-semibold">Menu</th>
                                           <th className="px-4 py-3 font-semibold">Category</th>
@@ -648,6 +675,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                             >
                                               <td className="px-4 py-3 text-sm text-muted">
                                                 {itemIndex + 1}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {item.group ?? '-'}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
                                                 {item.recipeCode ?? '-'}
@@ -688,7 +718,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">
                                     {recordStatus === 'rejected'
-                                      ? 'Rejected production summary'
+                                      ? 'Returned production summary'
                                       : recordStatus === 'requested'
                                       ? 'Requested ingredient summary'
                                       : recordStatus === 'cancelled'

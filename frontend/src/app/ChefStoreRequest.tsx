@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
@@ -32,6 +39,39 @@ type StoreRequestIngredient = {
   ingredientCost?: number
 }
 
+type RawMaterialVendorPriceApi = {
+  productCode?: string
+  site?: string
+  vendor?: string
+  currency?: string
+  unitOfMeasures?: string
+  minimumQuantity?: number
+  price?: number
+}
+
+type ReplacementVendorOption = {
+  key: string
+  productCode: string
+  site: string
+  vendor: string
+  currency?: string
+  unitOfMeasures: string
+  minimumQuantity?: number
+  price?: number
+}
+
+type ReplacementIngredientVendorInput = {
+  ingredientIndex: number
+  productCode?: string
+  name?: string
+  unitOfMeasures?: string
+  vendor?: string
+  site?: string
+  currency?: string
+  minimumQuantity?: number
+  price?: number
+}
+
 type StoreRequestFulfillment = {
   status?: 'fulfilled' | 'cancelled'
   completedBy?: string
@@ -51,12 +91,14 @@ type StoreRequestFulfillment = {
 type StoreRequestMenu = {
   id: string
   productionCode?: string
+  submittedAt?: string
   recipeId?: string
   recipeCode?: string
   recipeVersion?: number
   menuName: string
   clientName?: string
   category: string
+  group?: string
   portion: number
   estimatedCost?: number
   estimatedCostPerPax?: number
@@ -84,6 +126,19 @@ type StoreRequestGroup = {
   fulfillment?: StoreRequestFulfillment
 }
 
+const getGroupSubmittedAt = (group: StoreRequestGroup) =>
+  group.items.find((item) => item.submittedAt)?.submittedAt
+
+const formatCreatedDate = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
 type ReconciliationRow = {
   id: string
   productCode: string
@@ -108,8 +163,57 @@ const formatPrice = (value?: number) => {
   }).format(value)
 }
 
+const getMenuCostSummary = (menu: StoreRequestMenu) => {
+  const estimatedCost = Number.isFinite(Number(menu.estimatedCost))
+    ? Number(menu.estimatedCost)
+    : undefined
+  const estimatedCostPerPax = Number.isFinite(
+    Number(menu.estimatedCostPerPax),
+  )
+    ? Number(menu.estimatedCostPerPax)
+    : estimatedCost !== undefined && menu.portion > 0
+      ? estimatedCost / menu.portion
+      : undefined
+
+  return { estimatedCost, estimatedCostPerPax }
+}
+
+const getReplacementVendorUnitPrice = (option?: ReplacementVendorOption) => {
+  const price = Number(option?.price)
+  return Number.isFinite(price) ? price : undefined
+}
+
+const getReplacementIngredientFallbackPrice = (ingredient: {
+  qty: number
+  priceUom?: number
+  foodCost?: number
+}) => {
+  if (Number.isFinite(Number(ingredient.priceUom))) {
+    return Number(ingredient.priceUom)
+  }
+  if (
+    Number.isFinite(Number(ingredient.foodCost)) &&
+    Number.isFinite(Number(ingredient.qty)) &&
+    Number(ingredient.qty) > 0
+  ) {
+    return Number(ingredient.foodCost) / Number(ingredient.qty)
+  }
+  return undefined
+}
+
 type StoreRequestSiteOption = {
   code: string
+  name: string
+}
+
+type MenuGroupApi = {
+  id?: string
+  _id?: string
+  name?: string
+}
+
+type MenuGroupOption = {
+  id: string
   name: string
 }
 
@@ -193,6 +297,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
   const rows: SpreadsheetCell[][] = [
     [
       'No',
+      'Created Date',
       'Production Date',
       'Site',
       'Client Name',
@@ -220,6 +325,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       if (ingredients.length === 0) {
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(group.date),
           group.site ?? '',
           menu.clientName ?? '',
@@ -245,6 +351,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       ingredients.forEach((ingredient) => {
         rows.push([
           rowNumber,
+          formatCreatedDate(menu.submittedAt),
           toSpreadsheetDate(group.date),
           group.site ?? '',
           menu.clientName ?? '',
@@ -367,7 +474,9 @@ const ChefStoreRequest = ({
   const {
     cancelPendingMenuProductionBatch,
     cancelStoreRequestBatch,
+    fetchRecipes,
     fulfillStoreRequestBatch,
+    recipes,
   } = useChefData()
   const [selectedSite, setSelectedSite] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -402,6 +511,198 @@ const ChefStoreRequest = ({
   )
   const [bulkExportError, setBulkExportError] = useState('')
   const [bulkExporting, setBulkExporting] = useState(false)
+  const [changingMenuId, setChangingMenuId] = useState<string | null>(null)
+  const [replacementGroup, setReplacementGroup] = useState('')
+  const [replacementRecipeId, setReplacementRecipeId] = useState('')
+  const [replacementPortion, setReplacementPortion] = useState('')
+  const [replacementVendorOptions, setReplacementVendorOptions] = useState<
+    Record<number, ReplacementVendorOption[]>
+  >({})
+  const [replacementSelectedVendors, setReplacementSelectedVendors] =
+    useState<Record<number, string>>({})
+  const [replacementCustomPrices, setReplacementCustomPrices] = useState<
+    Record<number, string>
+  >({})
+  const [replacementVendorErrors, setReplacementVendorErrors] = useState<
+    Record<number, string>
+  >({})
+  const [replacementVendorLoading, setReplacementVendorLoading] =
+    useState(false)
+  const replacementVendorRequestRef = useRef(0)
+  const [changeMenuError, setChangeMenuError] = useState('')
+  const [changeMenuSubmitting, setChangeMenuSubmitting] = useState(false)
+  const [menuGroupOptions, setMenuGroupOptions] = useState<MenuGroupOption[]>([])
+  const [menuGroupLoading, setMenuGroupLoading] = useState(false)
+  const [menuGroupError, setMenuGroupError] = useState('')
+
+  const replacementRecipes = useMemo(
+    () =>
+      recipes
+        .filter(
+          (recipe) =>
+            recipe.approvalStatus === 'approved' &&
+            recipe.status === 'active' &&
+            recipe.isActive,
+        )
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [recipes],
+  )
+  const selectedReplacementRecipe = useMemo(
+    () =>
+      replacementRecipes.find((recipe) => recipe.id === replacementRecipeId),
+    [replacementRecipeId, replacementRecipes],
+  )
+  const replacementCostPreview = useMemo(() => {
+    const portion = Number(replacementPortion)
+    if (
+      !selectedReplacementRecipe ||
+      !Number.isFinite(portion) ||
+      portion <= 0
+    ) {
+      return {
+        estimatedCost: undefined,
+        estimatedCostPerPax: undefined,
+      }
+    }
+
+    const basePax =
+      Number(selectedReplacementRecipe.portionSize) > 0
+        ? Number(selectedReplacementRecipe.portionSize)
+        : 1
+    let estimatedCost = 0
+    let hasCost = false
+    selectedReplacementRecipe.ingredients.forEach(
+      (ingredient, ingredientIndex) => {
+        const options = replacementVendorOptions[ingredientIndex] ?? []
+        const selectedVendor = options.find(
+          (option) =>
+            option.key === replacementSelectedVendors[ingredientIndex],
+        )
+        const customPrice = Number(
+          replacementCustomPrices[ingredientIndex],
+        )
+        const unitPrice =
+          ingredient.ingredientType === 'NMP'
+            ? Number.isFinite(customPrice)
+              ? customPrice
+              : undefined
+            : getReplacementVendorUnitPrice(selectedVendor) ??
+              getReplacementIngredientFallbackPrice(ingredient)
+        if (unitPrice === undefined) return
+
+        const baseQty = Number(ingredient.qty)
+        const qty =
+          (Number.isFinite(baseQty) ? baseQty : 0) * (portion / basePax)
+        estimatedCost += qty * unitPrice
+        hasCost = true
+      },
+    )
+
+    if (!hasCost) {
+      return {
+        estimatedCost: undefined,
+        estimatedCostPerPax: undefined,
+      }
+    }
+    return {
+      estimatedCost,
+      estimatedCostPerPax: estimatedCost / portion,
+    }
+  }, [
+    replacementCustomPrices,
+    replacementPortion,
+    replacementSelectedVendors,
+    replacementVendorOptions,
+    selectedReplacementRecipe,
+  ])
+  const replacementFormComplete = useMemo(() => {
+    const portion = Number(replacementPortion)
+    if (
+      !replacementGroup.trim() ||
+      !selectedReplacementRecipe ||
+      !Number.isInteger(portion) ||
+      portion < 1 ||
+      replacementVendorLoading ||
+      menuGroupLoading
+    ) {
+      return false
+    }
+
+    return selectedReplacementRecipe.ingredients.every(
+      (ingredient, ingredientIndex) => {
+        if (replacementVendorErrors[ingredientIndex]) return false
+        if (ingredient.ingredientType === 'NMP') {
+          const rawPrice = replacementCustomPrices[ingredientIndex]?.trim()
+          const price = Number(rawPrice)
+          return Boolean(rawPrice) && Number.isFinite(price) && price >= 0
+        }
+
+        const options = replacementVendorOptions[ingredientIndex] ?? []
+        const selectedVendor = options.find(
+          (option) =>
+            option.key === replacementSelectedVendors[ingredientIndex],
+        )
+        const price =
+          getReplacementVendorUnitPrice(selectedVendor) ??
+          getReplacementIngredientFallbackPrice(ingredient)
+        return Boolean(selectedVendor?.vendor.trim()) && price !== undefined
+      },
+    )
+  }, [
+    menuGroupLoading,
+    replacementCustomPrices,
+    replacementGroup,
+    replacementPortion,
+    replacementSelectedVendors,
+    replacementVendorErrors,
+    replacementVendorLoading,
+    replacementVendorOptions,
+    selectedReplacementRecipe,
+  ])
+
+  useEffect(() => {
+    if (!accessToken) {
+      setMenuGroupOptions([])
+      return
+    }
+
+    let cancelled = false
+    setMenuGroupLoading(true)
+    setMenuGroupError('')
+    apiFetch<{ items?: MenuGroupApi[] }>(
+      '/menu-groups?limit=100&isActive=true',
+      undefined,
+      accessToken,
+    )
+      .then((data) => {
+        if (cancelled) return
+        setMenuGroupOptions(
+          (data.items ?? [])
+            .map((item) => ({
+              id: item.id ?? item._id ?? '',
+              name: item.name?.trim() ?? '',
+            }))
+            .filter((item) => item.id && item.name),
+        )
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setMenuGroupOptions([])
+        setMenuGroupError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load Group By options.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setMenuGroupLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken])
 
   const parseDotDecimal = (value: string) => {
     const trimmed = value.trim()
@@ -469,6 +770,178 @@ const ChefStoreRequest = ({
     }
 
     return siteCode || userSiteName || ''
+  }
+
+  const handleReplacementRecipeChange = async (
+    group: StoreRequestGroup,
+    recipeId: string,
+  ) => {
+    setReplacementRecipeId(recipeId)
+    setReplacementVendorOptions({})
+    setReplacementSelectedVendors({})
+    setReplacementCustomPrices({})
+    setReplacementVendorErrors({})
+    setChangeMenuError('')
+
+    const requestId = replacementVendorRequestRef.current + 1
+    replacementVendorRequestRef.current = requestId
+    const recipe = replacementRecipes.find((item) => item.id === recipeId)
+    if (!accessToken || !recipe) {
+      setReplacementVendorLoading(false)
+      return
+    }
+
+    setReplacementVendorLoading(true)
+    const site = getSiteDisplayName(group.site)
+    const requestsByProductCode = new Map<
+      string,
+      Promise<RawMaterialVendorPriceApi[]>
+    >()
+    const fetchVendorOptions = (productCode: string) => {
+      const normalizedProductCode = productCode.trim()
+      const existingRequest = requestsByProductCode.get(normalizedProductCode)
+      if (existingRequest) return existingRequest
+
+      const params = new URLSearchParams()
+      if (site) params.set('site', site)
+      const query = params.toString()
+      const request = apiFetch<RawMaterialVendorPriceApi[]>(
+        `/raw-materials/${encodeURIComponent(normalizedProductCode)}/vendor-prices${
+          query ? `?${query}` : ''
+        }`,
+        undefined,
+        accessToken,
+      )
+      requestsByProductCode.set(normalizedProductCode, request)
+      return request
+    }
+
+    try {
+      const results = await Promise.all(
+        recipe.ingredients.map(async (ingredient, ingredientIndex) => {
+          const fallbackPrice = getReplacementIngredientFallbackPrice(ingredient)
+          if (
+            ingredient.ingredientType === 'NMP' ||
+            !ingredient.productCode.trim()
+          ) {
+            return {
+              ingredientIndex,
+              options: [] as ReplacementVendorOption[],
+              customPrice: fallbackPrice,
+            }
+          }
+
+          try {
+            const items = await fetchVendorOptions(ingredient.productCode)
+            const optionsByKey = new Map<string, ReplacementVendorOption>()
+            items.forEach((item) => {
+              const productCode = item.productCode?.trim() ?? ''
+              const vendorSite = item.site?.trim() ?? ''
+              const vendor = item.vendor?.trim() ?? ''
+              const unitOfMeasures = item.unitOfMeasures?.trim() ?? ''
+              if (!productCode || !vendorSite || !vendor || !unitOfMeasures) {
+                return
+              }
+              const minimumQuantity = Number.isFinite(
+                Number(item.minimumQuantity),
+              )
+                ? Number(item.minimumQuantity)
+                : undefined
+              const price = Number.isFinite(Number(item.price))
+                ? Number(item.price)
+                : undefined
+              const currency = item.currency?.trim() || undefined
+              const key = [
+                productCode.toLowerCase(),
+                vendorSite.toLowerCase(),
+                vendor.toLowerCase(),
+                currency?.toLowerCase() ?? '',
+                unitOfMeasures.toLowerCase(),
+                minimumQuantity ?? '',
+                price ?? '',
+              ].join('|')
+              optionsByKey.set(key, {
+                key,
+                productCode,
+                site: vendorSite,
+                vendor,
+                currency,
+                unitOfMeasures,
+                minimumQuantity,
+                price,
+              })
+            })
+            const options = Array.from(optionsByKey.values()).sort((a, b) =>
+              a.vendor.localeCompare(b.vendor, undefined, {
+                sensitivity: 'base',
+              }),
+            )
+            const defaultOption = options.reduce<
+              ReplacementVendorOption | undefined
+            >((selected, option) => {
+              if (!selected) return option
+              const selectedPrice = getReplacementVendorUnitPrice(selected)
+              const optionPrice = getReplacementVendorUnitPrice(option)
+              if (optionPrice !== undefined && selectedPrice === undefined) {
+                return option
+              }
+              if (
+                optionPrice !== undefined &&
+                selectedPrice !== undefined &&
+                optionPrice > selectedPrice
+              ) {
+                return option
+              }
+              return selected
+            }, undefined)
+            return {
+              ingredientIndex,
+              options,
+              selectedKey: defaultOption?.key,
+              customPrice: fallbackPrice,
+            }
+          } catch (error) {
+            return {
+              ingredientIndex,
+              options: [] as ReplacementVendorOption[],
+              customPrice: fallbackPrice,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to load vendors.',
+            }
+          }
+        }),
+      )
+      if (replacementVendorRequestRef.current !== requestId) return
+
+      const optionsByIngredient: Record<number, ReplacementVendorOption[]> = {}
+      const selectedByIngredient: Record<number, string> = {}
+      const customPricesByIngredient: Record<number, string> = {}
+      const errorsByIngredient: Record<number, string> = {}
+      results.forEach((result) => {
+        optionsByIngredient[result.ingredientIndex] = result.options
+        if (result.selectedKey) {
+          selectedByIngredient[result.ingredientIndex] = result.selectedKey
+        }
+        if (result.customPrice !== undefined) {
+          customPricesByIngredient[result.ingredientIndex] = String(
+            result.customPrice,
+          )
+        }
+        if (result.error) {
+          errorsByIngredient[result.ingredientIndex] = result.error
+        }
+      })
+      setReplacementVendorOptions(optionsByIngredient)
+      setReplacementSelectedVendors(selectedByIngredient)
+      setReplacementCustomPrices(customPricesByIngredient)
+      setReplacementVendorErrors(errorsByIngredient)
+    } finally {
+      if (replacementVendorRequestRef.current === requestId) {
+        setReplacementVendorLoading(false)
+      }
+    }
   }
 
   const handleExportMenusByDate = (group: StoreRequestGroup) => {
@@ -618,6 +1091,180 @@ const ChefStoreRequest = ({
       setLoading(false)
     }
   }, [accessToken, requireSiteSelection, selectedSite])
+
+  const openChangeMenu = (
+    group: StoreRequestGroup,
+    menu: StoreRequestMenu,
+  ) => {
+    if (menu.approvalStatus !== 'rejected') return
+    setChangingMenuId(menu.id)
+    setReplacementGroup(menu.group ?? '')
+    setReplacementRecipeId('')
+    setReplacementPortion(String(menu.portion))
+    replacementVendorRequestRef.current += 1
+    setReplacementVendorOptions({})
+    setReplacementSelectedVendors({})
+    setReplacementCustomPrices({})
+    setReplacementVendorErrors({})
+    setReplacementVendorLoading(false)
+    setChangeMenuError('')
+    setActionMessage('')
+    fetchRecipes({ site: group.site }).catch((error) => {
+      setChangeMenuError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to load replacement menus.',
+      )
+    })
+  }
+
+  const closeChangeMenu = () => {
+    if (changeMenuSubmitting) return
+    setChangingMenuId(null)
+    setReplacementGroup('')
+    setReplacementRecipeId('')
+    setReplacementPortion('')
+    replacementVendorRequestRef.current += 1
+    setReplacementVendorOptions({})
+    setReplacementSelectedVendors({})
+    setReplacementCustomPrices({})
+    setReplacementVendorErrors({})
+    setReplacementVendorLoading(false)
+    setChangeMenuError('')
+  }
+
+  const handleChangeRejectedMenu = async (menu: StoreRequestMenu) => {
+    if (!accessToken || changingMenuId !== menu.id) return
+    if (!replacementGroup.trim()) {
+      setChangeMenuError('Select Group By.')
+      return
+    }
+    if (!replacementRecipeId) {
+      setChangeMenuError('Select a replacement menu.')
+      return
+    }
+    if (replacementRecipeId === menu.recipeId) {
+      setChangeMenuError('Select a different menu.')
+      return
+    }
+    const portion = Number(replacementPortion)
+    if (!Number.isInteger(portion) || portion < 1) {
+      setChangeMenuError('Portion must be a positive whole number.')
+      return
+    }
+    if (!selectedReplacementRecipe) {
+      setChangeMenuError('Replacement menu details are not available.')
+      return
+    }
+    if (replacementVendorLoading) {
+      setChangeMenuError('Wait until vendor data has finished loading.')
+      return
+    }
+
+    const ingredientVendors: ReplacementIngredientVendorInput[] = []
+    for (const [ingredientIndex, ingredient] of
+      selectedReplacementRecipe.ingredients.entries()) {
+      const ingredientLabel =
+        ingredient.name || ingredient.productCode || `${ingredientIndex + 1}`
+      if (replacementVendorErrors[ingredientIndex]) {
+        setChangeMenuError(
+          `Failed to load vendor for ${ingredientLabel}: ${replacementVendorErrors[ingredientIndex]}`,
+        )
+        return
+      }
+
+      if (ingredient.ingredientType === 'NMP') {
+        const rawPrice = replacementCustomPrices[ingredientIndex]?.trim()
+        const price = Number(rawPrice)
+        if (!rawPrice || !Number.isFinite(price) || price < 0) {
+          setChangeMenuError(`Price is required for ${ingredientLabel}.`)
+          return
+        }
+        ingredientVendors.push({
+          ingredientIndex,
+          productCode: ingredient.productCode,
+          name: ingredient.name,
+          unitOfMeasures: ingredient.unitOfMeasures,
+          vendor: 'CUSTOM',
+          price,
+        })
+        continue
+      }
+
+      const options = replacementVendorOptions[ingredientIndex] ?? []
+      if (options.length === 0) {
+        setChangeMenuError(
+          `No vendor is available for ${ingredientLabel} at this site.`,
+        )
+        return
+      }
+      const selectedKey = replacementSelectedVendors[ingredientIndex]
+      const selectedVendor = options.find(
+        (option) => option.key === selectedKey,
+      )
+      if (!selectedVendor) {
+        setChangeMenuError(`Select a vendor for ${ingredientLabel}.`)
+        return
+      }
+      const price =
+        getReplacementVendorUnitPrice(selectedVendor) ??
+        getReplacementIngredientFallbackPrice(ingredient)
+      if (price === undefined) {
+        setChangeMenuError(`Price is required for ${ingredientLabel}.`)
+        return
+      }
+      ingredientVendors.push({
+        ingredientIndex,
+        productCode: ingredient.productCode,
+        name: ingredient.name,
+        unitOfMeasures: ingredient.unitOfMeasures,
+        vendor: selectedVendor.vendor,
+        site: selectedVendor.site,
+        currency: selectedVendor.currency,
+        minimumQuantity: selectedVendor.minimumQuantity,
+        price,
+      })
+    }
+
+    setChangeMenuSubmitting(true)
+    setChangeMenuError('')
+    setActionMessage('')
+    try {
+      await apiFetch(
+        `/menu-productions/${menu.id}/change-rejected-menu`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            recipeId: replacementRecipeId,
+            group: replacementGroup,
+            portion,
+            ingredientVendors,
+          }),
+        },
+        accessToken,
+      )
+      await fetchStoreRequests()
+      setActionMessage(
+        `${menu.menuName} was changed and submitted to Admin Site for new sales input.`,
+      )
+      setChangingMenuId(null)
+      setReplacementGroup('')
+      setReplacementRecipeId('')
+      setReplacementPortion('')
+      replacementVendorRequestRef.current += 1
+      setReplacementVendorOptions({})
+      setReplacementSelectedVendors({})
+      setReplacementCustomPrices({})
+      setReplacementVendorErrors({})
+      setReplacementVendorLoading(false)
+    } catch (error) {
+      setChangeMenuError(
+        error instanceof Error ? error.message : 'Failed to change menu.',
+      )
+    } finally {
+      setChangeMenuSubmitting(false)
+    }
+  }
 
   const openPendingCancellationModal = (
     group: StoreRequestGroup,
@@ -1100,6 +1747,7 @@ const ChefStoreRequest = ({
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-16 px-5 py-4 font-semibold">No</th>
+                <th className="px-5 py-4 font-semibold">Created date</th>
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Production code</th>
                 <th className="px-5 py-4 font-semibold">Client name</th>
@@ -1112,13 +1760,13 @@ const ChefStoreRequest = ({
             <tbody>
               {loading ? (
                 <tr className="border-t border-border">
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
                     Loading store requests...
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
                     No production batches submitted yet.
                   </td>
                 </tr>
@@ -1184,6 +1832,9 @@ const ChefStoreRequest = ({
                       <td className="px-5 py-4 text-sm text-muted">
                         {(page - 1) * ITEMS_PER_PAGE + index + 1}
                       </td>
+                      <td className="px-5 py-4 text-sm text-muted">
+                        {formatCreatedDate(getGroupSubmittedAt(group))}
+                      </td>
                       <td className="px-5 py-4">{date}</td>
                       <td className="px-5 py-4 text-xs text-muted">
                         {group.productionCode ?? '-'}
@@ -1233,6 +1884,22 @@ const ChefStoreRequest = ({
                             className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                           >
                             {isExpanded ? 'Hide details' : 'View details'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleExportMenusByDate(group)
+                            }}
+                            className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success hover:bg-success/10"
+                          >
+                            <span className="flex items-center gap-2">
+                              <i
+                                className="bi bi-download text-sm"
+                                aria-hidden="true"
+                              />
+                              <span>Export</span>
+                            </span>
                           </button>
                           {actionMode === 'select' ? (
                             <select
@@ -1289,42 +1956,541 @@ const ChefStoreRequest = ({
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={7} className="px-5 py-5">
+                        <td colSpan={9} className="px-5 py-5">
                           <div className="space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div>
-                                <p className="text-xs font-bold text-muted">
-                                  Menu details
-                                </p>
+                            <p className="text-xs font-bold text-muted">
+                              Menu details
+                            </p>
+
+                            <div className="max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                              <div className="border-b border-border px-4 py-3 text-xs text-muted">
+                                Showing {items.length} of {items.length} menu rows
                               </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleExportMenusByDate(group)}
-                                  className="rounded-md border border-success bg-white px-4 py-2 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
-                                >
-                                  <span className="flex items-center gap-2">
-                                    <i className="bi bi-download text-sm" aria-hidden="true" />
-                                    <span>Export</span>
-                                  </span>
-                                </button>
-                              </div>
+                              <table
+                                className="dm-table min-w-full text-sm"
+                                aria-label="Menu production summary"
+                              >
+                                <thead className="bg-background">
+                                  <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                    <th className="w-12 px-4 py-3 font-semibold">
+                                      No
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Group By
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Recipe ID
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Menu
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Category
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Portion
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Estimated Total Cost
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Cost/Pax
+                                    </th>
+                                    <th className="px-4 py-3 font-semibold">
+                                      Action
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map((menu, menuIndex) => {
+                                    const {
+                                      estimatedCost,
+                                      estimatedCostPerPax,
+                                    } = getMenuCostSummary(menu)
+                                    const isChangingMenu =
+                                      changingMenuId === menu.id
+                                    const displayedEstimatedCost =
+                                      isChangingMenu
+                                        ? replacementCostPreview.estimatedCost
+                                        : estimatedCost
+                                    const displayedEstimatedCostPerPax =
+                                      isChangingMenu
+                                        ? replacementCostPreview.estimatedCostPerPax
+                                        : estimatedCostPerPax
+
+                                    return (
+                                      <tr
+                                        key={`summary-${menu.id}`}
+                                        className="border-t border-border"
+                                      >
+                                        <td className="px-4 py-3 text-sm text-muted">
+                                          {menuIndex + 1}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {changingMenuId === menu.id ? (
+                                            <select
+                                              value={replacementGroup}
+                                              onChange={(event) => {
+                                                setReplacementGroup(
+                                                  event.target.value,
+                                                )
+                                                setChangeMenuError('')
+                                              }}
+                                              disabled={
+                                                changeMenuSubmitting ||
+                                                menuGroupLoading
+                                              }
+                                              title={
+                                                menuGroupError || undefined
+                                              }
+                                              aria-label="Replacement menu group"
+                                              required
+                                              className="w-40 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              <option value="">
+                                                {menuGroupLoading
+                                                  ? 'Loading groups...'
+                                                  : menuGroupOptions.length ===
+                                                      0
+                                                    ? 'No groups configured'
+                                                    : 'Select group'}
+                                              </option>
+                                              {replacementGroup &&
+                                              !menuGroupOptions.some(
+                                                (option) =>
+                                                  option.name ===
+                                                  replacementGroup,
+                                              ) ? (
+                                                <option
+                                                  value={replacementGroup}
+                                                >
+                                                  {replacementGroup} (inactive)
+                                                </option>
+                                              ) : null}
+                                              {menuGroupOptions.map((option) => (
+                                                <option
+                                                  key={option.id}
+                                                  value={option.name}
+                                                >
+                                                  {option.name}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            menu.group ?? '-'
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-muted">
+                                          {changingMenuId === menu.id
+                                            ? selectedReplacementRecipe
+                                                ?.recipeCode || '-'
+                                            : menu.recipeCode ?? '-'}
+                                        </td>
+                                        <td className="min-w-72 px-4 py-3 font-medium">
+                                          {changingMenuId === menu.id ? (
+                                            <div>
+                                              <select
+                                                value={replacementRecipeId}
+                                                onChange={(event) => {
+                                                  handleReplacementRecipeChange(
+                                                    group,
+                                                    event.target.value,
+                                                  ).catch((error) => {
+                                                    setChangeMenuError(
+                                                      error instanceof Error
+                                                        ? error.message
+                                                        : 'Failed to load vendors.',
+                                                    )
+                                                  })
+                                                }}
+                                                disabled={
+                                                  changeMenuSubmitting ||
+                                                  replacementVendorLoading
+                                                }
+                                                required
+                                                className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm font-normal outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                <option value="">
+                                                  Select replacement menu
+                                                </option>
+                                                {replacementRecipes
+                                                  .filter(
+                                                    (recipe) =>
+                                                      recipe.id !==
+                                                      menu.recipeId,
+                                                  )
+                                                  .map((recipe) => (
+                                                    <option
+                                                      key={recipe.id}
+                                                      value={recipe.id}
+                                                    >
+                                                      {recipe.recipeCode ?? '-'}{' '}
+                                                      - {recipe.name} (
+                                                      {formatRecipeVersion(
+                                                        recipe.version,
+                                                      )}
+                                                      )
+                                                    </option>
+                                                  ))}
+                                              </select>
+                                              {changeMenuError ? (
+                                                <p className="mt-1 text-xs font-medium text-danger">
+                                                  {changeMenuError}
+                                                </p>
+                                              ) : null}
+                                            </div>
+                                          ) : (
+                                            <>
+                                              {menu.menuName} (
+                                              {formatRecipeVersion(
+                                                menu.recipeVersion,
+                                              )}
+                                              )
+                                            </>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {changingMenuId === menu.id
+                                            ? selectedReplacementRecipe
+                                                ?.category || '-'
+                                            : menu.category || '-'}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {changingMenuId === menu.id ? (
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              step="1"
+                                              value={replacementPortion}
+                                              onChange={(event) => {
+                                                setReplacementPortion(
+                                                  event.target.value,
+                                                )
+                                                setChangeMenuError('')
+                                              }}
+                                              disabled={changeMenuSubmitting}
+                                              aria-label="Replacement portion"
+                                              required
+                                              className="w-24 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            />
+                                          ) : (
+                                            menu.portion
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3 font-medium">
+                                          {formatPrice(
+                                            displayedEstimatedCost,
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3 font-medium">
+                                          {formatPrice(
+                                            displayedEstimatedCostPerPax,
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {changingMenuId === menu.id ? (
+                                            <div className="flex flex-wrap gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleChangeRejectedMenu(menu)
+                                                }
+                                                disabled={
+                                                  changeMenuSubmitting ||
+                                                  replacementVendorLoading ||
+                                                  !replacementFormComplete
+                                                }
+                                                className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                {replacementVendorLoading
+                                                  ? 'Loading...'
+                                                  : changeMenuSubmitting
+                                                    ? 'Saving...'
+                                                    : 'Save'}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={closeChangeMenu}
+                                                disabled={changeMenuSubmitting}
+                                                className="rounded-md bg-danger px-3 py-2 text-xs font-semibold text-white hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          ) : menu.approvalStatus ===
+                                              'rejected' &&
+                                            user?.role === 'chef' ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openChangeMenu(group, menu)
+                                              }
+                                              className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                                            >
+                                              Change
+                                            </button>
+                                          ) : (
+                                            '-'
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
                             </div>
+
+                            {changingMenuId && selectedReplacementRecipe ? (
+                              <div className="rounded-md border border-primary/30 bg-surface p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <h3 className="font-semibold text-foreground">
+                                      Vendor setup
+                                    </h3>
+                                    <p className="mt-1 text-xs text-muted">
+                                      Select the vendor for every ingredient in{' '}
+                                      {selectedReplacementRecipe.name} before
+                                      saving.
+                                    </p>
+                                  </div>
+                                  {replacementVendorLoading ? (
+                                    <span className="text-xs font-medium text-muted">
+                                      Loading vendors...
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                                  <table
+                                    className="dm-table min-w-full text-sm"
+                                    aria-label="Replacement ingredient vendor setup"
+                                  >
+                                    <thead className="bg-background">
+                                      <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                                        <th className="w-12 px-4 py-3 font-semibold">
+                                          No
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Product code
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Ingredient name
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Qty
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Unit
+                                        </th>
+                                        <th className="min-w-52 px-4 py-3 font-semibold">
+                                          Vendor
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Price
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          Ingredient cost
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {selectedReplacementRecipe.ingredients.map(
+                                        (ingredient, ingredientIndex) => {
+                                          const options =
+                                            replacementVendorOptions[
+                                              ingredientIndex
+                                            ] ?? []
+                                          const selectedVendor = options.find(
+                                            (option) =>
+                                              option.key ===
+                                              replacementSelectedVendors[
+                                                ingredientIndex
+                                              ],
+                                          )
+                                          const isNmp =
+                                            ingredient.ingredientType === 'NMP'
+                                          const portion = Number(
+                                            replacementPortion,
+                                          )
+                                          const basePax =
+                                            Number(
+                                              selectedReplacementRecipe.portionSize,
+                                            ) > 0
+                                              ? Number(
+                                                  selectedReplacementRecipe.portionSize,
+                                                )
+                                              : 1
+                                          const qty =
+                                            Number.isFinite(portion) &&
+                                            portion > 0
+                                              ? (Number(ingredient.qty) *
+                                                  portion) /
+                                                basePax
+                                              : 0
+                                          const customPrice = Number(
+                                            replacementCustomPrices[
+                                              ingredientIndex
+                                            ],
+                                          )
+                                          const unitPrice = isNmp
+                                            ? Number.isFinite(customPrice)
+                                              ? customPrice
+                                              : undefined
+                                            : getReplacementVendorUnitPrice(
+                                                selectedVendor,
+                                              ) ??
+                                              getReplacementIngredientFallbackPrice(
+                                                ingredient,
+                                              )
+                                          const ingredientCost =
+                                            unitPrice === undefined
+                                              ? undefined
+                                              : qty * unitPrice
+                                          const vendorError =
+                                            replacementVendorErrors[
+                                              ingredientIndex
+                                            ]
+
+                                          return (
+                                            <tr
+                                              key={`${ingredient.productCode}-${ingredientIndex}`}
+                                              className="border-t border-border"
+                                            >
+                                              <td className="px-4 py-3 text-muted">
+                                                {ingredientIndex + 1}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.productCode || '-'}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {ingredient.name}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {formatQuantity(qty)}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {formatUnitLabel(
+                                                  ingredient.unitOfMeasures,
+                                                )}
+                                              </td>
+                                              <td className="min-w-52 px-4 py-3">
+                                                {isNmp ? (
+                                                  <input
+                                                    type="text"
+                                                    value="CUSTOM"
+                                                    readOnly
+                                                    className="w-full rounded-md border border-border bg-slate-100 px-3 py-2 text-sm text-muted"
+                                                  />
+                                                ) : (
+                                                  <>
+                                                    <select
+                                                      value={
+                                                        replacementSelectedVendors[
+                                                          ingredientIndex
+                                                        ] ?? ''
+                                                      }
+                                                      onChange={(event) => {
+                                                        setReplacementSelectedVendors(
+                                                          (current) => ({
+                                                            ...current,
+                                                            [ingredientIndex]:
+                                                              event.target
+                                                                .value,
+                                                          }),
+                                                        )
+                                                        setChangeMenuError('')
+                                                      }}
+                                                      disabled={
+                                                        replacementVendorLoading ||
+                                                        options.length === 0 ||
+                                                        changeMenuSubmitting
+                                                      }
+                                                      required
+                                                      className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${
+                                                        options.length > 1
+                                                          ? 'border-amber-400 bg-amber-100'
+                                                          : 'border-border bg-white'
+                                                      }`}
+                                                    >
+                                                      {replacementVendorLoading ? (
+                                                        <option value="">
+                                                          Loading vendors...
+                                                        </option>
+                                                      ) : options.length ===
+                                                        0 ? (
+                                                        <option value="">
+                                                          {vendorError ||
+                                                            'No vendor for this site'}
+                                                        </option>
+                                                      ) : null}
+                                                      {options.map((option) => (
+                                                        <option
+                                                          key={option.key}
+                                                          value={option.key}
+                                                        >
+                                                          {option.vendor}
+                                                        </option>
+                                                      ))}
+                                                    </select>
+                                                    {vendorError ? (
+                                                      <p className="mt-1 text-xs text-danger">
+                                                        {vendorError}
+                                                      </p>
+                                                    ) : null}
+                                                  </>
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {isNmp ? (
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="any"
+                                                    value={
+                                                      replacementCustomPrices[
+                                                        ingredientIndex
+                                                      ] ?? ''
+                                                    }
+                                                    onChange={(event) => {
+                                                      setReplacementCustomPrices(
+                                                        (current) => ({
+                                                          ...current,
+                                                          [ingredientIndex]:
+                                                            event.target.value,
+                                                        }),
+                                                      )
+                                                      setChangeMenuError('')
+                                                    }}
+                                                    disabled={
+                                                      changeMenuSubmitting
+                                                    }
+                                                    aria-label={`Price for ${ingredient.name}`}
+                                                    required
+                                                    className="w-32 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                                  />
+                                                ) : (
+                                                  formatPrice(unitPrice)
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatPrice(ingredientCost)}
+                                              </td>
+                                            </tr>
+                                          )
+                                        },
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ) : null}
 
                             {items.map((menu) => {
                               const ingredients = menu.ingredients ?? []
-                              const estimatedCost = Number.isFinite(
-                                Number(menu.estimatedCost),
-                              )
-                                ? Number(menu.estimatedCost)
-                                : undefined
-                              const estimatedCostPerPax = Number.isFinite(
-                                Number(menu.estimatedCostPerPax),
-                              )
-                                ? Number(menu.estimatedCostPerPax)
-                                : estimatedCost !== undefined && menu.portion > 0
-                                  ? estimatedCost / menu.portion
-                                  : undefined
+                              const {
+                                estimatedCost,
+                                estimatedCostPerPax,
+                              } = getMenuCostSummary(menu)
                               const canCancelPendingMenu =
                                 !enableStoreRequestCancellation &&
                                 menu.approvalStatus === 'pending'
