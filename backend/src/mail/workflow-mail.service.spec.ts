@@ -44,6 +44,21 @@ describe('WorkflowMailService', () => {
 
   it('emails active Unit Managers and Corporate Chefs for a recipe submission', async () => {
     const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients
+      .mockResolvedValueOnce([
+        {
+          id: 'manager-1',
+          name: 'Manager',
+          email: 'manager@example.com',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'corporate-chef-1',
+          name: 'Corporate Chef',
+          email: 'corporate.chef@example.com',
+        },
+      ]);
 
     await service.notifyRecipeSubmitted({
       id: 'recipe-1',
@@ -53,14 +68,61 @@ describe('WorkflowMailService', () => {
       site: 'S001',
     });
 
+    expect(users.findActiveEmailRecipients).toHaveBeenNthCalledWith(1, {
+      roles: ['unit-manager'],
+      site: 'S001',
+    });
+    expect(users.findActiveEmailRecipients).toHaveBeenNthCalledWith(2, {
+      roles: ['corporate-chef'],
+      site: 'S001',
+    });
+    expect(mail.enqueue).toHaveBeenCalledTimes(2);
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'manager@example.com',
+        html: expect.stringContaining('/unit-manager?section=recipes'),
+        deduplicationKey: 'recipe-submitted-unit-manager-recipe-1-manager-1',
+      }),
+    );
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'corporate.chef@example.com',
+        html: expect.stringContaining('/corporate-chef?section=recipes'),
+        deduplicationKey:
+          'recipe-submitted-corporate-chef-recipe-1-corporate-chef-1',
+      }),
+    );
+  });
+
+  it('emails active Admin Sites when Chef submits menu production', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      {
+        id: 'admin-site-1',
+        name: 'Admin Site',
+        email: 'admin.site@example.com',
+      },
+    ]);
+
+    await service.notifyMenuProductionsSubmitted([
+      {
+        id: 'menu-1',
+        productionCode: 'MPR0001',
+        menuName: 'Soup',
+        productionDate: '2026-08-28',
+        site: 'S001',
+      },
+    ]);
+
     expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
-      roles: ['unit-manager', 'corporate-chef'],
+      roles: ['admin-site'],
       site: 'S001',
     });
     expect(mail.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: 'manager@example.com',
-        deduplicationKey: 'recipe-submitted-recipe-1-manager-1',
+        to: 'admin.site@example.com',
+        html: expect.stringContaining('/admin-site/menu-productions'),
+        deduplicationKey: 'menu-production-sales-input-MPR0001-admin-site-1',
       }),
     );
   });
@@ -100,6 +162,32 @@ describe('WorkflowMailService', () => {
       );
     },
   );
+
+  it('identifies a Corporate Chef decision in the Chef email', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      { id: 'chef-1', name: 'Chef', email: 'chef@example.com' },
+    ]);
+
+    await service.notifyRecipeDecision(
+      {
+        id: 'recipe-1',
+        name: 'Soup',
+        site: 'S001',
+        createdBy: '507f1f77bcf86cd799439011',
+      },
+      'approved',
+      undefined,
+      'Corporate Chef',
+    );
+
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'chef@example.com',
+        text: expect.stringContaining('Approved by the Corporate Chef'),
+      }),
+    );
+  });
 
   it('emails the assigned Unit Manager after Admin Site completes sales input', async () => {
     const { mail, service, users } = makeService();
