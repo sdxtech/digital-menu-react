@@ -464,6 +464,14 @@ describe('MenuProductionsService rejected menu replacement', () => {
     const findOneAndUpdate = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(updated),
     });
+    const revisedBatch = [
+      updated,
+      { ...updated, _id: 'menu-2', menuName: 'Replacement Rice' },
+      { ...updated, _id: 'menu-3', menuName: 'Replacement Noodles' },
+    ];
+    const menuFind = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(revisedBatch),
+    });
     const recipeFind = jest.fn().mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([replacementRecipe]),
@@ -476,7 +484,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
       notifyMenuProductionsSubmitted: jest.fn().mockResolvedValue(undefined),
     };
     const service = new MenuProductionsService(
-      { findOne: menuFindOne, findOneAndUpdate } as never,
+      { findOne: menuFindOne, findOneAndUpdate, find: menuFind } as never,
       {} as never,
       { find: recipeFind } as never,
       {} as never,
@@ -551,6 +559,12 @@ describe('MenuProductionsService rejected menu replacement', () => {
       { new: true },
     );
     expect(result).toEqual(updated);
+    expect(menuFind).toHaveBeenCalledWith({
+      productionCode: 'MPR0038',
+      createdBy: chefId,
+      isDraft: { $ne: true },
+      site: 'S001',
+    });
     expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
       chefId,
       'New Menu Production Sales Input',
@@ -560,16 +574,117 @@ describe('MenuProductionsService rejected menu replacement', () => {
       'ADMIN_SITE_MENU_PRODUCTION_SALES',
       { productionCode: 'MPR0038' },
     );
+    expect(notifications.createHierarchicalNotification).toHaveBeenCalledTimes(
+      1,
+    );
     expect(workflowMail.notifyMenuProductionsSubmitted).toHaveBeenCalledWith(
-      [
+      expect.arrayContaining([
         expect.objectContaining({
           id: 'menu-1',
           productionCode: 'MPR0038',
           approvalStatus: 'pending',
         }),
-      ],
-      expect.stringMatching(/^replacement-menu-1-/),
+      ]),
+      expect.stringMatching(/^replacement-batch-MPR0038-/),
     );
+    expect(workflowMail.notifyMenuProductionsSubmitted).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('waits for every rejected menu in the MPR to be replaced before notifying Admin Site', async () => {
+    const existing = {
+      _id: 'menu-1',
+      recipeId: oldRecipeId,
+      productionCode: 'MPR0038',
+      productionDate: '2026-09-07',
+      portion: 100,
+      site: 'S001',
+      createdBy: chefId,
+      approvalStatus: 'rejected',
+    };
+    const replacementRecipe = {
+      _id: replacementRecipeId,
+      recipeCode: 'RCP0027',
+      version: 2,
+      name: 'Replacement Soup',
+      category: 'Asian',
+      portionSize: 10,
+      ingredients: [
+        {
+          productCode: 'IT0001',
+          name: 'Ingredient',
+          unitOfMeasures: 'KG',
+          qty: 2,
+          priceUom: 50000,
+        },
+      ],
+    };
+    const updated = {
+      ...existing,
+      recipeId: replacementRecipeId,
+      approvalStatus: 'pending',
+    };
+    const menuFindOne = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existing),
+    });
+    const findOneAndUpdate = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(updated),
+    });
+    const menuFind = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        updated,
+        {
+          ...existing,
+          _id: 'menu-2',
+          approvalStatus: 'rejected',
+        },
+      ]),
+    });
+    const recipeFind = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([replacementRecipe]),
+      }),
+    });
+    const notifications = {
+      createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
+    };
+    const workflowMail = {
+      notifyMenuProductionsSubmitted: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new MenuProductionsService(
+      { findOne: menuFindOne, findOneAndUpdate, find: menuFind } as never,
+      {} as never,
+      { find: recipeFind } as never,
+      {} as never,
+      notifications as never,
+      workflowMail as never,
+    );
+
+    await service.changeRejectedMenu(
+      'menu-1',
+      {
+        recipeId: replacementRecipeId,
+        group: 'Indo 2',
+        portion: 120,
+        ingredientVendors: [
+          {
+            ingredientIndex: 0,
+            productCode: 'IT0001',
+            name: 'Ingredient',
+            unitOfMeasures: 'KG',
+            vendor: 'Vendor A',
+            site: 'S001',
+            price: 60000,
+          },
+        ],
+      },
+      chefId,
+      'S001',
+    );
+
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(workflowMail.notifyMenuProductionsSubmitted).not.toHaveBeenCalled();
   });
 
   it('does not expose another Chef rejected menu for replacement', async () => {

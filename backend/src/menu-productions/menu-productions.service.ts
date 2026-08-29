@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { createHash } from 'crypto';
 import { Model, Types } from 'mongoose';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
@@ -1018,10 +1019,39 @@ export class MenuProductionsService implements OnModuleInit {
       throw new NotFoundException('Rejected menu production not found.');
     }
 
-    this.dispatchMenuProductionSubmissionNotifications(
-      [updated],
-      `replacement-${id}-${Date.now()}`,
-    );
+    const revisedBatch = await this.menuProductionModel
+      .find(
+        this.withSiteFilter(
+          {
+            productionCode: existing.productionCode,
+            createdBy: normalizedChefId,
+            isDraft: { $ne: true },
+          },
+          site,
+        ),
+      )
+      .lean();
+    const revisionComplete =
+      revisedBatch.length > 0 &&
+      revisedBatch.every((item) => item.approvalStatus !== 'rejected');
+    if (revisionComplete) {
+      const revisionFingerprint = createHash('sha256')
+        .update(
+          revisedBatch
+            .map(
+              (item) =>
+                `${this.textValue(item._id)}:${this.textValue(item.recipeId)}:${item.approvalStatus}`,
+            )
+            .sort()
+            .join('|'),
+        )
+        .digest('hex')
+        .slice(0, 16);
+      this.dispatchMenuProductionSubmissionNotifications(
+        revisedBatch,
+        `replacement-batch-${existing.productionCode}-${revisionFingerprint}`,
+      );
+    }
 
     return updated;
   }
