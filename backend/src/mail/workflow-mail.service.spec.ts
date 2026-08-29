@@ -127,6 +127,37 @@ describe('WorkflowMailService', () => {
     );
   });
 
+  it('uses a new email key when changed menu production is resubmitted', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      {
+        id: 'admin-site-1',
+        name: 'Admin Site',
+        email: 'admin.site@example.com',
+      },
+    ]);
+
+    await service.notifyMenuProductionsSubmitted(
+      [
+        {
+          id: 'menu-1',
+          productionCode: 'MPR0001',
+          menuName: 'Replacement Soup',
+          productionDate: '2026-08-28',
+          site: 'S001',
+        },
+      ],
+      'replacement-menu-1-123',
+    );
+
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deduplicationKey:
+          'menu-production-sales-input-MPR0001-replacement-menu-1-123-admin-site-1',
+      }),
+    );
+  });
+
   it.each(['approved', 'rejected'] as const)(
     'emails only the Chef when a recipe is %s',
     async (status) => {
@@ -240,6 +271,48 @@ describe('WorkflowMailService', () => {
 
     expect(users.findActiveEmailRecipients).not.toHaveBeenCalled();
     expect(mail.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('returns a mixed review batch to Chef without emailing Storekeeper', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      { id: 'chef-1', name: 'Chef', email: 'chef@example.com' },
+    ]);
+
+    await service.notifyMenuProductionBatchReviewed([
+      {
+        id: 'menu-1',
+        productionCode: 'MPR0001',
+        menuName: 'Soup',
+        site: 'S001',
+        createdBy: '507f1f77bcf86cd799439011',
+        approvalStatus: 'approved',
+      },
+      {
+        id: 'menu-2',
+        productionCode: 'MPR0001',
+        menuName: 'Rice',
+        site: 'S001',
+        createdBy: '507f1f77bcf86cd799439011',
+        approvalStatus: 'rejected',
+      },
+    ]);
+
+    expect(users.findActiveEmailRecipients).toHaveBeenCalledTimes(1);
+    expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
+      roles: ['chef'],
+      site: 'S001',
+      userIds: ['507f1f77bcf86cd799439011'],
+    });
+    expect(mail.enqueue).toHaveBeenCalledTimes(1);
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'chef@example.com',
+        subject: 'Menu Production Returned: MPR0001',
+        text: expect.stringContaining('It was not forwarded to Storekeeper'),
+        html: expect.stringContaining('/chef/store-request'),
+      }),
+    );
   });
 
   it('sends separate Chef and Storekeeper links after a batch is reviewed', async () => {

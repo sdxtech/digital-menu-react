@@ -6,9 +6,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { createHash } from 'crypto';
 import { Model, Types } from 'mongoose';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
+import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { UpdateMenuProductionSalesDetailsDto } from './dto/update-menu-production-sales-details.dto';
 import { UpdateMenuProductionBatchSalesDetailsDto } from './dto/update-menu-production-batch-sales-details.dto';
@@ -79,6 +81,7 @@ type StoreRequestMenu = {
   productionCode?: string;
   submittedByName?: string;
   reviewedBy?: string;
+  submittedAt?: string;
   approvedAt?: string;
   recipeId?: string;
   recipeCode?: string;
@@ -86,6 +89,7 @@ type StoreRequestMenu = {
   menuName: string;
   clientName?: string;
   category: string;
+  group?: string;
   portion: number;
   cost?: number;
   estimatedCost?: number;
@@ -215,6 +219,7 @@ export class MenuProductionsService implements OnModuleInit {
 
   private dispatchMenuProductionSubmissionNotifications(
     records: Array<Parameters<MenuProductionsService['toMailRecord']>[0]>,
+    deduplicationContext?: string,
   ) {
     const mailRecords = records.map((record) => this.toMailRecord(record));
     const byProductionCode = new Map<string, (typeof mailRecords)[number]>();
@@ -239,12 +244,12 @@ export class MenuProductionsService implements OnModuleInit {
         )
         .catch((error) =>
           this.logger.error(
-            `Unit Manager submission notification failed: ${this.errorMessage(error)}`,
+            `Admin Site sales input notification failed: ${this.errorMessage(error)}`,
           ),
         );
     });
     void this.workflowMail
-      .notifyMenuProductionsSubmitted(mailRecords)
+      .notifyMenuProductionsSubmitted(mailRecords, deduplicationContext)
       .catch((error) =>
         this.logger.error(
           `Menu production submission email failed: ${this.errorMessage(error)}`,
@@ -252,15 +257,20 @@ export class MenuProductionsService implements OnModuleInit {
       );
   }
 
-  private async dispatchMenuProductionDecisionEmail(record: {
+  private async finalizeMenuProductionBatchReview(record: {
+    _id?: unknown;
+    id?: unknown;
     productionCode?: string;
     site?: string;
   }) {
+    const batchFilter: Record<string, unknown> = record.productionCode
+      ? {
+          productionCode: record.productionCode,
+          ...(record.site ? { site: record.site } : {}),
+        }
+      : { _id: record._id ?? record.id };
     const reviewedBatch = await this.menuProductionModel
-      .find({
-        productionCode: record.productionCode,
-        ...(record.site ? { site: record.site } : {}),
-      })
+      .find(batchFilter)
       .select({
         productionCode: 1,
         menuName: 1,
@@ -271,9 +281,49 @@ export class MenuProductionsService implements OnModuleInit {
         approvalStatus: 1,
       })
       .lean();
-    await this.workflowMail.notifyMenuProductionBatchReviewed(
-      reviewedBatch.map((item) => this.toMailRecord(item)),
-    );
+    const pendingCount = reviewedBatch.filter(
+      (item) => item.approvalStatus === 'pending',
+    ).length;
+    const rejectedCount = reviewedBatch.filter(
+      (item) => item.approvalStatus === 'rejected',
+    ).length;
+    const approvedCount = reviewedBatch.filter(
+      (item) => item.approvalStatus === 'approved',
+    ).length;
+    const isComplete = reviewedBatch.length > 0 && pendingCount === 0;
+    const allApproved =
+      isComplete &&
+      rejectedCount === 0 &&
+      approvedCount === reviewedBatch.length;
+
+    if (isComplete) {
+      await this.menuProductionModel.updateMany(batchFilter, {
+        $set: {
+          storeRequestStatus: allApproved ? 'requested' : 'not-requested',
+        },
+        ...(!allApproved
+          ? {
+              $unset: {
+                fulfilledBy: 1,
+                storeFulfillmentItems: 1,
+                storeFulfillmentCompletedAt: 1,
+                storeFulfillmentNote: 1,
+                storeCancelledBy: 1,
+                storeCancelledAt: 1,
+                storeCancellationReason: 1,
+              },
+            }
+          : {}),
+      });
+    }
+
+    return {
+      records: reviewedBatch.map((item) => this.toMailRecord(item)),
+      isComplete,
+      allApproved,
+      approvedCount,
+      rejectedCount,
+    };
   }
 
   private textValue(value: unknown) {
@@ -431,6 +481,7 @@ export class MenuProductionsService implements OnModuleInit {
       input,
       recipe,
     );
+    const isDraft = input.saveAsDraft === true;
     const created = await this.menuProductionModel.create({
       productionCode,
       recipeId: recipe.id,
@@ -448,7 +499,8 @@ export class MenuProductionsService implements OnModuleInit {
       ingredientVendors: costSnapshot.ingredientVendors,
       productionDate: input.productionDate,
       approvalStatus: 'pending',
-      isDraft: input.saveAsDraft === true,
+      isDraft,
+      ...(isDraft ? {} : { submittedAt: new Date() }),
       storeRequestStatus: 'not-requested',
       createdBy,
       unitManagerId: normalizedUnitManagerId,
@@ -482,6 +534,7 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
     const saveAsDraft = normalizedInputs[0]?.saveAsDraft === true;
+    const submittedAt = saveAsDraft ? undefined : new Date();
     const recipeById = await this.findEligibleRecipesById(
       normalizedInputs.map((item) => item.recipeId),
     );
@@ -527,6 +580,7 @@ export class MenuProductionsService implements OnModuleInit {
         productionDate: input.productionDate,
         approvalStatus: 'pending',
         isDraft: saveAsDraft,
+        ...(submittedAt ? { submittedAt } : {}),
         storeRequestStatus: 'not-requested',
         createdBy,
         unitManagerId: this.normalizeOptionalUserId(
@@ -614,7 +668,7 @@ export class MenuProductionsService implements OnModuleInit {
       site,
     );
     const result = await this.menuProductionModel.updateMany(draftFilter, {
-      $set: { isDraft: false },
+      $set: { isDraft: false, submittedAt: new Date() },
     });
     if (!result.matchedCount) {
       throw new NotFoundException('Menu production draft not found.');
@@ -683,29 +737,6 @@ export class MenuProductionsService implements OnModuleInit {
       this.menuProductionModel.countDocuments(filter),
     ]);
 
-    const needsSync = items.some(
-      (item) =>
-        item.approvalStatus === 'approved' &&
-        item.storeRequestStatus === 'not-requested',
-    );
-    if (needsSync) {
-      const syncFilter = this.withSiteFilter(
-        { approvalStatus: 'approved', storeRequestStatus: 'not-requested' },
-        site,
-      );
-      await this.menuProductionModel.updateMany(syncFilter, {
-        $set: { storeRequestStatus: 'requested' },
-      });
-      items.forEach((item) => {
-        if (
-          item.approvalStatus === 'approved' &&
-          item.storeRequestStatus === 'not-requested'
-        ) {
-          item.storeRequestStatus = 'requested';
-        }
-      });
-    }
-
     return {
       items,
       total,
@@ -743,9 +774,6 @@ export class MenuProductionsService implements OnModuleInit {
         );
       }
     }
-    // BACKEND LOGIC: approval drives store-request status automatically.
-    const nextStoreStatus: StoreRequestStatus =
-      status === 'approved' ? 'requested' : 'not-requested';
     const actor = reviewedBy?.trim();
     const reason = rejectionReason?.trim();
     if (status === 'rejected' && !reason) {
@@ -761,7 +789,7 @@ export class MenuProductionsService implements OnModuleInit {
         {
           $set: {
             approvalStatus: status,
-            storeRequestStatus: nextStoreStatus,
+            storeRequestStatus: 'not-requested',
             ...(actor ? { reviewedBy: actor } : {}),
             ...(status === 'approved' ? { approvedAt: new Date() } : {}),
             ...(status === 'rejected' ? { rejectionReason: reason } : {}),
@@ -783,13 +811,19 @@ export class MenuProductionsService implements OnModuleInit {
       .lean();
     if (!updated) throw new NotFoundException('Menu production not found');
 
-    // 🌟 Step 3A: If approved, instantly trigger notifications for Storekeeper and Chef
-    if (status === 'approved') {
+    const batchReview = await this.finalizeMenuProductionBatchReview(updated);
+    if (batchReview.isComplete) {
+      updated.storeRequestStatus = batchReview.allApproved
+        ? 'requested'
+        : 'not-requested';
+    }
+
+    if (batchReview.isComplete && batchReview.allApproved) {
       this.notificationsService
         .createHierarchicalNotification(
           updated.createdBy || 'system',
           'New Store Request Dispatched',
-          `Production batch ${updated.productionCode} has been approved. Materials aggregation is ready for distribution fulfillment.`,
+          `All ${batchReview.approvedCount} menus in production batch ${updated.productionCode} have been approved. Materials aggregation is ready for distribution fulfillment.`,
           updated.site || 'global',
           'storekeeper',
           'STORE_REQUEST_STOREKEEPER',
@@ -805,7 +839,7 @@ export class MenuProductionsService implements OnModuleInit {
         .createHierarchicalNotification(
           'system',
           'Menu Production Approved',
-          `Your production batch ${updated.productionCode} has been approved by the Unit Manager.`,
+          `All menus in production batch ${updated.productionCode} have been approved by the Unit Manager and forwarded to Storekeeper.`,
           updated.site || 'global',
           'chef',
           'STORE_REQUEST_RECORDS',
@@ -816,14 +850,12 @@ export class MenuProductionsService implements OnModuleInit {
             `Chef notification failed: ${this.errorMessage(err)}`,
           ),
         );
-    }
-    // 🌟 ADDED: If rejected or refused, clear Manager counts and notify the Chef!
-    else if (status === 'rejected') {
+    } else if (batchReview.isComplete) {
       this.notificationsService
         .createHierarchicalNotification(
           'system',
-          'Menu Production Rejected',
-          `Your production batch ${updated.productionCode} was rejected/refused by the Unit Manager.`,
+          'Menu Production Returned',
+          `Production batch ${updated.productionCode} was returned to Chef because ${batchReview.rejectedCount} menu(s) were rejected. It was not forwarded to Storekeeper.`,
           updated.site || 'global',
           'chef',
           'STORE_REQUEST_RECORDS',
@@ -831,29 +863,195 @@ export class MenuProductionsService implements OnModuleInit {
         )
         .catch((err) =>
           this.logger.error(
-            `Chef rejection notification failed: ${this.errorMessage(err)}`,
+            `Chef returned-batch notification failed: ${this.errorMessage(err)}`,
           ),
         );
     }
 
-    // 🌟 ADDED: Automatically clear the Unit Manager's unread badges for this site context on any decision
-    this.notificationsService
-      .markRoleNotificationsAsRead({
-        siteCode: updated.site || 'global',
-        targetUserRole: 'unit.manager',
-        componentKey: 'MENU_PRODUCTION_APPROVAL_REQUESTS',
-      })
-      .catch((err) =>
-        this.logger.error(
-          `Failed to clear manager badges: ${this.errorMessage(err)}`,
-        ),
-      );
+    if (batchReview.isComplete) {
+      this.notificationsService
+        .markRoleNotificationsAsRead({
+          siteCode: updated.site || 'global',
+          targetUserRole: 'unit.manager',
+          componentKey: 'MENU_PRODUCTION_APPROVAL_REQUESTS',
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to clear manager badges: ${this.errorMessage(err)}`,
+          ),
+        );
 
-    void this.dispatchMenuProductionDecisionEmail(updated).catch((error) =>
-      this.logger.error(
-        `Menu production decision email failed: ${this.errorMessage(error)}`,
-      ),
+      void this.workflowMail
+        .notifyMenuProductionBatchReviewed(batchReview.records)
+        .catch((error) =>
+          this.logger.error(
+            `Menu production decision email failed: ${this.errorMessage(error)}`,
+          ),
+        );
+    }
+
+    return updated;
+  }
+
+  async changeRejectedMenu(
+    id: string,
+    input: ChangeRejectedMenuProductionDto,
+    chefId?: string,
+    site?: string,
+  ) {
+    const normalizedChefId = chefId?.trim();
+    if (!normalizedChefId) {
+      throw new BadRequestException('Chef identity is required.');
+    }
+    const normalizedRecipeId = this.normalizeRecipeId(input.recipeId);
+    const normalizedGroup = input.group?.trim();
+    if (!normalizedGroup) {
+      throw new BadRequestException('Group By is required.');
+    }
+    const portion = Number(input.portion);
+    if (!Number.isInteger(portion) || portion < 1) {
+      throw new BadRequestException('Portion must be a positive integer.');
+    }
+    const filter = this.withSiteFilter(
+      {
+        _id: id,
+        createdBy: normalizedChefId,
+        approvalStatus: 'rejected',
+        isDraft: { $ne: true },
+      },
+      site,
     );
+    const existing = await this.menuProductionModel.findOne(filter).lean();
+    if (!existing) {
+      throw new NotFoundException('Rejected menu production not found.');
+    }
+    if (
+      this.normalizeOptionalRecipeId(existing.recipeId) === normalizedRecipeId
+    ) {
+      throw new BadRequestException(
+        'Select a different approved menu for the replacement.',
+      );
+    }
+
+    const recipeById = await this.findEligibleRecipesById([normalizedRecipeId]);
+    const recipe = recipeById.get(normalizedRecipeId);
+    if (!recipe) {
+      throw new BadRequestException('Replacement menu is not eligible.');
+    }
+    const selectedVendors = this.normalizeIngredientVendors(
+      input.ingredientVendors,
+    );
+    for (const [ingredientIndex, ingredient] of (
+      recipe.ingredients ?? []
+    ).entries()) {
+      const selectedVendor = this.findIngredientVendor(
+        selectedVendors,
+        ingredientIndex,
+        ingredient.productCode?.trim() ?? '',
+        ingredient.name?.trim() ?? '',
+        ingredient.unitOfMeasures?.trim() ?? '',
+      );
+      if (!selectedVendor?.vendor?.trim()) {
+        throw new BadRequestException(
+          `Vendor is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+        );
+      }
+      if (
+        !Number.isFinite(Number(selectedVendor.price)) ||
+        Number(selectedVendor.price) < 0
+      ) {
+        throw new BadRequestException(
+          `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+        );
+      }
+    }
+    const replacementInput: CreateMenuProductionDto = {
+      recipeId: normalizedRecipeId,
+      portion,
+      cost: 0,
+      ingredientVendors: input.ingredientVendors,
+      productionDate: existing.productionDate,
+    };
+    const costSnapshot = this.calculateMenuProductionCostSnapshot(
+      replacementInput,
+      recipe,
+    );
+    const updated = await this.menuProductionModel
+      .findOneAndUpdate(
+        filter,
+        {
+          $set: {
+            recipeId: recipe.id,
+            recipeCode: recipe.recipeCode,
+            recipeVersion: recipe.version,
+            menuName: recipe.name,
+            category: recipe.category,
+            group: normalizedGroup,
+            portion,
+            cost: costSnapshot.estimatedTotalCost ?? 0,
+            estimatedTotalCost: costSnapshot.estimatedTotalCost,
+            estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
+            ingredientVendors: costSnapshot.ingredientVendors,
+            approvalStatus: 'pending',
+            storeRequestStatus: 'not-requested',
+          },
+          $unset: {
+            rejectionReason: 1,
+            reviewedBy: 1,
+            approvedAt: 1,
+            sellingPricePerPax: 1,
+            sellingQuantity: 1,
+            estimatedRevenue: 1,
+            salesInputBy: 1,
+            fulfilledBy: 1,
+            storeFulfillmentItems: 1,
+            storeFulfillmentCompletedAt: 1,
+            storeFulfillmentNote: 1,
+            storeCancelledBy: 1,
+            storeCancelledAt: 1,
+            storeCancellationReason: 1,
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) {
+      throw new NotFoundException('Rejected menu production not found.');
+    }
+
+    const revisedBatch = await this.menuProductionModel
+      .find(
+        this.withSiteFilter(
+          {
+            productionCode: existing.productionCode,
+            createdBy: normalizedChefId,
+            isDraft: { $ne: true },
+          },
+          site,
+        ),
+      )
+      .lean();
+    const revisionComplete =
+      revisedBatch.length > 0 &&
+      revisedBatch.every((item) => item.approvalStatus !== 'rejected');
+    if (revisionComplete) {
+      const revisionFingerprint = createHash('sha256')
+        .update(
+          revisedBatch
+            .map(
+              (item) =>
+                `${this.textValue(item._id)}:${this.textValue(item.recipeId)}:${item.approvalStatus}`,
+            )
+            .sort()
+            .join('|'),
+        )
+        .digest('hex')
+        .slice(0, 16);
+      this.dispatchMenuProductionSubmissionNotifications(
+        revisedBatch,
+        `replacement-batch-${existing.productionCode}-${revisionFingerprint}`,
+      );
+    }
 
     return updated;
   }
@@ -958,7 +1156,26 @@ export class MenuProductionsService implements OnModuleInit {
         'Pending production batch not found for this site.',
       );
     }
-    const updatedItems = await this.menuProductionModel.find(filter).lean();
+    const batchFilter = this.withSiteFilter(
+      {
+        productionCode: normalizedCode,
+        isDraft: { $ne: true },
+      },
+      site,
+    );
+    await this.menuProductionModel.updateMany(batchFilter, {
+      $set: {
+        sellingPricePerPax,
+        sellingQuantity,
+        estimatedRevenue: this.roundQuantity(
+          sellingPricePerPax * sellingQuantity,
+        ),
+        salesInputBy: actor,
+      },
+    });
+    const updatedItems = await this.menuProductionModel
+      .find(batchFilter)
+      .lean();
     const firstItem = updatedItems[0];
     if (firstItem) {
       this.notificationsService
@@ -980,6 +1197,7 @@ export class MenuProductionsService implements OnModuleInit {
     void this.workflowMail
       .notifyMenuProductionsReadyForApproval(
         updatedItems.map((item) => this.toMailRecord(item)),
+        `sales-resubmission-${Date.now()}`,
       )
       .catch((error) =>
         this.logger.error(
@@ -2024,6 +2242,7 @@ export class MenuProductionsService implements OnModuleInit {
       Partial<MenuProduction> & {
         _id?: unknown;
         id?: unknown;
+        createdAt?: Date | string;
         createdBy?: unknown;
         storeFulfillmentItems?: unknown;
         storeFulfillmentCompletedAt?: unknown;
@@ -2342,6 +2561,11 @@ export class MenuProductionsService implements OnModuleInit {
         ),
         submittedByName,
         reviewedBy,
+        submittedAt: menu.submittedAt
+          ? new Date(String(menu.submittedAt)).toISOString()
+          : menu.createdAt
+            ? new Date(String(menu.createdAt)).toISOString()
+            : undefined,
         approvedAt: menu.approvedAt
           ? new Date(String(menu.approvedAt)).toISOString()
           : undefined,
@@ -2351,6 +2575,7 @@ export class MenuProductionsService implements OnModuleInit {
         menuName: String(menu.menuName ?? ''),
         clientName: String(menu.clientName ?? '').trim() || undefined,
         category: String(menu.category ?? ''),
+        group: String(menu.group ?? '').trim() || undefined,
         portion: Number(menu.portion ?? 0),
         cost: Number.isFinite(Number(menu.cost))
           ? Number(menu.cost)

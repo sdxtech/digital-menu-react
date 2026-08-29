@@ -134,6 +134,9 @@ export class MenuProduction {
   @Prop({ type: Boolean, default: false, index: true })
   isDraft: boolean;
 
+  @Prop({ type: Date, index: true })
+  submittedAt?: Date;
+
   @Prop({ type: String, trim: true })
   reviewedBy?: string;
 

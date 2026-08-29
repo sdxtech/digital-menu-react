@@ -136,7 +136,10 @@ export class WorkflowMailService {
     });
   }
 
-  async notifyMenuProductionsSubmitted(records: MenuProductionMailRecord[]) {
+  async notifyMenuProductionsSubmitted(
+    records: MenuProductionMailRecord[],
+    deduplicationContext?: string,
+  ) {
     if (!this.isEnabled()) return;
     const groups = this.groupMenuRecords(records);
     for (const group of groups.values()) {
@@ -160,13 +163,16 @@ export class WorkflowMailService {
         path: '/admin-site/menu-productions',
         actionLabel: 'Complete Sales Input',
         category: 'menu-production-sales-input',
-        deduplicationPrefix: `menu-production-sales-input-${first.productionCode}`,
+        deduplicationPrefix: `menu-production-sales-input-${first.productionCode}${
+          deduplicationContext ? `-${deduplicationContext}` : ''
+        }`,
       });
     }
   }
 
   async notifyMenuProductionsReadyForApproval(
     records: MenuProductionMailRecord[],
+    deduplicationContext?: string,
   ) {
     if (!this.isEnabled()) return;
     const groups = this.groupMenuRecords(records);
@@ -204,7 +210,9 @@ export class WorkflowMailService {
         path: '/unit-manager?section=menu-productions',
         actionLabel: 'Review Menu Production',
         category: 'menu-production-awaiting-approval',
-        deduplicationPrefix: `menu-production-awaiting-approval-${first.productionCode}`,
+        deduplicationPrefix: `menu-production-awaiting-approval-${first.productionCode}${
+          deduplicationContext ? `-${deduplicationContext}` : ''
+        }`,
       });
     }
   }
@@ -224,6 +232,7 @@ export class WorkflowMailService {
     const rejectedCount = records.filter(
       (item) => item.approvalStatus === 'rejected',
     ).length;
+    const allApproved = approvedCount === records.length && rejectedCount === 0;
     const creatorIds = Array.from(
       new Set(records.map((item) => item.createdBy).filter(Boolean)),
     ) as string[];
@@ -232,7 +241,7 @@ export class WorkflowMailService {
       site: first.site,
       userIds: creatorIds,
     });
-    const storekeepers = approvedCount
+    const storekeepers = allApproved
       ? await this.users.findActiveEmailRecipients({
           roles: [AppRole.Storekeeper],
           site: first.site,
@@ -254,9 +263,15 @@ export class WorkflowMailService {
       details: Array<[string, string]>;
       category: string;
     } = {
-      subject: `Menu Production Reviewed: ${first.productionCode}`,
-      title: 'Menu Production Review Completed',
-      message: `The Unit Manager has completed the review for production batch ${first.productionCode}.`,
+      subject: allApproved
+        ? `Menu Production Approved: ${first.productionCode}`
+        : `Menu Production Returned: ${first.productionCode}`,
+      title: allApproved
+        ? 'Menu Production Approved'
+        : 'Menu Production Returned To Chef',
+      message: allApproved
+        ? `All menus in production batch ${first.productionCode} were approved and forwarded to Storekeeper.`
+        : `Production batch ${first.productionCode} was returned to Chef because ${rejectedCount} menu(s) were rejected. It was not forwarded to Storekeeper.`,
       details: [
         ['Production code', first.productionCode],
         ['Production date', first.productionDate ?? '-'],
@@ -264,7 +279,9 @@ export class WorkflowMailService {
         ['Rejected menus', String(rejectedCount)],
         ['Site', first.site ?? '-'],
       ],
-      category: 'menu-production-reviewed',
+      category: allApproved
+        ? 'menu-production-approved'
+        : 'menu-production-returned',
     };
     await this.enqueueForRecipients(chefs, {
       ...sharedMessage,
