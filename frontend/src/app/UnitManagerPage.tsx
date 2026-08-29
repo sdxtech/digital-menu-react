@@ -1502,11 +1502,13 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                               <colgroup>
                                                 <col className="w-[5%]" />
-                                                <col className="w-[13%]" />
-                                                <col className="w-[39%]" />
-                                                <col className="w-[8%]" />
-                                                <col className="w-[8%]" />
-                                                <col className="w-[27%]" />
+                                                <col className="w-[12%]" />
+                                                <col className="w-[30%]" />
+                                                <col className="w-[7%]" />
+                                                <col className="w-[7%]" />
+                                                <col className="w-[18%]" />
+                                                <col className="w-[10%]" />
+                                                <col className="w-[11%]" />
                                               </colgroup>
                                               <thead className="bg-background">
                                               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -1522,13 +1524,17 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 <th className="px-3 py-3 font-semibold">
                                                   Vendor
                                                 </th>
+                                                <th className="px-3 py-3 font-semibold">Price</th>
+                                                <th className="px-3 py-3 font-semibold">
+                                                  Ingredient Cost
+                                                </th>
                                               </tr>
                                               </thead>
                                               <tbody>
                                               {item.ingredients.length === 0 ? (
                                                 <tr className="border-t border-border">
                                                   <td
-                                                    colSpan={6}
+                                                    colSpan={8}
                                                     className="px-4 py-5 text-center text-muted"
                                                   >
                                                     No ingredients available.
@@ -1560,6 +1566,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                       </td>
                                                       <td className="break-words px-3 py-3">
                                                         {ingredient.vendor ?? '-'}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3 font-medium">
+                                                        {formatPrice(ingredient.price)}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3 font-medium">
+                                                        {formatPrice(ingredient.ingredientCost)}
                                                       </td>
                                                     </tr>
                                                   ),
