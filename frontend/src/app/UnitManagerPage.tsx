@@ -4,6 +4,10 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import {
+  calculateFoodCostPercentage,
+  formatFoodCostPercentage,
+} from '../lib/food-cost'
 import { formatQuantity } from '../lib/quantity'
 import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
@@ -1100,10 +1104,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                         sellingQuantity !== undefined
                           ? sellingPricePerPax * sellingQuantity
                           : undefined
-                      const foodCostPercentage =
-                        estimatedRevenue !== undefined && estimatedRevenue > 0
-                          ? (totalEstimatedCost / estimatedRevenue) * 100
-                          : undefined
+                      const foodCostPercentage = calculateFoodCostPercentage(
+                        totalEstimatedCost,
+                        estimatedRevenue,
+                      )
                       const portionSummary = summarizePortionsByGroup(
                         group.items,
                       )
@@ -1200,13 +1204,14 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                       <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                         <colgroup>
                                           <col className="w-[5%]" />
-                                          <col className="w-[12%]" />
-                                          <col className="w-[23%]" />
-                                          <col className="w-[8%]" />
-                                          <col className="w-[13%]" />
                                           <col className="w-[10%]" />
+                                          <col className="w-[20%]" />
+                                          <col className="w-[8%]" />
+                                          <col className="w-[12%]" />
+                                          <col className="w-[10%]" />
+                                          <col className="w-[10%]" />
+                                          <col className="w-[12%]" />
                                           <col className="w-[13%]" />
-                                          <col className="w-[16%]" />
                                         </colgroup>
                                         <thead className="bg-background">
                                           <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -1226,6 +1231,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               Estimated Cost
                                             </th>
                                             <th className="px-3 py-3 font-semibold">
+                                              Food Cost %
+                                            </th>
+                                            <th className="px-3 py-3 font-semibold">
                                               Cost/Pax
                                             </th>
                                             <th className="px-3 py-3 font-semibold">
@@ -1240,7 +1248,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                           {group.items.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={8}
+                                                colSpan={9}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No menus pending in this group.
@@ -1264,7 +1272,6 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                       item.portion > 0
                                                     ? estimatedCost / item.portion
                                                     : undefined
-
                                               return (
                                                 <tr
                                                   key={item.id}
@@ -1293,6 +1300,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                   </td>
                                                   <td className="px-3 py-3 font-medium">
                                                     {formatPrice(estimatedCost)}
+                                                  </td>
+                                                  <td className="px-3 py-3 font-medium">
+                                                    {formatFoodCostPercentage(
+                                                      estimatedCost,
+                                                      estimatedRevenue,
+                                                    )}
                                                   </td>
                                                   <td className="px-3 py-3 font-medium">
                                                     {formatPrice(
@@ -1354,16 +1367,21 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             })
                                           )}
                                         </tbody>
-                                        <tfoot className="bg-background">
+                                        <tfoot className="bg-[#ccd9ec]">
                                           <tr className="border-t-2 border-primary">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Total
                                             </td>
                                             <td className="px-3 py-3 font-bold">
                                               {formatPrice(totalEstimatedCost)}
+                                            </td>
+                                            <td className="px-3 py-3 font-bold">
+                                              {foodCostPercentage === undefined
+                                                ? '-'
+                                                : `${foodCostPercentage.toFixed(2)}%`}
                                             </td>
                                             <td className="px-3 py-3 font-bold">
                                               {formatPrice(
@@ -1378,13 +1396,13 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               className="border-t border-border"
                                             >
                                               <td
-                                                colSpan={3}
+                                                colSpan={4}
                                                 className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em]"
                                               >
                                                 {item.name} Qty
                                               </td>
                                               <td
-                                                colSpan={4}
+                                                colSpan={5}
                                                 className="px-3 py-3 font-semibold"
                                               >
                                                 {formatQuantity(item.portion)}
@@ -1393,56 +1411,56 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                           ))}
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Total Qty
                                             </td>
-                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                            <td colSpan={5} className="px-3 py-3 font-bold">
                                               {formatQuantity(portionSummary.total)}
                                             </td>
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Selling Price/Pax
                                             </td>
-                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                            <td colSpan={5} className="px-3 py-3 font-bold">
                                               {formatPrice(sellingPricePerPax)}
                                             </td>
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Pax Calculation
                                             </td>
-                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                            <td colSpan={5} className="px-3 py-3 font-bold">
                                               {sellingQuantity ?? '-'}
                                             </td>
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Estimated Revenue
                                             </td>
-                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                            <td colSpan={5} className="px-3 py-3 font-bold">
                                               {formatPrice(estimatedRevenue)}
                                             </td>
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={3}
+                                              colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Food Cost Percentage
                                             </td>
-                                            <td colSpan={4} className="px-3 py-3 font-bold">
+                                            <td colSpan={5} className="px-3 py-3 font-bold">
                                               {foodCostPercentage === undefined
                                                 ? '-'
                                                 : `${foodCostPercentage.toFixed(2)}%`}
