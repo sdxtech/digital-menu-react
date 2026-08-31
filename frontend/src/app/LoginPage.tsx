@@ -49,13 +49,13 @@ const LoginPage = () => {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_12px_30px_rgba(11,41,87,0.25)] ring-1 ring-border">
                 <img
                   src="/Logo.png"
-                  alt="Food Recipe System logo"
+                  alt="SPARK logo"
                   className="h-full w-full object-contain"
                 />
               </div>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Food Recipe System
+                  SPARK
                 </h1>
               </div>
             </div>
@@ -65,18 +65,6 @@ const LoginPage = () => {
             <div className="relative rounded-[32px] border border-border bg-surface p-8 shadow-[0_30px_80px_rgba(15,23,42,0.16)] animate-fade-up [animation-delay:150ms]">
               <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent-blue/20 blur-2xl" />
               <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-accent-cyan/20 blur-3xl" />
-
-              <div className="relative">
-                <h3 className="text-muted">
-                  Login
-                </h3>
-                <p className="mt-2 text-2xl font-semibold">
-                  Sign in to continue to Quick View
-                </p>
-                <p className="mt-3 text-sm text-muted">
-                  Use the email and password registered by the superadmin.
-                </p>
-              </div>
 
               {/* Form login dengan input email, password, dan tombol submit. Juga menampilkan error jika login gagal dan opsi untuk menampilkan/menyembunyikan password. */}
               <form className="relative mt-8 space-y-5" onSubmit={handleSubmit}> 
