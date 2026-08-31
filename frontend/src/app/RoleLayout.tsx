@@ -435,8 +435,8 @@ const RoleLayout = ({
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white p-1.5 ring-1 ring-white/30">
                 <img
-                  src="/Logo.png"
-                  alt="Food Recipe System logo"
+                  src="/Sodexo_Logo.png"
+                  alt="Sodexo logo"
                   className="h-full w-full object-contain"
                 />
               </div>

@@ -48,8 +48,8 @@ const LoginPage = () => {
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_12px_30px_rgba(11,41,87,0.25)] ring-1 ring-border">
                 <img
-                  src="/Logo.png"
-                  alt="SPARK logo"
+                  src="/Sodexo_Logo.png"
+                  alt="Sodexo logo"
                   className="h-full w-full object-contain"
                 />
               </div>

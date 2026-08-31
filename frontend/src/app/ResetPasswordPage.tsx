@@ -73,8 +73,8 @@ const ResetPasswordPage = () => {
         <div className="flex items-center gap-3 md:flex-1 justify-center md:justify-start">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm border border-black/5">
             <img
-              src="/Logo.png"
-              alt="Food Recipe System logo"
+              src="/Sodexo_Logo.png"
+              alt="Sodexo logo"
               className="h-full w-full object-contain"
             />
           </div>
