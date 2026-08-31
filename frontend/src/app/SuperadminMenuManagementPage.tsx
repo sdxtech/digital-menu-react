@@ -427,6 +427,25 @@ const getRecipeBasePax = (recipe: Recipe) =>
 const getRecipeTargetPortion = (recipe: Recipe, portion: number | '') =>
   typeof portion === 'number' && portion > 0 ? portion : getRecipeBasePax(recipe)
 
+const getRecipeEstimatedCost = (recipe: Recipe) => {
+  if (Number.isFinite(Number(recipe.foodCostRecipe))) {
+    return Number(recipe.foodCostRecipe)
+  }
+
+  let hasIngredientCost = false
+  const totalIngredientCost = (recipe.ingredients ?? []).reduce(
+    (total, ingredient) => {
+      const ingredientCost = Number(ingredient.foodCost)
+      if (!Number.isFinite(ingredientCost)) return total
+      hasIngredientCost = true
+      return total + ingredientCost
+    },
+    0,
+  )
+
+  return hasIngredientCost ? totalIngredientCost : undefined
+}
+
 const sortVendorPriceOptions = (options: RawMaterialVendorPriceOption[]) =>
   options.sort((a, b) =>
     [a.vendor, a.site, String(a.minimumQuantity ?? '')]
@@ -1475,6 +1494,10 @@ const SuperadminMenuManagementPage = () => {
   const [approvalStatus, setApprovalStatus] = useState<'' | ApprovalStatus>('')
   const [recipeCategory, setRecipeCategory] = useState('')
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
+  const [selectedRecipeVendorPricesByProductKey, setSelectedRecipeVendorPricesByProductKey] =
+    useState<Record<string, RawMaterialVendorPriceOption[]>>({})
+  const [selectedRecipeVendorPriceLoadingByProductKey, setSelectedRecipeVendorPriceLoadingByProductKey] =
+    useState<Record<string, boolean>>({})
   const [recipeMessage, setRecipeMessage] = useState('')
   const [recipeRejectTarget, setRecipeRejectTarget] = useState<Recipe | null>(
     null,
@@ -1593,6 +1616,74 @@ const SuperadminMenuManagementPage = () => {
     if (!siteCode) return 'All sites'
     return siteNameByCode.get(siteCode) ?? siteCode
   }
+
+  useEffect(() => {
+    if (!selectedRecipe || !accessToken) {
+      setSelectedRecipeVendorPricesByProductKey({})
+      setSelectedRecipeVendorPriceLoadingByProductKey({})
+      return
+    }
+
+    const site = selectedRecipe.site?.trim() || selectedRecipe.siteName?.trim()
+    const productCodes = Array.from(
+      new Set(
+        (selectedRecipe.ingredients ?? [])
+          .map((ingredient) => ingredient.productCode?.trim() ?? '')
+          .filter(Boolean),
+      ),
+    )
+    let active = true
+
+    setSelectedRecipeVendorPriceLoadingByProductKey(
+      Object.fromEntries(
+        productCodes.map((productCode) => [
+          getRecipeCalculatorVendorProductKey(productCode, site),
+          true,
+        ]),
+      ),
+    )
+
+    Promise.all(
+      productCodes.map(async (productCode) => {
+        const params = site ? `?site=${encodeURIComponent(site)}` : ''
+        const data = await apiFetch<RawMaterialVendorPriceApi[]>(
+          `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices${params}`,
+          undefined,
+          accessToken,
+        )
+        const options = sortVendorPriceOptions(
+          (data ?? [])
+            .map(mapRawMaterialVendorPriceOption)
+            .filter(
+              (option): option is RawMaterialVendorPriceOption => option !== null,
+            ),
+        )
+        return {
+          key: getRecipeCalculatorVendorProductKey(productCode, site),
+          options,
+        }
+      }),
+    )
+      .then((results) => {
+        if (!active) return
+        setSelectedRecipeVendorPricesByProductKey(
+          Object.fromEntries(results.map(({ key, options }) => [key, options])),
+        )
+      })
+      .catch((error) => {
+        if (!active) return
+        console.error('Failed to load recipe ingredient vendors:', error)
+        setSelectedRecipeVendorPricesByProductKey({})
+      })
+      .finally(() => {
+        if (!active) return
+        setSelectedRecipeVendorPriceLoadingByProductKey({})
+      })
+
+    return () => {
+      active = false
+    }
+  }, [accessToken, selectedRecipe])
 
   const fetchSiteOptions = useCallback(async () => {
     if (!accessToken) {
@@ -3512,19 +3603,21 @@ const SuperadminMenuManagementPage = () => {
                   <th className="px-5 py-4 font-semibold">Sites</th>
                   <th className="px-5 py-4 font-semibold">Recipe Status</th>
                   <th className="px-5 py-4 font-semibold">Approval Status</th>
+                  <th className="px-5 py-4 font-semibold">Estimated Cost</th>
+                  <th className="px-5 py-4 font-semibold">Cost/Pax</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {recipeMeta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
                       Loading recipe data...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
                       {recipeMeta.error ? recipeMeta.error : 'No recipes found.'}
                     </td>
                   </tr>
@@ -3533,6 +3626,11 @@ const SuperadminMenuManagementPage = () => {
                     const recipeKey = getRecipeKey(recipe)
                     const isSelected = selectedRecipeId === recipeKey
                     const isRecipeEnabled = recipe.isActive ?? true
+                    const estimatedCost = getRecipeEstimatedCost(recipe)
+                    const costPerPax =
+                      estimatedCost === undefined
+                        ? undefined
+                        : estimatedCost / getRecipeBasePax(recipe)
 
                     return (
                       <tr key={recipeKey} className="border-t border-border">
@@ -3561,6 +3659,12 @@ const SuperadminMenuManagementPage = () => {
                           >
                             {getApprovalStatusLabel(recipe.approvalStatus)}
                           </span>
+                        </td>
+                        <td className="px-5 py-4 font-medium">
+                          {formatPrice(estimatedCost)}
+                        </td>
+                        <td className="px-5 py-4 font-medium">
+                          {formatPrice(costPerPax)}
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap items-center gap-2">
@@ -3759,10 +3863,24 @@ const SuperadminMenuManagementPage = () => {
                         <th className="px-4 py-3 font-semibold">Ingredient name</th>
                         <th className="px-4 py-3 font-semibold">Qty</th>
                         <th className="px-4 py-3 font-semibold">Unit</th>
+                        <th className="px-4 py-3 font-semibold">Vendor</th>
+                        <th className="px-4 py-3 font-semibold">Price</th>
+                        <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedRecipeIngredients.map((ingredient, index) => (
+                      {selectedRecipeIngredients.map((ingredient, index) => {
+                        const productKey = getRecipeCalculatorVendorProductKey(
+                          ingredient.productCode,
+                          selectedRecipe.site?.trim() || selectedRecipe.siteName?.trim(),
+                        )
+                        const vendorOptions =
+                          selectedRecipeVendorPricesByProductKey[productKey] ?? []
+                        const vendorNames = Array.from(
+                          new Set(vendorOptions.map((option) => option.vendor)),
+                        )
+
+                        return (
                         <tr
                           key={`${ingredient.productCode}-${ingredient.unitOfMeasures}-${index}`}
                           className="border-t border-border"
@@ -3783,8 +3901,30 @@ const SuperadminMenuManagementPage = () => {
                               ? formatUnitLabel(ingredient.unitOfMeasures)
                               : '-'}
                           </td>
+                          <td className="px-4 py-3">
+                            {selectedRecipeVendorPriceLoadingByProductKey[
+                              productKey
+                            ]
+                              ? 'Loading...'
+                              : vendorNames.join(', ') || '-'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {formatPrice(
+                              Number.isFinite(Number(ingredient.priceUom))
+                                ? Number(ingredient.priceUom)
+                                : undefined,
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            {formatPrice(
+                              Number.isFinite(Number(ingredient.foodCost))
+                                ? Number(ingredient.foodCost)
+                                : undefined,
+                            )}
+                          </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
