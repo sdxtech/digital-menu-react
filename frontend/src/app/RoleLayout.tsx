@@ -71,6 +71,9 @@ const RoleLayout = ({
   const [notificationFilter, setNotificationFilter] =
     useState<NotificationFilter>('unread')
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [markingAllNotificationsRead, setMarkingAllNotificationsRead] =
+    useState(false)
+  const [notificationActionError, setNotificationActionError] = useState('')
   
   const dropdownRef = useRef<HTMLDivElement>(null)
   const notificationDropdownRef = useRef<HTMLDivElement>(null)
@@ -169,6 +172,38 @@ const RoleLayout = ({
 
     event.preventDefault()
     toggleNotificationDropdown()
+  }
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    if (!accessToken || totalUnreadCount === 0 || markingAllNotificationsRead) {
+      return
+    }
+
+    setMarkingAllNotificationsRead(true)
+    setNotificationActionError('')
+
+    try {
+      await apiFetch(
+        '/notifications/mark-role-read',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            siteCode,
+            targetUserRole,
+          }),
+        },
+        accessToken,
+      )
+      setNotifications((current) =>
+        current.map((notification) => ({ ...notification, read: true })),
+      )
+      window.dispatchEvent(new CustomEvent('refresh-notifications'))
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error)
+      setNotificationActionError('Unable to mark all notifications as read.')
+    } finally {
+      setMarkingAllNotificationsRead(false)
+    }
   }
 
   const displayName = user?.name?.trim() || user?.email || defaultEmail
@@ -440,7 +475,26 @@ const RoleLayout = ({
                     role="menu"
                   >
                     <div className="border-b border-border px-3 py-2">
-                      <p className="text-xs font-semibold">Notifications</p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold">Notifications</p>
+                        {totalUnreadCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllNotificationsAsRead}
+                            disabled={markingAllNotificationsRead}
+                            className="rounded-md border border-primary px-2 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary-soft hover:text-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {markingAllNotificationsRead
+                              ? 'Marking as read...'
+                              : 'Mark all as read'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {notificationActionError ? (
+                        <p className="mt-1 text-[11px] text-red-600" role="alert">
+                          {notificationActionError}
+                        </p>
+                      ) : null}
                       <div className="mt-2 grid grid-cols-2 rounded-md bg-muted/30 p-0.5">
                         <button
                           type="button"
