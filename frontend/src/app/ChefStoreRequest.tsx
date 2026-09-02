@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { useChefData } from '../lib/chef-data'
+import { useChefData, type Recipe } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
@@ -200,6 +200,11 @@ const getReplacementIngredientFallbackPrice = (ingredient: {
   }
   return undefined
 }
+
+const formatReplacementRecipeLabel = (recipe: Recipe) =>
+  `${recipe.recipeCode ?? '-'} - ${recipe.name} (${formatRecipeVersion(recipe.version)})`
+
+const normalizeRecipeSearch = (value: string) => value.trim().toLowerCase()
 
 type StoreRequestSiteOption = {
   code: string
@@ -477,6 +482,7 @@ const ChefStoreRequest = ({
     fetchRecipes,
     fulfillStoreRequestBatch,
     recipes,
+    searchRecipes,
   } = useChefData()
   const [selectedSite, setSelectedSite] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -514,6 +520,12 @@ const ChefStoreRequest = ({
   const [changingMenuId, setChangingMenuId] = useState<string | null>(null)
   const [replacementGroup, setReplacementGroup] = useState('')
   const [replacementRecipeId, setReplacementRecipeId] = useState('')
+  const [replacementRecipeQuery, setReplacementRecipeQuery] = useState('')
+  const [replacementRecipeSearchResults, setReplacementRecipeSearchResults] =
+    useState<Recipe[]>([])
+  const [replacementRecipeDropdownOpen, setReplacementRecipeDropdownOpen] =
+    useState(false)
+  const [replacementSite, setReplacementSite] = useState('')
   const [replacementPortion, setReplacementPortion] = useState('')
   const [replacementVendorOptions, setReplacementVendorOptions] = useState<
     Record<number, ReplacementVendorOption[]>
@@ -529,6 +541,8 @@ const ChefStoreRequest = ({
   const [replacementVendorLoading, setReplacementVendorLoading] =
     useState(false)
   const replacementVendorRequestRef = useRef(0)
+  const replacementRecipeInputRef = useRef<HTMLInputElement | null>(null)
+  const replacementRecipeDropdownRef = useRef<HTMLDivElement | null>(null)
   const [changeMenuError, setChangeMenuError] = useState('')
   const [changeMenuSubmitting, setChangeMenuSubmitting] = useState(false)
   const [menuGroupOptions, setMenuGroupOptions] = useState<MenuGroupOption[]>([])
@@ -548,11 +562,50 @@ const ChefStoreRequest = ({
         .sort((a, b) => a.name.localeCompare(b.name)),
     [recipes],
   )
+  const replacementRecipeOptions = useMemo(() => {
+    const optionsById = new Map<string, Recipe>()
+    const availableOptions = [
+      ...replacementRecipes,
+      ...replacementRecipeSearchResults,
+    ]
+    availableOptions.forEach((recipe) => {
+      if (
+        recipe.approvalStatus === 'approved' &&
+        recipe.status === 'active' &&
+        recipe.isActive
+      ) {
+        optionsById.set(recipe.id, recipe)
+      }
+    })
+    return Array.from(optionsById.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )
+  }, [replacementRecipeSearchResults, replacementRecipes])
   const selectedReplacementRecipe = useMemo(
     () =>
-      replacementRecipes.find((recipe) => recipe.id === replacementRecipeId),
-    [replacementRecipeId, replacementRecipes],
+      replacementRecipeOptions.find(
+        (recipe) => recipe.id === replacementRecipeId,
+      ),
+    [replacementRecipeId, replacementRecipeOptions],
   )
+  const replacementRecipeSuggestions = useMemo(() => {
+    const normalizedQuery = normalizeRecipeSearch(replacementRecipeQuery)
+    return replacementRecipeOptions
+      .filter((recipe) => {
+        if (!normalizedQuery) return true
+        return normalizeRecipeSearch(
+          [
+            recipe.recipeCode,
+            recipe.name,
+            recipe.category,
+            formatRecipeVersion(recipe.version),
+          ]
+            .filter(Boolean)
+            .join(' '),
+        ).includes(normalizedQuery)
+      })
+      .slice(0, 20)
+  }, [replacementRecipeOptions, replacementRecipeQuery])
   const replacementCostPreview = useMemo(() => {
     const portion = Number(replacementPortion)
     if (
@@ -659,6 +712,96 @@ const ChefStoreRequest = ({
     replacementVendorLoading,
     replacementVendorOptions,
     selectedReplacementRecipe,
+  ])
+
+  const updateReplacementRecipeDropdownPosition = useCallback(() => {
+    const input = replacementRecipeInputRef.current
+    const dropdown = replacementRecipeDropdownRef.current
+    if (!input || !dropdown) return
+
+    const bounds = input.getBoundingClientRect()
+    const gap = 4
+    const availableBelow = window.innerHeight - bounds.bottom - 20
+    const availableAbove = bounds.top - 20
+    const naturalHeight = Math.min(280, dropdown.scrollHeight)
+    const placeBelow = availableBelow >= Math.min(naturalHeight, 160)
+    const maxHeight = Math.max(
+      100,
+      Math.min(280, placeBelow ? availableBelow : availableAbove),
+    )
+    const dropdownWidth = Math.min(
+      Math.max(bounds.width, 420),
+      window.innerWidth - 32,
+    )
+    const left = Math.min(
+      Math.max(16, bounds.left),
+      window.innerWidth - dropdownWidth - 16,
+    )
+    const renderedHeight = Math.min(naturalHeight, maxHeight)
+
+    dropdown.style.left = `${left}px`
+    dropdown.style.top = `${
+      placeBelow
+        ? bounds.bottom + gap
+        : Math.max(8, bounds.top - renderedHeight - gap)
+    }px`
+    dropdown.style.width = `${dropdownWidth}px`
+    dropdown.style.maxHeight = `${maxHeight}px`
+    dropdown.style.borderRadius = placeBelow
+      ? '0 0 0.75rem 0.75rem'
+      : '0.75rem 0.75rem 0 0'
+    dropdown.style.visibility = 'visible'
+  }, [])
+
+  useEffect(() => {
+    if (!replacementRecipeDropdownOpen) return
+
+    let animationFrame = 0
+    const syncPosition = () => {
+      updateReplacementRecipeDropdownPosition()
+      animationFrame = window.requestAnimationFrame(syncPosition)
+    }
+    animationFrame = window.requestAnimationFrame(syncPosition)
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [
+    replacementRecipeDropdownOpen,
+    replacementRecipeQuery,
+    replacementRecipeSuggestions,
+    updateReplacementRecipeDropdownPosition,
+  ])
+
+  useEffect(() => {
+    const query = replacementRecipeQuery.trim()
+    if (!replacementRecipeDropdownOpen) return
+    if (query.length < 2) {
+      setReplacementRecipeSearchResults([])
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      searchRecipes(query, {
+        limit: 20,
+        ...(replacementSite ? { site: replacementSite } : {}),
+      })
+        .then((results) => {
+          if (!cancelled) setReplacementRecipeSearchResults(results)
+        })
+        .catch(() => {
+          if (!cancelled) setReplacementRecipeSearchResults([])
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    replacementRecipeDropdownOpen,
+    replacementRecipeQuery,
+    replacementSite,
+    searchRecipes,
   ])
 
   useEffect(() => {
@@ -785,7 +928,9 @@ const ChefStoreRequest = ({
 
     const requestId = replacementVendorRequestRef.current + 1
     replacementVendorRequestRef.current = requestId
-    const recipe = replacementRecipes.find((item) => item.id === recipeId)
+    const recipe = replacementRecipeOptions.find(
+      (item) => item.id === recipeId,
+    )
     if (!accessToken || !recipe) {
       setReplacementVendorLoading(false)
       return
@@ -1100,6 +1245,10 @@ const ChefStoreRequest = ({
     setChangingMenuId(menu.id)
     setReplacementGroup(menu.group ?? '')
     setReplacementRecipeId('')
+    setReplacementRecipeQuery('')
+    setReplacementRecipeSearchResults([])
+    setReplacementRecipeDropdownOpen(false)
+    setReplacementSite(group.site ?? '')
     setReplacementPortion(String(menu.portion))
     replacementVendorRequestRef.current += 1
     setReplacementVendorOptions({})
@@ -1123,6 +1272,10 @@ const ChefStoreRequest = ({
     setChangingMenuId(null)
     setReplacementGroup('')
     setReplacementRecipeId('')
+    setReplacementRecipeQuery('')
+    setReplacementRecipeSearchResults([])
+    setReplacementRecipeDropdownOpen(false)
+    setReplacementSite('')
     setReplacementPortion('')
     replacementVendorRequestRef.current += 1
     setReplacementVendorOptions({})
@@ -1250,6 +1403,10 @@ const ChefStoreRequest = ({
       setChangingMenuId(null)
       setReplacementGroup('')
       setReplacementRecipeId('')
+      setReplacementRecipeQuery('')
+      setReplacementRecipeSearchResults([])
+      setReplacementRecipeDropdownOpen(false)
+      setReplacementSite('')
       setReplacementPortion('')
       replacementVendorRequestRef.current += 1
       setReplacementVendorOptions({})
@@ -2017,6 +2174,11 @@ const ChefStoreRequest = ({
                                       isChangingMenu
                                         ? replacementCostPreview.estimatedCostPerPax
                                         : estimatedCostPerPax
+                                    const availableReplacementSuggestions =
+                                      replacementRecipeSuggestions.filter(
+                                        (recipe) =>
+                                          recipe.id !== menu.recipeId,
+                                      )
 
                                     return (
                                       <tr
@@ -2089,50 +2251,135 @@ const ChefStoreRequest = ({
                                         <td className="min-w-72 px-4 py-3 font-medium">
                                           {changingMenuId === menu.id ? (
                                             <div>
-                                              <select
-                                                value={replacementRecipeId}
+                                              <input
+                                                ref={replacementRecipeInputRef}
+                                                type="text"
+                                                value={replacementRecipeQuery}
                                                 onChange={(event) => {
-                                                  handleReplacementRecipeChange(
-                                                    group,
+                                                  setReplacementRecipeQuery(
                                                     event.target.value,
-                                                  ).catch((error) => {
-                                                    setChangeMenuError(
-                                                      error instanceof Error
-                                                        ? error.message
-                                                        : 'Failed to load vendors.',
+                                                  )
+                                                  setChangeMenuError('')
+                                                  if (replacementRecipeId) {
+                                                    void handleReplacementRecipeChange(
+                                                      group,
+                                                      '',
                                                     )
-                                                  })
+                                                  }
+                                                }}
+                                                onFocus={(event) => {
+                                                  replacementRecipeInputRef.current =
+                                                    event.currentTarget
+                                                  setReplacementRecipeDropdownOpen(
+                                                    true,
+                                                  )
+                                                }}
+                                                onBlur={() => {
+                                                  window.setTimeout(() => {
+                                                    setReplacementRecipeDropdownOpen(
+                                                      false,
+                                                    )
+                                                    replacementRecipeInputRef.current =
+                                                      null
+                                                    replacementRecipeDropdownRef.current =
+                                                      null
+                                                  }, 150)
                                                 }}
                                                 disabled={
                                                   changeMenuSubmitting ||
                                                   replacementVendorLoading
                                                 }
+                                                placeholder="Search replacement menu"
+                                                role="combobox"
+                                                aria-autocomplete="list"
+                                                aria-expanded={
+                                                  replacementRecipeDropdownOpen
+                                                }
+                                                aria-controls="replacement-menu-options"
+                                                aria-label="Replacement menu"
                                                 required
                                                 className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm font-normal outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                              >
-                                                <option value="">
-                                                  Select replacement menu
-                                                </option>
-                                                {replacementRecipes
-                                                  .filter(
-                                                    (recipe) =>
-                                                      recipe.id !==
-                                                      menu.recipeId,
-                                                  )
-                                                  .map((recipe) => (
-                                                    <option
-                                                      key={recipe.id}
-                                                      value={recipe.id}
+                                              />
+                                              {replacementRecipeDropdownOpen
+                                                ? createPortal(
+                                                    <div
+                                                      id="replacement-menu-options"
+                                                      ref={
+                                                        replacementRecipeDropdownRef
+                                                      }
+                                                      role="listbox"
+                                                      className="fixed z-[100] overflow-y-auto border border-border bg-white shadow-xl"
+                                                      style={{
+                                                        visibility: 'hidden',
+                                                      }}
                                                     >
-                                                      {recipe.recipeCode ?? '-'}{' '}
-                                                      - {recipe.name} (
-                                                      {formatRecipeVersion(
-                                                        recipe.version,
+                                                      {availableReplacementSuggestions.length >
+                                                      0 ? (
+                                                        availableReplacementSuggestions
+                                                          .map((recipe) => (
+                                                            <button
+                                                              key={recipe.id}
+                                                              type="button"
+                                                              role="option"
+                                                              aria-selected={
+                                                                recipe.id ===
+                                                                replacementRecipeId
+                                                              }
+                                                              onMouseDown={(
+                                                                event,
+                                                              ) =>
+                                                                event.preventDefault()
+                                                              }
+                                                              onClick={() => {
+                                                                setReplacementRecipeQuery(
+                                                                  formatReplacementRecipeLabel(
+                                                                    recipe,
+                                                                  ),
+                                                                )
+                                                                setReplacementRecipeDropdownOpen(
+                                                                  false,
+                                                                )
+                                                                replacementRecipeInputRef.current =
+                                                                  null
+                                                                replacementRecipeDropdownRef.current =
+                                                                  null
+                                                                handleReplacementRecipeChange(
+                                                                  group,
+                                                                  recipe.id,
+                                                                ).catch(
+                                                                  (error) => {
+                                                                    setChangeMenuError(
+                                                                      error instanceof
+                                                                        Error
+                                                                        ? error.message
+                                                                        : 'Failed to load vendors.',
+                                                                    )
+                                                                  },
+                                                                )
+                                                              }}
+                                                              className="block w-full border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-primary-soft"
+                                                            >
+                                                              <span className="block truncate text-sm font-semibold text-foreground">
+                                                                {formatReplacementRecipeLabel(
+                                                                  recipe,
+                                                                )}
+                                                              </span>
+                                                              <span className="mt-1 block text-xs text-muted">
+                                                                {recipe.category ||
+                                                                  '-'}
+                                                              </span>
+                                                            </button>
+                                                          ))
+                                                      ) : (
+                                                        <p className="px-3 py-3 text-sm text-muted">
+                                                          No replacement menu
+                                                          found.
+                                                        </p>
                                                       )}
-                                                      )
-                                                    </option>
-                                                  ))}
-                                              </select>
+                                                    </div>,
+                                                    document.body,
+                                                  )
+                                                : null}
                                               {changeMenuError ? (
                                                 <p className="mt-1 text-xs font-medium text-danger">
                                                   {changeMenuError}
