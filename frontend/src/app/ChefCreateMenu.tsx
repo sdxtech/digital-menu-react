@@ -287,7 +287,7 @@ const ChefCreateMenu = ({
                 ingredient.unitOfMeasures ??
                 '',
               srQty:
-                ingredient.srQtyManual && Number.isFinite(ingredient.srQty)
+                Number.isFinite(ingredient.srQty)
                   ? String(ingredient.srQty)
                   : '',
               srQtyManual: ingredient.srQtyManual ?? false,
