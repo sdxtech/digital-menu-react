@@ -417,7 +417,7 @@ const AdminSiteMenuProductionPage = () => {
                             <div className="space-y-4">
                               <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs text-muted">Menu list</p>
-                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                                <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-black bg-white">
                                   <table className="dm-table min-w-full text-sm">
                                     <thead className="bg-background">
                                       <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -485,6 +485,21 @@ const AdminSiteMenuProductionPage = () => {
                                           {formatPrice(costPerPaxTotal)}
                                         </td>
                                       </tr>
+                                      {portionSummary.groups.length > 0 ? (
+                                        <tr
+                                          aria-hidden="true"
+                                          className="border-y border-black"
+                                        >
+                                          <td
+                                            colSpan={8}
+                                            className="h-2 p-0"
+                                            style={{
+                                              backgroundColor:
+                                                'var(--dm-primary)',
+                                            }}
+                                          />
+                                        </tr>
+                                      ) : null}
                                       {portionSummary.groups.map((item) => (
                                         <tr
                                           key={`group-portion-${item.name}`}
@@ -492,7 +507,7 @@ const AdminSiteMenuProductionPage = () => {
                                         >
                                           <td
                                             colSpan={6}
-                                            className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em]"
+                                            className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]"
                                           >
                                             {item.name} Qty
                                           </td>
@@ -517,6 +532,19 @@ const AdminSiteMenuProductionPage = () => {
                                         >
                                           {formatQuantity(portionSummary.total)}
                                         </td>
+                                      </tr>
+                                      <tr
+                                        aria-hidden="true"
+                                        className="border-y border-black"
+                                      >
+                                        <td
+                                          colSpan={8}
+                                          className="h-2 p-0"
+                                          style={{
+                                            backgroundColor:
+                                              'var(--dm-primary)',
+                                          }}
+                                        />
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
