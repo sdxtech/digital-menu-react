@@ -1200,7 +1200,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     <h3 className="text-sm font-semibold text-foreground">
                                       Menu list
                                     </h3>
-                                    <div className="mt-3 overflow-hidden rounded-md border border-border bg-white">
+                                    <div className="mt-3 overflow-hidden rounded-md border border-black bg-white">
                                       <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                         <colgroup>
                                           <col className="w-[5%]" />
@@ -1390,6 +1390,21 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             </td>
                                             <td colSpan={2} />
                                           </tr>
+                                          {portionSummary.groups.length > 0 ? (
+                                            <tr
+                                              aria-hidden="true"
+                                              className="border-y border-black"
+                                            >
+                                              <td
+                                                colSpan={9}
+                                                className="h-2 p-0"
+                                                style={{
+                                                  backgroundColor:
+                                                    'var(--dm-primary)',
+                                                }}
+                                              />
+                                            </tr>
+                                          ) : null}
                                           {portionSummary.groups.map((item) => (
                                             <tr
                                               key={`group-portion-${item.name}`}
@@ -1397,7 +1412,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             >
                                               <td
                                                 colSpan={4}
-                                                className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.12em]"
+                                                className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]"
                                               >
                                                 {item.name} Qty
                                               </td>
@@ -1419,6 +1434,19 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             <td colSpan={5} className="px-3 py-3 font-bold">
                                               {formatQuantity(portionSummary.total)}
                                             </td>
+                                          </tr>
+                                          <tr
+                                            aria-hidden="true"
+                                            className="border-y border-black"
+                                          >
+                                            <td
+                                              colSpan={9}
+                                              className="h-2 p-0"
+                                              style={{
+                                                backgroundColor:
+                                                  'var(--dm-primary)',
+                                              }}
+                                            />
                                           </tr>
                                           <tr className="border-t border-border">
                                             <td
