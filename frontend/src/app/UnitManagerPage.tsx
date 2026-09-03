@@ -1427,7 +1427,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                           <tr className="border-t border-border">
                                             <td
                                               colSpan={4}
-                                              className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                              className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]"
                                             >
                                               Total Qty
                                             </td>
