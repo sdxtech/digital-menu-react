@@ -167,6 +167,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Issuance History',
   },
   {
+    path: '/storekeeper/inventory',
+    getPageTitle: () => 'Inventory',
+  },
+  {
     path: '/admin-site/menu-production-history',
     getPageTitle: () => 'Menu Production History',
   },
