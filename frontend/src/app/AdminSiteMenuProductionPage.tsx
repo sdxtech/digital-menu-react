@@ -522,7 +522,7 @@ const AdminSiteMenuProductionPage = () => {
                                       <tr className="border-t border-border">
                                         <td
                                           colSpan={6}
-                                          className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          className="px-4 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Total Qty
                                         </td>

@@ -2,6 +2,11 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import {
+  calculateFoodCostPercentage,
+  formatFoodCostPercentage,
+} from '../lib/food-cost'
+import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
@@ -75,6 +80,9 @@ type StoreRequestMenu = {
   portion: number
   estimatedCost?: number
   estimatedCostPerPax?: number
+  sellingPricePerPax?: number
+  sellingQuantity?: number
+  estimatedRevenue?: number
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   ingredients?: StoreRequestIngredient[]
@@ -455,25 +463,19 @@ const UnitManagerMenuProductionRecordsPage = ({
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
                   <th className="px-5 py-4 font-semibold">Client name</th>
-                  <th className="px-5 py-4 font-semibold">Admin</th>
-                  <th className="px-5 py-4 font-semibold">Approval status</th>
-                  <th className="px-5 py-4 font-semibold">Reviewed by</th>
-                  <th className="px-5 py-4 font-semibold">Total menu</th>
-                  <th className="px-5 py-4 font-semibold">Storekeeper</th>
-                  <th className="px-5 py-4 font-semibold">Store request status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       Loading production records...
                     </td>
                   </tr>
                 ) : records.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
                         : 'No approved, rejected, completed, or cancelled production batches yet.'}
@@ -531,8 +533,72 @@ const UnitManagerMenuProductionRecordsPage = ({
                     const hasPendingApproval = items.some(
                       (item) => item.storeRequestStatus === 'not-requested',
                     )
+                    const approvalStatusSummary = [
+                      hasPendingReview ? 'Submitted' : '',
+                      hasApproved ? 'Approved' : '',
+                      hasRejected ? 'Returned to Chef' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(', ')
+                    const storeRequestStatusSummary = [
+                      hasRequested ? 'Requested' : '',
+                      hasDelivered ? 'Completed' : '',
+                      hasCancelled ? 'Cancelled' : '',
+                      hasPendingApproval ? 'Pending approval' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(', ')
                     const summaryItems = aggregateStoreRequestSummary(group.summary)
                     const fulfillmentItems = group.fulfillment?.items ?? []
+                    const totalEstimatedCost = items.reduce(
+                      (total, item) =>
+                        total +
+                        (Number.isFinite(Number(item.estimatedCost))
+                          ? Number(item.estimatedCost)
+                          : 0),
+                      0,
+                    )
+                    const totalEstimatedCostPerPax = items.reduce(
+                      (total, item) => {
+                        const estimatedCost = Number.isFinite(
+                          Number(item.estimatedCost),
+                        )
+                          ? Number(item.estimatedCost)
+                          : undefined
+                        const costPerPax = Number.isFinite(
+                          Number(item.estimatedCostPerPax),
+                        )
+                          ? Number(item.estimatedCostPerPax)
+                          : estimatedCost !== undefined && item.portion > 0
+                            ? estimatedCost / item.portion
+                            : 0
+                        return total + costPerPax
+                      },
+                      0,
+                    )
+                    const firstMenu = items[0]
+                    const sellingPricePerPax = Number.isFinite(
+                      Number(firstMenu?.sellingPricePerPax),
+                    )
+                      ? Number(firstMenu?.sellingPricePerPax)
+                      : undefined
+                    const sellingQuantity = Number.isFinite(
+                      Number(firstMenu?.sellingQuantity),
+                    )
+                      ? Number(firstMenu?.sellingQuantity)
+                      : undefined
+                    const estimatedRevenue =
+                      sellingPricePerPax !== undefined &&
+                      sellingQuantity !== undefined
+                        ? sellingPricePerPax * sellingQuantity
+                        : Number.isFinite(Number(firstMenu?.estimatedRevenue))
+                          ? Number(firstMenu?.estimatedRevenue)
+                          : undefined
+                    const foodCostPercentage = calculateFoodCostPercentage(
+                      totalEstimatedCost,
+                      estimatedRevenue,
+                    )
+                    const portionSummary = summarizePortionsByGroup(items)
 
                     return (
                       <Fragment key={`record-${groupKey}`}>
@@ -546,54 +612,11 @@ const UnitManagerMenuProductionRecordsPage = ({
                           <td className="px-5 py-4 text-sm text-muted">
                             {formatCreatedDate(getGroupSubmittedAt(group))}
                           </td>
-                          <td className="px-5 py-4">{group.date}</td>
+                      <td className="px-5 py-4">{group.date}</td>
                       <td className="px-5 py-4 text-xs text-muted">
                         {group.productionCode ?? '-'}
                       </td>
                       <td className="px-5 py-4">{group.items[0]?.clientName ?? '-'}</td>
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {group.items[0]?.salesInputBy ?? '-'}
-                      </td>
-                      <td className="px-5 py-4">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
-                              {hasPendingReview ? (
-                                <span className="text-muted">Submitted</span>
-                              ) : null}
-                              {hasApproved ? (
-                                <span className="text-primary">Approved</span>
-                              ) : null}
-                              {hasRejected ? (
-                                <span className="text-danger">
-                                  Returned to Chef
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-5 py-4 text-sm text-muted">
-                            {reviewedByLabel}
-                          </td>
-                          <td className="px-5 py-4 text-sm font-medium">
-                            {group.items.length}
-                          </td>
-                          <td className="px-5 py-4 text-sm text-muted">
-                            {storekeeperLabel}
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
-                              {hasRequested ? (
-                                <span className="text-primary">Requested</span>
-                              ) : null}
-                              {hasDelivered ? (
-                                <span className="text-success">Completed</span>
-                              ) : null}
-                              {hasCancelled ? (
-                                <span className="text-danger">Cancelled</span>
-                              ) : null}
-                              {hasPendingApproval ? (
-                                <span className="text-muted">Pending approval</span>
-                              ) : null}
-                            </div>
-                          </td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -627,22 +650,103 @@ const UnitManagerMenuProductionRecordsPage = ({
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={12} className="px-5 py-5">
+                            <td colSpan={6} className="px-5 py-5">
                               <div className="space-y-4">
+                                <section className="border-b border-border pb-4">
+                                  <h3 className="text-sm font-semibold text-foreground">
+                                    Production information
+                                  </h3>
+                                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Batch status
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {getRecordStatusLabel(recordStatus)}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Approval status
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {approvalStatusSummary || '-'}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Store request status
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {storeRequestStatusSummary || '-'}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Total menu
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {items.length}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Submitted by
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {submittedByLabel}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Admin
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {firstMenu?.salesInputBy?.trim() || '-'}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Client
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {firstMenu?.clientName?.trim() || '-'}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Reviewed by
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {reviewedByLabel}
+                                      </dd>
+                                    </div>
+                                    <div className="rounded-md border border-border bg-white px-3 py-2">
+                                      <dt className="text-xs font-medium text-muted">
+                                        Storekeeper
+                                      </dt>
+                                      <dd className="mt-1 font-semibold text-foreground">
+                                        {storekeeperLabel}
+                                      </dd>
+                                    </div>
+                                  </dl>
+                                </section>
+
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">Menu list</p>
-                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
+                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-black bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                           <th className="w-12 px-4 py-3 font-semibold">No</th>
                                           <th className="px-4 py-3 font-semibold">Group By</th>
-                                          <th className="px-4 py-3 font-semibold">Recipe code</th>
                                           <th className="px-4 py-3 font-semibold">Menu</th>
-                                          <th className="px-4 py-3 font-semibold">Category</th>
                                           <th className="px-4 py-3 font-semibold">Portion</th>
                                           <th className="px-4 py-3 font-semibold">
                                             Estimated Cost
+                                          </th>
+                                          <th className="px-4 py-3 font-semibold">
+                                            Cost Contribution (%)
                                           </th>
                                           <th className="px-4 py-3 font-semibold">
                                             Cost/Pax
@@ -679,20 +783,26 @@ const UnitManagerMenuProductionRecordsPage = ({
                                               <td className="px-4 py-3">
                                                 {item.group ?? '-'}
                                               </td>
-                                              <td className="px-4 py-3 font-medium">
-                                                {item.recipeCode ?? '-'}
-                                              </td>
                                               <td className="px-4 py-3">
-                                                {item.menuName}
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                {item.category}
+                                                <p className="font-semibold text-foreground">
+                                                  {item.menuName}
+                                                </p>
+                                                <p className="mt-1 text-xs text-muted">
+                                                  {item.recipeCode ?? '-'} ·{' '}
+                                                  {item.category || '-'}
+                                                </p>
                                               </td>
                                               <td className="px-4 py-3">
                                                 {item.portion}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
                                                 {formatPrice(estimatedCost)}
+                                              </td>
+                                              <td className="px-4 py-3 font-medium">
+                                                {formatFoodCostPercentage(
+                                                  estimatedCost,
+                                                  estimatedRevenue,
+                                                )}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
                                                 {formatPrice(estimatedCostPerPax)}
@@ -711,6 +821,149 @@ const UnitManagerMenuProductionRecordsPage = ({
                                           )
                                         })}
                                       </tbody>
+                                      <tfoot className="bg-[#ccd9ec]">
+                                        <tr className="border-t-2 border-primary">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Total
+                                          </td>
+                                          <td className="px-4 py-3 font-bold">
+                                            {formatPrice(totalEstimatedCost)}
+                                          </td>
+                                          <td className="px-4 py-3 font-bold">
+                                            {foodCostPercentage === undefined
+                                              ? '-'
+                                              : `${foodCostPercentage.toFixed(2)}%`}
+                                          </td>
+                                          <td className="px-4 py-3 font-bold">
+                                            {formatPrice(
+                                              totalEstimatedCostPerPax,
+                                            )}
+                                          </td>
+                                          <td colSpan={2} />
+                                        </tr>
+                                        {portionSummary.groups.length > 0 ? (
+                                          <tr
+                                            aria-hidden="true"
+                                            className="border-y border-black"
+                                          >
+                                            <td
+                                              colSpan={9}
+                                              className="h-2 p-0"
+                                              style={{
+                                                backgroundColor:
+                                                  'var(--dm-primary)',
+                                              }}
+                                            />
+                                          </tr>
+                                        ) : null}
+                                        {portionSummary.groups.map((item) => (
+                                          <tr
+                                            key={`record-group-portion-${item.name}`}
+                                            className="border-t border-border"
+                                          >
+                                            <td
+                                              colSpan={4}
+                                              className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]"
+                                            >
+                                              {item.name} Qty
+                                            </td>
+                                            <td
+                                              colSpan={5}
+                                              className="px-4 py-3 font-semibold"
+                                            >
+                                              {formatQuantity(item.portion)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Total Qty
+                                          </td>
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-3 font-bold"
+                                          >
+                                            {formatQuantity(portionSummary.total)}
+                                          </td>
+                                        </tr>
+                                        <tr
+                                          aria-hidden="true"
+                                          className="border-y border-black"
+                                        >
+                                          <td
+                                            colSpan={9}
+                                            className="h-2 p-0"
+                                            style={{
+                                              backgroundColor:
+                                                'var(--dm-primary)',
+                                            }}
+                                          />
+                                        </tr>
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Selling Price/Pax
+                                          </td>
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-3 font-bold"
+                                          >
+                                            {formatPrice(sellingPricePerPax)}
+                                          </td>
+                                        </tr>
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Pax Calculation
+                                          </td>
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-3 font-bold"
+                                          >
+                                            {sellingQuantity ?? '-'}
+                                          </td>
+                                        </tr>
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Estimated Revenue
+                                          </td>
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-3 font-bold"
+                                          >
+                                            {formatPrice(estimatedRevenue)}
+                                          </td>
+                                        </tr>
+                                        <tr className="border-t border-border">
+                                          <td
+                                            colSpan={4}
+                                            className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
+                                          >
+                                            Food Cost Percentage
+                                          </td>
+                                          <td
+                                            colSpan={5}
+                                            className="px-4 py-3 font-bold"
+                                          >
+                                            {foodCostPercentage === undefined
+                                              ? '-'
+                                              : `${foodCostPercentage.toFixed(2)}%`}
+                                          </td>
+                                        </tr>
+                                      </tfoot>
                                     </table>
                                   </div>
                                 </div>
@@ -731,7 +984,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                                           <th className="w-12 px-4 py-3 font-semibold">No</th>
                                           <th className="px-4 py-3 font-semibold">Product code</th>
-                                          <th className="px-4 py-3 font-semibold">Ingredient name</th>
+                                          <th className="min-w-32 max-w-64 px-4 py-3 font-semibold !whitespace-normal">
+                                            Ingredient name
+                                          </th>
                                           <th className="px-4 py-3 font-semibold">Vendor</th>
                                           <th className="px-4 py-3 font-semibold">Price</th>
                                           <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
@@ -765,7 +1020,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 {itemIndex + 1}
                                               </td>
                                               <td className="px-4 py-3">{item.productCode}</td>
-                                              <td className="px-4 py-3">{item.name}</td>
+                                              <td className="min-w-32 max-w-64 break-words px-4 py-3 !whitespace-normal">
+                                                {item.name}
+                                              </td>
                                               <td className="px-4 py-3">
                                                 {item.vendor ?? '-'}
                                               </td>
@@ -824,7 +1081,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 {itemIndex + 1}
                                               </td>
                                               <td className="px-4 py-3">{item.productCode}</td>
-                                              <td className="px-4 py-3">{item.name}</td>
+                                              <td className="min-w-32 max-w-64 break-words px-4 py-3 !whitespace-normal">
+                                                {item.name}
+                                              </td>
                                               <td className="px-4 py-3">
                                                 {item.vendor ?? '-'}
                                               </td>
@@ -844,7 +1103,6 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                   <td className="px-4 py-3">-</td>
                                                   <td className="px-4 py-3">-</td>
                                                   <td className="px-4 py-3">-</td>
-                                                  <td className="px-4 py-3">-</td>
                                                 </>
                                               ) : null}
                                               <td className="px-4 py-3">
@@ -859,24 +1117,6 @@ const UnitManagerMenuProductionRecordsPage = ({
                                       </tbody>
                                     </table>
                                   </div>
-                                  <p className="mt-3 text-xs text-muted">
-                                    Batch status: {getRecordStatusLabel(recordStatus)}
-                                  </p>
-                                  <p className="mt-2 text-xs text-muted">
-                                    Submitted by: {submittedByLabel}
-                                  </p>
-                                  <p className="mt-3 text-xs text-muted">
-                                    {recordStatus === 'rejected'
-                                      ? 'Reviewed by'
-                                      : recordStatus === 'requested'
-                                      ? 'Approved by'
-                                      : 'Handled by'}:{' '}
-                                    {recordStatus === 'requested'
-                                      ? reviewedByLabel
-                                      : recordStatus === 'rejected'
-                                        ? reviewedByLabel
-                                        : storekeeperLabel}
-                                  </p>
                                   {recordStatus !== 'requested' ? (
                                     <p className="mt-2 text-xs text-muted">
                                       {`${recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}: ${

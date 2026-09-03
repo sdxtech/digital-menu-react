@@ -55,7 +55,7 @@ const LoginPage = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  SPARK
+                  SPACE
                 </h1>
               </div>
             </div>

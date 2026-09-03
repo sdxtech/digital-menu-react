@@ -51,7 +51,7 @@ const ForgotPasswordPage = () => {
             />
           </div>
           <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">
-            SPARK
+            SPACE
           </h1>
         </div>
 
