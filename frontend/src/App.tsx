@@ -18,6 +18,7 @@ import ChefStoreRequest from './app/ChefStoreRequest'
 import StorekeeperLayout from './app/StorekeeperLayout'
 import StorekeeperPage from './app/StorekeeperPage'
 import StorekeeperHistoryPage from './app/StorekeeperHistoryPage'
+import StorekeeperInventoryPage from './app/StorekeeperInventoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductionRecordsPage'
 import UnitManagerPage from './app/UnitManagerPage'
@@ -218,6 +219,7 @@ function App() {
             <Route path="security" element={<SecurityView />} />
             
             <Route path="history" element={<StorekeeperHistoryPage />} />
+            <Route path="inventory" element={<StorekeeperInventoryPage />} />
           </Route>
         </Route>
 

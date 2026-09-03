@@ -27,6 +27,7 @@ import { HealthModule } from './health/health.module';
 import { SitesModule } from './sites/sites.module';
 import { JwtModule } from '@nestjs/jwt';
 import { MenuGroupsModule } from './menu-groups/menu-groups.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { MenuGroupsModule } from './menu-groups/menu-groups.module';
     RecipesModule,
     MenuProductionsModule,
     MenuGroupsModule,
+    FeatureFlagsModule,
     SitesModule,
     NotificationsModule,
     FilesModule,

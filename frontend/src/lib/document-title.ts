@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { matchPath, useLocation } from 'react-router-dom'
 
-const APP_NAME = 'SPARK'
+const APP_NAME = 'SPACE'
 
 type TitleMatcher = {
   path: string
@@ -165,6 +165,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/storekeeper/history',
     getPageTitle: () => 'Issuance History',
+  },
+  {
+    path: '/storekeeper/inventory',
+    getPageTitle: () => 'Inventory',
   },
   {
     path: '/admin-site/menu-production-history',
