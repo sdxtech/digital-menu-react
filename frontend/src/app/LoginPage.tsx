@@ -43,31 +43,19 @@ const LoginPage = () => {
   return (
     <AppShell>
       <div className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-14 lg:px-10">
-        <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-12">
-          <section className="lg:col-span-7 flex items-center justify-center">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_12px_30px_rgba(11,41,87,0.25)] ring-1 ring-border">
-                <img
-                  src="/Sodexo_Logo.png"
-                  alt="Sodexo logo"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  SPICES
-                </h1>
-              </div>
-            </div>
-          </section>
-
-          <section className="lg:col-span-5 lg:pl-4">
-            <div className="relative rounded-[32px] border border-border bg-surface p-8 shadow-[0_30px_80px_rgba(15,23,42,0.16)] animate-fade-up [animation-delay:150ms]">
+        <div className="flex w-full justify-center">
+          <section className="w-full max-w-md">
+            <div className="relative rounded-2xl border border-border bg-surface p-4 shadow-[0_30px_80px_rgba(15,23,42,0.16)] animate-fade-up [animation-delay:150ms]">
               <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent-blue/20 blur-2xl" />
               <div className="absolute -bottom-12 -left-8 h-40 w-40 rounded-full bg-accent-cyan/20 blur-3xl" />
 
               {/* Form login dengan input email, password, dan tombol submit. Juga menampilkan error jika login gagal dan opsi untuk menampilkan/menyembunyikan password. */}
-              <form className="relative mt-8 space-y-5" onSubmit={handleSubmit}> 
+              <form className="relative mt-2 space-y-5" onSubmit={handleSubmit}>
+                <img
+                  src="/SPICES_LOGO_2.png"
+                  alt="SPICES"
+                  className="mx-auto h-auto w-48 max-w-full object-contain sm:w-56"
+                />
                 <div>
                   <label className="text-sm font-medium text-foreground">
                     Email
