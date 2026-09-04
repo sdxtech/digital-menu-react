@@ -687,6 +687,125 @@ describe('MenuProductionsService rejected menu replacement', () => {
     expect(workflowMail.notifyMenuProductionsSubmitted).not.toHaveBeenCalled();
   });
 
+  it('changes only Group By when the group scope is selected', async () => {
+    const existing = {
+      _id: 'menu-1',
+      productionCode: 'MPR0038',
+      productionDate: '2026-09-07',
+      group: 'Old Group',
+      portion: 100,
+      site: 'S001',
+      createdBy: chefId,
+      approvalStatus: 'rejected',
+    };
+    const updated = {
+      ...existing,
+      group: 'New Group',
+      approvalStatus: 'pending',
+    };
+    const menuFindOne = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existing),
+    });
+    const findOneAndUpdate = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(updated),
+    });
+    const menuFind = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([{ ...existing, _id: 'menu-2' }]),
+    });
+    const service = new MenuProductionsService(
+      { findOne: menuFindOne, findOneAndUpdate, find: menuFind } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.changeRejectedMenu(
+      'menu-1',
+      { scope: 'group', group: 'New Group' },
+      chefId,
+      'S001',
+    );
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $set: {
+          group: 'New Group',
+          approvalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+        },
+      }),
+      { new: true },
+    );
+  });
+
+  it('changes only Portion and recalculates its costs', async () => {
+    const existing = {
+      _id: 'menu-1',
+      recipeId: oldRecipeId,
+      productionCode: 'MPR0038',
+      productionDate: '2026-09-07',
+      group: 'Indo 1',
+      portion: 100,
+      site: 'S001',
+      createdBy: chefId,
+      approvalStatus: 'rejected',
+      estimatedTotalCost: 1200000,
+      estimatedCostPerPax: 12000,
+      ingredientVendors: [
+        {
+          ingredientIndex: 0,
+          productCode: 'IT0001',
+          name: 'Ingredient',
+          unitOfMeasures: 'KG',
+          vendor: 'Vendor A',
+          price: 60000,
+        },
+      ],
+    };
+    const menuFindOne = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existing),
+    });
+    const findOneAndUpdate = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ ...existing, portion: 50 }),
+    });
+    const menuFind = jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([{ ...existing, _id: 'menu-2' }]),
+    });
+    const service = new MenuProductionsService(
+      { findOne: menuFindOne, findOneAndUpdate, find: menuFind } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.changeRejectedMenu(
+      'menu-1',
+      { scope: 'portion', portion: 50 },
+      chefId,
+      'S001',
+    );
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $set: {
+          portion: 50,
+          cost: 600000,
+          estimatedTotalCost: 600000,
+          estimatedCostPerPax: 12000,
+          approvalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+        },
+      }),
+      { new: true },
+    );
+  });
+
   it('does not expose another Chef rejected menu for replacement', async () => {
     const menuFindOne = jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
