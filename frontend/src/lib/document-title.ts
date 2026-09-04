@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { matchPath, useLocation } from 'react-router-dom'
 
-const APP_NAME = 'SPACE'
+const APP_NAME = 'SPICES'
 
 type TitleMatcher = {
   path: string
