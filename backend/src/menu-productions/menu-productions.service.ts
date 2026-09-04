@@ -903,15 +903,10 @@ export class MenuProductionsService implements OnModuleInit {
     if (!normalizedChefId) {
       throw new BadRequestException('Chef identity is required.');
     }
-    const normalizedRecipeId = this.normalizeRecipeId(input.recipeId);
-    const normalizedGroup = input.group?.trim();
-    if (!normalizedGroup) {
-      throw new BadRequestException('Group By is required.');
-    }
-    const portion = Number(input.portion);
-    if (!Number.isInteger(portion) || portion < 1) {
-      throw new BadRequestException('Portion must be a positive integer.');
-    }
+    const scope = input.scope ?? 'all';
+    const changesMenu = scope === 'all' || scope === 'menu';
+    const changesGroup = scope === 'all' || scope === 'group';
+    const changesPortion = scope === 'all' || scope === 'portion';
     const filter = this.withSiteFilter(
       {
         _id: id,
@@ -925,7 +920,30 @@ export class MenuProductionsService implements OnModuleInit {
     if (!existing) {
       throw new NotFoundException('Rejected menu production not found.');
     }
+
+    const normalizedRecipeId = changesMenu
+      ? this.normalizeRecipeId(input.recipeId ?? '')
+      : this.normalizeOptionalRecipeId(existing.recipeId);
+    if (changesMenu && !normalizedRecipeId) {
+      throw new BadRequestException('Existing menu recipe is not available.');
+    }
+    const normalizedGroup = changesGroup
+      ? input.group?.trim()
+      : existing.group?.trim();
+    if (changesGroup && !normalizedGroup) {
+      throw new BadRequestException('Group By is required.');
+    }
+    const portion = changesPortion
+      ? Number(input.portion)
+      : Number(existing.portion);
     if (
+      (changesMenu || changesPortion) &&
+      (!Number.isInteger(portion) || portion < 1)
+    ) {
+      throw new BadRequestException('Portion must be a positive integer.');
+    }
+    if (
+      changesMenu &&
       this.normalizeOptionalRecipeId(existing.recipeId) === normalizedRecipeId
     ) {
       throw new BadRequestException(
@@ -933,67 +951,103 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    const recipeById = await this.findEligibleRecipesById([normalizedRecipeId]);
-    const recipe = recipeById.get(normalizedRecipeId);
-    if (!recipe) {
-      throw new BadRequestException('Replacement menu is not eligible.');
-    }
-    const selectedVendors = this.normalizeIngredientVendors(
-      input.ingredientVendors,
-    );
-    for (const [ingredientIndex, ingredient] of (
-      recipe.ingredients ?? []
-    ).entries()) {
-      const selectedVendor = this.findIngredientVendor(
-        selectedVendors,
-        ingredientIndex,
-        ingredient.productCode?.trim() ?? '',
-        ingredient.name?.trim() ?? '',
-        ingredient.unitOfMeasures?.trim() ?? '',
+    let recipe: EligibleRecipe | undefined;
+    let costSnapshot: ReturnType<
+      typeof this.calculateMenuProductionCostSnapshot
+    > | null = null;
+    if (changesMenu) {
+      if (!normalizedRecipeId) {
+        throw new BadRequestException('Existing menu recipe is not available.');
+      }
+      const recipeById = await this.findEligibleRecipesById([
+        normalizedRecipeId,
+      ]);
+      recipe = recipeById.get(normalizedRecipeId);
+      if (!recipe) {
+        throw new BadRequestException('Replacement menu is not eligible.');
+      }
+      const ingredientVendors = input.ingredientVendors ?? [];
+      const selectedVendors =
+        this.normalizeIngredientVendors(ingredientVendors);
+      for (const [ingredientIndex, ingredient] of (
+        recipe.ingredients ?? []
+      ).entries()) {
+        const selectedVendor = this.findIngredientVendor(
+          selectedVendors,
+          ingredientIndex,
+          ingredient.productCode?.trim() ?? '',
+          ingredient.name?.trim() ?? '',
+          ingredient.unitOfMeasures?.trim() ?? '',
+        );
+        if (!selectedVendor?.vendor?.trim()) {
+          throw new BadRequestException(
+            `Vendor is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+          );
+        }
+        if (
+          !Number.isFinite(Number(selectedVendor.price)) ||
+          Number(selectedVendor.price) < 0
+        ) {
+          throw new BadRequestException(
+            `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+          );
+        }
+      }
+      const replacementInput: CreateMenuProductionDto = {
+        recipeId: normalizedRecipeId,
+        portion,
+        cost: 0,
+        ingredientVendors,
+        productionDate: existing.productionDate,
+      };
+      costSnapshot = this.calculateMenuProductionCostSnapshot(
+        replacementInput,
+        recipe,
       );
-      if (!selectedVendor?.vendor?.trim()) {
-        throw new BadRequestException(
-          `Vendor is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
-        );
-      }
-      if (
-        !Number.isFinite(Number(selectedVendor.price)) ||
-        Number(selectedVendor.price) < 0
-      ) {
-        throw new BadRequestException(
-          `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
-        );
+    }
+    const updatedValues: Record<string, unknown> = {
+      approvalStatus: 'pending',
+      storeRequestStatus: 'not-requested',
+    };
+    if (changesGroup) updatedValues.group = normalizedGroup;
+    if (changesPortion) updatedValues.portion = portion;
+    if (costSnapshot) {
+      updatedValues.cost = costSnapshot.estimatedTotalCost ?? 0;
+      updatedValues.estimatedTotalCost = costSnapshot.estimatedTotalCost;
+      updatedValues.estimatedCostPerPax = costSnapshot.estimatedCostPerPax;
+      updatedValues.ingredientVendors = costSnapshot.ingredientVendors;
+    }
+    if (changesPortion && !changesMenu) {
+      const existingPortion = Number(existing.portion);
+      const existingTotalCost = Number(
+        existing.estimatedTotalCost ?? existing.cost,
+      );
+      const existingCostPerPax = Number.isFinite(
+        Number(existing.estimatedCostPerPax),
+      )
+        ? Number(existing.estimatedCostPerPax)
+        : Number.isFinite(existingTotalCost) && existingPortion > 0
+          ? existingTotalCost / existingPortion
+          : undefined;
+      if (existingCostPerPax !== undefined) {
+        updatedValues.cost = existingCostPerPax * portion;
+        updatedValues.estimatedTotalCost = existingCostPerPax * portion;
+        updatedValues.estimatedCostPerPax = existingCostPerPax;
       }
     }
-    const replacementInput: CreateMenuProductionDto = {
-      recipeId: normalizedRecipeId,
-      portion,
-      cost: 0,
-      ingredientVendors: input.ingredientVendors,
-      productionDate: existing.productionDate,
-    };
-    const costSnapshot = this.calculateMenuProductionCostSnapshot(
-      replacementInput,
-      recipe,
-    );
+    if (changesMenu && recipe) {
+      updatedValues.recipeId = recipe.id;
+      updatedValues.recipeCode = recipe.recipeCode;
+      updatedValues.recipeVersion = recipe.version;
+      updatedValues.menuName = recipe.name;
+      updatedValues.category = recipe.category;
+    }
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
         filter,
         {
           $set: {
-            recipeId: recipe.id,
-            recipeCode: recipe.recipeCode,
-            recipeVersion: recipe.version,
-            menuName: recipe.name,
-            category: recipe.category,
-            group: normalizedGroup,
-            portion,
-            cost: costSnapshot.estimatedTotalCost ?? 0,
-            estimatedTotalCost: costSnapshot.estimatedTotalCost,
-            estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
-            ingredientVendors: costSnapshot.ingredientVendors,
-            approvalStatus: 'pending',
-            storeRequestStatus: 'not-requested',
+            ...updatedValues,
           },
           $unset: {
             rejectionReason: 1,

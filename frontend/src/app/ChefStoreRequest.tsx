@@ -72,6 +72,8 @@ type ReplacementIngredientVendorInput = {
   price?: number
 }
 
+type ChangeMenuScope = 'all' | 'group' | 'menu' | 'portion'
+
 type StoreRequestFulfillment = {
   status?: 'fulfilled' | 'cancelled'
   completedBy?: string
@@ -518,6 +520,8 @@ const ChefStoreRequest = ({
   const [bulkExportError, setBulkExportError] = useState('')
   const [bulkExporting, setBulkExporting] = useState(false)
   const [changingMenuId, setChangingMenuId] = useState<string | null>(null)
+  const [changeMenuScope, setChangeMenuScope] =
+    useState<ChangeMenuScope | null>(null)
   const [replacementGroup, setReplacementGroup] = useState('')
   const [replacementRecipeId, setReplacementRecipeId] = useState('')
   const [replacementRecipeQuery, setReplacementRecipeQuery] = useState('')
@@ -548,6 +552,10 @@ const ChefStoreRequest = ({
   const [menuGroupOptions, setMenuGroupOptions] = useState<MenuGroupOption[]>([])
   const [menuGroupLoading, setMenuGroupLoading] = useState(false)
   const [menuGroupError, setMenuGroupError] = useState('')
+  const changesGroup = changeMenuScope === 'all' || changeMenuScope === 'group'
+  const changesMenu = changeMenuScope === 'all' || changeMenuScope === 'menu'
+  const changesPortion =
+    changeMenuScope === 'all' || changeMenuScope === 'portion'
 
   const replacementRecipes = useMemo(
     () =>
@@ -672,15 +680,15 @@ const ChefStoreRequest = ({
   const replacementFormComplete = useMemo(() => {
     const portion = Number(replacementPortion)
     if (
-      !replacementGroup.trim() ||
-      !selectedReplacementRecipe ||
-      !Number.isInteger(portion) ||
-      portion < 1 ||
-      replacementVendorLoading ||
-      menuGroupLoading
+      !changeMenuScope ||
+      (changesGroup && (!replacementGroup.trim() || menuGroupLoading)) ||
+      (changesPortion && (!Number.isInteger(portion) || portion < 1))
     ) {
       return false
     }
+
+    if (!changesMenu) return true
+    if (!selectedReplacementRecipe || replacementVendorLoading) return false
 
     return selectedReplacementRecipe.ingredients.every(
       (ingredient, ingredientIndex) => {
@@ -703,6 +711,10 @@ const ChefStoreRequest = ({
       },
     )
   }, [
+    changeMenuScope,
+    changesGroup,
+    changesMenu,
+    changesPortion,
     menuGroupLoading,
     replacementCustomPrices,
     replacementGroup,
@@ -1240,9 +1252,11 @@ const ChefStoreRequest = ({
   const openChangeMenu = (
     group: StoreRequestGroup,
     menu: StoreRequestMenu,
+    scope: ChangeMenuScope,
   ) => {
     if (menu.approvalStatus !== 'rejected') return
     setChangingMenuId(menu.id)
+    setChangeMenuScope(scope)
     setReplacementGroup(menu.group ?? '')
     setReplacementRecipeId('')
     setReplacementRecipeQuery('')
@@ -1258,18 +1272,21 @@ const ChefStoreRequest = ({
     setReplacementVendorLoading(false)
     setChangeMenuError('')
     setActionMessage('')
-    fetchRecipes({ site: group.site }).catch((error) => {
-      setChangeMenuError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to load replacement menus.',
-      )
-    })
+    if (scope === 'all' || scope === 'menu') {
+      fetchRecipes({ site: group.site }).catch((error) => {
+        setChangeMenuError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load replacement menus.',
+        )
+      })
+    }
   }
 
   const closeChangeMenu = () => {
     if (changeMenuSubmitting) return
     setChangingMenuId(null)
+    setChangeMenuScope(null)
     setReplacementGroup('')
     setReplacementRecipeId('')
     setReplacementRecipeQuery('')
@@ -1287,36 +1304,37 @@ const ChefStoreRequest = ({
   }
 
   const handleChangeRejectedMenu = async (menu: StoreRequestMenu) => {
-    if (!accessToken || changingMenuId !== menu.id) return
-    if (!replacementGroup.trim()) {
+    if (!accessToken || changingMenuId !== menu.id || !changeMenuScope) return
+    if (changesGroup && !replacementGroup.trim()) {
       setChangeMenuError('Select Group By.')
       return
     }
-    if (!replacementRecipeId) {
+    if (changesMenu && !replacementRecipeId) {
       setChangeMenuError('Select a replacement menu.')
       return
     }
-    if (replacementRecipeId === menu.recipeId) {
+    if (changesMenu && replacementRecipeId === menu.recipeId) {
       setChangeMenuError('Select a different menu.')
       return
     }
     const portion = Number(replacementPortion)
-    if (!Number.isInteger(portion) || portion < 1) {
+    if (changesPortion && (!Number.isInteger(portion) || portion < 1)) {
       setChangeMenuError('Portion must be a positive whole number.')
       return
     }
-    if (!selectedReplacementRecipe) {
+    if (changesMenu && !selectedReplacementRecipe) {
       setChangeMenuError('Replacement menu details are not available.')
       return
     }
-    if (replacementVendorLoading) {
+    if (changesMenu && replacementVendorLoading) {
       setChangeMenuError('Wait until vendor data has finished loading.')
       return
     }
 
     const ingredientVendors: ReplacementIngredientVendorInput[] = []
-    for (const [ingredientIndex, ingredient] of
-      selectedReplacementRecipe.ingredients.entries()) {
+    for (const [ingredientIndex, ingredient] of (
+      selectedReplacementRecipe?.ingredients ?? []
+    ).entries()) {
       const ingredientLabel =
         ingredient.name || ingredient.productCode || `${ingredientIndex + 1}`
       if (replacementVendorErrors[ingredientIndex]) {
@@ -1383,16 +1401,18 @@ const ChefStoreRequest = ({
     setChangeMenuError('')
     setActionMessage('')
     try {
+      const payload: Record<string, unknown> = { scope: changeMenuScope }
+      if (changesGroup) payload.group = replacementGroup
+      if (changesPortion) payload.portion = portion
+      if (changesMenu) {
+        payload.recipeId = replacementRecipeId
+        payload.ingredientVendors = ingredientVendors
+      }
       await apiFetch(
         `/menu-productions/${menu.id}/change-rejected-menu`,
         {
           method: 'PATCH',
-          body: JSON.stringify({
-            recipeId: replacementRecipeId,
-            group: replacementGroup,
-            portion,
-            ingredientVendors,
-          }),
+          body: JSON.stringify(payload),
         },
         accessToken,
       )
@@ -1401,6 +1421,7 @@ const ChefStoreRequest = ({
         `${menu.menuName} was changed and submitted to Admin Site for new sales input.`,
       )
       setChangingMenuId(null)
+      setChangeMenuScope(null)
       setReplacementGroup('')
       setReplacementRecipeId('')
       setReplacementRecipeQuery('')
@@ -2167,11 +2188,17 @@ const ChefStoreRequest = ({
                                     const isChangingMenu =
                                       changingMenuId === menu.id
                                     const displayedEstimatedCost =
-                                      isChangingMenu
+                                      isChangingMenu && changesMenu
                                         ? replacementCostPreview.estimatedCost
+                                        : isChangingMenu && changesPortion
+                                          ? estimatedCost === undefined
+                                            ? undefined
+                                            : (estimatedCost *
+                                                Number(replacementPortion)) /
+                                              menu.portion
                                         : estimatedCost
                                     const displayedEstimatedCostPerPax =
-                                      isChangingMenu
+                                      isChangingMenu && changesMenu
                                         ? replacementCostPreview.estimatedCostPerPax
                                         : estimatedCostPerPax
                                     const availableReplacementSuggestions =
@@ -2189,7 +2216,8 @@ const ChefStoreRequest = ({
                                           {menuIndex + 1}
                                         </td>
                                         <td className="px-4 py-3">
-                                          {changingMenuId === menu.id ? (
+                                          {changingMenuId === menu.id &&
+                                          changesGroup ? (
                                             <select
                                               value={replacementGroup}
                                               onChange={(event) => {
@@ -2243,13 +2271,15 @@ const ChefStoreRequest = ({
                                           )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-muted">
-                                          {changingMenuId === menu.id
+                                          {changingMenuId === menu.id &&
+                                          changesMenu
                                             ? selectedReplacementRecipe
                                                 ?.recipeCode || '-'
                                             : menu.recipeCode ?? '-'}
                                         </td>
                                         <td className="min-w-72 px-4 py-3 font-medium">
-                                          {changingMenuId === menu.id ? (
+                                          {changingMenuId === menu.id &&
+                                          changesMenu ? (
                                             <div>
                                               <input
                                                 ref={replacementRecipeInputRef}
@@ -2380,11 +2410,6 @@ const ChefStoreRequest = ({
                                                     document.body,
                                                   )
                                                 : null}
-                                              {changeMenuError ? (
-                                                <p className="mt-1 text-xs font-medium text-danger">
-                                                  {changeMenuError}
-                                                </p>
-                                              ) : null}
                                             </div>
                                           ) : (
                                             <>
@@ -2397,13 +2422,15 @@ const ChefStoreRequest = ({
                                           )}
                                         </td>
                                         <td className="px-4 py-3">
-                                          {changingMenuId === menu.id
+                                          {changingMenuId === menu.id &&
+                                          changesMenu
                                             ? selectedReplacementRecipe
                                                 ?.category || '-'
                                             : menu.category || '-'}
                                         </td>
                                         <td className="px-4 py-3">
-                                          {changingMenuId === menu.id ? (
+                                          {changingMenuId === menu.id &&
+                                          changesPortion ? (
                                             <input
                                               type="number"
                                               min="1"
@@ -2436,46 +2463,96 @@ const ChefStoreRequest = ({
                                         </td>
                                         <td className="px-4 py-3">
                                           {changingMenuId === menu.id ? (
-                                            <div className="flex flex-wrap gap-2">
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleChangeRejectedMenu(menu)
-                                                }
-                                                disabled={
-                                                  changeMenuSubmitting ||
-                                                  replacementVendorLoading ||
-                                                  !replacementFormComplete
-                                                }
-                                                className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                                              >
-                                                {replacementVendorLoading
-                                                  ? 'Loading...'
-                                                  : changeMenuSubmitting
-                                                    ? 'Saving...'
-                                                    : 'Save'}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={closeChangeMenu}
-                                                disabled={changeMenuSubmitting}
-                                                className="rounded-md bg-danger px-3 py-2 text-xs font-semibold text-white hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60"
-                                              >
-                                                Cancel
-                                              </button>
+                                            <div>
+                                              <div className="flex flex-wrap gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleChangeRejectedMenu(
+                                                      menu,
+                                                    )
+                                                  }
+                                                  disabled={
+                                                    changeMenuSubmitting ||
+                                                    replacementVendorLoading ||
+                                                    !replacementFormComplete
+                                                  }
+                                                  className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                                >
+                                                  {replacementVendorLoading
+                                                    ? 'Loading...'
+                                                    : changeMenuSubmitting
+                                                      ? 'Saving...'
+                                                      : 'Save'}
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={closeChangeMenu}
+                                                  disabled={
+                                                    changeMenuSubmitting
+                                                  }
+                                                  className="rounded-md bg-danger px-3 py-2 text-xs font-semibold text-white hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60"
+                                                >
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                              {changeMenuError ? (
+                                                <p className="mt-2 min-w-40 text-xs font-medium text-danger">
+                                                  {changeMenuError}
+                                                </p>
+                                              ) : null}
                                             </div>
                                           ) : menu.approvalStatus ===
                                               'rejected' &&
                                             user?.role === 'chef' ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                openChangeMenu(group, menu)
-                                              }
-                                              className="rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                                            <select
+                                              value=""
+                                              onChange={(event) => {
+                                                const scope = event.target
+                                                  .value as ChangeMenuScope
+                                                if (!scope) return
+                                                setActionMessage('')
+                                                openChangeMenu(
+                                                  group,
+                                                  menu,
+                                                  scope,
+                                                )
+                                              }}
+                                              aria-label={`Change ${menu.menuName}`}
+                                              className="min-w-28 rounded-md border border-primary bg-primary-soft px-3 py-2 text-xs font-semibold text-primary outline-none hover:bg-primary-soft/80"
                                             >
-                                              Change
-                                            </button>
+                                              <option
+                                                value=""
+                                                disabled
+                                                className="bg-white text-foreground"
+                                              >
+                                                Change
+                                              </option>
+                                              <option
+                                                value="all"
+                                                className="bg-white text-foreground"
+                                              >
+                                                All
+                                              </option>
+                                              <option
+                                                value="group"
+                                                className="bg-white text-foreground"
+                                              >
+                                                Group By
+                                              </option>
+                                              <option
+                                                value="menu"
+                                                className="bg-white text-foreground"
+                                              >
+                                                Menu
+                                              </option>
+                                              <option
+                                                value="portion"
+                                                className="bg-white text-foreground"
+                                              >
+                                                Portion
+                                              </option>
+                                            </select>
                                           ) : (
                                             '-'
                                           )}
@@ -2487,7 +2564,9 @@ const ChefStoreRequest = ({
                               </table>
                             </div>
 
-                            {changingMenuId && selectedReplacementRecipe ? (
+                            {changingMenuId &&
+                            changesMenu &&
+                            selectedReplacementRecipe ? (
                               <div className="rounded-md border border-primary/30 bg-surface p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
