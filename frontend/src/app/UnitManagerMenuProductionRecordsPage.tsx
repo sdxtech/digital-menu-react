@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -104,6 +104,11 @@ const getGroupKey = (group: StoreRequestGroup) =>
 const getGroupSubmittedAt = (group: StoreRequestGroup) =>
   group.items.find((item) => item.submittedAt)?.submittedAt
 
+const getProductionDateTimestamp = (value: string) => {
+  const timestamp = new Date(`${value}T00:00:00`).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 const formatCreatedDate = (value?: string) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -114,9 +119,18 @@ const formatCreatedDate = (value?: string) => {
   }).format(date)
 }
 
-type RecordStatus = 'requested' | 'fulfilled' | 'cancelled' | 'rejected'
+type RecordStatus =
+  | 'sales-input'
+  | 'pending'
+  | 'requested'
+  | 'fulfilled'
+  | 'cancelled'
+  | 'rejected'
 
-const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => {
+const getGroupRecordStatus = (
+  group: StoreRequestGroup,
+  includePending: boolean,
+): RecordStatus | null => {
   const hasFulfilled = group.items.some(
     (item) => item.storeRequestStatus === 'fulfilled',
   )
@@ -142,11 +156,21 @@ const getGroupRecordStatus = (group: StoreRequestGroup): RecordStatus | null => 
   if (hasRequested) {
     return 'requested'
   }
+  if (
+    includePending &&
+    group.items.some((item) => item.approvalStatus === 'pending')
+  ) {
+    return group.items.some((item) => item.salesInputBy?.trim())
+      ? 'pending'
+      : 'sales-input'
+  }
 
   return null
 }
 
 const getRecordStatusLabel = (status: RecordStatus) => {
+  if (status === 'sales-input') return 'Waiting for Sales Input'
+  if (status === 'pending') return 'Waiting for Approval'
   if (status === 'requested') return 'Waiting for Storekeeper'
   if (status === 'rejected') return 'Returned to Chef'
   return getStoreRequestStatusLabel(status)
@@ -180,12 +204,200 @@ const buildIngredientKey = (
   return `${baseKey}__${normalizedVendor}__${vendorSite?.trim().toLowerCase() ?? ''}`
 }
 
+export const DateRangeFilter = ({
+  id,
+  label,
+  from,
+  to,
+  sortDirection,
+  onApply,
+  onSort,
+}: {
+  id: string
+  label: string
+  from: string
+  to: string
+  sortDirection?: 'asc' | 'desc'
+  onApply: (from: string, to: string) => void
+  onSort: (direction: 'asc' | 'desc') => void
+}) => {
+  const [open, setOpen] = useState(false)
+  const [draftFrom, setDraftFrom] = useState(from)
+  const [draftTo, setDraftTo] = useState(to)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const invalidRange = Boolean(draftFrom && draftTo && draftFrom > draftTo)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && !containerRef.current?.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  const closeDropdown = () => {
+    setOpen(false)
+    buttonRef.current?.focus()
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative max-w-full"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation()
+          closeDropdown()
+        }
+      }}
+    >
+      <button
+        ref={buttonRef}
+        id={`${id}-toggle`}
+        type="button"
+        aria-expanded={open}
+        aria-controls={`${id}-panel`}
+        onClick={() => {
+          if (!open) {
+            setDraftFrom(from)
+            setDraftTo(to)
+          }
+          setOpen(!open)
+        }}
+        className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm text-primary shadow-sm outline-none hover:bg-background focus-visible:border-accent-blue focus-visible:ring-4 focus-visible:ring-accent-blue/20"
+      >
+        <span className="text-left">
+          <span className="block">{label}</span>
+          {from || to ? (
+            <span className="block text-xs">{from || 'Any date'} – {to || 'Any date'}</span>
+          ) : null}
+        </span>
+        {sortDirection ? (
+          <>
+            <i className={`bi ${sortDirection === 'desc' ? 'bi-sort-down' : 'bi-sort-up'}`} aria-hidden="true" />
+            <span className="sr-only">{sortDirection === 'desc' ? 'Newest to Oldest' : 'Oldest to Newest'}</span>
+          </>
+        ) : null}
+        <i className={`bi bi-chevron-down transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          id={`${id}-panel`}
+          aria-labelledby={`${id}-toggle`}
+          className="absolute left-0 top-full z-30 mt-2 w-64 max-w-[calc(100vw-3rem)] rounded-xl border border-border bg-white py-2 shadow-lg"
+        >
+          <div className="space-y-1 px-2 pb-2">
+            {(['desc', 'asc'] as const).map((direction) => (
+              <button
+                key={direction}
+                type="button"
+                aria-pressed={sortDirection === direction}
+                onClick={() => {
+                  onSort(direction)
+                  closeDropdown()
+                }}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-background focus-visible:outline-accent-blue ${sortDirection === direction ? 'bg-accent-blue/10 font-medium text-primary' : 'text-muted'}`}
+              >
+                {direction === 'desc' ? 'Newest to Oldest' : 'Oldest to Newest'}
+                {sortDirection === direction ? <i className="bi bi-check-lg" aria-hidden="true" /> : null}
+              </button>
+            ))}
+          </div>
+          <form
+            className="space-y-3 border-t border-border px-4 pb-2 pt-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (invalidRange) return
+              onApply(draftFrom, draftTo)
+              closeDropdown()
+            }}
+          >
+            <p className="text-sm font-medium">Date Range</p>
+            {[
+              { name: 'from', label: 'From', value: draftFrom, setValue: setDraftFrom, max: draftTo || undefined },
+              { name: 'to', label: 'To', value: draftTo, setValue: setDraftTo, min: draftFrom || undefined },
+            ].map((field) => (
+              <div key={field.name}>
+                <label htmlFor={`${id}-${field.name}`} className="mb-1 block text-sm text-muted">{field.label}</label>
+                <input
+                  id={`${id}-${field.name}`}
+                  aria-label={`${label} ${field.label}`}
+                  type="date"
+                  value={field.value}
+                  min={field.min}
+                  max={field.max}
+                  onChange={(event) => field.setValue(event.target.value)}
+                  aria-invalid={invalidRange}
+                  aria-describedby={invalidRange ? `${id}-error` : undefined}
+                  className="h-10 w-full min-w-0 rounded-md border border-border bg-white px-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                />
+              </div>
+            ))}
+            {invalidRange ? (
+              <p id={`${id}-error`} role="alert" className="text-xs text-red-600">From date must be on or before To date.</p>
+            ) : null}
+            <div className="flex items-center justify-between gap-2">
+              <button type="submit" disabled={invalidRange} className="py-1 text-sm font-semibold text-green-600 hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-50">
+                Set Date Range
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onApply('', '')
+                  closeDropdown()
+                }}
+                className="py-1 text-xs text-muted hover:text-primary"
+              >
+                Clear
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 const UnitManagerMenuProductionRecordsPage = ({
   hideFulfillmentColumns = false,
+  includePending = false,
+  enableSiteSelection = false,
+  title = 'Menu Production Records',
+  description =
+    'Track approved batches waiting for the Storekeeper, plus rejected, completed, and cancelled production history.',
 }: {
   hideFulfillmentColumns?: boolean
+  includePending?: boolean
+  enableSiteSelection?: boolean
+  title?: string
+  description?: string
 }) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
+  const siteOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
+      ).map((code) => ({
+        code,
+        name:
+          user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
+      })),
+    [user?.site, user?.siteOptions, user?.sites],
+  )
+  const [selectedSite, setSelectedSite] = useState('')
+  const [productionDateFrom, setProductionDateFrom] = useState('')
+  const [productionDateTo, setProductionDateTo] = useState('')
+  const [createdDateFrom, setCreatedDateFrom] = useState('')
+  const [createdDateTo, setCreatedDateTo] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [dateSort, setDateSort] = useState('production-desc')
   const [records, setRecords] = useState<StoreRequestGroup[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [page, setPage] = useState(1)
@@ -194,20 +406,31 @@ const UnitManagerMenuProductionRecordsPage = ({
 
   const fetchRecords = useCallback(async () => {
     if (!accessToken) return
+    if (enableSiteSelection && !selectedSite) {
+      setRecords([])
+      return
+    }
 
     setLoading(true)
     setError('')
 
     try {
+      const params = new URLSearchParams()
+      if (enableSiteSelection) params.set('site', selectedSite)
+      const query = params.toString()
       const data = await apiFetch<{ items: StoreRequestGroup[] }>(
-        '/menu-productions/store-requests',
+        `/menu-productions/store-requests${query ? `?${query}` : ''}`,
         undefined,
         accessToken,
       )
 
       const handledGroups = [...(data.items ?? [])]
-        .filter((group) => getGroupRecordStatus(group) !== null)
-        .sort((a, b) => b.date.localeCompare(a.date))
+        .filter((group) => getGroupRecordStatus(group, includePending) !== null)
+        .sort(
+          (a, b) =>
+            getProductionDateTimestamp(b.date) -
+            getProductionDateTimestamp(a.date),
+        )
 
       setRecords(handledGroups)
     } catch (fetchError) {
@@ -219,27 +442,100 @@ const UnitManagerMenuProductionRecordsPage = ({
     } finally {
       setLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, enableSiteSelection, includePending, selectedSite])
+
+  useEffect(() => {
+    if (!enableSiteSelection) return
+    setSelectedSite((current) =>
+      siteOptions.some((site) => site.code === current)
+        ? current
+        : siteOptions[0]?.code ?? '',
+    )
+  }, [enableSiteSelection, siteOptions])
+
+  useEffect(() => {
+    setPage(1)
+    setExpandedGroups([])
+  }, [selectedSite, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
     fetchRecords().catch(() => null)
   }, [fetchRecords])
 
+  const invalidProductionRange = Boolean(
+    productionDateFrom && productionDateTo && productionDateFrom > productionDateTo,
+  )
+  const invalidCreatedRange = Boolean(
+    createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
+  )
+
+  const clientOptions = useMemo(() => {
+    const clients = new Map<string, string>()
+    records.forEach((group) => {
+      group.items.forEach((item) => {
+        const name = item.clientName?.trim()
+        if (name && !clients.has(name.toLowerCase())) {
+          clients.set(name.toLowerCase(), name)
+        }
+      })
+    })
+    return Array.from(clients.values()).sort((a, b) =>
+      a.localeCompare(b, 'id', { sensitivity: 'base' }),
+    )
+  }, [records])
+
+  const filteredRecords = useMemo(() => {
+    if (invalidProductionRange || invalidCreatedRange) return []
+
+    const normalizedClient = clientName.trim().toLowerCase()
+    const filtered = records.filter((group) => {
+      if (productionDateFrom && group.date < productionDateFrom) return false
+      if (productionDateTo && group.date > productionDateTo) return false
+      if (createdDateFrom || createdDateTo) {
+        const submittedAt = getGroupSubmittedAt(group)
+        if (!submittedAt) return false
+        const createdDate = new Date(submittedAt)
+        if (Number.isNaN(createdDate.getTime())) return false
+        // Match the local calendar date shown in the Created date column.
+        const date = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')}`
+        if (createdDateFrom && date < createdDateFrom) return false
+        if (createdDateTo && date > createdDateTo) return false
+      }
+      return !normalizedClient || group.items.some((item) =>
+        item.clientName?.trim().toLowerCase() === normalizedClient,
+      )
+    })
+
+    const sortByCreated = dateSort.startsWith('created-')
+    const direction = dateSort.endsWith('-asc') ? 1 : -1
+    return filtered.sort((a, b) => {
+      const aDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(a) ?? '').getTime()
+        : getProductionDateTimestamp(a.date)
+      const bDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(b) ?? '').getTime()
+        : getProductionDateTimestamp(b.date)
+      if (Number.isNaN(aDate)) return Number.isNaN(bDate) ? 0 : 1
+      if (Number.isNaN(bDate)) return -1
+      return (aDate - bDate) * direction
+    })
+  }, [records, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(records.length / RECORD_ITEMS_PER_PAGE))
+    const totalPages = Math.max(1, Math.ceil(filteredRecords.length / RECORD_ITEMS_PER_PAGE))
     setPage((prev) => Math.min(prev, totalPages))
-  }, [records.length])
+  }, [filteredRecords.length])
 
   const paginatedRecords = useMemo(
     () =>
-      records.slice(
+      filteredRecords.slice(
         (page - 1) * RECORD_ITEMS_PER_PAGE,
         page * RECORD_ITEMS_PER_PAGE,
       ),
-    [page, records],
+    [page, filteredRecords],
   )
 
-  const totalPages = Math.max(1, Math.ceil(records.length / RECORD_ITEMS_PER_PAGE))
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / RECORD_ITEMS_PER_PAGE))
 
   const toggleExpandedGroup = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -436,11 +732,90 @@ const UnitManagerMenuProductionRecordsPage = ({
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Menu Production Records</h1>
+          <h1 className="text-2xl font-semibold">{title}</h1>
           <p className="mt-2 text-sm text-muted">
-            Track approved batches waiting for the Storekeeper, plus rejected,
-            completed, and cancelled production history.
+            {description}
           </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {enableSiteSelection ? (
+              <div className="w-full sm:w-60">
+                <label className="sr-only" htmlFor="executive-production-site">
+                  Site
+                </label>
+                <select
+                  id="executive-production-site"
+                  value={selectedSite}
+                  onChange={(event) => {
+                    setSelectedSite(event.target.value)
+                    setClientName('')
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">Select site</option>
+                  {siteOptions.map((site) => (
+                    <option key={site.code} value={site.code}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="w-full sm:w-60">
+              <label htmlFor="production-record-client" className="sr-only">Client Name</label>
+              <select
+                id="production-record-client"
+                value={clientName}
+                onChange={(event) => setClientName(event.target.value)}
+                disabled={loading || (enableSiteSelection && !selectedSite)}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
+                {clientOptions.map((client) => (
+                  <option key={client.toLowerCase()} value={client}>
+                    {client}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <DateRangeFilter
+              id="production-record-production"
+              label="Production Date"
+              from={productionDateFrom}
+              to={productionDateTo}
+              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setProductionDateFrom(from)
+                setProductionDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`production-${direction}`)}
+            />
+            <DateRangeFilter
+              id="production-record-created"
+              label="Created Date"
+              from={createdDateFrom}
+              to={createdDateTo}
+              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setCreatedDateFrom(from)
+                setCreatedDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`created-${direction}`)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProductionDateFrom('')
+                setProductionDateTo('')
+                setCreatedDateFrom('')
+                setCreatedDateTo('')
+                setClientName('')
+                setDateSort('production-desc')
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+            >
+              Reset filters
+            </button>
+          </div>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}
@@ -452,7 +827,7 @@ const UnitManagerMenuProductionRecordsPage = ({
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
-            summary={`Showing ${paginatedRecords.length} of ${records.length} tracked production batches`}
+            summary={`Showing ${paginatedRecords.length} of ${filteredRecords.length} tracked production batches`}
           />
           <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">
@@ -473,11 +848,13 @@ const UnitManagerMenuProductionRecordsPage = ({
                       Loading production records...
                     </td>
                   </tr>
-                ) : records.length === 0 ? (
+                ) : filteredRecords.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
+                        : productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
+                        ? 'No production batches match the selected filters.'
                         : 'No approved, rejected, completed, or cancelled production batches yet.'}
                     </td>
                   </tr>
@@ -495,7 +872,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                     const submittedByLabel = submittedByNames.length
                       ? submittedByNames.join(', ')
                       : '-'
-                    const recordStatus = getGroupRecordStatus(group)
+                    const recordStatus = getGroupRecordStatus(group, includePending)
                     if (!recordStatus) return null
                     const reviewedByNames = getReviewedByNames(group)
                     const reviewedByLabel = reviewedByNames.length
@@ -970,7 +1347,10 @@ const UnitManagerMenuProductionRecordsPage = ({
 
                                 <div className="rounded-md border border-border bg-surface p-4">
                                   <p className="text-xs text-muted">
-                                    {recordStatus === 'rejected'
+                                    {recordStatus === 'pending' ||
+                                    recordStatus === 'sales-input'
+                                      ? 'Planned ingredient summary'
+                                      : recordStatus === 'rejected'
                                       ? 'Returned production summary'
                                       : recordStatus === 'requested'
                                       ? 'Requested ingredient summary'
@@ -1117,7 +1497,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                                       </tbody>
                                     </table>
                                   </div>
-                                  {recordStatus !== 'requested' ? (
+                                  {recordStatus !== 'requested' &&
+                                  recordStatus !== 'pending' &&
+                                  recordStatus !== 'sales-input' ? (
                                     <p className="mt-2 text-xs text-muted">
                                       {`${recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}: ${
                                         recordStatus !== 'rejected' &&

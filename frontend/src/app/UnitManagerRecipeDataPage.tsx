@@ -5,6 +5,12 @@ import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import {
+  downloadSpreadsheet,
+  toSpreadsheetDate,
+  toSpreadsheetDecimal,
+  type SpreadsheetCell,
+} from '../lib/spreadsheet-export'
 
 const ITEMS_PER_PAGE = 10
 
@@ -70,8 +76,29 @@ const formatTimestamp = (value?: string) => {
 const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
 
-const UnitManagerRecipeDataPage = () => {
-  const { accessToken } = useAuth()
+const UnitManagerRecipeDataPage = ({
+  showExport = false,
+  enableSiteSelection = false,
+  description =
+    'View approved, pending, and rejected recipes without leaving the Unit Manager workspace.',
+}: {
+  showExport?: boolean
+  enableSiteSelection?: boolean
+  description?: string
+}) => {
+  const { accessToken, user } = useAuth()
+  const siteOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
+      ).map((code) => ({
+        code,
+        name:
+          user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
+      })),
+    [user?.site, user?.siteOptions, user?.sites],
+  )
+  const [selectedSite, setSelectedSite] = useState('')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -95,10 +122,17 @@ const UnitManagerRecipeDataPage = () => {
 
   const fetchCategories = useCallback(async () => {
     if (!accessToken) return
+    if (enableSiteSelection && !selectedSite) {
+      setCategories([])
+      return
+    }
 
     try {
+      const params = new URLSearchParams()
+      if (enableSiteSelection) params.set('site', selectedSite)
+      const query = params.toString()
       const data = await apiFetch<string[]>(
-        '/recipes/categories',
+        `/recipes/categories${query ? `?${query}` : ''}`,
         undefined,
         accessToken,
       )
@@ -106,10 +140,16 @@ const UnitManagerRecipeDataPage = () => {
     } catch {
       setCategories([])
     }
-  }, [accessToken])
+  }, [accessToken, enableSiteSelection, selectedSite])
 
   const fetchRecipes = useCallback(async () => {
     if (!accessToken) return
+    if (enableSiteSelection && !selectedSite) {
+      setRecipes([])
+      setTotalItems(0)
+      setTotalPages(1)
+      return
+    }
 
     setLoading(true)
     setError('')
@@ -118,6 +158,7 @@ const UnitManagerRecipeDataPage = () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('limit', String(ITEMS_PER_PAGE))
+      if (enableSiteSelection) params.set('site', selectedSite)
 
       if (searchTerm.trim()) {
         params.set('search', searchTerm.trim())
@@ -157,10 +198,21 @@ const UnitManagerRecipeDataPage = () => {
     accessToken,
     approvalFilter,
     categoryFilters,
+    enableSiteSelection,
     page,
     searchTerm,
+    selectedSite,
     statusFilters,
   ])
+
+  useEffect(() => {
+    if (!enableSiteSelection) return
+    setSelectedSite((current) =>
+      siteOptions.some((site) => site.code === current)
+        ? current
+        : siteOptions[0]?.code ?? '',
+    )
+  }, [enableSiteSelection, siteOptions])
 
   useEffect(() => {
     fetchCategories().catch(() => null)
@@ -172,7 +224,11 @@ const UnitManagerRecipeDataPage = () => {
 
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, statusFilters, categoryFilters, approvalFilter])
+  }, [searchTerm, statusFilters, categoryFilters, approvalFilter, selectedSite])
+
+  useEffect(() => {
+    setSelectedRecipeId(null)
+  }, [selectedSite])
 
   const selectedRecipe = useMemo(
     () =>
@@ -198,6 +254,70 @@ const UnitManagerRecipeDataPage = () => {
     : 'Unknown'
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
 
+  const handleExportRecipe = (recipe: Recipe) => {
+    const rows: SpreadsheetCell[][] = [
+      [
+        'Recipe Code',
+        'Name',
+        'Version',
+        'Category',
+        'Site',
+        'Portion Size',
+        'Recipe Status',
+        'Approval Status',
+        'Description',
+        'Created By',
+        'Created At',
+        'Ingredient Type',
+        'IT Code',
+        'Ingredient Name',
+        'QTY',
+        'Unit Of Measures',
+      ],
+    ]
+    const ingredients = recipe.ingredients ?? []
+    const commonCells: SpreadsheetCell[] = [
+      recipe.recipeCode ?? '',
+      recipe.name,
+      formatRecipeVersion(recipe.version),
+      recipe.category,
+      formatRecipeSite(recipe),
+      toSpreadsheetDecimal(recipe.portionSize),
+      recipe.isActive === false ? 'Disabled' : statusLabel(recipe.status),
+      getApprovalStatusLabel(recipe.approvalStatus),
+      recipe.description ?? '',
+      formatActorLabel(
+        recipe.createdByName,
+        recipe.createdByEmail,
+        recipe.createdBy,
+      ),
+      toSpreadsheetDate(recipe.createdAt),
+    ]
+
+    if (ingredients.length === 0) {
+      rows.push([...commonCells, '', '', '', '', ''])
+    } else {
+      ingredients.forEach((ingredient) => {
+        rows.push([
+          ...commonCells,
+          ingredient.ingredientType ?? '',
+          ingredient.productCode,
+          ingredient.name,
+          toSpreadsheetDecimal(ingredient.qty),
+          formatUnitLabel(ingredient.unitOfMeasures),
+        ])
+      })
+    }
+
+    const safeCode = (recipe.recipeCode ?? recipe.name).replace(
+      /[\\/:*?"<>|]/g,
+      '-',
+    )
+    downloadSpreadsheet(`recipe-${safeCode}.xlsx`, [
+      { name: 'Recipe Data', rows },
+    ])
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -205,11 +325,33 @@ const UnitManagerRecipeDataPage = () => {
           <div>
             <h1 className="text-2xl font-semibold">Recipe Data</h1>
             <p className="mt-2 text-sm text-muted">
-              View approved, pending, and rejected recipes without leaving the
-              Unit Manager workspace.
+              {description}
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+            {enableSiteSelection ? (
+              <div className="w-full sm:w-52">
+                <label
+                  className="sr-only"
+                  htmlFor="executive-recipe-site"
+                >
+                  Site
+                </label>
+                <select
+                  id="executive-recipe-site"
+                  value={selectedSite}
+                  onChange={(event) => setSelectedSite(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">Select site</option>
+                  {siteOptions.map((site) => (
+                    <option key={site.code} value={site.code}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <input
               type="text"
               value={searchTerm}
@@ -421,17 +563,34 @@ const UnitManagerRecipeDataPage = () => {
                           {getApprovalStatusLabel(recipe.approvalStatus)}
                         </td>
                         <td className="px-5 py-4">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedRecipeId((prev) =>
-                                prev === recipeKey ? null : recipeKey,
-                              )
-                            }
-                            className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                          >
-                            {isSelected ? 'Hide details' : 'View details'}
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedRecipeId((prev) =>
+                                  prev === recipeKey ? null : recipeKey,
+                                )
+                              }
+                              className="rounded-md border border-primary bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                            >
+                              {isSelected ? 'Hide details' : 'View details'}
+                            </button>
+                            {showExport ? (
+                              <button
+                                type="button"
+                                onClick={() => handleExportRecipe(recipe)}
+                                className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <i
+                                    className="bi bi-download text-sm"
+                                    aria-hidden="true"
+                                  />
+                                  <span>Export</span>
+                                </span>
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     )

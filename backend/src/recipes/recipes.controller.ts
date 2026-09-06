@@ -57,8 +57,13 @@ export class RecipesController {
   // BACKEND LOGIC: provide category options for recipe filters.
   @Get('categories')
   @Roles(...ALL_APP_ROLES)
-  listCategories(@Req() req: AuthenticatedRequest) {
-    return this.recipes.listCategories(getUserSiteScope(req.user));
+  listCategories(
+    @Req() req: AuthenticatedRequest,
+    @Query('site') requestedSite?: string,
+  ) {
+    return this.recipes.listCategories(
+      this.resolveQuerySite(req, requestedSite),
+    );
   }
 
   @Get('drafts')
@@ -260,6 +265,26 @@ export class RecipesController {
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (req.user.roles?.includes(AppRole.Executive)) {
+      const assignedSites = Array.from(
+        new Set([req.user.site, ...(req.user.sites ?? [])]),
+      )
+        .map((site) => site?.trim())
+        .filter((site): site is string => Boolean(site));
+      const requested = requestedSite?.trim();
+      if (!requested) return req.user.site?.trim() || assignedSites[0];
+
+      const assignedSite = assignedSites.find(
+        (site) => site.toLowerCase() === requested.toLowerCase(),
+      );
+      if (!assignedSite) {
+        throw new ForbiddenException(
+          'The selected site is not assigned to this Executive.',
+        );
+      }
+      return assignedSite;
+    }
+
     if (req.user.roles?.includes(AppRole.CorporateChef)) {
       const assignedSites = (req.user.sites ?? []).map((site) =>
         site.trim().toLowerCase(),

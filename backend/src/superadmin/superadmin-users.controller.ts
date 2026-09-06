@@ -315,6 +315,7 @@ export class SuperadminUsersController {
       'unit-manager': AppRole.UnitManager,
       unitmanager: AppRole.UnitManager,
       'unit manager': AppRole.UnitManager,
+      executive: AppRole.Executive,
       'admin-site': AppRole.AdminSite,
       adminsite: AppRole.AdminSite,
       'admin sites': AppRole.AdminSite,

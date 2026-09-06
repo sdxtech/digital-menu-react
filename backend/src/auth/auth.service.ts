@@ -138,6 +138,7 @@ export class AuthService {
   private resolveAppRole(roles: AppRole[] = []) {
     if (roles.includes(AppRole.Superadmin)) return 'superadmin';
     if (roles.includes(AppRole.UnitManager)) return 'unit-manager';
+    if (roles.includes(AppRole.Executive)) return 'executive';
     if (roles.includes(AppRole.CorporateChef)) return 'corporate-chef';
     if (roles.includes(AppRole.AdminSite)) return 'admin-site';
     if (roles.includes(AppRole.Storekeeper)) return 'storekeeper';
