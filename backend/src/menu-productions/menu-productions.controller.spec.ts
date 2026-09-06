@@ -1,4 +1,5 @@
 import { AppRole } from '../auth/roles.constants';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { MenuProductionsController } from './menu-productions.controller';
 
 describe('MenuProductionsController sales input actor', () => {
@@ -6,6 +7,7 @@ describe('MenuProductionsController sales input actor', () => {
     const menuProductions = {
       updateBatchSalesDetails: jest.fn(),
       updateSalesDetails: jest.fn(),
+      buildStoreRequestGroups: jest.fn(),
     };
     return {
       controller: new MenuProductionsController(menuProductions as never),
@@ -61,5 +63,55 @@ describe('MenuProductionsController sales input actor', () => {
       'SITE-001',
       'admin@example.com',
     );
+  });
+
+  it('allows executive read access without granting production mutations', () => {
+    const storeRequestsHandler = Object.getOwnPropertyDescriptor(
+      MenuProductionsController.prototype,
+      'storeRequests',
+    )?.value as object;
+    const approveHandler = Object.getOwnPropertyDescriptor(
+      MenuProductionsController.prototype,
+      'approve',
+    )?.value as object;
+    const readRoles = Reflect.getMetadata(
+      ROLES_KEY,
+      storeRequestsHandler,
+    ) as AppRole[];
+    const approveRoles = Reflect.getMetadata(
+      ROLES_KEY,
+      approveHandler,
+    ) as AppRole[];
+
+    expect(readRoles).toContain(AppRole.Executive);
+    expect(approveRoles).not.toContain(AppRole.Executive);
+  });
+
+  it('lets an executive query an assigned site only', async () => {
+    const { controller, menuProductions } = makeController();
+    const executiveRequest = {
+      user: {
+        sub: 'executive-1',
+        roles: [AppRole.Executive],
+        site: 'SITE-001',
+        sites: ['SITE-001', 'SITE-002'],
+      },
+    };
+
+    await controller.storeRequests(executiveRequest as never, {
+      site: 'SITE-002',
+    });
+
+    expect(menuProductions.buildStoreRequestGroups).toHaveBeenCalledWith(
+      { site: 'SITE-002' },
+      'SITE-002',
+      undefined,
+      false,
+    );
+    expect(() =>
+      controller.storeRequests(executiveRequest as never, {
+        site: 'SITE-999',
+      }),
+    ).toThrow('The selected site is not assigned to this Executive.');
   });
 });

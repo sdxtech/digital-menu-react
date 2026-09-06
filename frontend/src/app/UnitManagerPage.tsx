@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -20,6 +20,7 @@ import {
   toSpreadsheetDecimal,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
+import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 
 const RECIPE_ITEMS_PER_PAGE = 10
 const MENU_GROUP_ITEMS_PER_PAGE = 10
@@ -111,6 +112,11 @@ type StoreRequestGroup = {
 const getGroupSubmittedAt = (group: StoreRequestGroup) =>
   group.items.find((item) => item.submittedAt)?.submittedAt
 
+const getProductionDateTimestamp = (value: string) => {
+  const timestamp = new Date(`${value}T00:00:00`).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 const formatCreatedDate = (value?: string) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -186,6 +192,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
   const [menuGroupPage, setMenuGroupPage] = useState(1)
+  const [productionDateFrom, setProductionDateFrom] = useState('')
+  const [productionDateTo, setProductionDateTo] = useState('')
+  const [createdDateFrom, setCreatedDateFrom] = useState('')
+  const [createdDateTo, setCreatedDateTo] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [dateSort, setDateSort] = useState('production-desc')
   const [activeSection, setActiveSection] = useState<ApprovalCenterSection>(() =>
     isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
   )
@@ -260,12 +272,74 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   }, [pendingRecipes.length])
 
   useEffect(() => {
+    setMenuGroupPage(1)
+    setExpandedGroups([])
+  }, [productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
+  const invalidProductionRange = Boolean(
+    productionDateFrom && productionDateTo && productionDateFrom > productionDateTo,
+  )
+  const invalidCreatedRange = Boolean(
+    createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
+  )
+
+  const clientOptions = useMemo(() => {
+    const clients = new Map<string, string>()
+    menuProductionGroups.forEach((group) => {
+      group.items.forEach((item) => {
+        const name = item.clientName?.trim()
+        if (name && !clients.has(name.toLowerCase())) {
+          clients.set(name.toLowerCase(), name)
+        }
+      })
+    })
+    return Array.from(clients.values()).sort((a, b) =>
+      a.localeCompare(b, 'id', { sensitivity: 'base' }),
+    )
+  }, [menuProductionGroups])
+
+  const filteredMenuProductionGroups = useMemo(() => {
+    if (invalidProductionRange || invalidCreatedRange) return []
+    const normalizedClient = clientName.trim().toLowerCase()
+    const filtered = menuProductionGroups.filter((group) => {
+      if (productionDateFrom && group.date < productionDateFrom) return false
+      if (productionDateTo && group.date > productionDateTo) return false
+      if (createdDateFrom || createdDateTo) {
+        const submittedAt = getGroupSubmittedAt(group)
+        if (!submittedAt) return false
+        const createdDate = new Date(submittedAt)
+        if (Number.isNaN(createdDate.getTime())) return false
+        const date = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')}`
+        if (createdDateFrom && date < createdDateFrom) return false
+        if (createdDateTo && date > createdDateTo) return false
+      }
+      return !normalizedClient || group.items.some(
+        (item) => item.clientName?.trim().toLowerCase() === normalizedClient,
+      )
+    })
+
+    const sortByCreated = dateSort.startsWith('created-')
+    const direction = dateSort.endsWith('-asc') ? 1 : -1
+    return filtered.sort((a, b) => {
+      const aDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(a) ?? '').getTime()
+        : getProductionDateTimestamp(a.date)
+      const bDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(b) ?? '').getTime()
+        : getProductionDateTimestamp(b.date)
+      if (Number.isNaN(aDate)) return Number.isNaN(bDate) ? 0 : 1
+      if (Number.isNaN(bDate)) return -1
+      return (aDate - bDate) * direction
+    })
+  }, [menuProductionGroups, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
+  useEffect(() => {
     const nextTotalPages = Math.max(
       1,
-      Math.ceil(menuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+      Math.ceil(filteredMenuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
     )
     setMenuGroupPage((prev) => Math.min(prev, nextTotalPages))
-  }, [menuProductionGroups.length])
+  }, [filteredMenuProductionGroups.length])
 
   const getGroupKey = (group: StoreRequestGroup) =>
     `${group.date}__${group.productionCode ?? 'no-code'}`
@@ -542,9 +616,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
 
   const menuGroupTotalPages = Math.max(
     1,
-    Math.ceil(menuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+    Math.ceil(filteredMenuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
   )
-  const paginatedMenuGroups = menuProductionGroups.slice(
+  const paginatedMenuGroups = filteredMenuProductionGroups.slice(
     (menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE,
     menuGroupPage * MENU_GROUP_ITEMS_PER_PAGE,
   )
@@ -1001,11 +1075,67 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 </p>
               </div>
             </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="w-full sm:w-60">
+                <label htmlFor="menu-production-approval-client" className="sr-only">Client Name</label>
+                <select
+                  id="menu-production-approval-client"
+                  value={clientName}
+                  onChange={(event) => setClientName(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">All clients</option>
+                  {clientOptions.map((client) => (
+                    <option key={client.toLowerCase()} value={client}>
+                      {client}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <DateRangeFilter
+                id="menu-production-approval-production"
+                label="Production Date"
+                from={productionDateFrom}
+                to={productionDateTo}
+                sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+                onApply={(from, to) => {
+                  setProductionDateFrom(from)
+                  setProductionDateTo(to)
+                }}
+                onSort={(direction) => setDateSort(`production-${direction}`)}
+              />
+              <DateRangeFilter
+                id="menu-production-approval-created"
+                label="Created Date"
+                from={createdDateFrom}
+                to={createdDateTo}
+                sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+                onApply={(from, to) => {
+                  setCreatedDateFrom(from)
+                  setCreatedDateTo(to)
+                }}
+                onSort={(direction) => setDateSort(`created-${direction}`)}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setProductionDateFrom('')
+                  setProductionDateTo('')
+                  setCreatedDateFrom('')
+                  setCreatedDateTo('')
+                  setClientName('')
+                  setDateSort('production-desc')
+                }}
+                className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+              >
+                Reset filters
+              </button>
+            </div>
             <TablePagination
               page={menuGroupPage}
               totalPages={menuGroupTotalPages}
               onPageChange={setMenuGroupPage}
-              summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionGroups.length} production batches`}
+              summary={`Showing ${paginatedMenuGroups.length} of ${filteredMenuProductionGroups.length} production batches`}
               className="mt-4"
             />
             <div className="mt-4 overflow-hidden rounded-md border border-border">
@@ -1031,10 +1161,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                   </tr>
                 </thead>
                 <tbody>
-                  {menuProductionGroups.length === 0 ? (
+                  {filteredMenuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
                       <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                        No production menus pending approval.
+                        {productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
+                          ? 'No production batches match the selected filters.'
+                          : 'No production menus pending approval.'}
                       </td>
                     </tr>
                   ) : (

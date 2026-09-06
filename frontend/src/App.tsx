@@ -24,6 +24,7 @@ import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductio
 import UnitManagerPage from './app/UnitManagerPage'
 import CorporateChefLayout from './app/CorporateChefLayout'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
+import ExecutiveLayout from './app/ExecutiveLayout'
 import AdminSiteLayout from './app/AdminSiteLayout'
 import AdminSiteMenuProductionPage from './app/AdminSiteMenuProductionPage'
 import AdminSiteMenuProductionHistoryPage from './app/AdminSiteMenuProductionHistoryPage'
@@ -173,6 +174,38 @@ function App() {
               element={<UnitManagerMenuProductionRecordsPage />}
             />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
+          </Route>
+        </Route>
+
+        <Route element={<RequireRole role="executive" />}>
+          <Route path="/executive" element={<ExecutiveLayout />}>
+            <Route
+              index
+              element={<Navigate to="menu-production-progress" replace />}
+            />
+            <Route
+              path="menu-production-progress"
+              element={
+                <UnitManagerMenuProductionRecordsPage
+                  includePending
+                  enableSiteSelection
+                  title="Menu Production Progress"
+                  description="Monitor production batches from submission through approval, store request, completion, rejection, or cancellation."
+                />
+              }
+            />
+            <Route
+              path="recipe-data"
+              element={
+                <UnitManagerRecipeDataPage
+                  showExport
+                  enableSiteSelection
+                  description="View recipe data and export its details in read-only mode."
+                />
+              }
+            />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="security" element={<SecurityView />} />
           </Route>
         </Route>
 

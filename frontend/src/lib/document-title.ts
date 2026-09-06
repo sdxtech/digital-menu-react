@@ -148,6 +148,26 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Recipe Data',
   },
   {
+    path: '/executive',
+    getPageTitle: () => 'Executive Workspace',
+  },
+  {
+    path: '/executive/menu-production-progress',
+    getPageTitle: () => 'Menu Production Progress',
+  },
+  {
+    path: '/executive/recipe-data',
+    getPageTitle: () => 'Recipe Data',
+  },
+  {
+    path: '/executive/profile',
+    getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/executive/security',
+    getPageTitle: () => 'Security & Password',
+  },
+  {
     path: '/storekeeper',
     getPageTitle: () => 'Quick View',
   },

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -366,6 +367,26 @@ export class MenuProductionsController {
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (req.user.roles?.includes(AppRole.Executive)) {
+      const assignedSites = Array.from(
+        new Set([req.user.site, ...(req.user.sites ?? [])]),
+      )
+        .map((site) => site?.trim())
+        .filter((site): site is string => Boolean(site));
+      const requested = requestedSite?.trim();
+      if (!requested) return req.user.site?.trim() || assignedSites[0];
+
+      const assignedSite = assignedSites.find(
+        (site) => site.toLowerCase() === requested.toLowerCase(),
+      );
+      if (!assignedSite) {
+        throw new ForbiddenException(
+          'The selected site is not assigned to this Executive.',
+        );
+      }
+      return assignedSite;
+    }
+
     const siteScope = getUserSiteScope(req.user);
     if (siteScope) return siteScope;
     return requestedSite?.trim() || undefined;

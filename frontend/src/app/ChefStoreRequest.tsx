@@ -26,6 +26,7 @@ import {
   toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
+import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 
 type StoreRequestIngredient = {
   ingredientType?: 'IT' | 'NMP'
@@ -130,6 +131,11 @@ type StoreRequestGroup = {
 
 const getGroupSubmittedAt = (group: StoreRequestGroup) =>
   group.items.find((item) => item.submittedAt)?.submittedAt
+
+const getProductionDateTimestamp = (value: string) => {
+  const timestamp = new Date(`${value}T00:00:00`).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
 
 const formatCreatedDate = (value?: string) => {
   if (!value) return '-'
@@ -493,6 +499,12 @@ const ChefStoreRequest = ({
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [productionDateFrom, setProductionDateFrom] = useState('')
+  const [productionDateTo, setProductionDateTo] = useState('')
+  const [createdDateFrom, setCreatedDateFrom] = useState('')
+  const [createdDateTo, setCreatedDateTo] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [dateSort, setDateSort] = useState('production-desc')
   const [cancellingGroupKey, setCancellingGroupKey] = useState<string | null>(null)
   const [pendingCancellationGroup, setPendingCancellationGroup] =
     useState<StoreRequestGroup | null>(null)
@@ -1827,15 +1839,78 @@ const ChefStoreRequest = ({
   }, [selectedSite])
 
   useEffect(() => {
+    setExpandedGroups([])
+    setPage(1)
+  }, [productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
+  const invalidProductionRange = Boolean(
+    productionDateFrom && productionDateTo && productionDateFrom > productionDateTo,
+  )
+  const invalidCreatedRange = Boolean(
+    createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
+  )
+
+  const clientOptions = useMemo(() => {
+    const clients = new Map<string, string>()
+    groups.forEach((group) => {
+      group.items.forEach((item) => {
+        const name = item.clientName?.trim()
+        if (name && !clients.has(name.toLowerCase())) {
+          clients.set(name.toLowerCase(), name)
+        }
+      })
+    })
+    return Array.from(clients.values()).sort((a, b) =>
+      a.localeCompare(b, 'id', { sensitivity: 'base' }),
+    )
+  }, [groups])
+
+  const filteredGroups = useMemo(() => {
+    if (requireSiteSelection) return groups
+    if (invalidProductionRange || invalidCreatedRange) return []
+    const normalizedClient = clientName.trim().toLowerCase()
+    const filtered = groups.filter((group) => {
+      if (productionDateFrom && group.date < productionDateFrom) return false
+      if (productionDateTo && group.date > productionDateTo) return false
+      if (createdDateFrom || createdDateTo) {
+        const submittedAt = getGroupSubmittedAt(group)
+        if (!submittedAt) return false
+        const createdDate = new Date(submittedAt)
+        if (Number.isNaN(createdDate.getTime())) return false
+        const date = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')}`
+        if (createdDateFrom && date < createdDateFrom) return false
+        if (createdDateTo && date > createdDateTo) return false
+      }
+      return !normalizedClient || group.items.some(
+        (item) => item.clientName?.trim().toLowerCase() === normalizedClient,
+      )
+    })
+
+    const sortByCreated = dateSort.startsWith('created-')
+    const direction = dateSort.endsWith('-asc') ? 1 : -1
+    return filtered.sort((a, b) => {
+      const aDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(a) ?? '').getTime()
+        : getProductionDateTimestamp(a.date)
+      const bDate = sortByCreated
+        ? new Date(getGroupSubmittedAt(b) ?? '').getTime()
+        : getProductionDateTimestamp(b.date)
+      if (Number.isNaN(aDate)) return Number.isNaN(bDate) ? 0 : 1
+      if (Number.isNaN(bDate)) return -1
+      return (aDate - bDate) * direction
+    })
+  }, [groups, requireSiteSelection, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
+  useEffect(() => {
     const nextTotalPages = Math.max(
       1,
-      Math.ceil(groups.length / ITEMS_PER_PAGE),
+      Math.ceil(filteredGroups.length / ITEMS_PER_PAGE),
     )
     setPage((prev) => Math.min(prev, nextTotalPages))
-  }, [groups.length])
+  }, [filteredGroups.length])
 
-  const totalPages = Math.max(1, Math.ceil(groups.length / ITEMS_PER_PAGE))
-  const paginatedGroups = groups.slice(
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / ITEMS_PER_PAGE))
+  const paginatedGroups = filteredGroups.slice(
     (page - 1) * ITEMS_PER_PAGE,
     page * ITEMS_PER_PAGE,
   )
@@ -1885,6 +1960,65 @@ const ChefStoreRequest = ({
             ) : null}
           </div>
         ) : null}
+        {!requireSiteSelection ? (
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <div className="w-full sm:w-60">
+              <label htmlFor="chef-store-request-client" className="sr-only">Client Name</label>
+              <select
+                id="chef-store-request-client"
+                value={clientName}
+                onChange={(event) => setClientName(event.target.value)}
+                disabled={loading}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
+                {clientOptions.map((client) => (
+                  <option key={client.toLowerCase()} value={client}>
+                    {client}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <DateRangeFilter
+              id="chef-store-request-production"
+              label="Production Date"
+              from={productionDateFrom}
+              to={productionDateTo}
+              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setProductionDateFrom(from)
+                setProductionDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`production-${direction}`)}
+            />
+            <DateRangeFilter
+              id="chef-store-request-created"
+              label="Created Date"
+              from={createdDateFrom}
+              to={createdDateTo}
+              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setCreatedDateFrom(from)
+                setCreatedDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`created-${direction}`)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProductionDateFrom('')
+                setProductionDateTo('')
+                setCreatedDateFrom('')
+                setCreatedDateTo('')
+                setClientName('')
+                setDateSort('production-desc')
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+            >
+              Reset filters
+            </button>
+          </div>
+        ) : null}
         {errorMessage ? (
           <p className="text-xs font-medium text-red-600">{errorMessage}</p>
         ) : null}
@@ -1896,7 +2030,7 @@ const ChefStoreRequest = ({
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {groups.length} production batches
+            Showing {paginatedGroups.length} of {filteredGroups.length} production batches
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -1942,10 +2076,12 @@ const ChefStoreRequest = ({
                     Loading store requests...
                   </td>
                 </tr>
-              ) : groups.length === 0 ? (
+              ) : filteredGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={9} className="px-5 py-10 text-center text-muted">
-                    No production batches submitted yet.
+                    {productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
+                      ? 'No production batches match the selected filters.'
+                      : 'No production batches submitted yet.'}
                   </td>
                 </tr>
               ) : (

@@ -3,6 +3,7 @@ export enum AppRole {
   Chef = 'chef',
   CorporateChef = 'corporate-chef',
   UnitManager = 'unit-manager',
+  Executive = 'executive',
   AdminSite = 'admin-site',
   Storekeeper = 'storekeeper',
 }
@@ -12,6 +13,7 @@ export const ALL_APP_ROLES: AppRole[] = [
   AppRole.Chef,
   AppRole.CorporateChef,
   AppRole.UnitManager,
+  AppRole.Executive,
   AppRole.AdminSite,
   AppRole.Storekeeper,
 ];
