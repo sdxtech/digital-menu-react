@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -171,6 +171,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     corporateOnly ? 'pending' : '',
   )
   const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [recipeTotal, setRecipeTotal] = useState(0)
+  const approvalRequestId = useRef(0)
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -259,13 +261,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   }, [accessToken, corporateOnly, user?.site, user?.siteOptions, user?.sites])
 
   const fetchApprovals = useCallback(async () => {
+    const requestId = ++approvalRequestId.current
     if (!accessToken) {
       setError('Please log in first to load approval data.')
       return
     }
     if (!selectedSite) {
       setRecipes([])
+      setRecipeTotal(0)
       setMenuGroups([])
+      setLoading(false)
       setError('')
       return
     }
@@ -276,14 +281,15 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       const recipeParams = new URLSearchParams()
       recipeParams.set('site', selectedSite)
       recipeParams.set('strictSite', 'true')
-      recipeParams.set('limit', '100')
+      recipeParams.set('page', String(recipePage))
+      recipeParams.set('limit', String(ITEMS_PER_PAGE))
       if (approvalFilter) recipeParams.set('approvalStatus', approvalFilter)
 
       const menuParams = new URLSearchParams()
       menuParams.set('site', selectedSite)
       if (approvalFilter) menuParams.set('approvalStatus', approvalFilter)
 
-      const recipesData = await apiFetch<{ items?: Recipe[] }>(
+      const recipesData = await apiFetch<{ items?: Recipe[]; total: number }>(
         `/recipes?${recipeParams.toString()}`,
         undefined,
         accessToken,
@@ -296,6 +302,12 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             accessToken,
           )
 
+      if (requestId !== approvalRequestId.current) return
+
+      const total = recipesData.total ?? 0
+      const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))
+      setRecipeTotal(total)
+      setRecipePage((current) => Math.min(current, totalPages))
       setRecipes(recipesData.items ?? [])
       setMenuGroups(
         [...(menusData.items ?? [])].sort((a, b) => {
@@ -305,15 +317,17 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
         }),
       )
     } catch (caught) {
+      if (requestId !== approvalRequestId.current) return
       const nextError =
         caught instanceof Error ? caught.message : 'Failed to load approval data.'
       setRecipes([])
+      setRecipeTotal(0)
       setMenuGroups([])
       setError(nextError)
     } finally {
-      setLoading(false)
+      if (requestId === approvalRequestId.current) setLoading(false)
     }
-  }, [accessToken, approvalFilter, corporateOnly, selectedSite])
+  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite])
 
   useEffect(() => {
     fetchSites().catch(() => null)
@@ -321,6 +335,9 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
 
   useEffect(() => {
     fetchApprovals().catch(() => null)
+    return () => {
+      approvalRequestId.current += 1
+    }
   }, [fetchApprovals])
 
   useEffect(() => {
@@ -335,7 +352,6 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   }, [corporateOnly, sectionParam])
 
   useEffect(() => {
-    setRecipePage(1)
     setMenuPage(1)
     setExpandedRecipes([])
     setExpandedGroups([])
@@ -346,12 +362,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     setError('')
   }, [selectedSite, approvalFilter])
 
-  const recipeTotalPages = Math.max(1, Math.ceil(recipes.length / ITEMS_PER_PAGE))
+  const recipeTotalPages = Math.max(1, Math.ceil(recipeTotal / ITEMS_PER_PAGE))
   const menuTotalPages = Math.max(1, Math.ceil(menuGroups.length / ITEMS_PER_PAGE))
-  const paginatedRecipes = recipes.slice(
-    (recipePage - 1) * ITEMS_PER_PAGE,
-    recipePage * ITEMS_PER_PAGE,
-  )
   const paginatedMenuGroups = menuGroups.slice(
     (menuPage - 1) * ITEMS_PER_PAGE,
     menuPage * ITEMS_PER_PAGE,
@@ -555,7 +567,10 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             <label className="text-xs font-medium text-muted">Site</label>
             <select
               value={selectedSite}
-              onChange={(event) => setSelectedSite(event.target.value)}
+              onChange={(event) => {
+                setSelectedSite(event.target.value)
+                setRecipePage(1)
+              }}
               className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             >
               <option value="">Select site</option>
@@ -572,9 +587,10 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             </label>
             <select
               value={approvalFilter}
-              onChange={(event) =>
+              onChange={(event) => {
                 setApprovalFilter(event.target.value as '' | ApprovalStatus)
-              }
+                setRecipePage(1)
+              }}
               className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             >
               <option value="">{corporateOnly ? 'All status' : 'All status'}</option>
@@ -605,7 +621,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             totalPages={recipeTotalPages}
             loading={loading}
             onPageChange={setRecipePage}
-            summary={`Showing ${paginatedRecipes.length} of ${recipes.length} recipes`}
+            summary={`Showing ${recipes.length} of ${recipeTotal} recipes`}
             className="border-b border-border bg-white px-5 py-4"
           />
           <div className="max-w-full overflow-x-auto">
@@ -636,7 +652,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     </td>
                   </tr>
                 ) : (
-                  paginatedRecipes.map((recipe, index) => {
+                  recipes.map((recipe, index) => {
                     const recipeKey = getRecipeKey(recipe)
                     const isExpanded = expandedRecipes.includes(recipeKey)
                     const ingredients = recipe.ingredients ?? []
