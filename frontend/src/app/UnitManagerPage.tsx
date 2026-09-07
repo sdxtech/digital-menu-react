@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -174,6 +174,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [pendingRecipes, setPendingRecipes] = useState<Recipe[]>([])
+  const [recipeTotal, setRecipeTotal] = useState(0)
+  const [loadingApprovals, setLoadingApprovals] = useState(false)
+  const approvalRequestId = useRef(0)
   const [menuProductionGroups, setMenuProductionGroups] = useState<
     StoreRequestGroup[]
   >([])
@@ -218,11 +221,17 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
+    const requestId = ++approvalRequestId.current
     if (!accessToken) return
+    setLoadingApprovals(true)
     try {
-      const recipeParams = new URLSearchParams({ approvalStatus: 'pending', limit: '50' })
+      const recipeParams = new URLSearchParams({
+        approvalStatus: 'pending',
+        page: String(recipePage),
+        limit: String(RECIPE_ITEMS_PER_PAGE),
+      })
       if (corporateOnly && selectedSite) recipeParams.set('site', selectedSite)
-      const recipesData = await apiFetch<{ items: Recipe[] }>(
+      const recipesData = await apiFetch<{ items: Recipe[]; total: number }>(
         `/recipes?${recipeParams.toString()}`,
         undefined,
         accessToken,
@@ -234,22 +243,36 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             undefined,
             accessToken,
           )
+      if (requestId !== approvalRequestId.current) return
+
+      const total = recipesData.total ?? 0
+      const totalPages = Math.max(1, Math.ceil(total / RECIPE_ITEMS_PER_PAGE))
+      setRecipeTotal(total)
+      setRecipePage((current) => Math.min(current, totalPages))
       setPendingRecipes(recipesData.items ?? [])
       const sortedGroups = [...(menusData.items ?? [])].sort((a, b) =>
         a.date.localeCompare(b.date),
       )
       setMenuProductionGroups(sortedGroups)
     } catch (error) {
+      if (requestId !== approvalRequestId.current) return
       const message =
         error instanceof Error ? error.message : 'Failed to load approvals.'
+      setPendingRecipes([])
+      setRecipeTotal(0)
       setActionError(message)
+    } finally {
+      if (requestId === approvalRequestId.current) setLoadingApprovals(false)
     }
-  }, [accessToken, corporateOnly, selectedSite])
+  }, [accessToken, corporateOnly, recipePage, selectedSite])
 
   useEffect(() => {
     setActionError('')
     setActionMessage('')
     fetchPending().catch(() => null)
+    return () => {
+      approvalRequestId.current += 1
+    }
   }, [fetchPending])
 
   useEffect(() => {
@@ -262,14 +285,6 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
       current === nextSection ? current : nextSection,
     )
   }, [corporateOnly, sectionParam])
-
-  useEffect(() => {
-    const nextTotalPages = Math.max(
-      1,
-      Math.ceil(pendingRecipes.length / RECIPE_ITEMS_PER_PAGE),
-    )
-    setRecipePage((prev) => Math.min(prev, nextTotalPages))
-  }, [pendingRecipes.length])
 
   useEffect(() => {
     setMenuGroupPage(1)
@@ -607,11 +622,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
 
   const recipeTotalPages = Math.max(
     1,
-    Math.ceil(pendingRecipes.length / RECIPE_ITEMS_PER_PAGE),
-  )
-  const paginatedRecipes = pendingRecipes.slice(
-    (recipePage - 1) * RECIPE_ITEMS_PER_PAGE,
-    recipePage * RECIPE_ITEMS_PER_PAGE,
+    Math.ceil(recipeTotal / RECIPE_ITEMS_PER_PAGE),
   )
 
   const menuGroupTotalPages = Math.max(
@@ -642,6 +653,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                   const next = new URLSearchParams(searchParams)
                   next.set('section', 'recipes')
                   next.set('site', event.target.value)
+                  setRecipePage(1)
                   setSearchParams(next)
                 }}
                 className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
@@ -827,8 +839,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             <TablePagination
               page={recipePage}
               totalPages={recipeTotalPages}
+              loading={loadingApprovals}
               onPageChange={setRecipePage}
-              summary={`Showing ${paginatedRecipes.length} of ${pendingRecipes.length} recipes`}
+              summary={`Showing ${pendingRecipes.length} of ${recipeTotal} recipes`}
               className="mt-4"
             />
             <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
@@ -846,14 +859,20 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingRecipes.length === 0 ? (
+                  {loadingApprovals ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-6 text-center text-muted">
+                        Loading approval data...
+                      </td>
+                    </tr>
+                  ) : pendingRecipes.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-6 text-center text-muted">
                         No recipes pending approval.
                       </td>
                     </tr>
                   ) : (
-                    paginatedRecipes.map((item, index) => {
+                    pendingRecipes.map((item, index) => {
                       const recipeKey = getRecipeKey(item)
                       const isExpanded = expandedRecipeKeys.includes(recipeKey)
                       const ingredients = item.ingredients ?? []
