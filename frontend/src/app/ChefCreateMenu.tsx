@@ -209,6 +209,7 @@ const ChefCreateMenu = ({
   const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
   const isCorporateChef = user?.role === 'corporate-chef'
   const isChef = user?.role === 'chef'
+  const useVendorPrices = isChef || isCorporateChef
   const showIngredientCostColumns = isChef || isCorporateChef
   const recipeDraftsPath = isCorporateChef
     ? '/corporate-chef/recipe-drafts'
@@ -542,7 +543,7 @@ const ChefCreateMenu = ({
   ])
 
   useEffect(() => {
-    if (!isChef || !accessToken) return
+    if (!useVendorPrices || !accessToken || !rawMaterialSite) return
     const productCodes: string[] = JSON.parse(vendorProductCodes)
     productCodes.forEach((productCode) => {
       const key = getVendorProductKey(rawMaterialSite, productCode)
@@ -573,7 +574,7 @@ const ChefCreateMenu = ({
         } }))
       })
     })
-  }, [accessToken, isChef, rawMaterialSite, vendorPrices, vendorProductCodes])
+  }, [accessToken, useVendorPrices, rawMaterialSite, vendorPrices, vendorProductCodes])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -1246,11 +1247,11 @@ const ChefCreateMenu = ({
         return
       }
 
-      const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+      const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
       const vendor = row.ingredientType === 'IT' ? selectedVendor?.vendor ?? row.vendor : undefined
-      if (isChef && row.ingredientType === 'IT') {
+      if (useVendorPrices && row.ingredientType === 'IT') {
         const vendorState = vendorPrices[getVendorProductKey(rawMaterialSite, row.productCode)]
-        if (!vendorState || vendorState.loading || vendorState.error || (row.vendor && !selectedVendor)) {
+        if (!vendorState || vendorState.loading || vendorState.error || !selectedVendor || selectedVendor.price === undefined) {
           setSubmitError(`Load and select an available vendor for ${name} before saving.`)
           setSubmitMessage('')
           return
@@ -1396,8 +1397,9 @@ const ChefCreateMenu = ({
   }
 
   const ingredientCosts = new Map(ingredientRows.map((row) => {
-    const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
-    const price = selectedVendor ? selectedVendor.price : row.priceUom
+    const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+    const price = useVendorPrices && row.ingredientType === 'IT'
+      ? selectedVendor?.price : row.priceUom
     const costQtyRaw = enableIngredientUomConversion
       ? row.srQtyManual
         ? row.srQty
@@ -1822,7 +1824,7 @@ const ChefCreateMenu = ({
                       Unit of Measures
                     </th>
                   )}
-                  {isChef ? (
+                  {useVendorPrices ? (
                     <th className="min-w-[180px] px-4 py-3 font-semibold">Vendor</th>
                   ) : null}
                   {showIngredientCostColumns ? (
@@ -1839,8 +1841,9 @@ const ChefCreateMenu = ({
                   const vendorKey = getVendorProductKey(rawMaterialSite, row.productCode)
                   const vendorState = vendorPrices[vendorKey]
                   const vendorOptions = getVendorOptions(row)
-                  const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
-                  const price = selectedVendor ? selectedVendor.price : row.priceUom
+                  const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+                  const price = useVendorPrices && row.ingredientType === 'IT'
+                    ? selectedVendor?.price : row.priceUom
                   const ingredientCost = ingredientCosts.get(row.id)
                   return (
                   <tr key={row.id} className="border-t border-border">
@@ -2094,7 +2097,7 @@ const ChefCreateMenu = ({
                         />
                       </td>
                     )}
-                    {isChef ? (
+                    {useVendorPrices ? (
                       <td className="w-[216px] min-w-[216px] px-4 py-3">
                         {row.ingredientType === 'NMP' ? (
                           <input type="text" value="CUSTOM" readOnly aria-readonly="true"
@@ -2154,7 +2157,7 @@ const ChefCreateMenu = ({
                 {showIngredientCostColumns ? (
                   <>
                     <tr className="border-t border-border bg-background">
-                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (isChef ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
                         Estimated total cost
                       </th>
                       <td className="whitespace-nowrap px-4 py-3 font-semibold">
@@ -2162,7 +2165,7 @@ const ChefCreateMenu = ({
                       </td>
                     </tr>
                     <tr className="border-t border-border bg-background">
-                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (isChef ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
                         Cost per pax
                       </th>
                       <td className="whitespace-nowrap px-4 py-3 font-semibold">
@@ -2173,7 +2176,7 @@ const ChefCreateMenu = ({
                 ) : null}
                 <tr className="border-t border-border">
                   <td
-                    colSpan={(enableIngredientUomConversion ? 9 : 7) + (showIngredientCostColumns ? 2 : 0) + (isChef ? 1 : 0)}
+                    colSpan={(enableIngredientUomConversion ? 9 : 7) + (showIngredientCostColumns ? 2 : 0) + (useVendorPrices ? 1 : 0)}
                     className="px-4 py-3"
                   >
                     <div className="flex justify-center">
