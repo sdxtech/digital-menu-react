@@ -19,6 +19,7 @@ export type StoreRequestStatus =
   | 'cancelled'
 
 export type RecipeIngredient = {
+  vendor?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -130,6 +131,7 @@ export type RawMaterial = {
   productCode: string
   name: string
   unitOfMeasures: string
+  price?: number
   baseUnitOfMeasures?: string
   conversionFactor?: number
   specificConversions?: RawMaterialSpecificConversion[]
@@ -340,6 +342,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     isActive: item.isActive !== false,
     ingredients: Array.isArray(item.ingredients)
       ? item.ingredients.map((ingredient) => ({
+          vendor: ingredient.vendor,
           ingredientType: ingredient.ingredientType,
           productCode: ingredient.productCode ?? '',
           name: ingredient.name ?? '',
@@ -435,6 +438,9 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   productCode: item.productCode,
   name: item.name,
   unitOfMeasures: item.unitOfMeasures,
+  price: item.price != null && Number.isFinite(Number(item.price))
+    ? Number(item.price)
+    : undefined,
   baseUnitOfMeasures: item.baseUnitOfMeasures,
   conversionFactor: Number.isFinite(Number(item.conversionFactor))
     ? Number(item.conversionFactor)

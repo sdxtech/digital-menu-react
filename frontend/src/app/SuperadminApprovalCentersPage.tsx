@@ -37,6 +37,7 @@ type RecipeIngredient = {
   name?: string
   unitOfMeasures?: string
   qty?: number
+  foodCost?: number
 }
 
 type Recipe = {
@@ -50,6 +51,7 @@ type Recipe = {
   description?: string
   imageUrl?: string
   portionSize?: number
+  foodCostRecipe?: number
   ingredients?: RecipeIngredient[]
   createdBy?: string
   createdByName?: string
@@ -143,6 +145,37 @@ const approvalStatusClass = (status: ApprovalStatus) => {
 
 const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
+
+const getRecipeCostLabels = (recipe: Recipe) => {
+  if (recipe.approvalStatus === 'approved') {
+    return { estimatedTotalCost: '-', costPerPax: '-' }
+  }
+  const ingredientCosts = (recipe.ingredients ?? [])
+    .map((ingredient) => ingredient.foodCost)
+    .filter((cost): cost is number => cost != null && Number.isFinite(cost))
+  const totalCost =
+    recipe.foodCostRecipe != null && Number.isFinite(recipe.foodCostRecipe)
+      ? recipe.foodCostRecipe
+      : ingredientCosts.length
+        ? ingredientCosts.reduce((total, cost) => total + cost, 0)
+        : undefined
+  if (totalCost === undefined) return { estimatedTotalCost: '-', costPerPax: '-' }
+  const basePax =
+    recipe.portionSize != null &&
+    Number.isFinite(recipe.portionSize) &&
+    recipe.portionSize > 0
+      ? recipe.portionSize
+      : 1
+  const formatter = new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  })
+  return {
+    estimatedTotalCost: formatter.format(totalCost),
+    costPerPax: formatter.format(totalCost / basePax),
+  }
+}
 
 const getGroupKey = (group: StoreRequestGroup) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
@@ -439,6 +472,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
         accessToken,
       )
       setMessage(`${recipe.name} set to ${nextStatus}.`)
+      if (editingRecipe?.id === recipeId) setEditingRecipe(null)
       await fetchApprovals()
       setOverrideAction(null)
       setOverrideReason('')
@@ -548,6 +582,15 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               lockSrUomToRawMaterial
               showImport={false}
               onClose={() => setEditingRecipe(null)}
+              onReject={corporateOnly ? () => {
+                const recipe = recipes.find((item) => (item.id ?? item._id) === editingRecipe.id)
+                if (!recipe) {
+                  setError('Recipe is no longer available. Close the editor and refresh the approval list.')
+                  setEditingRecipe(null)
+                  return
+                }
+                openOverrideAction({ kind: 'recipe', recipe, nextStatus: 'rejected' })
+              } : undefined}
               onSaved={() => {
                 setEditingRecipe(null)
                 setError('')
@@ -635,19 +678,25 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   <th className="px-5 py-4 font-semibold">Category</th>
                   <th className="px-5 py-4 font-semibold">Recipe status</th>
                   <th className="px-5 py-4 font-semibold">Approval status</th>
+                  {corporateOnly ? (
+                    <>
+                      <th className="px-5 py-4 font-semibold">Estimated Total Cost</th>
+                      <th className="px-5 py-4 font-semibold">Cost/Pax</th>
+                    </>
+                  ) : null}
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-10 text-center text-muted">
                       Loading approval data...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-10 text-center text-muted">
                       {selectedSite ? 'No recipes found.' : 'Select a site first.'}
                     </td>
                   </tr>
@@ -656,6 +705,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     const recipeKey = getRecipeKey(recipe)
                     const isExpanded = expandedRecipes.includes(recipeKey)
                     const ingredients = recipe.ingredients ?? []
+                    const costLabels = getRecipeCostLabels(recipe)
                     const canReviewRecipe = corporateOnly
                       ? recipe.approvalStatus === 'pending'
                       : true
@@ -689,6 +739,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                               {getApprovalStatusLabel(recipe.approvalStatus)}
                             </span>
                           </td>
+                          {corporateOnly ? (
+                            <>
+                              <td className="whitespace-nowrap px-5 py-4 font-medium">
+                                {costLabels.estimatedTotalCost}
+                              </td>
+                              <td className="whitespace-nowrap px-5 py-4 font-medium">
+                                {costLabels.costPerPax}
+                              </td>
+                            </>
+                          ) : null}
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2">
                               <button
@@ -750,7 +810,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={8} className="px-5 py-5">
+                            <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-5">
                               <div className="grid gap-4 lg:grid-cols-12">
                                 <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
                                   <p className="text-xs text-muted">Recipe details</p>

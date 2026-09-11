@@ -14,6 +14,11 @@ import { Type } from 'class-transformer';
 
 export class RecipeIngredientDto {
   @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  vendor?: string;
+
+  @IsOptional()
   @IsIn(['IT', 'NMP'])
   ingredientType?: 'IT' | 'NMP';
   @IsString()
