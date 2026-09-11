@@ -3626,7 +3626,8 @@ const SuperadminMenuManagementPage = () => {
                     const recipeKey = getRecipeKey(recipe)
                     const isSelected = selectedRecipeId === recipeKey
                     const isRecipeEnabled = recipe.isActive ?? true
-                    const estimatedCost = getRecipeEstimatedCost(recipe)
+                    const estimatedCost = recipe.approvalStatus === 'approved'
+                      ? undefined : getRecipeEstimatedCost(recipe)
                     const costPerPax =
                       estimatedCost === undefined
                         ? undefined

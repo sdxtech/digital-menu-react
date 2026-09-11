@@ -6,6 +6,7 @@ type TestIngredient = Record<string, unknown> & {
 };
 
 type RecipeUpdatePayload = {
+  $unset?: Record<string, unknown>;
   $set: Record<string, unknown> & {
     ingredients?: TestIngredient[];
   };
@@ -25,7 +26,10 @@ describe('RecipesService site visibility', () => {
       exists: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn(),
       updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
-      findOne: jest.fn(),
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ approvalStatus: 'pending' }),
+      }),
       findOneAndUpdate: jest.fn(),
       distinct: jest.fn(),
     };
@@ -42,6 +46,7 @@ describe('RecipesService site visibility', () => {
       findLookupByNormalizedCode: jest.fn().mockResolvedValue(null),
       findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
       findAvailableNormalizedCodesForSite: jest.fn().mockResolvedValue([]),
+      findVendorPrices: jest.fn().mockResolvedValue([]),
     };
     const unitOfMeasures = {
       findActiveConversion: jest.fn().mockResolvedValue(null),
@@ -120,6 +125,112 @@ describe('RecipesService site visibility', () => {
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(result),
+  });
+
+  const estimatedIngredient = {
+    ingredientType: 'NMP' as const,
+    productCode: 'NMP',
+    name: 'Local ingredient',
+    unitOfMeasures: 'KG',
+    qty: 2,
+    priceUom: 10,
+    foodCost: 20,
+  };
+
+  it.each([AppRole.Chef, AppRole.CorporateChef])(
+    'retains estimates while %s saves a draft',
+    async (role) => {
+      const { recipeModel, service } = makeService();
+      recipeModel.create.mockImplementation((payload: object) =>
+        Promise.resolve({ _id: 'draft', ...payload }),
+      );
+      await service.create(
+        {
+          name: 'Draft',
+          category: 'Main',
+          saveAsDraft: true,
+          ingredients: [estimatedIngredient],
+        },
+        { id: 'author', roles: [role] },
+      );
+      expect(recipeModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          foodCostRecipe: 20,
+          ingredients: [estimatedIngredient],
+          approvalStatus: 'pending',
+        }),
+      );
+    },
+  );
+
+  it.each([AppRole.CorporateChef, AppRole.Superadmin])(
+    'does not store estimates when %s creates an auto-approved recipe',
+    async (role) => {
+      const { recipeModel, service } = makeService();
+      recipeModel.create.mockImplementation((payload: object) =>
+        Promise.resolve({ _id: 'approved', ...payload }),
+      );
+      await service.create(
+        {
+          name: 'Approved',
+          category: 'Main',
+          foodCostRecipe: 20,
+          ingredients: [estimatedIngredient],
+        },
+        { id: 'author', roles: [role] },
+      );
+      const calls = recipeModel.create.mock.calls as unknown as Array<
+        [
+          {
+            foodCostRecipe?: number;
+            ingredients: TestIngredient[];
+          },
+        ]
+      >;
+      expect(calls[0][0].foodCostRecipe).toBeUndefined();
+      expect(calls[0][0].ingredients[0].foodCost).toBeUndefined();
+      expect(calls[0][0].ingredients[0].priceUom).toBe(10);
+    },
+  );
+
+  it.each([AppRole.CorporateChef, AppRole.UnitManager])(
+    'expires estimates when approved by %s',
+    async (role) => {
+      const { recipeModel, service } = makeService();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ ingredients: [estimatedIngredient] }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'approved' }),
+      );
+      await service.setApprovalStatus('recipe', 'approved', {
+        id: 'approver',
+        roles: [role],
+      });
+      const update = getUpdatePayload(recipeModel);
+      expect(update.$unset?.foodCostRecipe).toBe('');
+      expect(update.$set.foodCostRecipe).toBeUndefined();
+      expect(update.$set.ingredients?.[0].foodCost).toBeUndefined();
+      expect(update.$set.ingredients?.[0].qty).toBe(2);
+    },
+  );
+
+  it('does not restore estimates when an approved recipe is edited', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.findOne.mockReturnValue(
+      mockRecipeQuery({ approvalStatus: 'approved' }),
+    );
+    recipeModel.findOneAndUpdate.mockReturnValue(
+      mockRecipeQuery({ _id: 'approved' }),
+    );
+    await service.updateById('recipe', {
+      foodCostRecipe: 20,
+      ingredients: [estimatedIngredient],
+    });
+    const update = getUpdatePayload(recipeModel);
+    expect(update.$unset?.foodCostRecipe).toBe('');
+    expect(update.$set.foodCostRecipe).toBeUndefined();
+    expect(update.$set.ingredients?.[0].foodCost).toBeUndefined();
   });
 
   it('creates an independent recipe as version 1', async () => {
@@ -555,6 +666,10 @@ describe('RecipesService site visibility', () => {
       expect.any(Object),
       { new: true },
     );
+    expect(getUpdatePayload(recipeModel).$unset).toMatchObject({
+      foodCostRecipe: '',
+      'ingredients.$[].foodCost': '',
+    });
     expect(getUpdatePayload(recipeModel).$set).toEqual(
       expect.objectContaining({
         name: 'Updated Recipe',
@@ -613,7 +728,7 @@ describe('RecipesService site visibility', () => {
         _id: 'recipe-draft',
         name: 'Ready Recipe',
         category: 'Main Course',
-        ingredients: [{ name: 'Ingredient' }],
+        ingredients: [estimatedIngredient],
       }),
     );
     const lean = jest.fn().mockResolvedValue({
@@ -632,6 +747,10 @@ describe('RecipesService site visibility', () => {
       sites: ['SITE-001', 'SITE-002'],
     });
 
+    expect(getUpdatePayload(recipeModel).$unset?.foodCostRecipe).toBe('');
+    expect(
+      getUpdatePayload(recipeModel).$set.ingredients?.[0].foodCost,
+    ).toBeUndefined();
     expect(getUpdatePayload(recipeModel).$set).toEqual(
       expect.objectContaining({
         isDraft: false,
@@ -658,6 +777,144 @@ describe('RecipesService site visibility', () => {
       'Corporate Chef must be assigned to a site before editing recipes.',
     );
     expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('saves the selected vendor using its site price instead of the master or submitted price', async () => {
+    const { rawMaterials, recipeModel, service } = makeService();
+    recipeModel.findOne.mockReturnValue(mockRecipeQuery({ site: 'SITE-A' }));
+    recipeModel.findOneAndUpdate.mockReturnValue(
+      mockRecipeQuery({ _id: 'recipe-a' }),
+    );
+    rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+      { productCodeNormalized: 'rm-001', price: 100 },
+    ]);
+    rawMaterials.findVendorPrices.mockResolvedValue([
+      { vendor: 'Vendor A', unitOfMeasures: 'KG', price: 10 },
+      { vendor: 'Vendor B', unitOfMeasures: 'KG', price: 20 },
+    ]);
+
+    await service.updateById('recipe-a', {
+      ingredients: [
+        {
+          ingredientType: 'IT',
+          productCode: 'RM-001',
+          name: 'Chicken',
+          unitOfMeasures: 'KG',
+          qty: 2,
+          vendor: 'Vendor A',
+          priceUom: 999,
+          foodCost: 1998,
+        },
+      ],
+    });
+
+    expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+      productCode: 'RM-001',
+      site: 'SITE-A',
+    });
+    expect(getUpdatedIngredient(recipeModel)).toEqual(
+      expect.objectContaining({
+        vendor: 'Vendor A',
+        priceUom: 10,
+        foodCost: 20,
+      }),
+    );
+  });
+
+  it.each([
+    { vendor: 'Another vendor', unitOfMeasures: 'KG', price: 10 },
+    { vendor: 'Vendor A', unitOfMeasures: 'BOX', price: 10 },
+    { vendor: 'Vendor A', unitOfMeasures: 'KG', price: undefined },
+  ])(
+    'rejects an unavailable vendor price or incompatible unit: %j',
+    async (option) => {
+      const { rawMaterials, recipeModel, service } = makeService();
+      recipeModel.findOne.mockReturnValue(mockRecipeQuery({ site: 'SITE-A' }));
+      rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+        { productCodeNormalized: 'rm-001', price: 100 },
+      ]);
+      rawMaterials.findVendorPrices.mockResolvedValue([option]);
+
+      await expect(
+        service.updateById('recipe-a', {
+          ingredients: [
+            {
+              ingredientType: 'IT',
+              productCode: 'RM-001',
+              name: 'Chicken',
+              unitOfMeasures: 'KG',
+              qty: 2,
+              vendor: 'Vendor A',
+            },
+          ],
+        }),
+      ).rejects.toThrow('has no valid price for this site and unit');
+      expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('syncs selected vendor prices within each recipe site and reuses product lookups', async () => {
+    const { rawMaterials, recipeModel, service } = makeService();
+    const ingredient = {
+      ingredientType: 'IT',
+      productCode: 'RM-001',
+      name: 'Chicken',
+      unitOfMeasures: 'KG',
+      qty: 2,
+      vendor: 'Vendor A',
+      priceUom: 1,
+      foodCost: 2,
+    };
+    recipeModel.find.mockReturnValue(
+      mockRecipeQuery([
+        {
+          _id: 'recipe-a',
+          site: 'SITE-A',
+          ingredients: [ingredient, ingredient],
+        },
+        { _id: 'recipe-b', site: 'SITE-B', ingredients: [ingredient] },
+      ]),
+    );
+    rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+      { productCodeNormalized: 'rm-001', price: 100 },
+    ]);
+    rawMaterials.findVendorPrices.mockImplementation(
+      ({ site }: { site: string }) =>
+        Promise.resolve([
+          {
+            vendor: 'Vendor A',
+            unitOfMeasures: 'KG',
+            price: site === 'SITE-A' ? 10 : 20,
+          },
+        ]),
+    );
+
+    await service.backfillApprovedIngredientCosts();
+
+    expect(rawMaterials.findVendorPrices).toHaveBeenCalledTimes(2);
+    const updates = recipeModel.updateOne.mock.calls as unknown as Array<
+      [{ _id: string }, RecipeUpdatePayload]
+    >;
+    expect(updates[0]?.[0]).toEqual({ _id: 'recipe-a' });
+    expect(updates[0]?.[1].$set).toMatchObject({
+      ingredients: [
+        { vendor: 'Vendor A', priceUom: 10 },
+        { vendor: 'Vendor A', priceUom: 10 },
+      ],
+    });
+    expect(updates[1]?.[0]).toEqual({ _id: 'recipe-b' });
+    expect(updates[1]?.[1].$set).toMatchObject({
+      ingredients: [{ vendor: 'Vendor A', priceUom: 20 }],
+    });
+    for (const [, update] of updates) {
+      expect(update.$set.foodCostRecipe).toBeUndefined();
+      expect(
+        update.$set.ingredients?.every(
+          (ingredient) => ingredient.foodCost === undefined,
+        ),
+      ).toBe(true);
+      expect(update.$unset?.foodCostRecipe).toBe('');
+    }
   });
 
   it('uses raw material specific conversion when no global conversion exists', async () => {
