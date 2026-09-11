@@ -208,7 +208,10 @@ export class RecipesService {
     );
     const normalizedSite = this.normalizeSite(actor?.site);
     await this.validateSiteScopedIngredients(ingredients, normalizedSite);
-    const costFields = await this.buildIngredientCostUpdate(ingredients);
+    const costFields = await this.buildIngredientCostUpdate(
+      ingredients,
+      normalizedSite,
+    );
     const inputFoodCostRecipe = this.normalizeOptionalNumber(
       input.foodCostRecipe,
     );
@@ -244,16 +247,18 @@ export class RecipesService {
       imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
-      ...(inputFoodCostRecipe !== undefined
+      ...(!autoApprove && inputFoodCostRecipe !== undefined
         ? { foodCostRecipe: inputFoodCostRecipe }
-        : 'foodCostRecipe' in costFields
+        : !autoApprove && 'foodCostRecipe' in costFields
           ? { foodCostRecipe: costFields.foodCostRecipe }
           : {}),
       status: autoApprove ? 'active' : (input.status ?? 'draft'),
       approvalStatus: autoApprove ? 'approved' : 'pending',
       isDraft: saveAsDraft,
       ...(autoApprove ? { reviewedAt: new Date() } : {}),
-      ingredients: costFields.ingredients,
+      ingredients: autoApprove
+        ? this.withoutRecipeEstimates(costFields.ingredients)
+        : costFields.ingredients,
       ...createdFields,
       ...updatedFields,
       ...reviewedFields,
@@ -501,9 +506,16 @@ export class RecipesService {
             approvalStatus: isCorporateChefActor ? 'approved' : 'pending',
             ...this.buildActorFields(actor, 'updated'),
             ...(isCorporateChefActor
-              ? { reviewedAt: new Date(), ...reviewedFields }
+              ? {
+                  reviewedAt: new Date(),
+                  ...reviewedFields,
+                  ingredients: this.withoutRecipeEstimates(
+                    existing.ingredients,
+                  ),
+                }
               : {}),
           },
+          ...(isCorporateChefActor ? { $unset: { foodCostRecipe: '' } } : {}),
         },
         { new: true },
       )
@@ -628,7 +640,11 @@ export class RecipesService {
     }
     const costFields =
       status === 'approved' && existing
-        ? await this.buildIngredientCostUpdate(existing.ingredients ?? [])
+        ? {
+            ingredients: this.withoutRecipeEstimates(
+              existing.ingredients ?? [],
+            ),
+          }
         : {};
     const updatePayload: Record<string, unknown> = {
       $set: {
@@ -653,7 +669,7 @@ export class RecipesService {
       };
     }
     if (status === 'approved') {
-      updatePayload.$unset = { rejectionReason: '' };
+      updatePayload.$unset = { rejectionReason: '', foodCostRecipe: '' };
     }
     const updated = await this.recipeModel
       .findOneAndUpdate(filter, updatePayload, { new: true })
@@ -716,7 +732,7 @@ export class RecipesService {
         approvalStatus: 'approved',
         'ingredients.0': { $exists: true },
       })
-      .select({ ingredients: 1, foodCostRecipe: 1 })
+      .select({ ingredients: 1, foodCostRecipe: 1, site: 1 })
       .lean();
 
     const productCodes = recipes.flatMap((recipe) =>
@@ -732,55 +748,56 @@ export class RecipesService {
     const updatedFields = this.buildActorFields(actor, 'updated');
 
     let updatedRecipes = 0;
+    const vendorPrices = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >();
     let updatedIngredients = 0;
     let skippedNoRawMaterial = 0;
     let skippedMissingPrice = 0;
 
     for (const recipe of recipes) {
-      let changed = false;
-      const ingredients = (recipe.ingredients ?? []).map((ingredient) => {
-        const result = this.applyIngredientCostFromLookup(
-          ingredient,
-          rawMaterialByCode,
+      let changed =
+        recipe.foodCostRecipe !== undefined ||
+        (recipe.ingredients ?? []).some(
+          (ingredient) => ingredient.foodCost !== undefined,
         );
-        if (result.status === 'missing_raw_material') {
-          skippedNoRawMaterial += 1;
-          return ingredient;
-        }
-        if (result.status === 'missing_price') {
-          skippedMissingPrice += 1;
-          return ingredient;
-        }
-        if (result.changed) {
-          changed = true;
-          updatedIngredients += 1;
-        }
-        return result.ingredient;
-      });
-
-      const foodCostRecipe = this.calculateFoodCostRecipe(ingredients);
-      const nextFoodCostRecipe =
-        foodCostRecipe > 0 ? this.roundQuantity(foodCostRecipe) : undefined;
-      const currentFoodCostRecipe = this.normalizeOptionalNumber(
-        recipe.foodCostRecipe,
+      const ingredients = await Promise.all(
+        (recipe.ingredients ?? []).map(async (ingredient) => {
+          const result = await this.applyIngredientCostFromLookup(
+            ingredient,
+            rawMaterialByCode,
+            recipe.site,
+            vendorPrices,
+          );
+          if (result.status === 'missing_raw_material') {
+            skippedNoRawMaterial += 1;
+            return ingredient;
+          }
+          if (result.status === 'missing_price') {
+            skippedMissingPrice += 1;
+            return ingredient;
+          }
+          if (
+            ingredient.priceUom !== result.ingredient.priceUom ||
+            ingredient.foodCost !== undefined
+          ) {
+            changed = true;
+            updatedIngredients += 1;
+          }
+          return result.ingredient;
+        }),
       );
 
-      if (!changed && currentFoodCostRecipe === nextFoodCostRecipe) continue;
+      if (!changed) continue;
 
       const updatePayload: Record<string, unknown> = {
         $set: {
-          ingredients,
+          ingredients: this.withoutRecipeEstimates(ingredients),
           ...updatedFields,
         },
+        $unset: { foodCostRecipe: '' },
       };
-      if (nextFoodCostRecipe !== undefined) {
-        updatePayload.$set = {
-          ...(updatePayload.$set as Record<string, unknown>),
-          foodCostRecipe: nextFoodCostRecipe,
-        };
-      } else {
-        updatePayload.$unset = { foodCostRecipe: '' };
-      }
 
       await this.recipeModel.updateOne({ _id: recipe._id }, updatePayload);
       updatedRecipes += 1;
@@ -914,6 +931,22 @@ export class RecipesService {
   async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, unknown> = {};
+    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    const preserveDraft = input.saveAsDraft === true;
+    const autoApprove = isCorporateChefActor && !preserveDraft;
+    let clearEstimates = autoApprove;
+    let recipeSite = actor?.site;
+    if (input.ingredients !== undefined || input.foodCostRecipe !== undefined) {
+      const existing = await this.recipeModel
+        .findOne(
+          this.withSiteFilter({ _id: id }, this.getActorSiteScope(actor)),
+        )
+        .select({ site: 1, approvalStatus: 1 })
+        .lean();
+      if (!existing) throw new NotFoundException('Recipe not found');
+      recipeSite = existing.site ?? actor?.site;
+      clearEstimates = autoApprove || existing.approvalStatus === 'approved';
+    }
 
     if (input.name !== undefined) {
       const name = input.name.trim();
@@ -965,8 +998,13 @@ export class RecipesService {
       const ingredients = await this.applyIngredientUomConversions(
         this.normalizeIngredients(input.ingredients),
       );
-      const costFields = await this.buildIngredientCostUpdate(ingredients);
-      $set.ingredients = costFields.ingredients;
+      const costFields = await this.buildIngredientCostUpdate(
+        ingredients,
+        recipeSite,
+      );
+      $set.ingredients = clearEstimates
+        ? this.withoutRecipeEstimates(costFields.ingredients)
+        : costFields.ingredients;
       if (inputFoodCostRecipe === undefined) {
         if ('foodCostRecipe' in costFields) {
           $set.foodCostRecipe = costFields.foodCostRecipe;
@@ -980,7 +1018,6 @@ export class RecipesService {
       throw new BadRequestException('No fields to update.');
     }
 
-    const isCorporateChefActor = this.isCorporateChefActor(actor);
     const corporateSiteScope = this.getActorSiteScope(actor);
     if (isCorporateChefActor && !corporateSiteScope) {
       throw new BadRequestException(
@@ -988,8 +1025,12 @@ export class RecipesService {
       );
     }
     const updatedFields = this.buildActorFields(actor, 'updated');
-    const preserveDraft = input.saveAsDraft === true;
-    const autoApprove = isCorporateChefActor && !preserveDraft;
+    if (clearEstimates) {
+      delete $set.foodCostRecipe;
+      $unset.foodCostRecipe = '';
+      if (input.ingredients === undefined)
+        $unset['ingredients.$[].foodCost'] = '';
+    }
     const reviewedFields = autoApprove
       ? this.buildActorFields(actor, 'reviewed')
       : {};
@@ -1833,6 +1874,7 @@ export class RecipesService {
 
   private normalizeIngredients(
     input?: Array<{
+      vendor?: string;
       productCode: string;
       ingredientType?: 'IT' | 'NMP';
       name: string;
@@ -1862,6 +1904,9 @@ export class RecipesService {
       const conversionId = item.conversionId?.trim();
       return {
         ...(item.ingredientType ? { ingredientType: item.ingredientType } : {}),
+        ...(item.ingredientType !== 'NMP' && item.vendor?.trim()
+          ? { vendor: item.vendor.trim() }
+          : {}),
         productCode:
           item.ingredientType === 'NMP' ? 'NMP' : item.productCode.trim(),
         name: item.name.trim(),
@@ -2035,7 +2080,18 @@ export class RecipesService {
     };
   }
 
-  private async buildIngredientCostUpdate(ingredients: RecipeIngredient[]) {
+  private withoutRecipeEstimates(ingredients: RecipeIngredient[]) {
+    return ingredients.map((ingredient) => {
+      const next = { ...ingredient };
+      delete next.foodCost;
+      return next;
+    });
+  }
+
+  private async buildIngredientCostUpdate(
+    ingredients: RecipeIngredient[],
+    site?: string,
+  ) {
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(
         ingredients
@@ -2045,13 +2101,26 @@ export class RecipesService {
     const rawMaterialByCode = new Map(
       rawMaterialLookups.map((item) => [item.productCodeNormalized, item]),
     );
-    const nextIngredients = ingredients.map((ingredient) => {
-      const result = this.applyIngredientCostFromLookup(
-        ingredient,
-        rawMaterialByCode,
-      );
-      return 'ingredient' in result ? result.ingredient : ingredient;
-    });
+    const vendorPrices = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >();
+    const nextIngredients = await Promise.all(
+      ingredients.map(async (ingredient) => {
+        const result = await this.applyIngredientCostFromLookup(
+          ingredient,
+          rawMaterialByCode,
+          site,
+          vendorPrices,
+        );
+        if (ingredient.vendor && result.status !== 'matched') {
+          throw new BadRequestException(
+            `Selected vendor for ${ingredient.name || ingredient.productCode} has no valid price for this site and unit.`,
+          );
+        }
+        return 'ingredient' in result ? result.ingredient : ingredient;
+      }),
+    );
     const foodCostRecipe = this.calculateFoodCostRecipe(nextIngredients);
 
     return {
@@ -2062,24 +2131,51 @@ export class RecipesService {
     };
   }
 
-  private applyIngredientCostFromLookup(
+  private async applyIngredientCostFromLookup(
     ingredient: RecipeIngredient,
     rawMaterialByCode: Map<string, RawMaterialLookup>,
-  ):
+    site?: string,
+    vendorPrices = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >(),
+  ): Promise<
     | {
         status: 'matched';
         changed: boolean;
         ingredient: RecipeIngredient;
       }
     | { status: 'missing_raw_material' }
-    | { status: 'missing_price' } {
+    | { status: 'missing_price' }
+  > {
     const productCode = ingredient.productCode?.trim() ?? '';
     if (!productCode) return { status: 'missing_raw_material' };
 
     const rawMaterial = rawMaterialByCode.get(productCode.toLowerCase());
     if (!rawMaterial) return { status: 'missing_raw_material' };
 
-    const unitPrice = this.normalizeOptionalNumber(rawMaterial.price);
+    let unitPrice = this.normalizeOptionalNumber(rawMaterial.price);
+    if (ingredient.vendor) {
+      if (!site?.trim()) return { status: 'missing_price' };
+      const key = JSON.stringify([
+        site.trim().toLowerCase(),
+        productCode.toLowerCase(),
+      ]);
+      let request = vendorPrices.get(key);
+      if (!request) {
+        request = this.rawMaterials.findVendorPrices({ productCode, site });
+        vendorPrices.set(key, request);
+      }
+      const options = await request;
+      const selected = options.find(
+        (option) =>
+          option.vendor?.trim().toLowerCase() ===
+            ingredient.vendor?.trim().toLowerCase() &&
+          this.normalizeUomCode(option.unitOfMeasures) ===
+            this.normalizeUomCode(ingredient.unitOfMeasures),
+      );
+      unitPrice = this.normalizeOptionalNumber(selected?.price);
+    }
     if (unitPrice === undefined) return { status: 'missing_price' };
 
     const qty = Number(ingredient.qty);

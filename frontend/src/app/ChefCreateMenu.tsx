@@ -19,6 +19,15 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INGREDIENT_ROWS_PER_PAGE = 30
 
+const formatPrice = (value?: number) => {
+  if (value === undefined || !Number.isFinite(value)) return '-'
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
 type RecipeForm = {
   name: string
   category: string
@@ -36,9 +45,26 @@ type IngredientRow = {
   prodUomCode: string
   srQty: string
   srQtyManual: boolean
+  priceUom?: number
+  vendor?: string
   baseUnitOfMeasures?: string
   conversionFactor?: number
 }
+
+type VendorPriceOption = {
+  vendor: string
+  unitOfMeasures: string
+  price?: number
+}
+
+type VendorPriceState = {
+  loading: boolean
+  options: VendorPriceOption[]
+  error?: string
+}
+
+const getVendorProductKey = (site: string | undefined, productCode: string) =>
+  JSON.stringify([site?.trim().toLowerCase() ?? '', productCode.trim().toLowerCase()])
 
 type UnitOfMeasureApi = {
   id?: string
@@ -124,6 +150,8 @@ const createIngredientRow = (
   prodUomCode: values.prodUomCode ?? '',
   srQty: values.srQty ?? '',
   srQtyManual: values.srQtyManual ?? false,
+  priceUom: values.priceUom,
+  vendor: values.vendor,
   baseUnitOfMeasures: values.baseUnitOfMeasures,
   conversionFactor: values.conversionFactor,
 })
@@ -143,6 +171,7 @@ type ChefCreateMenuProps = {
   showImport?: boolean
   onClose?: () => void
   onSaved?: () => void
+  onReject?: () => void
 }
 
 const ChefCreateMenu = ({
@@ -153,6 +182,7 @@ const ChefCreateMenu = ({
   showImport = true,
   onClose,
   onSaved,
+  onReject,
 }: ChefCreateMenuProps) => {
   const location = useLocation()
   const navigate = useNavigate()
@@ -178,6 +208,8 @@ const ChefCreateMenu = ({
   )
   const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
   const isCorporateChef = user?.role === 'corporate-chef'
+  const isChef = user?.role === 'chef'
+  const showIngredientCostColumns = isChef || isCorporateChef
   const recipeDraftsPath = isCorporateChef
     ? '/corporate-chef/recipe-drafts'
     : '/chef/recipe-drafts'
@@ -207,6 +239,7 @@ const ChefCreateMenu = ({
   )
   const [resubmitFeedback, setResubmitFeedback] = useState('')
   const [resubmitModalOpen, setResubmitModalOpen] = useState(false)
+  const [approving, setApproving] = useState(false)
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
@@ -214,6 +247,11 @@ const ChefCreateMenu = ({
 
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
   const rawMaterialCacheRef = useRef<Map<string, RawMaterial>>(new Map())
+  const [vendorPrices, setVendorPrices] = useState<Record<string, VendorPriceState>>({})
+  const vendorProductCodes = JSON.stringify(Array.from(new Set(
+    ingredientRows.filter((row) => row.ingredientType === 'IT')
+      .map((row) => row.productCode.trim().toLowerCase()).filter(Boolean),
+  )).sort())
   const [uomOptions, setUomOptions] = useState<UnitOfMeasureOption[]>([])
   const [srUomOptions, setSrUomOptions] = useState<string[]>([])
   const [unitConversions, setUnitConversions] = useState<UnitConversion[]>([])
@@ -291,6 +329,12 @@ const ChefCreateMenu = ({
                   ? String(ingredient.srQty)
                   : '',
               srQtyManual: ingredient.srQtyManual ?? false,
+              vendor: ingredient.vendor,
+              priceUom: ingredient.priceUom ?? (
+                ingredient.foodCost !== undefined && ingredient.qty > 0
+                  ? ingredient.foodCost / ingredient.qty
+                  : undefined
+              ),
             }),
           )
         : [createIngredientRow()],
@@ -498,6 +542,40 @@ const ChefCreateMenu = ({
   ])
 
   useEffect(() => {
+    if (!isChef || !accessToken) return
+    const productCodes: string[] = JSON.parse(vendorProductCodes)
+    productCodes.forEach((productCode) => {
+      const key = getVendorProductKey(rawMaterialSite, productCode)
+      if (vendorPrices[key]) return
+      setVendorPrices((current) => ({ ...current, [key]: { loading: true, options: [] } }))
+      const params = new URLSearchParams()
+      if (rawMaterialSite) params.set('site', rawMaterialSite)
+      apiFetch<VendorPriceOption[]>(
+        `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices?${params.toString()}`,
+        undefined,
+        accessToken,
+      ).then((items) => {
+        if (!isMountedRef.current) return
+        const options = items.filter((item) => item.vendor?.trim() && item.unitOfMeasures?.trim())
+          .map((item) => ({
+            vendor: item.vendor.trim(),
+            unitOfMeasures: item.unitOfMeasures.trim(),
+            price: item.price != null && Number.isFinite(Number(item.price)) && Number(item.price) >= 0
+              ? Number(item.price) : undefined,
+          }))
+          .sort((a, b) => a.vendor.localeCompare(b.vendor))
+        setVendorPrices((current) => ({ ...current, [key]: { loading: false, options } }))
+      }).catch((error: unknown) => {
+        if (!isMountedRef.current) return
+        setVendorPrices((current) => ({ ...current, [key]: {
+          loading: false, options: [],
+          error: error instanceof Error ? error.message : 'Failed to load vendors.',
+        } }))
+      })
+    })
+  }, [accessToken, isChef, rawMaterialSite, vendorPrices, vendorProductCodes])
+
+  useEffect(() => {
     const nextTotalPages = Math.max(
       1,
       Math.ceil(ingredientRows.length / INGREDIENT_ROWS_PER_PAGE),
@@ -507,6 +585,16 @@ const ChefCreateMenu = ({
 
   const normalizeValue = (value: string) => value.trim().toLowerCase()
   const normalizeUomCode = (value: string) => value.trim().toUpperCase()
+  const getVendorOptions = (row: IngredientRow) =>
+    (vendorPrices[getVendorProductKey(rawMaterialSite, row.productCode)]?.options ?? [])
+      .filter((option) => normalizeUomCode(option.unitOfMeasures) === normalizeUomCode(row.unitOfMeasures))
+  const getSelectedVendor = (row: IngredientRow) => {
+    const options = getVendorOptions(row)
+    if (row.vendor) return options.find((option) => normalizeValue(option.vendor) === normalizeValue(row.vendor ?? ''))
+    return options.reduce<VendorPriceOption | undefined>((selected, option) =>
+      !selected || (option.price ?? -1) > (selected.price ?? -1) ? option : selected,
+    undefined)
+  }
   const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
     const prod = normalizeUomCode(prodUomCode)
     const sr = normalizeUomCode(srUomCode)
@@ -636,6 +724,13 @@ const ChefCreateMenu = ({
       productCode: matched.productCode,
       name: matched.name,
       unitOfMeasures: matched.unitOfMeasures,
+      priceUom: matched.price ?? (
+        normalizeValue(row.productCode) === normalizeValue(matched.productCode)
+          ? row.priceUom
+          : undefined
+      ),
+      vendor: normalizeValue(row.productCode) === normalizeValue(matched.productCode)
+        ? row.vendor : undefined,
       ...(srUomChanged ? { srQty: '', srQtyManual: false } : {}),
       baseUnitOfMeasures: matched.baseUnitOfMeasures,
       conversionFactor: matched.conversionFactor,
@@ -687,6 +782,8 @@ const ChefCreateMenu = ({
               srQtyManual: false,
               baseUnitOfMeasures: undefined,
               conversionFactor: undefined,
+              priceUom: undefined,
+              vendor: undefined,
             }
           : row,
       ),
@@ -703,6 +800,15 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (
+          (field === 'ingredientType' || (
+            row.ingredientType === 'IT' && (field === 'productCode' || field === 'name')
+          )) &&
+          value !== row[field]
+        ) {
+          next.priceUom = undefined
+          next.vendor = undefined
+        }
         if (field === 'ingredientType') {
           if (value === 'NMP') {
             next.productCode = 'NMP'
@@ -732,14 +838,14 @@ const ChefCreateMenu = ({
           next.baseUnitOfMeasures = undefined
           next.conversionFactor = undefined
         }
-        if (field === 'productCode' && typeof value === 'string') {
+        if (next.ingredientType === 'IT' && field === 'productCode' && typeof value === 'string') {
           const matched = findRawMaterialByCode(value)
           if (matched) {
             return applyRawMaterialToRow(next, matched)
           }
         }
 
-        if (field === 'name' && typeof value === 'string') {
+        if (next.ingredientType === 'IT' && field === 'name' && typeof value === 'string') {
           const matched = findRawMaterialByName(value)
           if (matched) {
             return applyRawMaterialToRow(next, matched)
@@ -1133,6 +1239,24 @@ const ChefCreateMenu = ({
         return
       }
 
+      const nmpPrice = row.ingredientType === 'NMP' ? row.priceUom : undefined
+      if (nmpPrice !== undefined && (!Number.isFinite(nmpPrice) || nmpPrice < 0)) {
+        setSubmitError(`Price for ${name} must be a number greater than or equal to 0.`)
+        setSubmitMessage('')
+        return
+      }
+
+      const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+      const vendor = row.ingredientType === 'IT' ? selectedVendor?.vendor ?? row.vendor : undefined
+      if (isChef && row.ingredientType === 'IT') {
+        const vendorState = vendorPrices[getVendorProductKey(rawMaterialSite, row.productCode)]
+        if (!vendorState || vendorState.loading || vendorState.error || (row.vendor && !selectedVendor)) {
+          setSubmitError(`Load and select an available vendor for ${name} before saving.`)
+          setSubmitMessage('')
+          return
+        }
+      }
+
       if (enableIngredientUomConversion) {
         const conversionResult = calculateSrQty(row)
         const srQtyRaw = row.srQtyManual
@@ -1160,6 +1284,11 @@ const ChefCreateMenu = ({
           name,
           unitOfMeasures,
           qty: srQty,
+          ...(vendor ? { vendor } : {}),
+          ...(nmpPrice !== undefined ? {
+            priceUom: nmpPrice,
+            foodCost: roundQuantity(nmpPrice * srQty),
+          } : {}),
           prodQty: qty,
           prodUomCode,
           srQty,
@@ -1179,6 +1308,11 @@ const ChefCreateMenu = ({
           name,
           unitOfMeasures,
           qty,
+          ...(vendor ? { vendor } : {}),
+          ...(nmpPrice !== undefined ? {
+            priceUom: nmpPrice,
+            foodCost: roundQuantity(nmpPrice * qty),
+          } : {}),
         })
       }
     }
@@ -1260,6 +1394,29 @@ const ChefCreateMenu = ({
       setSubmitMessage('')
     }
   }
+
+  const ingredientCosts = new Map(ingredientRows.map((row) => {
+    const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+    const price = selectedVendor ? selectedVendor.price : row.priceUom
+    const costQtyRaw = enableIngredientUomConversion
+      ? row.srQtyManual
+        ? row.srQty
+        : calculateSrQty(row)?.srQty ?? row.srQty
+      : row.qty
+    const costQty = costQtyRaw === '' ? undefined : Number(costQtyRaw)
+    const cost = price !== undefined && Number.isFinite(price) &&
+      costQty !== undefined && Number.isFinite(costQty)
+      ? roundQuantity(price * costQty)
+      : undefined
+    return [row.id, cost] as const
+  }))
+  const estimatedTotalCost = roundQuantity(
+    Array.from(ingredientCosts.values()).reduce<number>((total, cost) => total + (cost ?? 0), 0),
+  )
+  const basePax = Number(recipeForm.portionSize)
+  const costPerPax = Number.isFinite(basePax) && basePax > 0
+    ? estimatedTotalCost / basePax
+    : undefined
 
   const ingredientTotalPages = Math.max(
     1,
@@ -1665,11 +1822,26 @@ const ChefCreateMenu = ({
                       Unit of Measures
                     </th>
                   )}
+                  {isChef ? (
+                    <th className="min-w-[180px] px-4 py-3 font-semibold">Vendor</th>
+                  ) : null}
+                  {showIngredientCostColumns ? (
+                    <>
+                      <th className="min-w-[140px] px-4 py-3 font-semibold">Price</th>
+                      <th className="min-w-[160px] px-4 py-3 font-semibold">Ingredient Cost</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {paginatedIngredientRows.map((row, index) => {
                   const conversionResult = calculateSrQty(row)
+                  const vendorKey = getVendorProductKey(rawMaterialSite, row.productCode)
+                  const vendorState = vendorPrices[vendorKey]
+                  const vendorOptions = getVendorOptions(row)
+                  const selectedVendor = isChef && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
+                  const price = selectedVendor ? selectedVendor.price : row.priceUom
+                  const ingredientCost = ingredientCosts.get(row.id)
                   return (
                   <tr key={row.id} className="border-t border-border">
                     <td className="px-2 py-3">
@@ -1922,11 +2094,86 @@ const ChefCreateMenu = ({
                         />
                       </td>
                     )}
+                    {isChef ? (
+                      <td className="w-[216px] min-w-[216px] px-4 py-3">
+                        {row.ingredientType === 'NMP' ? (
+                          <input type="text" value="CUSTOM" readOnly aria-readonly="true"
+                            className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted shadow-sm outline-none" />
+                        ) : row.ingredientType === 'IT' ? (
+                          <>
+                            <select
+                              value={selectedVendor?.vendor ?? row.vendor ?? ''}
+                              onChange={(event) => updateIngredientRow(row.id, 'vendor', event.target.value)}
+                              disabled={!vendorState || vendorState.loading}
+                              aria-label={`Vendor for ${row.name || `ingredient ${index + 1}`}`}
+                              className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${vendorOptions.length > 1 ? 'border-amber-400 bg-amber-100' : 'border-border bg-white'}`}
+                            >
+                              {!vendorState || vendorState.loading ? <option value="">Loading vendors...</option>
+                                : vendorOptions.length === 0 ? <option value="">{vendorState.error || 'No vendor for this site'}</option> : null}
+                              {row.vendor && !selectedVendor ? <option value={row.vendor}>{row.vendor} (unavailable)</option> : null}
+                              {vendorOptions.map((option) => <option key={option.vendor} value={option.vendor}>{option.vendor}</option>)}
+                            </select>
+                            {vendorState?.error ? <button type="button" className="mt-1 text-xs text-primary underline"
+                              onClick={() => setVendorPrices((current) => {
+                                const next = { ...current }
+                                delete next[vendorKey]
+                                return next
+                              })}>Retry vendors</button> : null}
+                          </>
+                        ) : '-'}
+                      </td>
+                    ) : null}
+                    {showIngredientCostColumns ? (
+                      <>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          {isChef && row.ingredientType === 'NMP' ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={row.priceUom ?? ''}
+                              onChange={(event) => updateIngredientRow(
+                                row.id,
+                                'priceUom',
+                                event.target.value === '' ? undefined : Number(event.target.value),
+                              )}
+                              onWheel={(event) => event.currentTarget.blur()}
+                              aria-label={`Price for ${row.name || `ingredient ${index + 1}`}`}
+                              placeholder="Price (IDR)"
+                              className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                            />
+                          ) : formatPrice(price)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 font-medium">
+                          {formatPrice(ingredientCost)}
+                        </td>
+                      </>
+                    ) : null}
                   </tr>
                 )})}
+                {showIngredientCostColumns ? (
+                  <>
+                    <tr className="border-t border-border bg-background">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (isChef ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                        Estimated total cost
+                      </th>
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold">
+                        {formatPrice(estimatedTotalCost)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-border bg-background">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (isChef ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                        Cost per pax
+                      </th>
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold">
+                        {formatPrice(costPerPax)}
+                      </td>
+                    </tr>
+                  </>
+                ) : null}
                 <tr className="border-t border-border">
                   <td
-                    colSpan={enableIngredientUomConversion ? 8 : 6}
+                    colSpan={(enableIngredientUomConversion ? 9 : 7) + (showIngredientCostColumns ? 2 : 0) + (isChef ? 1 : 0)}
                     className="px-4 py-3"
                   >
                     <div className="flex justify-center">
@@ -1971,6 +2218,33 @@ const ChefCreateMenu = ({
                 Save Draft
               </button>
             ) : null}
+            {isCorporateChef && isEditMode && !isDraftRecipe && onReject ? (
+              <>
+                <button
+                  type="button"
+                  disabled={approving}
+                  onClick={async () => {
+                    setApproving(true)
+                    try {
+                      await handleSaveRecipe()
+                    } finally {
+                      setApproving(false)
+                    }
+                  }}
+                  className="inline-flex items-center justify-center rounded-md border border-primary bg-primary px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-primary-hover disabled:opacity-60"
+                >
+                  {approving ? 'Approving...' : 'Approve'}
+                </button>
+                <button
+                  type="button"
+                  disabled={approving}
+                  onClick={onReject}
+                  className="inline-flex items-center justify-center rounded-md border border-danger bg-white px-4 py-3 text-sm font-semibold text-danger disabled:opacity-60"
+                >
+                  Reject
+                </button>
+              </>
+            ) : (
             <ActionButton
               action={
                 isEditMode && !isRejectedRecipe && !isDraftRecipe ? 'update' : 'submit'
@@ -1981,6 +2255,7 @@ const ChefCreateMenu = ({
                   : handleSaveRecipe()
               }
             />
+            )}
           </div>
         </div>
       </div>
