@@ -1512,6 +1512,7 @@ const SuperadminMenuManagementPage = () => {
   const [recipeImportMessage, setRecipeImportMessage] = useState('')
   const [recipeImporting, setRecipeImporting] = useState(false)
   const [recipeCostSyncing, setRecipeCostSyncing] = useState(false)
+  const [recipeConversionSyncing, setRecipeConversionSyncing] = useState(false)
 
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryMeta, setCategoryMeta] = useState<TableMeta>(emptyMeta)
@@ -2124,6 +2125,41 @@ const SuperadminMenuManagementPage = () => {
       () => null,
     )
     fetchRecipeCategories().catch(() => null)
+  }
+
+  const syncRecipeConversions = async () => {
+    if (!accessToken || recipeConversionSyncing || recipeCostSyncing) return
+
+    setRecipeConversionSyncing(true)
+    setRecipeMessage('')
+    setRecipeMeta((prev) => ({ ...prev, error: '' }))
+    try {
+      const result = await apiFetch<{
+        updatedRecipes: number
+        updatedIngredients: number
+        skippedManual: number
+        skippedIncomplete: number
+        skippedMissingConversion: number
+        skippedConcurrentRecipes: number
+      }>(
+        '/recipes/ingredient-conversions/sync',
+        { method: 'PATCH' },
+        accessToken,
+      )
+      setRecipeMessage(
+        `Synced conversion for ${result.updatedIngredients} ingredients across ${result.updatedRecipes} approved, submitted, or rejected recipes. ` +
+        `Skipped: ${result.skippedManual} manual quantities, ${result.skippedIncomplete} ingredients without raw material or production quantity/unit, ` +
+        `${result.skippedMissingConversion} missing conversions, ${result.skippedConcurrentRecipes} recipes changed during sync.`,
+      )
+      await fetchRecipes(recipeMeta.page, recipeMeta.limit, recipeSearch)
+    } catch (error) {
+      setRecipeMeta((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to sync recipe conversions.',
+      }))
+    } finally {
+      setRecipeConversionSyncing(false)
+    }
   }
 
   const syncRecipeCosts = async () => {
@@ -3497,11 +3533,21 @@ const SuperadminMenuManagementPage = () => {
               <button
                 type="button"
                 onClick={syncRecipeCosts}
-                disabled={!accessToken || recipeCostSyncing}
+                disabled={!accessToken || recipeCostSyncing || recipeConversionSyncing}
                 className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
                 <span>{recipeCostSyncing ? 'Syncing...' : 'Sync costs'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={syncRecipeConversions}
+                disabled={!accessToken || recipeConversionSyncing || recipeCostSyncing}
+                title="Recalculate approved, submitted, and rejected recipe SR quantities using current conversion rules. Manual SR quantities are preserved."
+                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
+                <span>{recipeConversionSyncing ? 'Syncing...' : 'Sync Conversion'}</span>
               </button>
               <ActionButton
                 action="import"
@@ -3626,8 +3672,7 @@ const SuperadminMenuManagementPage = () => {
                     const recipeKey = getRecipeKey(recipe)
                     const isSelected = selectedRecipeId === recipeKey
                     const isRecipeEnabled = recipe.isActive ?? true
-                    const estimatedCost = recipe.approvalStatus === 'approved'
-                      ? undefined : getRecipeEstimatedCost(recipe)
+                    const estimatedCost = getRecipeEstimatedCost(recipe)
                     const costPerPax =
                       estimatedCost === undefined
                         ? undefined

@@ -26,6 +26,16 @@ describe('RecipesController corporate chef creation', () => {
     },
   };
 
+  it('restricts conversion sync to superadmin', () => {
+    const handler = Object.getOwnPropertyDescriptor(
+      RecipesController.prototype,
+      'syncIngredientConversions',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Superadmin,
+    ]);
+  });
+
   it('uses the selected assigned site as the recipe scope', async () => {
     const { controller, recipes } = makeController();
     const dto = {

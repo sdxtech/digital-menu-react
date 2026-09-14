@@ -725,6 +725,145 @@ export class RecipesService {
     return updated;
   }
 
+  async syncIngredientConversions(actor?: RecipeActor) {
+    const filter = {
+      deletedAt: { $exists: false },
+      approvalStatus: { $in: ['approved', 'pending', 'rejected'] },
+      isDraft: { $ne: true },
+      'ingredients.0': { $exists: true },
+    };
+    const recipes = await this.recipeModel
+      .find(filter)
+      .select({ ingredients: 1, approvalStatus: 1 })
+      .lean();
+    const rawMaterialCache = new Map<string, RawMaterialLookup | null>();
+    const result = {
+      scannedRecipes: recipes.length,
+      updatedRecipes: 0,
+      updatedIngredients: 0,
+      skippedManual: 0,
+      skippedIncomplete: 0,
+      skippedMissingConversion: 0,
+      skippedConcurrentRecipes: 0,
+    };
+
+    for (const recipe of recipes) {
+      const ingredients: RecipeIngredient[] = [];
+      let changedIngredients = 0;
+      for (const ingredient of recipe.ingredients ?? []) {
+        if (ingredient.srQtyManual) {
+          result.skippedManual += 1;
+          ingredients.push(ingredient);
+          continue;
+        }
+        if (
+          ingredient.ingredientType === 'NMP' ||
+          !ingredient.productCode?.trim() ||
+          this.normalizeOptionalNumber(ingredient.prodQty) === undefined ||
+          !ingredient.prodUomCode?.trim() ||
+          !(ingredient.srUomCode?.trim() || ingredient.unitOfMeasures?.trim())
+        ) {
+          result.skippedIncomplete += 1;
+          ingredients.push(ingredient);
+          continue;
+        }
+        const rawMaterial = await this.resolveRawMaterial(
+          ingredient.productCode.trim(),
+          rawMaterialCache,
+        );
+        if (!rawMaterial) {
+          result.skippedIncomplete += 1;
+          ingredients.push(ingredient);
+          continue;
+        }
+        let converted: RecipeIngredient;
+        try {
+          [converted] = await this.applyIngredientUomConversions(
+            [ingredient],
+            rawMaterialCache,
+          );
+        } catch (error) {
+          if (!(error instanceof BadRequestException)) throw error;
+          result.skippedMissingConversion += 1;
+          ingredients.push(ingredient);
+          continue;
+        }
+        if (
+          ingredient.qty !== converted.qty ||
+          ingredient.srQty !== converted.srQty ||
+          ingredient.unitOfMeasures !== converted.unitOfMeasures ||
+          ingredient.prodUomCode !== converted.prodUomCode ||
+          ingredient.srUomCode !== converted.srUomCode ||
+          ingredient.conversionId !== converted.conversionId ||
+          ingredient.conversionMultiplier !== converted.conversionMultiplier
+        ) {
+          changedIngredients += 1;
+          if (recipe.approvalStatus !== 'approved') {
+            const unitPrice = this.normalizeOptionalNumber(ingredient.priceUom);
+            const previousCost = this.normalizeOptionalNumber(
+              ingredient.foodCost,
+            );
+            const previousQty = this.normalizeOptionalNumber(ingredient.qty);
+            const convertedQty = this.normalizeOptionalNumber(converted.qty);
+            const price =
+              unitPrice ??
+              (previousCost !== undefined &&
+              previousQty !== undefined &&
+              previousQty > 0
+                ? previousCost / previousQty
+                : undefined);
+            if (price !== undefined && convertedQty !== undefined) {
+              converted.foodCost = this.roundQuantity(convertedQty * price);
+            } else {
+              delete converted.foodCost;
+            }
+          }
+        }
+        ingredients.push(converted);
+      }
+      if (!changedIngredients) continue;
+
+      const clearEstimates = recipe.approvalStatus === 'approved';
+      const hasEstimates = ingredients.some(
+        (ingredient) =>
+          this.normalizeOptionalNumber(ingredient.foodCost) !== undefined,
+      );
+      const update = await this.recipeModel.updateOne(
+        {
+          ...filter,
+          _id: recipe._id,
+          approvalStatus: recipe.approvalStatus,
+          ingredients: recipe.ingredients,
+        },
+        {
+          $set: {
+            ingredients: clearEstimates
+              ? this.withoutRecipeEstimates(ingredients)
+              : ingredients,
+            ...(!clearEstimates && hasEstimates
+              ? {
+                  foodCostRecipe: this.roundQuantity(
+                    this.calculateFoodCostRecipe(ingredients),
+                  ),
+                }
+              : {}),
+            ...this.buildActorFields(actor, 'updated'),
+          },
+          ...(clearEstimates || !hasEstimates
+            ? { $unset: { foodCostRecipe: '' } }
+            : {}),
+        },
+      );
+      if (!update.modifiedCount) {
+        result.skippedConcurrentRecipes += 1;
+        continue;
+      }
+      result.updatedRecipes += 1;
+      result.updatedIngredients += changedIngredients;
+    }
+    return result;
+  }
+
   async backfillApprovedIngredientCosts(actor?: RecipeActor) {
     const recipes = await this.recipeModel
       .find({
@@ -1927,9 +2066,9 @@ export class RecipesService {
 
   private async applyIngredientUomConversions(
     ingredients: RecipeIngredient[],
+    rawMaterialCache = new Map<string, RawMaterialLookup | null>(),
   ): Promise<RecipeIngredient[]> {
     const nextIngredients: RecipeIngredient[] = [];
-    const rawMaterialCache = new Map<string, RawMaterialLookup | null>();
 
     for (const ingredient of ingredients) {
       const prodQty = this.normalizeOptionalNumber(ingredient.prodQty);
