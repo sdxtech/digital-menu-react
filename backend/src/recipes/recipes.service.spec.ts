@@ -917,6 +917,194 @@ describe('RecipesService site visibility', () => {
     }
   });
 
+  describe('recipe conversion sync', () => {
+    const ingredient = {
+      productCode: 'RM-001',
+      name: 'Ingredient A',
+      unitOfMeasures: 'PK',
+      prodUomCode: 'GR',
+      prodQty: 3000,
+      srUomCode: 'PK',
+      srQty: 0.6,
+      qty: 0.6,
+      conversionId: 'GR To PK',
+      conversionMultiplier: 1 / 5000,
+      priceUom: 90000,
+      foodCost: 54000,
+    };
+
+    const setup = (ingredients = [ingredient]) => {
+      const mocks = makeService();
+      mocks.recipeModel.find.mockReturnValue(
+        mockRecipeQuery([
+          { _id: 'recipe-a', approvalStatus: 'approved', ingredients },
+        ]),
+      );
+      mocks.recipeModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+      mocks.rawMaterials.findLookupByNormalizedCode.mockResolvedValue({
+        productCodeNormalized: 'rm-001',
+        unitOfMeasures: 'PK',
+        specificConversions: [
+          { prodUomCode: 'GR', srUomCode: 'PK', conversionFactor: 15000 },
+        ],
+      });
+      return mocks;
+    };
+
+    it('recalculates from production quantity with the current product rule and invalidates old estimates', async () => {
+      const { service, recipeModel, unitOfMeasures } = setup();
+      const result = await service.syncIngredientConversions();
+      expect(result).toMatchObject({
+        updatedRecipes: 1,
+        updatedIngredients: 1,
+      });
+      expect(recipeModel.find).toHaveBeenCalledWith({
+        deletedAt: { $exists: false },
+        approvalStatus: { $in: ['approved', 'pending', 'rejected'] },
+        isDraft: { $ne: true },
+        'ingredients.0': { $exists: true },
+      });
+      expect(recipeModel.updateOne).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: 'recipe-a', ingredients: [ingredient] }),
+        expect.objectContaining({
+          $unset: { foodCostRecipe: '' },
+        }),
+      );
+      const calls = recipeModel.updateOne.mock.calls as unknown as Array<
+        [unknown, RecipeUpdatePayload]
+      >;
+      expect(calls[0][1].$set.ingredients?.[0]).toMatchObject({
+        prodQty: 3000,
+        qty: 0.2,
+        srQty: 0.2,
+        conversionMultiplier: 1 / 15000,
+        priceUom: 90000,
+      });
+      expect(calls[0][1].$set.ingredients?.[0].foodCost).toBeUndefined();
+      expect(unitOfMeasures.findActiveConversion).not.toHaveBeenCalled();
+    });
+
+    it.each(['pending', 'rejected'])(
+      'syncs %s recipes and recalculates their approval estimates without changing status',
+      async (approvalStatus) => {
+        const { service, recipeModel } = setup();
+        recipeModel.find.mockReturnValue(
+          mockRecipeQuery([
+            { _id: 'recipe-a', approvalStatus, ingredients: [ingredient] },
+          ]),
+        );
+        expect(await service.syncIngredientConversions()).toMatchObject({
+          updatedRecipes: 1,
+          updatedIngredients: 1,
+        });
+        const calls = recipeModel.updateOne.mock.calls as unknown as Array<
+          [Record<string, unknown>, RecipeUpdatePayload]
+        >;
+        expect(calls[0][0].approvalStatus).toBe(approvalStatus);
+        expect(calls[0][1].$set.ingredients?.[0]).toMatchObject({
+          prodQty: 3000,
+          qty: 0.2,
+          srQty: 0.2,
+          foodCost: 18000,
+        });
+        expect(calls[0][1].$set.foodCostRecipe).toBe(18000);
+        expect(calls[0][1].$set.approvalStatus).toBeUndefined();
+        expect(calls[0][1].$unset).toBeUndefined();
+      },
+    );
+
+    it('does not compound conversions or write unchanged quantities on repeat sync', async () => {
+      const { service, recipeModel } = setup([
+        {
+          ...ingredient,
+          qty: 0.2,
+          srQty: 0.2,
+          conversionMultiplier: 1 / 15000,
+        },
+      ]);
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        updatedRecipes: 0,
+        updatedIngredients: 0,
+      });
+      expect(recipeModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('preserves manual quantities and skips legacy ingredients without production quantity', async () => {
+      const { service, recipeModel } = setup();
+      recipeModel.find.mockReturnValue(
+        mockRecipeQuery([
+          {
+            _id: 'recipe-a',
+            ingredients: [
+              { ...ingredient, srQtyManual: true },
+              { ...ingredient, prodQty: undefined },
+            ],
+          },
+        ]),
+      );
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        skippedManual: 1,
+        skippedIncomplete: 1,
+        updatedRecipes: 0,
+      });
+      expect(recipeModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('uses an active global conversion when no product rule exists', async () => {
+      const { service, recipeModel, rawMaterials, unitOfMeasures } = setup();
+      rawMaterials.findLookupByNormalizedCode.mockResolvedValue({
+        unitOfMeasures: 'PK',
+      });
+      unitOfMeasures.findActiveConversion.mockResolvedValue({
+        prodUomCode: 'GR',
+        srUomCode: 'PK',
+        conversionId: 'GR To PK',
+        multiplier: 1 / 15000,
+      });
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        updatedRecipes: 1,
+      });
+      expect(recipeModel.updateOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports missing conversion rules without changing the ingredient', async () => {
+      const { service, recipeModel, rawMaterials } = setup();
+      rawMaterials.findLookupByNormalizedCode.mockResolvedValue({
+        unitOfMeasures: 'PK',
+      });
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        skippedMissingConversion: 1,
+        updatedRecipes: 0,
+      });
+      expect(recipeModel.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('reports missing raw materials and does not swallow database failures', async () => {
+      const { service, rawMaterials, recipeModel } = setup();
+      rawMaterials.findLookupByNormalizedCode.mockResolvedValue(null);
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        skippedIncomplete: 1,
+      });
+      expect(recipeModel.updateOne).not.toHaveBeenCalled();
+      rawMaterials.findLookupByNormalizedCode.mockRejectedValue(
+        new Error('Lookup failed'),
+      );
+      await expect(service.syncIngredientConversions()).rejects.toThrow(
+        'Lookup failed',
+      );
+    });
+
+    it('reports concurrent edits instead of counting an unapplied update', async () => {
+      const { service, recipeModel } = setup();
+      recipeModel.updateOne.mockResolvedValue({ modifiedCount: 0 });
+      expect(await service.syncIngredientConversions()).toMatchObject({
+        skippedConcurrentRecipes: 1,
+        updatedRecipes: 0,
+        updatedIngredients: 0,
+      });
+    });
+  });
+
   it('uses raw material specific conversion when no global conversion exists', async () => {
     const { rawMaterials, recipeModel, service, unitOfMeasures } =
       makeService();

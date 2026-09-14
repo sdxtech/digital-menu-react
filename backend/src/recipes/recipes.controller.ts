@@ -84,6 +84,12 @@ export class RecipesController {
     return this.recipes.backfillApprovedIngredientCosts(this.buildActor(req));
   }
 
+  @Patch('ingredient-conversions/sync')
+  @Roles(AppRole.Superadmin)
+  syncIngredientConversions(@Req() req: AuthenticatedRequest) {
+    return this.recipes.syncIngredientConversions(this.buildActor(req));
+  }
+
   @Patch(':id')
   @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   update(
