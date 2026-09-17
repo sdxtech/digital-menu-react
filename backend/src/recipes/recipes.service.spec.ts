@@ -496,6 +496,7 @@ describe('RecipesService site visibility', () => {
       $and: [{ site: 'SITE-001' }],
       approvalStatus: 'pending',
       deletedAt: { $exists: false },
+      isActive: { $ne: false },
       isDraft: { $ne: true },
     });
   });
@@ -509,6 +510,7 @@ describe('RecipesService site visibility', () => {
     expect(recipeModel.find).toHaveBeenCalledWith({
       approvalStatus: 'approved',
       deletedAt: { $exists: false },
+      isActive: { $ne: false },
       isDraft: { $ne: true },
     });
   });
@@ -526,6 +528,7 @@ describe('RecipesService site visibility', () => {
         },
       ],
       deletedAt: { $exists: false },
+      isActive: { $ne: false },
       isDraft: { $ne: true },
     });
   });
