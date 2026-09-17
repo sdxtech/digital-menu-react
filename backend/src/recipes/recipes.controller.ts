@@ -75,7 +75,11 @@ export class RecipesController {
   @Get()
   @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
-    return this.recipes.findAll(query, this.resolveQuerySite(req, query.site));
+    return this.recipes.findAll(
+      query,
+      this.resolveQuerySite(req, query.site),
+      req.user.roles?.includes(AppRole.Superadmin) ?? false,
+    );
   }
 
   @Patch('ingredient-costs/backfill')
