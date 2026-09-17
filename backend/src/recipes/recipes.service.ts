@@ -341,11 +341,18 @@ export class RecipesService {
     }
   }
 
-  async findAll(query: ListRecipesQueryDto, site?: string) {
+  async findAll(
+    query: ListRecipesQueryDto,
+    site?: string,
+    includeInactive = false,
+  ) {
     const filter: Record<string, unknown> = {
       deletedAt: { $exists: false },
       isDraft: { $ne: true },
     };
+    if (!includeInactive) {
+      filter.isActive = { $ne: false };
+    }
     const andFilters: Record<string, unknown>[] = [];
     const visibilityFilter =
       query.strictSite === 'true'

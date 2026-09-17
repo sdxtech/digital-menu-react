@@ -114,9 +114,32 @@ describe('RecipesController corporate chef creation', () => {
     expect(recipes.findAll).toHaveBeenCalledWith(
       { site: 'SITE-002' },
       'SITE-002',
+      false,
     );
     expect(() =>
       controller.list(executiveRequest as never, { site: 'SITE-999' }),
     ).toThrow('The selected site is not assigned to this Executive.');
+  });
+
+  it('hides disabled recipes from non-superadmin recipe data', async () => {
+    const { controller, recipes } = makeController();
+
+    await controller.list(request as never, {});
+
+    expect(recipes.findAll).toHaveBeenCalledWith({}, 'SITE-001', false);
+  });
+
+  it('keeps disabled recipes available to superadmin', async () => {
+    const { controller, recipes } = makeController();
+    const superadminRequest = {
+      user: {
+        sub: 'superadmin-1',
+        roles: [AppRole.Superadmin],
+      },
+    };
+
+    await controller.list(superadminRequest as never, {});
+
+    expect(recipes.findAll).toHaveBeenCalledWith({}, undefined, true);
   });
 });
