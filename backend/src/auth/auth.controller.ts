@@ -26,6 +26,7 @@ import { UsersService } from '../users/users.service';
 import type { Request, Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
+import { EMAIL_LOGO_URL } from '../mail/mail.constants';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SitesService } from '../sites/sites.service';
@@ -192,14 +193,15 @@ export class AuthController {
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
       const appBaseUrl = this.config.getOrThrow<string>('APP_BASE_URL');
       const resetUrl = `${appBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+      const logoUrl = EMAIL_LOGO_URL;
 
       await this.users.setPasswordResetToken(user.id, tokenHash, expiresAt);
       try {
         await this.mail.enqueue({
           to: user.email,
-          subject: 'Reset your Food Recipe System password',
+          subject: 'Reset your SPICES password',
           text: `Use this link to reset your password within 30 minutes: ${resetUrl}`,
-          html: `<p>A password reset was requested for your Food Recipe System account.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request it, you can ignore this email.</p>`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:640px;color:#0f172a"><img src="${logoUrl}" alt="SPICES" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:0 0 20px;border:0" /><h2>Reset your password</h2><p>A password reset was requested for your SPICES account.</p><p style="margin-top:24px"><a href="${resetUrl}" style="background:#2563eb;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px">Reset password</a></p><p>This link expires in 30 minutes. If you did not request it, you can ignore this email.</p><p style="margin-top:24px;color:#64748b;font-size:12px">Note : This is an automated notification from SPICES, please do not reply.</p><img src="${logoUrl}" alt="SPICES" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:16px 0 0;border:0" /></div>`,
           category: 'password-reset',
           deduplicationKey: `password-reset-${user.id}-${tokenHash}`,
         });

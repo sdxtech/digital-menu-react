@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { AppRole } from '../auth/roles.constants';
 import { EmailRecipient, UsersService } from '../users/users.service';
 import { MailService } from './mail.service';
+import { EMAIL_LOGO_URL } from './mail.constants';
 
 type RecipeMailRecord = {
   id: string;
@@ -330,7 +331,7 @@ export class WorkflowMailService {
       return;
     }
     const url = this.buildAppUrl(message.path);
-    const logoUrl = this.buildAppUrl('/SPICES_LOGO_2.png');
+    const logoUrl = EMAIL_LOGO_URL;
     const textDetails = message.details
       .map(([label, value]) => `${label}: ${value}`)
       .join('\n');

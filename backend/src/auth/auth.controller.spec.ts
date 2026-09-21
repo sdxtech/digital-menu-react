@@ -47,6 +47,7 @@ describe('AuthController password reset', () => {
     const tokenHash = users.setPasswordResetToken.mock.calls[0]?.[1] as string;
     const mailInput = mail.enqueue.mock.calls[0]?.[0] as {
       text: string;
+      html: string;
       deduplicationKey: string;
     };
     const rawToken = new URL(
@@ -59,6 +60,14 @@ describe('AuthController password reset', () => {
         .digest('hex'),
     ).toBe(tokenHash);
     expect(mailInput.deduplicationKey).toContain(tokenHash);
+    const imageSources = [
+      ...mailInput.html.matchAll(/<img src="([^"]+)"/g),
+    ].map((match) => match[1]);
+    expect(imageSources).toEqual([
+      'https://spices.systems/SPICES_LOGO_2.png?v=20260918',
+      'https://spices.systems/SPICES_LOGO_2.png?v=20260918',
+    ]);
+    expect(mailInput.html).toContain('http://localhost:5173/reset-password?');
   });
 
   it('returns the same response without sending for an unknown account', async () => {
