@@ -10,6 +10,7 @@ export type JwtPayload = {
   siteId?: string;
   siteName?: string;
   sites?: string[];
+  sessionVersion?: number;
   iat?: number;
   exp?: number;
 };

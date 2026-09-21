@@ -27,6 +27,9 @@ export class User {
   @Prop({ select: false })
   lastActivityAt?: Date;
 
+  @Prop({ default: 0 })
+  sessionVersion: number;
+
   // 🌟 NEW FIELD: Allows Mongoose to persist your secure recovery tokens safely
   @Prop({ type: String, select: false, index: true })
   resetTokenHash?: string;

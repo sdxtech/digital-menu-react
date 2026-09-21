@@ -230,7 +230,6 @@ export class AuthController {
     }
 
     await this.users.updatePassword(user.id, dto.newPassword);
-    await this.users.setRefreshToken(user.id, null);
 
     return {
       ok: true,
