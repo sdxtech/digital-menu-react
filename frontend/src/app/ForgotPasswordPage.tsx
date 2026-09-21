@@ -39,28 +39,16 @@ const ForgotPasswordPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#dce4fd] to-[#f4f6fe] flex items-center justify-center p-4">
-      <div className="max-w-4xl w-full flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
-        
-        {/* LEFT BRAND SECTION */}
-        <div className="flex items-center gap-3 md:flex-1 justify-center md:justify-start">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm border border-black/5">
+      <div className="max-w-md w-full">
+        <div className="bg-white rounded-3xl p-8 shadow-xl border border-white/40 max-w-md w-full animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="mb-6 flex justify-center">
             <img
-              src="/Sodexo_Logo.png"
-              alt="Sodexo logo"
-              className="h-full w-full object-contain"
+              src="/SPICES_LOGO_2.png"
+              alt="SPICES"
+              className="h-14 w-auto object-contain"
             />
           </div>
-          <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">
-            SPICES
-          </h1>
-        </div>
-
-        {/* RIGHT FLOATING COMPACT CARD CONTAINER */}
-        <div className="bg-white rounded-3xl p-8 shadow-xl border border-white/40 max-w-md w-full animate-in fade-in slide-in-from-bottom-2 duration-200">
           <div className="mb-6">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-              Recovery
-            </span>
             <h2 className="text-lg font-bold text-slate-900 leading-tight">
               Forgot Password?
             </h2>
