@@ -12,6 +12,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AppRole } from '../auth/roles.constants';
 import { MailService } from '../mail/mail.service';
+import { EMAIL_LOGO_URL } from '../mail/mail.constants';
 import { TestEmailDto } from '../mail/dto/test-email.dto';
 import { MenuProductionsService } from '../menu-productions/menu-productions.service';
 import { ExportStoreRequestsQueryDto } from './dto/export-store-requests.query.dto';
@@ -33,10 +34,12 @@ export class SuperadminController {
   @Post('test-email')
   @Roles(AppRole.Superadmin)
   testEmail(@Body() dto: TestEmailDto) {
+    const logoUrl = EMAIL_LOGO_URL;
     return this.mail.enqueue({
       to: dto.to,
       subject: 'Test Email',
-      text: 'Ini email test dari Food Recipe System.',
+      text: 'Ini email test dari SPICES.',
+      html: `<div style="font-family:Arial,sans-serif;max-width:640px;color:#0f172a"><img src="${logoUrl}" alt="SPICES" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:0 0 20px;border:0" /><p>Ini email test dari SPICES.</p><p style="margin-top:24px;color:#64748b;font-size:12px">Note : This is an automated notification from SPICES, please do not reply.</p><img src="${logoUrl}" alt="SPICES" width="140" style="display:block;width:140px;max-width:100%;height:auto;margin:16px 0 0;border:0" /></div>`,
       category: 'test',
     });
   }

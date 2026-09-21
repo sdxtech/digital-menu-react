@@ -42,6 +42,26 @@ describe('WorkflowMailService', () => {
     expect(mail.enqueue).not.toHaveBeenCalled();
   });
 
+  it('uses public logos while keeping workflow links on the local app', async () => {
+    const { mail, service } = makeService();
+
+    await service.notifyRecipeSubmitted({
+      id: 'recipe-1',
+      name: 'Soup',
+      site: 'S001',
+    });
+
+    const input = mail.enqueue.mock.calls[0]?.[0] as { html: string };
+    const imageSources = [...input.html.matchAll(/<img src="([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(imageSources).toEqual([
+      'https://spices.systems/SPICES_LOGO_2.png?v=20260918',
+      'https://spices.systems/SPICES_LOGO_2.png?v=20260918',
+    ]);
+    expect(input.html).toContain('http://localhost:5173/unit-manager?');
+  });
+
   it('emails active Unit Managers and Corporate Chefs for a recipe submission', async () => {
     const { mail, service, users } = makeService();
     users.findActiveEmailRecipients
