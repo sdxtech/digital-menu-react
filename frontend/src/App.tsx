@@ -274,7 +274,27 @@ function App() {
               path="approval-centers"
               element={<SuperadminApprovalCentersPage />}
             />
+            <Route
+              path="admin-site-sales"
+              element={<AdminSiteMenuProductionPage />}
+            />
+            <Route
+              path="admin-site-history"
+              element={<AdminSiteMenuProductionHistoryPage />}
+            />
+            <Route
+              path="menu-production-progress"
+              element={
+                <UnitManagerMenuProductionRecordsPage
+                  includePending
+                  title="Menu Production Progress"
+                  description="Monitor production batches across all sites from submission through approval, store request, completion, rejection, or cancellation."
+                />
+              }
+            />
             <Route path="store-request" element={<SuperadminStoreRequestPage />} />
+            <Route path="issuance-history" element={<StorekeeperHistoryPage />} />
+            <Route path="inventory" element={<StorekeeperInventoryPage />} />
             <Route
               path="store-request-export"
               element={<SuperadminStoreRequestExportPage />}
