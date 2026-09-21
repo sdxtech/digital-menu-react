@@ -143,26 +143,11 @@ const navItems = [
     ],
   },
   {
-    label: 'Production Progress',
-    to: '/superadmin/menu-production-progress',
-    icon: (className: string) => (
-      <i className={`bi bi-graph-up-arrow ${className}`} aria-hidden="true" />
-    ),
-  },
-  {
-    label: 'Store Request',
+    label: 'Store Request Operations',
     to: '/superadmin/store-request',
     icon: (className: string) => (
       <i className={`bi bi-clipboard-check ${className}`} aria-hidden="true" />
     ),
-  },
-  {
-    label: 'Issuance History',
-    to: '/superadmin/issuance-history',
-    icon: (className: string) => (
-      <i className={`bi bi-clock-history ${className}`} aria-hidden="true" />
-    ),
-    componentKey: 'STORE_ISSUANCE_HISTORY',
   },
   {
     label: 'Inventory',
