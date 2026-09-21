@@ -119,10 +119,56 @@ const navItems = [
     ],
   },
   {
+    label: 'Admin Site Operations',
+    to: '/superadmin/admin-site-sales',
+    icon: (className: string) => (
+      <i className={`bi bi-building-gear ${className}`} aria-hidden="true" />
+    ),
+    children: [
+      {
+        label: 'Sales Input',
+        to: '/superadmin/admin-site-sales',
+        icon: (className: string) => (
+          <i className={`bi bi-cash-coin ${className}`} aria-hidden="true" />
+        ),
+        componentKey: 'ADMIN_SITE_MENU_PRODUCTION_SALES',
+      },
+      {
+        label: 'Production History',
+        to: '/superadmin/admin-site-history',
+        icon: (className: string) => (
+          <i className={`bi bi-clock-history ${className}`} aria-hidden="true" />
+        ),
+      },
+    ],
+  },
+  {
+    label: 'Production Progress',
+    to: '/superadmin/menu-production-progress',
+    icon: (className: string) => (
+      <i className={`bi bi-graph-up-arrow ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Store Request',
     to: '/superadmin/store-request',
     icon: (className: string) => (
       <i className={`bi bi-clipboard-check ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
+    label: 'Issuance History',
+    to: '/superadmin/issuance-history',
+    icon: (className: string) => (
+      <i className={`bi bi-clock-history ${className}`} aria-hidden="true" />
+    ),
+    componentKey: 'STORE_ISSUANCE_HISTORY',
+  },
+  {
+    label: 'Inventory',
+    to: '/superadmin/inventory',
+    icon: (className: string) => (
+      <i className={`bi bi-boxes ${className}`} aria-hidden="true" />
     ),
   },
   {
