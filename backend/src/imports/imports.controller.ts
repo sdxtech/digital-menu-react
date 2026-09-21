@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -19,6 +21,7 @@ import { AppRole } from '../auth/roles.constants';
 import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { getUploadDir } from '../common/upload-dir';
+import { FilesService } from '../files/files.service';
 import { ImportDto } from './dto/import.dto';
 import { ImportsService } from './imports.service';
 
@@ -36,7 +39,10 @@ type UploadFilterCallback = (error: Error | null, acceptFile: boolean) => void;
 @Controller('imports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ImportsController {
-  constructor(private readonly importsService: ImportsService) {}
+  constructor(
+    private readonly importsService: ImportsService,
+    private readonly files: FilesService,
+  ) {}
 
   @Post('products')
   @Roles(AppRole.Superadmin)
@@ -104,12 +110,19 @@ export class ImportsController {
       throw new BadRequestException('file is required');
     }
 
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileKey = `imports/raw-materials/${randomUUID()}-${safeName}`;
+    await this.files.uploadObject(
+      fileKey,
+      createReadStream(file.path),
+      file.mimetype,
+    );
+
     return this.importsService.enqueueRawMaterials(
       req.user.sub,
-      undefined,
+      fileKey,
       file.originalname,
       file.mimetype,
-      file.path,
     );
   }
 

@@ -39,6 +39,7 @@ import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminClientManagementPage from './app/SuperadminClientManagementPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 import SuperadminStoreRequestPage from './app/SuperadminStoreRequestPage'
+import SuperadminAuditLogPage from './app/SuperadminAuditLogPage'
 import { useRouteDocumentTitle } from './lib/document-title'
 import ProfileView from './app/ProfileView'
 
@@ -295,6 +296,7 @@ function App() {
             <Route path="store-request" element={<SuperadminStoreRequestPage />} />
             <Route path="issuance-history" element={<StorekeeperHistoryPage />} />
             <Route path="inventory" element={<StorekeeperInventoryPage />} />
+            <Route path="audit-logs" element={<SuperadminAuditLogPage />} />
             <Route
               path="store-request-export"
               element={<SuperadminStoreRequestExportPage />}

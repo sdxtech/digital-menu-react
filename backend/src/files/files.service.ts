@@ -99,6 +99,14 @@ export class FilesService {
     return Readable.from(response.Body as AsyncIterable<Uint8Array>);
   }
 
+  async presignDownload(key: string, expiresIn = 7 * 24 * 60 * 60) {
+    return getSignedUrl(
+      this.s3,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn },
+    );
+  }
+
   async uploadObject(
     key: string,
     body: Readable | string,
