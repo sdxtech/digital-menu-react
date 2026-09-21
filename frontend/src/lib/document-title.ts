@@ -263,7 +263,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/superadmin/store-request',
-    getPageTitle: () => 'Store Request',
+    getPageTitle: () => 'Store Request Operations',
   },
   {
     path: '/superadmin/issuance-history',
