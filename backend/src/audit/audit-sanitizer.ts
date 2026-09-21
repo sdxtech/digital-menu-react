@@ -15,6 +15,7 @@ const SENSITIVE_KEYS = new Set([
 export const sanitizeAuditValue = (value: unknown, depth = 0): unknown => {
   if (depth > 8) return '[truncated]';
   if (value instanceof Date) return value.toISOString();
+  if (isObjectId(value)) return value.toHexString();
   if (Buffer.isBuffer(value)) {
     return {
       type: 'Buffer',
@@ -46,6 +47,20 @@ export const sanitizeAuditValue = (value: unknown, depth = 0): unknown => {
   }
   if (typeof value === 'string') return value.slice(0, 10_000);
   return value;
+};
+
+const isObjectId = (
+  value: unknown,
+): value is { _bsontype: 'ObjectId'; toHexString: () => string } => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as {
+    _bsontype?: unknown;
+    toHexString?: unknown;
+  };
+  return (
+    candidate._bsontype === 'ObjectId' &&
+    typeof candidate.toHexString === 'function'
+  );
 };
 
 export const buildAuditDiff = (
