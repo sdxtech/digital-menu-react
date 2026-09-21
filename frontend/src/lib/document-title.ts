@@ -250,8 +250,28 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Approval Centers',
   },
   {
+    path: '/superadmin/admin-site-sales',
+    getPageTitle: () => 'Admin Site Sales Input',
+  },
+  {
+    path: '/superadmin/admin-site-history',
+    getPageTitle: () => 'Admin Site Production History',
+  },
+  {
+    path: '/superadmin/menu-production-progress',
+    getPageTitle: () => 'Menu Production Progress',
+  },
+  {
     path: '/superadmin/store-request',
     getPageTitle: () => 'Store Request',
+  },
+  {
+    path: '/superadmin/issuance-history',
+    getPageTitle: () => 'Issuance History',
+  },
+  {
+    path: '/superadmin/inventory',
+    getPageTitle: () => 'Inventory',
   },
   {
     path: '/superadmin/store-request-export',
