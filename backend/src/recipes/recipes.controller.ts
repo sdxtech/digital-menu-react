@@ -16,7 +16,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
-import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -211,14 +210,7 @@ export class RecipesController {
       throw new BadRequestException('file is required');
     }
 
-    try {
-      return await this.recipes.importFromExcel(
-        file.path,
-        this.buildActor(req),
-      );
-    } finally {
-      await fs.unlink(file.path).catch(() => null);
-    }
+    return this.recipes.importFromExcel(file.path, this.buildActor(req));
   }
 
   private buildActor(

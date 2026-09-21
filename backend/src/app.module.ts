@@ -28,6 +28,8 @@ import { SitesModule } from './sites/sites.module';
 import { JwtModule } from '@nestjs/jwt';
 import { MenuGroupsModule } from './menu-groups/menu-groups.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { AuditModule } from './audit/audit.module';
+import { auditMongoosePlugin } from './audit/audit-mongoose.plugin';
 
 @Module({
   imports: [
@@ -40,6 +42,10 @@ import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.getOrThrow<string>('MONGO_URI'),
+        connectionFactory: (connection: import('mongoose').Connection) => {
+          connection.plugin(auditMongoosePlugin);
+          return connection;
+        },
       }),
     }),
     RedisModule,
@@ -53,6 +59,7 @@ import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
     MenuProductionsModule,
     MenuGroupsModule,
     FeatureFlagsModule,
+    AuditModule,
     SitesModule,
     NotificationsModule,
     FilesModule,

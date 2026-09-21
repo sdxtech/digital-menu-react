@@ -17,7 +17,11 @@ describe('MailService', () => {
         return value;
       }),
     };
-    const service = new MailService(queue as never, config as never);
+    const service = new MailService(
+      queue as never,
+      config as never,
+      { send: jest.fn() } as never,
+    );
 
     await service.enqueue({
       to: 'chef@example.com',
@@ -54,7 +58,11 @@ describe('MailService', () => {
       get: jest.fn((key: string) => values[key]),
       getOrThrow: jest.fn((key: string) => values[key]),
     };
-    const service = new MailService(queue as never, config as never);
+    const service = new MailService(
+      queue as never,
+      config as never,
+      { send: jest.fn() } as never,
+    );
 
     await service.enqueue({ to: 'manager@example.com', subject: 'Test' });
 
