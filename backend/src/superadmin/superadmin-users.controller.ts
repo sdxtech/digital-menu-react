@@ -15,7 +15,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
-import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import ExcelJS from 'exceljs';
 import * as bcrypt from 'bcrypt';
@@ -127,11 +126,7 @@ export class SuperadminUsersController {
       throw new BadRequestException('file is required');
     }
 
-    try {
-      return await this.importFromExcel(file.path);
-    } finally {
-      await fs.unlink(file.path).catch(() => null);
-    }
+    return this.importFromExcel(file.path);
   }
 
   @Post()

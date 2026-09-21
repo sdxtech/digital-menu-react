@@ -178,6 +178,13 @@ const navItems = [
       <i className={`bi bi-box-arrow-down ${className}`} aria-hidden="true" />
     ),
   },
+  {
+    label: 'Audit Log',
+    to: '/superadmin/audit-logs',
+    icon: (className: string) => (
+      <i className={`bi bi-shield-lock ${className}`} aria-hidden="true" />
+    ),
+  },
 ]
 
 const SuperadminLayout = () => {

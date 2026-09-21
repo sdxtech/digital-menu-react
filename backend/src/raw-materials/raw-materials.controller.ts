@@ -16,7 +16,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
-import { promises as fs } from 'fs';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -208,19 +207,14 @@ export class RawMaterialsController {
   ) {
     if (!file) throw new BadRequestException('file is required');
 
-    try {
-      const rows = this.priceFileParser.parse(file.path, file.originalname);
-      const result =
-        await this.rawMaterials.bulkUpdatePricesByProductCode(rows);
-      if (result.requestedCount === 0) {
-        throw new BadRequestException(
-          'File must include at least one row with product code and price.',
-        );
-      }
-      return result;
-    } finally {
-      await fs.unlink(file.path).catch(() => undefined);
+    const rows = this.priceFileParser.parse(file.path, file.originalname);
+    const result = await this.rawMaterials.bulkUpdatePricesByProductCode(rows);
+    if (result.requestedCount === 0) {
+      throw new BadRequestException(
+        'File must include at least one row with product code and price.',
+      );
     }
+    return result;
   }
 
   @Patch('specific-conversions/bulk')
