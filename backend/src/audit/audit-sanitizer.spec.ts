@@ -1,4 +1,5 @@
 import { buildAuditDiff, sanitizeAuditValue } from './audit-sanitizer';
+import { Types } from 'mongoose';
 
 describe('audit sanitizer', () => {
   it('redacts secrets recursively while preserving response fields', () => {
@@ -20,5 +21,13 @@ describe('audit sanitizer', () => {
         { name: 'New', status: 'draft' },
       ),
     ).toEqual({ name: { before: 'Old', after: 'New' } });
+  });
+
+  it('serializes MongoDB ObjectId values as hexadecimal strings', () => {
+    const id = new Types.ObjectId();
+
+    expect(sanitizeAuditValue({ _id: id })).toEqual({
+      _id: id.toHexString(),
+    });
   });
 });
