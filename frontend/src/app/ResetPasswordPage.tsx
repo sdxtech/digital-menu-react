@@ -68,27 +68,16 @@ const ResetPasswordPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#dce4fd] to-[#f4f6fe] flex items-center justify-center p-4">
-      <div className="max-w-4xl w-full flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
-        {/* LEFT BRAND SECTION */}
-        <div className="flex items-center gap-3 md:flex-1 justify-center md:justify-start">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white p-2 shadow-sm border border-black/5">
+      <div className="max-w-md w-full">
+        <div className="bg-white rounded-3xl p-8 shadow-xl border border-white/40 max-w-md w-full animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="mb-6 flex justify-center">
             <img
-              src="/Sodexo_Logo.png"
-              alt="Sodexo logo"
-              className="h-full w-full object-contain"
+              src="/SPICES_LOGO_2.png"
+              alt="SPICES"
+              className="h-14 w-auto object-contain"
             />
           </div>
-          <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">
-            Food Recipe System
-          </h1>
-        </div>
-
-        {/* RIGHT FLOATING CARD */}
-        <div className="bg-white rounded-3xl p-8 shadow-xl border border-white/40 max-w-md w-full animate-in fade-in slide-in-from-bottom-2 duration-200">
           <div className="mb-6">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-              Security
-            </span>
             <h2 className="text-lg font-bold text-slate-900 leading-tight">
               Create New Password
             </h2>
@@ -121,7 +110,7 @@ const ResetPasswordPage = () => {
                 disabled={isLoading || !token}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full h-10 px-3 text-sm rounded-xl border border-slate-200 bg-[#ebf0fe]/40 focus:outline-none focus:ring-2 focus:ring-[#112d60]/20 focus:border-[#112d60] text-slate-900 text-slate-900"
+                className="w-full h-10 px-3 text-sm rounded-xl border border-slate-200 bg-[#ebf0fe]/40 transition focus:outline-none focus:ring-2 focus:ring-[#112d60]/20 focus:border-[#112d60] text-slate-900 disabled:opacity-60"
               />
             </div>
 
@@ -136,18 +125,29 @@ const ResetPasswordPage = () => {
                 disabled={isLoading || !token}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full h-10 px-3 text-sm rounded-xl border border-slate-200 bg-[#ebf0fe]/40 focus:outline-none focus:ring-2 focus:ring-[#112d60]/20 focus:border-[#112d60] text-slate-900 text-slate-900"
+                className="w-full h-10 px-3 text-sm rounded-xl border border-slate-200 bg-[#ebf0fe]/40 transition focus:outline-none focus:ring-2 focus:ring-[#112d60]/20 focus:border-[#112d60] text-slate-900 disabled:opacity-60"
               />
             </div>
 
             <button
               type="submit"
               disabled={isLoading || !token}
-              className="w-full h-10 mt-2 rounded-xl bg-[#112d60] hover:bg-[#193d7c] text-white text-xs font-semibold transition shadow-md shadow-blue-900/10 disabled:opacity-50"
+              className="w-full h-10 mt-2 rounded-xl bg-[#112d60] hover:bg-[#193d7c] text-white text-xs font-semibold shadow-md shadow-blue-900/10 transition active:scale-[0.99] disabled:opacity-50 flex items-center justify-center"
             >
               {isLoading ? 'Updating Password...' : 'Reset Password'}
             </button>
           </form>
+
+          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="text-xs font-semibold text-[#112d60] hover:underline bg-transparent border-none p-0 cursor-pointer"
+            >
+              <i className="bi bi-arrow-left mr-1.5" />
+              Back to Sign In
+            </button>
+          </div>
         </div>
       </div>
     </div>
