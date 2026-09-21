@@ -109,6 +109,30 @@ describe('AuthService', () => {
     expect(users.setRefreshToken).not.toHaveBeenCalled();
   });
 
+  it('rejects a refresh token issued before a password change', async () => {
+    const users = makeUsers();
+    const jwt = makeJwt();
+    const service = new AuthService(
+      users as never,
+      makeSites() as never,
+      jwt as never,
+      makeConfig() as never,
+    );
+
+    users.findByIdWithRefreshToken.mockResolvedValue({
+      id: 'user-1',
+      isActive: true,
+      sessionVersion: 2,
+      refreshTokenHash: await bcrypt.hash('old-refresh-token', 10),
+    });
+    jwt.verifyAsync.mockResolvedValue({ sub: 'user-1', sessionVersion: 1 });
+
+    await expect(service.refresh('old-refresh-token')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(users.setRefreshToken).not.toHaveBeenCalled();
+  });
+
   it('revokes session when refresh token is idle-timed out', async () => {
     const users = makeUsers();
     const sites = makeSites();

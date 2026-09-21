@@ -85,6 +85,5 @@ describe('AuthController password reset', () => {
       createHash('sha256').update(token).digest('hex'),
     );
     expect(users.updatePassword).toHaveBeenCalledWith('user-1', 'new-secret');
-    expect(users.setRefreshToken).toHaveBeenCalledWith('user-1', null);
   });
 });
