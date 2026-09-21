@@ -51,6 +51,7 @@ export class AuthService {
       user.email,
       roles,
       siteContext,
+      user.sessionVersion ?? 0,
     );
     await this.users.setRefreshToken(user.id, tokens.refreshToken);
     return tokens;
@@ -73,6 +74,7 @@ export class AuthService {
       user.email,
       roles,
       siteContext,
+      user.sessionVersion ?? 0,
     );
     await this.users.setRefreshToken(user.id, tokens.refreshToken);
     return tokens;
@@ -82,15 +84,17 @@ export class AuthService {
     try {
       const refreshSecret =
         this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(
-        refreshToken,
-        {
-          secret: refreshSecret,
-        },
-      );
+      const payload = await this.jwt.verifyAsync<{
+        sub: string;
+        sessionVersion?: number;
+      }>(refreshToken, {
+        secret: refreshSecret,
+      });
 
       const user = await this.users.findByIdWithRefreshToken(payload.sub);
       if (!user || !user.isActive)
+        throw new UnauthorizedException('Invalid refresh token');
+      if ((payload.sessionVersion ?? 0) !== (user.sessionVersion ?? 0))
         throw new UnauthorizedException('Invalid refresh token');
       if (!user.refreshTokenHash)
         throw new UnauthorizedException('Invalid refresh token');
@@ -111,6 +115,7 @@ export class AuthService {
         user.email,
         roles,
         siteContext,
+        user.sessionVersion ?? 0,
       );
       await this.users.setRefreshToken(user.id, tokens.refreshToken);
       return tokens;
@@ -197,6 +202,7 @@ export class AuthService {
     email: string,
     roles: AppRole[],
     siteContext: AuthSiteContext,
+    sessionVersion: number,
   ) {
     const accessExpiresIn = resolveExpiresIn(
       this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
@@ -221,11 +227,12 @@ export class AuthService {
         siteId: siteContext.siteId,
         siteName: siteContext.siteName,
         sites: siteContext.sites,
+        sessionVersion,
       },
       { expiresIn: accessExpiresIn },
     );
     const refreshToken = await this.jwt.signAsync(
-      { sub, jti: refreshTokenId },
+      { sub, jti: refreshTokenId, sessionVersion },
       { secret: refreshSecret, expiresIn: refreshExpiresIn },
     );
 

@@ -63,3 +63,31 @@ describe('UsersService email recipients', () => {
     expect(model.find).not.toHaveBeenCalled();
   });
 });
+
+describe('UsersService password changes', () => {
+  it('updates the password and revokes existing sessions together', async () => {
+    const user = {
+      id: 'user-1',
+      email: 'chef@corp.test',
+      name: 'Chef',
+    };
+    const select = jest.fn().mockResolvedValue(user);
+    const model = {
+      findById: jest.fn().mockReturnValue({ select }),
+      updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+    };
+    const service = new UsersService(model as never, {} as never);
+
+    await expect(
+      service.updatePassword('user-1', 'new-secret'),
+    ).resolves.toEqual(user);
+    expect(model.updateOne).toHaveBeenCalledWith(
+      { _id: 'user-1' },
+      {
+        $set: { passwordHash: expect.any(String) },
+        $inc: { sessionVersion: 1 },
+        $unset: { refreshTokenHash: 1, lastActivityAt: 1 },
+      },
+    );
+  });
+});

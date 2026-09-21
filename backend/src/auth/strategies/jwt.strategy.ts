@@ -30,7 +30,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: JwtPayload) {
     const user = await this.users.findByIdWithSessionState(payload.sub);
-    if (!user || !user.isActive || !user.refreshTokenHash) {
+    if (
+      !user ||
+      !user.isActive ||
+      !user.refreshTokenHash ||
+      (payload.sessionVersion ?? 0) !== (user.sessionVersion ?? 0)
+    ) {
       throw new UnauthorizedException('SESSION_REVOKED');
     }
 

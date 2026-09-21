@@ -341,8 +341,15 @@ export class UsersService {
       throw new BadRequestException('Password is required');
     }
 
-    user.passwordHash = await bcrypt.hash(trimmed, 12);
-    await user.save();
+    const passwordHash = await bcrypt.hash(trimmed, 12);
+    await this.userModel.updateOne(
+      { _id: id },
+      {
+        $set: { passwordHash },
+        $inc: { sessionVersion: 1 },
+        $unset: { refreshTokenHash: 1, lastActivityAt: 1 },
+      },
+    );
 
     return { id: user.id, email: user.email, name: user.name };
   }
@@ -366,8 +373,15 @@ export class UsersService {
       throw new BadRequestException('Current password is incorrect');
     }
 
-    user.passwordHash = await bcrypt.hash(next, 12);
-    await user.save();
+    const passwordHash = await bcrypt.hash(next, 12);
+    await this.userModel.updateOne(
+      { _id: id },
+      {
+        $set: { passwordHash },
+        $inc: { sessionVersion: 1 },
+        $unset: { refreshTokenHash: 1, lastActivityAt: 1 },
+      },
+    );
 
     return { id: user.id, email: user.email, name: user.name };
   }
