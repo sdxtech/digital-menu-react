@@ -7,6 +7,7 @@ const SENSITIVE_KEYS = new Set([
   'accesstoken',
   'refreshtoken',
   'refreshtokenhash',
+  'resettokenhash',
   'authorization',
   'cookie',
   'secret',
@@ -31,9 +32,11 @@ export const sanitizeAuditValue = (value: unknown, depth = 0): unknown => {
   if (value && typeof value === 'object') {
     const objectValue = value as { toObject?: unknown };
     const source =
-      typeof objectValue.toObject === 'function'
-        ? (objectValue.toObject as () => unknown)()
-        : value;
+      value instanceof Map
+        ? Object.fromEntries(value as Map<string, unknown>)
+        : typeof objectValue.toObject === 'function'
+          ? (objectValue.toObject as () => unknown)()
+          : value;
     return Object.fromEntries(
       Object.entries(source as Record<string, unknown>)
         .slice(0, 200)

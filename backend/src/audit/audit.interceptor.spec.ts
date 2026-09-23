@@ -1,11 +1,13 @@
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
-import { access, writeFile } from 'node:fs/promises';
+import { firstValueFrom, Observable, of, throwError, defer } from 'rxjs';
+import { Logger } from '@nestjs/common';
+import { access, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { addAuditDatabaseChange } from './audit-context';
 import { AuditInterceptor } from './audit.interceptor';
 
 describe('AuditInterceptor', () => {
+  afterEach(() => jest.restoreAllMocks());
   const files = { uploadObject: jest.fn().mockResolvedValue(undefined) };
   const makeContext = (
     body?: Record<string, unknown>,
@@ -179,5 +181,129 @@ describe('AuditInterceptor', () => {
       }),
     );
     await expect(access(path)).rejects.toBeDefined();
+  });
+
+  it('cleans temporary imports and preserves the response when audit upload fails', async () => {
+    const path = join(tmpdir(), `audit-failed-upload-${Date.now()}.csv`);
+    await writeFile(path, 'code,name\n1,Test');
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const storage = {
+      uploadObject: jest
+        .fn()
+        .mockRejectedValue(new Error('Storage unavailable')),
+    };
+    const interceptor = new AuditInterceptor(audit as never, storage as never);
+    const result = { imported: 1 };
+    try {
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(
+            makeContext({}, { path, originalname: 'import.csv' }) as never,
+            { handle: () => of(result) },
+          ),
+        ),
+      ).resolves.toBe(result);
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      await expect(access(path)).rejects.toBeDefined();
+    } finally {
+      await unlink(path).catch(() => undefined);
+    }
+  });
+
+  it.each([false, true])(
+    'preserves the API outcome when audit database writing fails (business failure: %s)',
+    async (failed) => {
+      const logger = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      const audit = {
+        record: jest.fn().mockRejectedValue(new Error('Audit unavailable')),
+      };
+      const interceptor = new AuditInterceptor(audit as never, files as never);
+      const error = Object.assign(new Error('Invalid data'), { status: 400 });
+      const result = { saved: true };
+      const response = firstValueFrom(
+        interceptor.intercept(makeContext() as never, {
+          handle: () => (failed ? throwError(() => error) : of(result)),
+        }),
+      );
+      if (failed) await expect(response).rejects.toBe(error);
+      else await expect(response).resolves.toBe(result);
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(logger).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['GET', 'HEAD', 'OPTIONS'])(
+    'does not introduce audit work for %s requests',
+    async (method) => {
+      const audit = { record: jest.fn() };
+      const interceptor = new AuditInterceptor(audit as never, files as never);
+      const context = makeContext();
+      context.switchToHttp().getRequest().method = method;
+      await expect(
+        firstValueFrom(
+          interceptor.intercept(context as never, { handle: () => of('ok') }),
+        ),
+      ).resolves.toBe('ok');
+      expect(audit.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('isolates database changes between concurrent requests', async () => {
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const interceptor = new AuditInterceptor(audit as never, files as never);
+    const runRequest = (name: string) =>
+      firstValueFrom(
+        interceptor.intercept(makeContext({ name }) as never, {
+          handle: () =>
+            defer(async () => {
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              addAuditDatabaseChange({
+                collection: 'recipes',
+                operation: 'create',
+                before: null,
+                after: { name },
+                changes: {},
+              });
+              await new Promise<void>((resolve) => setImmediate(resolve));
+              return { name };
+            }),
+        }),
+      );
+    await Promise.all([runRequest('First'), runRequest('Second')]);
+    expect(audit.record).toHaveBeenCalledTimes(2);
+    for (const name of ['First', 'Second']) {
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({
+            input: { name },
+            after: { name },
+            response: { name },
+          }) as unknown,
+        }),
+      );
+    }
+  });
+
+  it('keeps files explicitly retained by their owner', async () => {
+    const path = join(tmpdir(), `audit-preserve-${Date.now()}.csv`);
+    await writeFile(path, 'test');
+    const context = makeContext({}, { path, originalname: 'import.csv' });
+    Object.assign(context.switchToHttp().getRequest(), {
+      auditPreserveUpload: true,
+    });
+    const interceptor = new AuditInterceptor(
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
+      files as never,
+    );
+    try {
+      await firstValueFrom(
+        interceptor.intercept(context as never, { handle: () => of('ok') }),
+      );
+      await expect(access(path)).resolves.toBeUndefined();
+    } finally {
+      await unlink(path);
+    }
   });
 });
