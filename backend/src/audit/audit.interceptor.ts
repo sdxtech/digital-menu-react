@@ -193,9 +193,6 @@ export class AuditInterceptor implements NestInterceptor {
               ? file.mimetype
               : 'application/octet-stream',
           );
-          if (!uploadRequest.auditPreserveUpload) {
-            await unlink(path).catch(() => undefined);
-          }
           return {
             ...metadata,
             contentStored: true,
@@ -209,6 +206,18 @@ export class AuditInterceptor implements NestInterceptor {
             captureError:
               error instanceof Error ? error.message : 'File capture failed',
           };
+        } finally {
+          if (!uploadRequest.auditPreserveUpload) {
+            try {
+              await unlink(path);
+            } catch (cleanupError) {
+              if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+                this.logger.error(
+                  `Failed to clean audit upload: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+                );
+              }
+            }
+          }
         }
       }),
     );

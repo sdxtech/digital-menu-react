@@ -49,7 +49,7 @@ export const auditMongoosePlugin = (schema: Schema) => {
               : undefined,
           )
           .filter((id) => id !== undefined && id !== null);
-        query.$auditBefore = snapshotRows.map(sanitizeAuditValue);
+        query.$auditBefore = snapshotRows.map((row) => sanitizeAuditValue(row));
       } catch (error) {
         logCaptureError(query.model.collection.name, operation, error);
       }
@@ -69,7 +69,7 @@ export const auditMongoosePlugin = (schema: Schema) => {
             ? { _id: { $in: beforeIds } }
             : query.getFilter();
           const rows = await query.model.find(filter).limit(21).lean();
-          after = rows.slice(0, 20).map(sanitizeAuditValue);
+          after = rows.slice(0, 20).map((row) => sanitizeAuditValue(row));
         }
         const beforeSnapshot =
           before.length <= 1 ? (before[0] ?? null) : before;

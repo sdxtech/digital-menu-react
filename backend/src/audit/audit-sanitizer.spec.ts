@@ -2,6 +2,18 @@ import { buildAuditDiff, sanitizeAuditValue } from './audit-sanitizer';
 import { Types } from 'mongoose';
 
 describe('audit sanitizer', () => {
+  it('preserves imported raw material extra fields stored as a Map', () => {
+    expect(
+      sanitizeAuditValue({ extraFields: new Map([['source', 'Import']]) }),
+    ).toEqual({ extraFields: { source: 'Import' } });
+  });
+
+  it('redacts recovery credentials in document snapshots', () => {
+    expect(sanitizeAuditValue({ resetTokenHash: 'private-hash' })).toEqual({
+      resetTokenHash: '[REDACTED]',
+    });
+  });
+
   it('redacts secrets recursively while preserving response fields', () => {
     expect(
       sanitizeAuditValue({

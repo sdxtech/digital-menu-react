@@ -83,4 +83,15 @@ describe('AuditService annual archive', () => {
       expect.anything(),
     );
   });
+
+  it('does not leave an unhandled rejection when the archive database is unavailable', async () => {
+    const { service, archiveModel, auditModel } = makeService('success');
+    archiveModel.findOne.mockImplementation(() => {
+      throw new Error('Database unavailable');
+    });
+    archiveModel.updateOne.mockRejectedValue(new Error('Database unavailable'));
+
+    await expect(service.runAnnualArchive()).resolves.toBeUndefined();
+    expect(auditModel.deleteMany).not.toHaveBeenCalled();
+  });
 });
