@@ -273,11 +273,17 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Annual audit archive ${year} failed: ${message}`);
-      await this.archiveModel.updateOne(
-        { year },
-        { $set: { status: 'failed', error: message } },
-        { upsert: true },
-      );
+      try {
+        await this.archiveModel.updateOne(
+          { year },
+          { $set: { status: 'failed', error: message } },
+          { upsert: true },
+        );
+      } catch (statusError) {
+        this.logger.error(
+          `Failed to record annual archive failure: ${statusError instanceof Error ? statusError.message : String(statusError)}`,
+        );
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Mongoose, Types } from 'mongoose';
 import { Recipe, RecipeSchema } from '../recipes/schemas/recipe.schema';
-import { auditRequestStorage } from './audit-context';
+import { auditRequestStorage, AuditRequestContext } from './audit-context';
 import { auditMongoosePlugin } from './audit-mongoose.plugin';
 
 type Hook = (this: unknown) => void | Promise<void>;
@@ -29,6 +29,35 @@ const queryResult = (rows: unknown[] | Error) => ({
 });
 
 describe('audit mongoose plugin', () => {
+  it('preserves every sampled row in a bulk update snapshot', async () => {
+    const { preHooks, postHooks } = setupPlugin();
+    const rows = Array.from({ length: 21 }, (_, index) => ({
+      _id: new Types.ObjectId(),
+      name: `Menu ${index}`,
+      ingredientVendors: [{ vendor: 'Vendor', price: index }],
+    }));
+    const query = {
+      model: {
+        collection: { name: 'menuproductions' },
+        find: () => queryResult(rows),
+      },
+      op: 'updateMany',
+      getFilter: () => ({ site: 'S002' }),
+    };
+    const context: AuditRequestContext = { databaseChanges: [] };
+    await auditRequestStorage.run(context, async () => {
+      await preHooks.get('updateMany')?.call(query);
+      await postHooks.get('updateMany')?.call(query);
+    });
+    const expected = rows.slice(0, 20).map((row) => ({
+      ...row,
+      _id: row._id.toHexString(),
+    }));
+    expect(context.databaseChanges[0].before).toEqual(expected);
+    expect(context.databaseChanges[0].after).toEqual(expected);
+    expect(context.databaseChanges[0].truncated).toBe(true);
+  });
+
   it('saves recipe ingredients and captures them in the parent audit snapshot', async () => {
     const mongoose = new Mongoose();
     const connection = mongoose.createConnection();
