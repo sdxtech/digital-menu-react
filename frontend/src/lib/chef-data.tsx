@@ -350,6 +350,21 @@ const mapRecipe = (item: RecipeApi): Recipe => {
           qty: Number.isFinite(Number(ingredient.qty))
             ? Number(ingredient.qty)
             : 0,
+          prodQty: Number.isFinite(Number(ingredient.prodQty))
+            ? Number(ingredient.prodQty)
+            : undefined,
+          prodUomCode: ingredient.prodUomCode ?? undefined,
+          srQty: Number.isFinite(Number(ingredient.srQty))
+            ? Number(ingredient.srQty)
+            : undefined,
+          srQtyManual: ingredient.srQtyManual === true,
+          srUomCode: ingredient.srUomCode ?? undefined,
+          conversionId: ingredient.conversionId ?? undefined,
+          conversionMultiplier: Number.isFinite(
+            Number(ingredient.conversionMultiplier),
+          )
+            ? Number(ingredient.conversionMultiplier)
+            : undefined,
           priceUom: Number.isFinite(Number(ingredient.priceUom))
             ? Number(ingredient.priceUom)
             : undefined,
