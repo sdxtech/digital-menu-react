@@ -30,7 +30,7 @@ export type User = {
 type AuthContextValue = {
   user: User | null
   accessToken: string | null
-  login: (email: string, password: string) => Promise<User>
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<User>
   logout: () => void
   updateUser: (updates: Partial<User>) => void
 }/* Tipe data untuk nilai yang disediakan oleh konteks autentikasi, termasuk informasi pengguna, token akses, dan fungsi login/logout. */
@@ -101,7 +101,7 @@ export const readStoredToken = (): string | null => {
 }/* Fungsi untuk membaca token akses yang disimpan, pertama mencoba dari sessionStorage, jika tidak ada baru mencoba dari localStorage (untuk mendukung migrasi dari penyimpanan lama). */
 
 export const readStoredRefreshToken = (): string | null => {
-  return readSessionStorage(REFRESH_TOKEN_KEY)
+  return readSessionStorage(REFRESH_TOKEN_KEY) ?? readLocalStorage(REFRESH_TOKEN_KEY)
 }/* Fungsi untuk membaca token refresh yang disimpan dari sessionStorage. */
 
 const getJwtExpirationTime = (token: string) => {
@@ -127,6 +127,15 @@ const getJwtExpirationTime = (token: string) => {
   }
 }
 
+const writePersistentStorage = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value)
+    sessionStorage.removeItem(key)
+  } catch {
+    // ignore storage write errors
+  }
+}
+
 const migrateLegacyUserToSession = () => {
   const legacyUser = readLocalStorage(USER_KEY)
   if (!legacyUser) return null
@@ -146,7 +155,10 @@ const readStoredUser = (): User | null => {
       return null
     }// Jika tidak ada token akses yang valid, anggap data pengguna tidak valid dan hapus.
 
-    const stored = readSessionStorage(USER_KEY) ?? migrateLegacyUserToSession()
+    const stored =
+      readSessionStorage(USER_KEY) ??
+      readLocalStorage(USER_KEY) ??
+      migrateLegacyUserToSession()
     if (!stored) return null
     const parsed = JSON.parse(stored) as User
     if (!parsed?.role || !(parsed.role in rolePaths)) return null
@@ -183,7 +195,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [])
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, rememberMe = false) => {
     const {
       accessToken: nextAccessToken,/* Token akses yang diterima dari respons login. */
       refreshToken: nextRefreshToken,/* Token refresh yang diterima dari respons login, jika ada. */
@@ -244,12 +256,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       sites: me?.sites,
       siteOptions: me?.siteOptions,
     }/* Buat objek User berdasarkan informasi yang diterima dari endpoint /auth/me dan hasil validasi peran. */
+    const store = rememberMe ? writePersistentStorage : writeSessionStorage
     setUser(nextUser)/* Simpan informasi pengguna ke state. */
-    writeSessionStorage(USER_KEY, JSON.stringify(nextUser))/* Simpan informasi pengguna ke sessionStorage. */
+    store(USER_KEY, JSON.stringify(nextUser))/* Simpan informasi pengguna untuk durasi sesi yang dipilih. */
     setAccessToken(nextAccessToken)/* Simpan token akses ke state. */
-    writeSessionStorage(ACCESS_TOKEN_KEY, nextAccessToken)/* Simpan token akses ke sessionStorage. */
+    store(ACCESS_TOKEN_KEY, nextAccessToken)/* Simpan token akses untuk durasi sesi yang dipilih. */
     if (nextRefreshToken) {
-      writeSessionStorage(REFRESH_TOKEN_KEY, nextRefreshToken)/* Jika refresh token diterima, simpan ke sessionStorage. */
+      store(REFRESH_TOKEN_KEY, nextRefreshToken)/* Jika refresh token diterima, simpan untuk durasi sesi yang dipilih. */
     } else {
       removeStoredItem(REFRESH_TOKEN_KEY)/* Jika tidak ada refresh token, pastikan untuk menghapus token refresh yang mungkin tersisa dari penyimpanan sebelumnya. */
     }
@@ -275,6 +288,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!accessToken) return
 
+    // A remembered session can refresh its access token on the next API request.
+    if (readLocalStorage(REFRESH_TOKEN_KEY)) return
+
     const expiresAt = getJwtExpirationTime(accessToken)
     if (!expiresAt) return
 
@@ -292,7 +308,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser((current) => {
       if (!current) return current
       const nextUser = { ...current, ...updates }
-      writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
+      if (readLocalStorage(ACCESS_TOKEN_KEY)) {
+        writePersistentStorage(USER_KEY, JSON.stringify(nextUser))
+      } else {
+        writeSessionStorage(USER_KEY, JSON.stringify(nextUser))
+      }
       return nextUser
     })
   }, [])

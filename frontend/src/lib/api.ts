@@ -49,9 +49,20 @@ const handleUnauthorized = () => {
 
 const readRefreshToken = () => {
   try {
-    return sessionStorage.getItem(REFRESH_TOKEN_KEY)
+    return sessionStorage.getItem(REFRESH_TOKEN_KEY) ?? localStorage.getItem(REFRESH_TOKEN_KEY)
   } catch {
     return null
+  }
+}
+
+const hasPersistentSession = () => {
+  try {
+    return Boolean(
+      localStorage.getItem(REFRESH_TOKEN_KEY) ??
+        localStorage.getItem(TOKEN_KEY),
+    )
+  } catch {
+    return false
   }
 }
 
@@ -78,11 +89,13 @@ const tryRefreshAccessToken = async () => {
       const nextAccessToken = data?.accessToken
       if (!nextAccessToken) return null
 
-      sessionStorage.setItem(TOKEN_KEY, nextAccessToken)
-      localStorage.removeItem(TOKEN_KEY)
+      const storage = hasPersistentSession() ? localStorage : sessionStorage
+      const otherStorage = storage === localStorage ? sessionStorage : localStorage
+      storage.setItem(TOKEN_KEY, nextAccessToken)
+      otherStorage.removeItem(TOKEN_KEY)
       if (data?.refreshToken) {
-        sessionStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken)
-        localStorage.removeItem(REFRESH_TOKEN_KEY)
+        storage.setItem(REFRESH_TOKEN_KEY, data.refreshToken)
+        otherStorage.removeItem(REFRESH_TOKEN_KEY)
       }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
