@@ -91,6 +91,7 @@ export const auditMongoosePlugin = (schema: Schema) => {
   schema.pre('save', async function () {
     if (!hasAuditRequestContext()) return;
     const document = this as unknown as {
+      $isSubdocument?: boolean;
       isNew: boolean;
       constructor: {
         collection: { name: string };
@@ -99,6 +100,8 @@ export const auditMongoosePlugin = (schema: Schema) => {
       _id: unknown;
       $locals: Record<string, unknown>;
     };
+    // Embedded documents are included in their parent's audit snapshot.
+    if (document.$isSubdocument) return;
     if (ignoredCollections.has(document.constructor.collection.name)) return;
     try {
       document.$locals.auditBefore = document.isNew
@@ -118,10 +121,12 @@ export const auditMongoosePlugin = (schema: Schema) => {
   schema.post('save', function () {
     if (!hasAuditRequestContext()) return;
     const document = this as unknown as {
+      $isSubdocument?: boolean;
       constructor: { collection: { name: string } };
       $locals: Record<string, unknown>;
       toObject(): unknown;
     };
+    if (document.$isSubdocument) return;
     if (ignoredCollections.has(document.constructor.collection.name)) return;
     try {
       const before = document.$locals.auditBefore ?? null;
