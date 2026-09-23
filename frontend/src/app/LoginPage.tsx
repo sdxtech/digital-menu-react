@@ -12,6 +12,7 @@ const LoginPage = () => {
   })
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false) /* Menyimpan status tampilan password */
+  const [rememberMe, setRememberMe] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -28,7 +29,7 @@ const LoginPage = () => {
       return
     }
     try {
-      const nextUser = await login(email, password)
+      const nextUser = await login(email, password, rememberMe)
       setError('')
       navigate(rolePathFor(nextUser.role), { replace: true })
     } catch (error) {
@@ -122,6 +123,8 @@ const LoginPage = () => {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
                       className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
                     />
                     Remember me
