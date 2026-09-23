@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { Mongoose, Types } from 'mongoose';
+import { Recipe, RecipeSchema } from '../recipes/schemas/recipe.schema';
 import { auditRequestStorage } from './audit-context';
 import { auditMongoosePlugin } from './audit-mongoose.plugin';
 
@@ -28,6 +29,77 @@ const queryResult = (rows: unknown[] | Error) => ({
 });
 
 describe('audit mongoose plugin', () => {
+  it('saves recipe ingredients and captures them in the parent audit snapshot', async () => {
+    const mongoose = new Mongoose();
+    const connection = mongoose.createConnection();
+    connection.plugin(auditMongoosePlugin);
+    const model = connection.model(Recipe.name, RecipeSchema.clone());
+    const insert = jest.spyOn(model.collection, 'insertOne').mockResolvedValue({
+      acknowledged: true,
+      insertedId: new Types.ObjectId(),
+    });
+    const recipe = new model({
+      name: 'Test',
+      category: 'Appetizer',
+      site: 'S002',
+      portionSize: 10,
+      ingredients: [
+        { ingredientType: 'IT', productCode: 'IT09679_N', qty: 0.2 },
+      ],
+    });
+    const context = { databaseChanges: [] };
+
+    await auditRequestStorage.run(context, () => recipe.save());
+
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(context.databaseChanges).toEqual([
+      expect.objectContaining({
+        collection: 'recipes',
+        operation: 'create',
+        after: expect.objectContaining({
+          ingredients: [expect.objectContaining({ productCode: 'IT09679_N' })],
+        }) as unknown,
+      }),
+    ]);
+    const before = recipe.toObject();
+    jest.spyOn(model, 'findById').mockReturnValue({
+      lean: () => Promise.resolve(before),
+    } as ReturnType<typeof model.findById>);
+    const update = jest.spyOn(model.collection, 'updateOne').mockResolvedValue({
+      acknowledged: true,
+      matchedCount: 1,
+      modifiedCount: 1,
+      upsertedCount: 0,
+      upsertedId: null,
+    });
+    recipe.ingredients[0].qty = 0.3;
+    recipe.approvalHistory.push({
+      rejectionReason: 'Adjust quantities',
+      rejectedAt: new Date(),
+    });
+    const updateContext = { databaseChanges: [] };
+
+    await auditRequestStorage.run(updateContext, () => recipe.save());
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(updateContext.databaseChanges).toEqual([
+      expect.objectContaining({
+        collection: 'recipes',
+        operation: 'save',
+        before: expect.objectContaining({
+          ingredients: [expect.objectContaining({ qty: 0.2 })],
+        }) as unknown,
+        after: expect.objectContaining({
+          ingredients: [expect.objectContaining({ qty: 0.3 })],
+          approvalHistory: [
+            expect.objectContaining({ rejectionReason: 'Adjust quantities' }),
+          ],
+        }) as unknown,
+      }),
+    ]);
+    await connection.close();
+  });
+
   it('uses the original ObjectId when loading the post-update snapshot', async () => {
     const { preHooks, postHooks } = setupPlugin();
     const id = new Types.ObjectId();
