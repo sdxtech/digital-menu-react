@@ -252,10 +252,15 @@ const ChefCreateMenu = ({
   const [rawMaterialsLoading, setRawMaterialsLoading] = useState(false)
   const [rawMaterialsError, setRawMaterialsError] = useState('')
   const rawMaterialCacheRef = useRef<Map<string, RawMaterial>>(new Map())
+  const [, setRawMaterialCacheVersion] = useState(0)
   const [vendorPrices, setVendorPrices] = useState<Record<string, VendorPriceState>>({})
   const vendorProductCodes = JSON.stringify(Array.from(new Set(
     ingredientRows.filter((row) => row.ingredientType === 'IT')
       .map((row) => row.productCode.trim().toLowerCase()).filter(Boolean),
+  )).sort())
+  const recipeRawMaterialCodes = JSON.stringify(Array.from(new Set(
+    ingredientRows.filter((row) => row.ingredientType === 'IT')
+      .map((row) => row.productCode.trim()).filter(Boolean),
   )).sort())
   const [uomOptions, setUomOptions] = useState<UnitOfMeasureOption[]>([])
   const [srUomOptions, setSrUomOptions] = useState<string[]>([])
@@ -749,7 +754,7 @@ const ChefCreateMenu = ({
     }
   }
 
-  const resolveRawMaterialByProductCode = async (productCode: string) => {
+  const resolveRawMaterialByProductCode = useCallback(async (productCode: string) => {
     const normalizedCode = normalizeValue(productCode)
     if (!normalizedCode) return undefined
 
@@ -765,7 +770,42 @@ const ChefCreateMenu = ({
     } catch {
       return undefined
     }
-  }
+  }, [cacheRawMaterials, rawMaterialSite, searchRawMaterials])
+
+  useEffect(() => {
+    if (!enableIngredientUomConversion || !accessToken) return
+    if (isCorporateChef && !selectedSite) return
+
+    let cancelled = false
+    const productCodes: string[] = JSON.parse(recipeRawMaterialCodes)
+    const missingCodes = productCodes.filter(
+      (productCode) =>
+        !rawMaterialCacheRef.current.has(
+          `code:${normalizeValue(productCode)}`,
+        ),
+    )
+    if (!missingCodes.length) return
+
+    Promise.all(missingCodes.map(resolveRawMaterialByProductCode)).then(
+      (materials) => {
+        if (cancelled || !materials.some(Boolean)) return
+        setRawMaterialCacheVersion((version) => version + 1)
+      },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    accessToken,
+    enableIngredientUomConversion,
+    isCorporateChef,
+    rawMaterialSite,
+    recipeRawMaterialCodes,
+    resolveRawMaterialByProductCode,
+    searchRawMaterials,
+    selectedSite,
+  ])
 
   const updateRecipeForm = <K extends keyof RecipeForm>(
     field: K,
