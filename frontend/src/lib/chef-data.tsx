@@ -1017,7 +1017,8 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       params.set('page', '1')
       params.set('limit', String(safeLimit))
       if (search?.trim()) params.set('search', search.trim())
-      const effectiveSite = site?.trim() || user?.site?.trim()
+      const effectiveSite = site?.trim() ||
+        (user?.role === 'superadmin' ? undefined : user?.site?.trim())
       if (effectiveSite) params.set('site', effectiveSite)
 
       const data = await apiFetch<{
@@ -1030,7 +1031,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
       return (data.items ?? []).map(mapRawMaterial)
     },
-    [accessToken, user?.site],
+    [accessToken, user?.role, user?.site],
   )
 
   const markStoreRequested = async (menuProductionId: string) => {

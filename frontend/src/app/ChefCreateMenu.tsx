@@ -234,7 +234,9 @@ const ChefCreateMenu = ({
     ).values(),
   )
   const [selectedSite, setSelectedSite] = useState(baseRecipe?.site ?? '')
-  const rawMaterialSite = isCorporateChef ? selectedSite : user?.site
+  const rawMaterialSite = isCorporateChef
+    ? selectedSite
+    : user?.role === 'superadmin' ? undefined : user?.site
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -247,6 +249,8 @@ const ChefCreateMenu = ({
   ])
 
   const [rawMaterialOptions, setRawMaterialOptions] = useState<RawMaterial[]>([])
+  const [rawMaterialsLoading, setRawMaterialsLoading] = useState(false)
+  const [rawMaterialsError, setRawMaterialsError] = useState('')
   const rawMaterialCacheRef = useRef<Map<string, RawMaterial>>(new Map())
   const [vendorPrices, setVendorPrices] = useState<Record<string, VendorPriceState>>({})
   const vendorProductCodes = JSON.stringify(Array.from(new Set(
@@ -518,8 +522,12 @@ const ChefCreateMenu = ({
     const requestId = ++searchRequestRef.current
     if (isCorporateChef && !selectedSite) {
       setRawMaterialOptions([])
+      setRawMaterialsLoading(false)
+      setRawMaterialsError('Select a site first.')
       return
     }
+    setRawMaterialsLoading(true)
+    setRawMaterialsError('')
     searchRawMaterials('', 5, rawMaterialSite)
       .then((results) => {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
@@ -527,12 +535,15 @@ const ChefCreateMenu = ({
         }
         cacheRawMaterials(results)
         setRawMaterialOptions(results.slice(0, 5))
+        setRawMaterialsLoading(false)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
         setRawMaterialOptions([])
+        setRawMaterialsLoading(false)
+        setRawMaterialsError(error instanceof Error ? error.message : 'Failed to load raw materials.')
       })
   }, [
     cacheRawMaterials,
@@ -904,6 +915,9 @@ const ChefCreateMenu = ({
 
     const requestId = ++searchRequestRef.current
     const trimmed = query.trim()
+    setRawMaterialOptions([])
+    setRawMaterialsLoading(true)
+    setRawMaterialsError('')
     const targetMeta = trimmed && target ? { ...target } : null
     const delay = trimmed ? 200 : 0
     const fetchLimit = trimmed ? 40 : 10
@@ -921,6 +935,7 @@ const ChefCreateMenu = ({
         cacheRawMaterials(results)
         const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
         setRawMaterialOptions(ranked.slice(0, 10))
+        setRawMaterialsLoading(false)
 
         if (targetMeta) {
           setIngredientRows((prev) =>
@@ -942,11 +957,13 @@ const ChefCreateMenu = ({
             }),
           )
         }
-      } catch {
+      } catch (error) {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
         setRawMaterialOptions([])
+        setRawMaterialsLoading(false)
+        setRawMaterialsError(error instanceof Error ? error.message : 'Failed to load raw materials.')
       }
     }, delay)
   }
@@ -967,8 +984,19 @@ const ChefCreateMenu = ({
     }
   }
 
-  const handleRawMaterialFocus = () => {
-    scheduleRawMaterialSearch('')
+  const handleRawMaterialFocus = (row: IngredientRow, input: HTMLInputElement) => {
+    if (row.ingredientType !== 'IT') return
+    setActiveIngredientDropdownId(row.id)
+    ingredientInputRef.current = input
+    scheduleRawMaterialSearch(input.value)
+  }
+
+  const handleRawMaterialBlur = (input: HTMLInputElement) => {
+    window.setTimeout(() => {
+      if (ingredientInputRef.current !== input) return
+      setActiveIngredientDropdownId(null)
+      ingredientInputRef.current = null
+    }, 150)
   }
 
   const updateIngredientDropdownPosition = useCallback(() => {
@@ -1779,15 +1807,6 @@ const ChefCreateMenu = ({
           />
 
           <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
-            <datalist id="raw-material-code-options">
-              {rawMaterialOptions.map((item) => (
-                <option
-                  key={`code-${item.id}`}
-                  value={item.productCode}
-                  label={item.name}
-                />
-              ))}
-            </datalist>
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -1897,14 +1916,10 @@ const ChefCreateMenu = ({
                             event.target.value,
                           )
                         }
-                        onFocus={
-                          row.ingredientType === 'NMP'
-                            ? undefined
-                            : handleRawMaterialFocus
-                        }
+                        onFocus={(event) => handleRawMaterialFocus(row, event.currentTarget)}
+                        onBlur={(event) => handleRawMaterialBlur(event.currentTarget)}
                         autoComplete="off"
                         placeholder={row.ingredientType === 'NMP' ? 'NMP' : 'PRD-001'}
-                        list="raw-material-code-options"
                         className={`w-full rounded-xl border border-border px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 ${row.ingredientType === 'NMP' ? 'bg-slate-200 text-muted' : 'bg-white'}`}
                       />
                     </td>
@@ -1920,21 +1935,8 @@ const ChefCreateMenu = ({
                               event.target.value,
                             )
                           }
-                          onFocus={(event) => {
-                            if (row.ingredientType !== 'IT') return
-                            setActiveIngredientDropdownId(row.id)
-                            ingredientInputRef.current = event.currentTarget
-                            handleRawMaterialFocus()
-                          }}
-                          onBlur={() => {
-                            window.setTimeout(() => {
-                              setActiveIngredientDropdownId((current) =>
-                                current === row.id ? null : current,
-                              )
-                              ingredientInputRef.current = null
-                              ingredientDropdownRef.current = null
-                            }, 150)
-                          }}
+                          onFocus={(event) => handleRawMaterialFocus(row, event.currentTarget)}
+                          onBlur={(event) => handleRawMaterialBlur(event.currentTarget)}
                           autoComplete="off"
                           placeholder="Oat Milk"
                           className="peer col-start-1 row-start-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm leading-5 text-transparent caret-foreground outline-none placeholder:text-gray-400 focus:border-accent-blue focus:text-foreground focus:ring-4 focus:ring-accent-blue/20"
@@ -1944,8 +1946,7 @@ const ChefCreateMenu = ({
                         </div>
                       </div>
                       {row.ingredientType === 'IT' &&
-                      activeIngredientDropdownId === row.id &&
-                      rawMaterialOptions.length > 0 ? (
+                      activeIngredientDropdownId === row.id ? (
                         createPortal(
                           <div
                             ref={ingredientDropdownRef}
@@ -1953,6 +1954,13 @@ const ChefCreateMenu = ({
                             style={{ visibility: 'hidden' }}
                           >
                             <div className="py-1">
+                              {rawMaterialsLoading ? (
+                                <p className="px-3 py-2 text-sm text-muted" role="status">Searching raw materials...</p>
+                              ) : rawMaterialsError ? (
+                                <p className="px-3 py-2 text-sm text-red-600" role="alert">{rawMaterialsError}</p>
+                              ) : rawMaterialOptions.length === 0 ? (
+                                <p className="px-3 py-2 text-sm text-muted" role="status">No raw materials found.</p>
+                              ) : null}
                               {rawMaterialOptions.map((item) => (
                                 <button
                                   key={item.id}
