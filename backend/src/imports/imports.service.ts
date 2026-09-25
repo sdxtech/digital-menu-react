@@ -3,9 +3,11 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { rm } from 'node:fs/promises';
 import { IMPORTS_QUEUE } from '../queue/queue.constants';
 
 type ImportJobData = {
@@ -21,6 +23,8 @@ type ImportJobData = {
 
 @Injectable()
 export class ImportsService {
+  private readonly logger = new Logger(ImportsService.name);
+
   constructor(
     @Inject(IMPORTS_QUEUE) private readonly importsQueue: Queue<ImportJobData>,
   ) {}
@@ -92,6 +96,16 @@ export class ImportsService {
     }
 
     await job.remove();
+    if (job.data.filePath) {
+      try {
+        await rm(job.data.filePath, { force: true });
+      } catch (error) {
+        this.logger.error(
+          'Failed to clean cancelled raw material import',
+          error,
+        );
+      }
+    }
     return { jobId, status: 'cancelled' };
   }
 }

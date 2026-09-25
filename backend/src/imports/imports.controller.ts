@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Logger,
   Param,
   Post,
   Req,
@@ -11,8 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
-import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { copyFile, rm } from 'node:fs/promises';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -21,7 +21,6 @@ import { AppRole } from '../auth/roles.constants';
 import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { getUploadDir } from '../common/upload-dir';
-import { FilesService } from '../files/files.service';
 import { ImportDto } from './dto/import.dto';
 import { ImportsService } from './imports.service';
 
@@ -39,10 +38,9 @@ type UploadFilterCallback = (error: Error | null, acceptFile: boolean) => void;
 @Controller('imports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ImportsController {
-  constructor(
-    private readonly importsService: ImportsService,
-    private readonly files: FilesService,
-  ) {}
+  private readonly logger = new Logger(ImportsController.name);
+
+  constructor(private readonly importsService: ImportsService) {}
 
   @Post('products')
   @Roles(AppRole.Superadmin)
@@ -110,20 +108,29 @@ export class ImportsController {
       throw new BadRequestException('file is required');
     }
 
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileKey = `imports/raw-materials/${randomUUID()}-${safeName}`;
-    await this.files.uploadObject(
-      fileKey,
-      createReadStream(file.path),
-      file.mimetype,
-    );
-
-    return this.importsService.enqueueRawMaterials(
-      req.user.sub,
-      fileKey,
-      file.originalname,
-      file.mimetype,
-    );
+    // The audit interceptor owns the original upload and deletes it after capture.
+    // Keep a separate copy for the worker, which runs in the backend application.
+    const filePath = `${file.path}.import`;
+    try {
+      await copyFile(file.path, filePath);
+      return await this.importsService.enqueueRawMaterials(
+        req.user.sub,
+        undefined,
+        file.originalname,
+        file.mimetype,
+        filePath,
+      );
+    } catch (error) {
+      try {
+        await rm(filePath, { force: true });
+      } catch (cleanupError) {
+        this.logger.error(
+          'Failed to clean raw material import copy',
+          cleanupError,
+        );
+      }
+      throw error;
+    }
   }
 
   @Post('jobs/:jobId/cancel')

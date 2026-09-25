@@ -296,6 +296,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async handleRawMaterials(job: Job<ImportJob>) {
     const { userId, fileKey, fileName, contentType, filePath } = job.data;
+    let retainFileForRetry = false;
     const errors: ImportError[] = [];
     let successCount = 0;
     let failCount = 0;
@@ -565,6 +566,9 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
     } catch (error) {
       const reason = (error as Error).message;
+      retainFileForRetry =
+        reason !== RAW_MATERIAL_IMPORT_CANCELLED_REASON &&
+        job.attemptsMade + 1 < (job.opts.attempts ?? 1);
       if (reason === RAW_MATERIAL_IMPORT_CANCELLED_REASON) {
         const summary = { successCount, failCount, errors, reason };
         await this.notifications.create(
@@ -586,8 +590,12 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
       throw error;
     } finally {
-      if (filePath) {
-        fs.unlink(filePath).catch(() => null);
+      if (filePath && !retainFileForRetry) {
+        try {
+          await fs.rm(filePath, { force: true });
+        } catch (error) {
+          this.logger.error('Failed to clean raw material import file', error);
+        }
       }
     }
   }
