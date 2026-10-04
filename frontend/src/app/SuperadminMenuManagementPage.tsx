@@ -3560,61 +3560,91 @@ const SuperadminMenuManagementPage = () => {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-4">
-            <input
-              type="search"
-              value={recipeSearchInput}
-              onChange={(event) => setRecipeSearchInput(event.target.value)}
-              placeholder="Search recipe"
-              className="w-56 rounded-2xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            />
+          <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+            <div className="flex w-full items-center gap-3 sm:w-auto">
+              <div className="min-w-0 flex-1 sm:w-64 md:w-72">
+                <label htmlFor="superadmin-recipe-search" className="sr-only">Search recipes</label>
+                <input
+                  id="superadmin-recipe-search"
+                  type="search"
+                  value={recipeSearchInput}
+                  onChange={(event) => setRecipeSearchInput(event.target.value)}
+                  placeholder="Search recipes..."
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={applyRecipeSearch}
+                className="h-10 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white"
+              >
+                Search
+              </button>
+            </div>
+            <div className="w-full sm:w-60">
+              <label htmlFor="superadmin-recipeStatus" className="sr-only">Recipe status</label>
+              <select
+                id="superadmin-recipeStatus"
+                value={recipeStatus}
+                onChange={(event) => {
+                  setRecipeStatus(event.target.value as '' | RecipeStatus)
+                  setRecipeMeta((prev) => ({ ...prev, page: 1 }))
+                }}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">Recipe status</option>
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+              </select>
+            </div>
+            <div className="w-full sm:w-60">
+              <label htmlFor="superadmin-approvalStatus" className="sr-only">Approval status</label>
+              <select
+                id="superadmin-approvalStatus"
+                value={approvalStatus}
+                onChange={(event) => {
+                  setApprovalStatus(event.target.value as '' | ApprovalStatus)
+                  setRecipeMeta((prev) => ({ ...prev, page: 1 }))
+                }}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">Approval status</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <div className="w-full sm:w-60">
+              <label htmlFor="superadmin-recipeCategory" className="sr-only">Category</label>
+              <select
+                id="superadmin-recipeCategory"
+                value={recipeCategory}
+                onChange={(event) => {
+                  setRecipeCategory(event.target.value)
+                  setRecipeMeta((prev) => ({ ...prev, page: 1 }))
+                }}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">Category</option>
+                {recipeCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
-              onClick={applyRecipeSearch}
-              className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white"
+              onClick={() => {
+                setRecipeStatus('')
+                setApprovalStatus('')
+                setRecipeCategory('')
+                setRecipeMeta((prev) => ({ ...prev, page: 1 }))
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
             >
-              Search
+              Reset filters
             </button>
-            <select
-              value={recipeCategory}
-              onChange={(event) => {
-                setRecipeCategory(event.target.value)
-                setRecipeMeta((prev) => ({ ...prev, page: 1 }))
-              }}
-              className="rounded-2xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">All categories</option>
-              {recipeCategories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <select
-              value={recipeStatus}
-              onChange={(event) => {
-                setRecipeStatus(event.target.value as '' | RecipeStatus)
-                setRecipeMeta((prev) => ({ ...prev, page: 1 }))
-              }}
-              className="rounded-2xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">All recipe status</option>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-            </select>
-            <select
-              value={approvalStatus}
-              onChange={(event) => {
-                setApprovalStatus(event.target.value as '' | ApprovalStatus)
-                setRecipeMeta((prev) => ({ ...prev, page: 1 }))
-              }}
-              className="rounded-2xl border border-border bg-white px-4 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">All approval status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
           </div>
 
           <TablePagination
