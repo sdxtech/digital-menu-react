@@ -501,6 +501,22 @@ describe('RecipesService site visibility', () => {
     });
   });
 
+  it('loads draft production recipe references by ID while preserving visibility filters', async () => {
+    const { recipeModel, service } = makeService();
+    mockRecipeList(recipeModel);
+    const ids = ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'];
+
+    await service.findAll({ ids: ids.join(',') }, 'SITE-002');
+
+    expect(recipeModel.find).toHaveBeenCalledWith({
+      _id: { $in: ids },
+      $and: [{ $or: [{ approvalStatus: 'approved' }, { site: 'SITE-002' }] }],
+      deletedAt: { $exists: false },
+      isActive: { $ne: false },
+      isDraft: { $ne: true },
+    });
+  });
+
   it('keeps approved recipe data visible across sites', async () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel);

@@ -294,6 +294,7 @@ type ChefDataContextValue = ChefDataState & {
     input: CancelPendingMenuProductionBatchInput,
   ) => Promise<void>
   fetchRecipes: (options?: SiteScopedFetchOptions) => Promise<Recipe[]>
+  fetchRecipesByIds: (ids: string[]) => Promise<Recipe[]>
   searchRecipes: (search: string, options?: RecipeSearchOptions) => Promise<Recipe[]>
   fetchMenuProductions: (
     options?: SiteScopedFetchOptions,
@@ -517,6 +518,25 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       recipes: mapped,
     }))
     return mapped
+  }, [accessToken])
+
+  const fetchRecipesByIds = useCallback(async (ids: string[]) => {
+    if (!accessToken || !ids.length) return []
+    const uniqueIds = Array.from(new Set(ids))
+    const items: Recipe[] = []
+    for (let index = 0; index < uniqueIds.length; index += 50) {
+      const params = new URLSearchParams({
+        ids: uniqueIds.slice(index, index + 50).join(','),
+        limit: '50',
+      })
+      const data = await apiFetch<{ items: RecipeApi[] }>(
+        `/recipes?${params.toString()}`,
+        undefined,
+        accessToken,
+      )
+      items.push(...(data.items ?? []).map(mapRecipe))
+    }
+    return items
   }, [accessToken])
 
   const searchRecipes = useCallback(async (
@@ -1148,6 +1168,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     cancelStoreRequestBatch,
     cancelPendingMenuProductionBatch,
     fetchRecipes,
+    fetchRecipesByIds,
     searchRecipes,
     fetchMenuProductions,
   }
