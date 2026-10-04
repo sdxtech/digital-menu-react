@@ -81,6 +81,9 @@ export class Recipe {
   @Prop({ type: Number })
   foodCostRecipe?: number;
 
+  @Prop({ type: Number })
+  targetFoodCostPercentage?: number;
+
   @Prop({ enum: ['draft', 'active'], default: 'draft' })
   status: RecipeStatus;
 

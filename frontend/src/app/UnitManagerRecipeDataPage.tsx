@@ -2,6 +2,7 @@ import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import RecipeFilters from '../components/RecipeFilters'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -18,6 +19,8 @@ import {
 const ITEMS_PER_PAGE = 10
 
 type RecipeIngredient = {
+  priceUom?: number
+  foodCost?: number
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -26,6 +29,8 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  targetFoodCostPercentage?: number
+  foodCostRecipe?: number
   id?: string
   _id?: string
   recipeCode?: string
@@ -520,6 +525,8 @@ const UnitManagerRecipeDataPage = ({
               </p>
             </div>
           </div>
+
+          <RecipeSalesRecommendation recipe={selectedRecipe} />
 
           {selectedRecipe.approvalStatus !== 'approved' &&
           selectedRecipe.approvalHistory?.length ? (

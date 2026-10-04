@@ -60,6 +60,7 @@ const ChefRecipeDrafts = () => {
           category: draft.category,
           description: draft.description ?? '',
           portionSize: draft.portionSize,
+          targetFoodCostPercentage: draft.targetFoodCostPercentage,
           site: draft.site,
           approvalStatus: draft.approvalStatus,
           isDraft: true,
