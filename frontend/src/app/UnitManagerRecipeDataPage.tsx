@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import RecipeFilters from '../components/RecipeFilters'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -102,6 +103,7 @@ const UnitManagerRecipeDataPage = ({
   const [selectedSite, setSelectedSite] = useState('')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [categories, setCategories] = useState<string[]>([])
+  const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilters, setStatusFilters] = useState<Array<'draft' | 'active'>>(
     [],
@@ -110,16 +112,12 @@ const UnitManagerRecipeDataPage = ({
   const [approvalFilter, setApprovalFilter] = useState<
     '' | 'pending' | 'approved' | 'rejected'
   >('')
-  const [filterOpen, setFilterOpen] = useState(false)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  const activeFilterCount =
-    statusFilters.length + categoryFilters.length + (approvalFilter ? 1 : 0)
 
   const fetchCategories = useCallback(async () => {
     if (!accessToken) return
@@ -353,152 +351,24 @@ const UnitManagerRecipeDataPage = ({
                 </select>
               </div>
             ) : null}
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search recipes..."
-              className="w-full min-w-[200px] rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 sm:w-64 md:w-72"
-            />
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setFilterOpen((prev) => !prev)}
-                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm"
-              >
-                <span className="flex items-center gap-2">
-                  <span>
-                    Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
-                  </span>
-                  <i
-                    className={`bi bi-chevron-down text-base transition-transform ${
-                      filterOpen ? 'rotate-180' : ''
-                    }`}
-                    aria-hidden="true"
-                  />
-                </span>
-              </button>
-
-              {filterOpen ? (
-                <>
-                  <button
-                    type="button"
-                    aria-label="Close filter panel"
-                    className="fixed inset-0 z-30 cursor-default bg-transparent md:hidden"
-                    onClick={() => setFilterOpen(false)}
-                  />
-                  <div className="fixed left-3 right-3 top-56 z-40 mt-0 max-h-[calc(100vh-15rem)] overflow-y-auto rounded-md border border-border bg-white p-4 text-sm shadow-xl md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-72 md:max-h-none md:overflow-visible">
-                    <div className="mb-3 flex items-center justify-between border-b border-border pb-2 md:hidden">
-                      <p className="text-xs font-semibold text-primary">Filter</p>
-                      <button
-                        type="button"
-                        onClick={() => setFilterOpen(false)}
-                        className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-soft text-primary transition hover:bg-primary hover:text-white"
-                        aria-label="Close filter"
-                      >
-                        <i className="bi bi-x-lg text-[10px]" aria-hidden="true" />
-                      </button>
-                    </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted">Recipe status</p>
-                    {statusFilters.length ? (
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilters([])}
-                        className="text-xs font-semibold text-primary"
-                      >
-                        Reset
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {(['draft', 'active'] as const).map((status) => (
-                      <label key={status} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={statusFilters.includes(status)}
-                          onChange={() =>
-                            setStatusFilters((prev) =>
-                              prev.includes(status)
-                                ? prev.filter((item) => item !== status)
-                                : [...prev, status],
-                            )
-                          }
-                          className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-                        />
-                        <span>{statusLabel(status)}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between">
-                    <p className="text-xs text-muted">Approval status</p>
-                    {approvalFilter ? (
-                      <button
-                        type="button"
-                        onClick={() => setApprovalFilter('')}
-                        className="text-xs font-semibold text-primary"
-                      >
-                        Reset
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {(['pending', 'approved', 'rejected'] as const).map((status) => (
-                      <label key={status} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="recipe-approval-status"
-                          checked={approvalFilter === status}
-                          onChange={() => setApprovalFilter(status)}
-                          className="h-4 w-4 border-border text-primary focus:ring-2 focus:ring-primary/30"
-                        />
-                        <span>{getApprovalStatusLabel(status)}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between">
-                    <p className="text-xs text-muted">Category</p>
-                    {categoryFilters.length ? (
-                      <button
-                        type="button"
-                        onClick={() => setCategoryFilters([])}
-                        className="text-xs font-semibold text-primary"
-                      >
-                        Reset
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
-                    {categories.length === 0 ? (
-                      <p className="text-xs text-muted">No categories yet.</p>
-                    ) : (
-                      categories.map((category) => (
-                        <label key={category} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={categoryFilters.includes(category)}
-                            onChange={() =>
-                              setCategoryFilters((prev) =>
-                                prev.includes(category)
-                                  ? prev.filter((item) => item !== category)
-                                  : [...prev, category],
-                              )
-                            }
-                            className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-                          />
-                          <span>{category}</span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-                </>
-              ) : null}
-            </div>
           </div>
         </div>
+
+        <RecipeFilters
+          searchTerm={searchInput}
+          onSearchChange={setSearchInput}
+          onSearch={() => {
+            setSearchTerm(searchInput.trim())
+            setPage(1)
+          }}
+          statuses={statusFilters}
+          approvalStatus={approvalFilter}
+          categories={categories}
+          selectedCategories={categoryFilters}
+          onStatusesChange={setStatusFilters}
+          onApprovalStatusChange={setApprovalFilter}
+          onCategoriesChange={setCategoryFilters}
+        />
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <TablePagination
