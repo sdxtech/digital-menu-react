@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import {
   Fragment,
   useCallback,
@@ -492,7 +493,7 @@ const dedupeVendorPricesByVendor = (
   return sortVendorPriceOptions(Array.from(byVendor.values()))
 }
 
-export const RecipeCalculator = () => {
+export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = {}) => {
   const { accessToken } = useAuth()
   const [calculatorRecipes, setCalculatorRecipes] = useState<Recipe[]>([])
   const [calculatorRows, setCalculatorRows] = useState<RecipeCalculatorRow[]>([
@@ -981,7 +982,7 @@ export const RecipeCalculator = () => {
     <section className="rounded-md border border-border bg-surface shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div>
-          <h2 className="text-lg font-semibold">Calculator Recipe</h2>
+          <PageHeading as="h2" className="text-lg font-semibold" showBack={!embedded}>Calculator Recipe</PageHeading>
           <p className="mt-1 text-xs text-muted">
             Select saved recipes and preview price with estimated ingredient cost.
           </p>
@@ -2912,7 +2913,7 @@ const SuperadminMenuManagementPage = () => {
     <div className="w-full py-2">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Menu Management</h1>
+          <PageHeading className="text-2xl font-semibold">Menu Management</PageHeading>
           <p className="mt-1 text-sm text-muted">
             Manage recipe, raw material, and category data from one workspace.
           </p>
@@ -3497,7 +3498,7 @@ const SuperadminMenuManagementPage = () => {
           />
         ) : null}
 
-        {activeTab === 'recipe-calculator' ? <RecipeCalculator /> : null}
+        {activeTab === 'recipe-calculator' ? <RecipeCalculator embedded /> : null}
 
         {activeTab === 'create-recipe' ? (
           <ChefCreateMenu

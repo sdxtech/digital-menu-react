@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -146,7 +147,7 @@ const SuperadminDashboardPage = () => {
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Quick View</h1>
+            <PageHeading className="text-2xl font-semibold">Quick View</PageHeading>
             <p className="mt-1 text-sm text-muted">
               Monitor platform activity across users, sites, and production flow.
             </p>

@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useState, useEffect } from 'react'
 import { useChefData } from '../lib/chef-data'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -58,7 +59,7 @@ const ChefRawMaterial = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Raw Material Data</h1>
+          <PageHeading className="text-2xl font-semibold">Raw Material Data</PageHeading>
         </div>
 
         <div className="rounded-md border border-border bg-surface shadow-sm">

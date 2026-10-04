@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -72,7 +73,7 @@ const ChefRecipeDrafts = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Recipe Drafts</h1>
+          <PageHeading className="text-2xl font-semibold text-foreground">Recipe Drafts</PageHeading>
           <p className="mt-1 text-sm text-muted">
             Continue recipes that have not been submitted for approval.
           </p>

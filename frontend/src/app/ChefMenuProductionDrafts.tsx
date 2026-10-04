@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -66,9 +67,9 @@ const ChefMenuProductionDrafts = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">
+          <PageHeading className="text-2xl font-semibold text-foreground">
             Menu Production Drafts
-          </h1>
+          </PageHeading>
           <p className="mt-1 text-sm text-muted">
             Continue production batches that have not been sent to Admin Site.
           </p>

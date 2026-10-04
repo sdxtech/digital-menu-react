@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -53,7 +54,7 @@ const ChefDashboard = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">Quick View</h1>
+          <PageHeading className="text-2xl font-semibold">Quick View</PageHeading>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}

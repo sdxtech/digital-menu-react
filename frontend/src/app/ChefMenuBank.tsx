@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
@@ -666,7 +667,7 @@ const ChefMenuBank = () => {
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold">Recipe Data</h1>
+            <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
           </div>
         </div>
 

@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import {
   Fragment,
   useCallback,
@@ -1919,7 +1920,7 @@ const ChefStoreRequest = ({
     <div className="space-y-6">
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">Store Request</h1>
+          <PageHeading className="text-2xl font-semibold">Store Request</PageHeading>
           {enableBulkExport ? (
             <button
               type="button"

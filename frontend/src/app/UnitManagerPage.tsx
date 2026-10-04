@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
@@ -639,7 +640,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     <div className="w-full py-2">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Approval Center</h1>
+          <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
           <p className="mt-2 text-sm text-muted">
             {corporateOnly
               ? 'Review recipes from your assigned sites.'

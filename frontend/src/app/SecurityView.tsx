@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useState } from 'react'
 import ActionButton from '../components/ActionButton'
 import { useAuth } from '../lib/auth'
@@ -66,7 +67,7 @@ const SecurityView = () => {
     <div className="space-y-6 animate-in fade-in duration-100">
       {/* HEADER SECTION */}
       <div>
-        <h1 className="text-2xl font-semibold">Security & Password</h1>
+        <PageHeading className="text-2xl font-semibold">Security & Password</PageHeading>
         
         {/* Real-time Validation Message Feedback Box Wrapper */}
         {message && (

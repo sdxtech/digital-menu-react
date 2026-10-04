@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -732,7 +733,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <h1 className="text-2xl font-semibold">{title}</h1>
+          <PageHeading className="text-2xl font-semibold">{title}</PageHeading>
           <p className="mt-2 text-sm text-muted">
             {description}
           </p>

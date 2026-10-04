@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ChefStoreRequest from './ChefStoreRequest'
@@ -120,7 +121,7 @@ const SuperadminStoreRequestPage = () => {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold">Store Request Operations</h1>
+        <PageHeading className="text-2xl font-semibold">Store Request Operations</PageHeading>
         <p className="mt-1 text-sm text-muted">
           Process store requests and monitor their progress and issuance history
           from one workspace.

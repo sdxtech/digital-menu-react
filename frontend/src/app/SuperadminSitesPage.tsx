@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
@@ -398,7 +399,7 @@ const SuperadminSitesPage = () => {
     <div className="w-full py-2">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Site Management</h1>
+          <PageHeading className="text-2xl font-semibold">Site Management</PageHeading>
           <p className="mt-1 text-sm text-muted">
             Manage branches and assignable workspaces for operational users.
           </p>

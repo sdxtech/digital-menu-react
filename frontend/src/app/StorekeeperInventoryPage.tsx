@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -43,7 +44,7 @@ const StorekeeperInventoryPage = () => {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">Inventory</h1>
+          <PageHeading className="text-2xl font-semibold">Inventory</PageHeading>
           <p className="text-sm text-muted">
             {inventoryEnabled === false
               ? 'The Inventory dashboard is currently disabled by Superadmin.'
@@ -69,7 +70,7 @@ const StorekeeperInventoryPage = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Inventory</h1>
+        <PageHeading className="text-2xl font-semibold">Inventory</PageHeading>
         <p className="text-sm text-muted">
           Inventory data is displayed according to the Google account currently
           signed in on this browser.
