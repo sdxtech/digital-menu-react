@@ -2052,6 +2052,12 @@ const ChefCreateMenu = ({
                             className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           >
                             <option value="">Select</option>
+                            {row.prodUomCode &&
+                            !uomOptions.some((unit) => unit.code === row.prodUomCode) ? (
+                              <option value={row.prodUomCode}>
+                                {formatUnitLabel(row.prodUomCode)}
+                              </option>
+                            ) : null}
                             {uomOptions.map((unit) => (
                               <option key={unit.id} value={unit.code}>
                                 {formatUnitLabel(unit.code)}

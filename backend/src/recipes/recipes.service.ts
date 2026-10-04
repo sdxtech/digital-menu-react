@@ -353,6 +353,9 @@ export class RecipesService {
     if (!includeInactive) {
       filter.isActive = { $ne: false };
     }
+    if (query.ids) {
+      filter._id = { $in: this.parseCsv(query.ids) };
+    }
     const andFilters: Record<string, unknown>[] = [];
     const visibilityFilter =
       query.strictSite === 'true'

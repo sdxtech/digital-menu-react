@@ -162,6 +162,7 @@ const ChefMenuCycle = ({
     replaceMenuProductionDraft,
     submitMenuProductionDraft,
     fetchRecipes,
+    fetchRecipesByIds,
     searchRecipes,
   } = useChefData()/* Mengambil data resep, produksi menu, dan fungsi untuk menambahkan produksi menu secara bulk dari context ChefData */
   const [productionSite, setProductionSite] = useState('')
@@ -221,6 +222,44 @@ const ChefMenuCycle = ({
   const draftProductionCode = draftState?.productionCode?.trim() ?? ''
   const hydratedDraftRef = useRef('')
   const restoredDraftVendorsRef = useRef('')
+  const [draftRecipesLoading, setDraftRecipesLoading] = useState(false)
+  const [draftRecipesError, setDraftRecipesError] = useState('')
+
+  useEffect(() => {
+    if (!draftProductionCode || !accessToken) return
+    let cancelled = false
+    const ids = Array.from(new Set(
+      (draftState?.menus ?? []).map((menu) => menu.recipeId).filter(
+        (id): id is string => Boolean(id),
+      ),
+    ))
+    setDraftRecipesLoading(true)
+    setDraftRecipesError('')
+    fetchRecipesByIds(ids)
+      .then((items) => {
+        if (cancelled) return
+        setSelectedRecipesById((current) => ({
+          ...current,
+          ...Object.fromEntries(items.map((recipe) => [recipe.id, recipe])),
+        }))
+        const availableIds = new Set(items.filter((recipe) =>
+          recipe.approvalStatus === 'approved' &&
+          recipe.status === 'active' && recipe.isActive,
+        ).map((recipe) => recipe.id))
+        if (ids.some((id) => !availableIds.has(id))) {
+          setDraftRecipesError('A recipe in this draft is unavailable. Select an active approved recipe before saving.')
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setDraftRecipesError(
+          error instanceof Error ? error.message : 'Failed to load draft recipe ingredients.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setDraftRecipesLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [accessToken, draftProductionCode, draftState?.menus, fetchRecipesByIds])
 
   const normalizeText = useCallback(
     (value?: string) => value?.trim().toLowerCase() ?? '',
@@ -621,9 +660,9 @@ const ChefMenuCycle = ({
   const availableRecipes = useMemo(
     () =>
       [
+        ...Object.values(selectedRecipesById),
         ...scopedRecipes,
         ...recipeSearchResults,
-        ...Object.values(selectedRecipesById),
       ]
         .filter((recipe, index, recipes) =>
           recipes.findIndex((candidate) => candidate.id === recipe.id) === index,
@@ -1152,6 +1191,10 @@ const ChefMenuCycle = ({
   const handleSubmitToTimeline = async (
     options: { saveAsDraft?: boolean } = {},
   ) => {
+    if (draftRecipesLoading) {
+      setInputError('Wait for draft recipe ingredients to finish loading.')
+      return
+    }
     if (requireProductionSite && !productionSite) {
       setInputError(emptySiteMessage)
       setInputMessage('')
@@ -2246,6 +2289,12 @@ const ChefMenuCycle = ({
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>
+            {draftRecipesLoading ? (
+              <p className="text-xs font-medium text-muted">Loading draft recipe ingredients...</p>
+            ) : null}
+            {draftRecipesError ? (
+              <p className="text-xs font-medium text-red-600">{draftRecipesError}</p>
+            ) : null}
             {inputError ? (
               <p className="text-xs font-medium text-red-600">{inputError}</p>
             ) : null}
