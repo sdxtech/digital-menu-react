@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiBaseUrl, apiFetch } from "../lib/api";
@@ -227,7 +228,7 @@ const SuperadminAuditLogPage = () => {
     <section className="space-y-5 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Audit Log</h1>
+          <PageHeading className="text-2xl font-semibold">Audit Log</PageHeading>
           <p className="mt-1 text-sm text-muted">
             Review system changes and export a PDF report for a selected period.
           </p>

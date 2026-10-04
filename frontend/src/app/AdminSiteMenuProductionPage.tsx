@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiFetch } from "../lib/api";
@@ -278,7 +279,7 @@ const AdminSiteMenuProductionPage = () => {
   return (
     <section className="space-y-5 pb-10">
       <div>
-        <h1 className="text-2xl font-semibold">Menu Production Sales Input</h1>
+        <PageHeading className="text-2xl font-semibold">Menu Production Sales Input</PageHeading>
         <p className="mt-1 text-sm text-muted">
           Complete selling price and quantity before Unit Manager approval.
         </p>

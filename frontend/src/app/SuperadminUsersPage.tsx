@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
@@ -540,7 +541,7 @@ const SuperadminUsersPage = () => {
       <div className="space-y-6">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-semibold">User Management</h1>
+            <PageHeading className="text-2xl font-semibold">User Management</PageHeading>
             <p className="mt-1 text-sm text-muted">
               Update names, emails, and passwords for your team.
             </p>

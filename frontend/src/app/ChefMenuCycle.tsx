@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -1443,6 +1444,26 @@ const ChefMenuCycle = ({
     }
   }
 
+  const handleCancelProductionDraft = () => {
+    hydratedDraftRef.current = ''
+    restoredDraftVendorsRef.current = ''
+    setProductionDate('')
+    setProductionClientId('')
+    setMenuRows([createMenuInputRow()])
+    setSelectedRecipesById({})
+    setRecipeSearchResults([])
+    setExpandedMenuRows([])
+    setInputPage(1)
+    setActiveRecipeDropdownId(null)
+    setSelectedVendorPriceByIngredientKey({})
+    setCustomPriceByIngredientKey({})
+    setDraftRecipesLoading(false)
+    setDraftRecipesError('')
+    setInputError('')
+    setInputMessage('')
+    navigate(location.pathname + location.search, { replace: true, state: null })
+  }
+
   const handleBackfillIngredientCosts = async () => {
     if (!accessToken || costSyncLoading) return
 
@@ -1498,7 +1519,12 @@ const ChefMenuCycle = ({
           {embedded ? (
             <h2 className="text-lg font-semibold">{title}</h2>
           ) : (
-            <h1 className="text-2xl font-semibold">{title}</h1>
+            <PageHeading
+              className="text-2xl font-semibold"
+              backTo={draftProductionCode ? '/chef/menu-production-drafts' : undefined}
+            >
+              {title}
+            </PageHeading>
           )}
           {description ? (
             <p className="mt-1 text-sm text-muted">{description}</p>
@@ -2302,7 +2328,10 @@ const ChefMenuCycle = ({
               <p className="text-xs font-medium text-primary">{inputMessage}</p>
             ) : null}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {draftProductionCode && !embedded ? (
+              <ActionButton action="cancel" onClick={handleCancelProductionDraft} size="sm" />
+            ) : null}
             {!embedded ? (
               <button
                 type="button"

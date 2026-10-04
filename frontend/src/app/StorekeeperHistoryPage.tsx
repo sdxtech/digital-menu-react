@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatQuantity, formatSignedQuantity } from '../lib/quantity'
@@ -544,7 +545,7 @@ const StorekeeperHistoryPage = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Issuance History</h1>
+        <PageHeading className="text-2xl font-semibold">Issuance History</PageHeading>
         <p className="text-sm text-muted">
           This data contains completed ingredient issuances and cancelled store
           requests.

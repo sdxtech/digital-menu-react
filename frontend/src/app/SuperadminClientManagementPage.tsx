@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -173,7 +174,7 @@ const SuperadminClientManagementPage = () => {
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Client Management</h1>
+            <PageHeading className="text-2xl font-semibold">Client Management</PageHeading>
             <p className="mt-1 text-sm text-muted">Manage clients and the sites serving them.</p>
           </div>
           <button type="button" onClick={openCreate} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white">

@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
@@ -1049,7 +1050,7 @@ const SuperadminUnitOfMeasuresPage = () => {
     <div className="w-full py-2">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">UOM Management</h1>
+          <PageHeading className="text-2xl font-semibold">UOM Management</PageHeading>
           <p className="mt-1 text-sm text-muted">
             Manage unit master data and conversion IDs for recipe and raw
             material measurements.
