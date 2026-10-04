@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -724,20 +725,10 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                           </td>
                           <td className="px-5 py-4">{recipe.category || '-'}</td>
                           <td className="px-5 py-4">
-                            {recipe.isActive === false
-                              ? 'Disabled'
-                              : recipe.status === 'active'
-                                ? 'Active'
-                                : 'Draft'}
+                            <RecipeStatusBadge status={recipe.status} isActive={recipe.isActive} />
                           </td>
                           <td className="px-5 py-4">
-                            <span
-                              className={`font-medium ${approvalStatusClass(
-                                recipe.approvalStatus,
-                              )}`}
-                            >
-                              {getApprovalStatusLabel(recipe.approvalStatus)}
-                            </span>
+                            <RecipeApprovalStatusBadge status={recipe.approvalStatus} />
                           </td>
                           {corporateOnly ? (
                             <>

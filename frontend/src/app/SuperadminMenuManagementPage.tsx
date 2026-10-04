@@ -8,6 +8,7 @@ import {
 } from 'react'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
+import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { useSearchParams } from 'react-router-dom'
@@ -18,7 +19,6 @@ import {
   formatRecipeVersion,
   formatVersionedRecipeName,
 } from '../lib/recipe-version'
-import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 import SuperadminGroupByManagement from './SuperadminGroupByManagement'
 
@@ -246,15 +246,6 @@ const emptyRawMaterialForm: RawMaterialForm = {
   productCode: '',
   name: '',
   unitOfMeasures: '',
-}
-
-const recipeStatusLabel = (status: RecipeStatus) =>
-  status === 'active' ? 'Active' : 'Draft'
-
-const approvalStatusClass = (status: ApprovalStatus) => {
-  if (status === 'approved') return 'text-primary'
-  if (status === 'rejected') return 'text-danger'
-  return 'text-muted'
 }
 
 const formatActorLabel = (name?: string, email?: string, fallback?: string) =>
@@ -3693,18 +3684,10 @@ const SuperadminMenuManagementPage = () => {
                         <td className="px-5 py-4">{recipe.category || '-'}</td>
                         <td className="px-5 py-4">{getRecipeSiteLabel(recipe)}</td>
                         <td className="px-5 py-4">
-                          {isRecipeEnabled
-                            ? recipeStatusLabel(recipe.status)
-                            : 'Disabled'}
+                          <RecipeStatusBadge status={recipe.status} isActive={isRecipeEnabled} />
                         </td>
                         <td className="px-5 py-4">
-                          <span
-                            className={`font-medium ${approvalStatusClass(
-                              recipe.approvalStatus,
-                            )}`}
-                          >
-                            {getApprovalStatusLabel(recipe.approvalStatus)}
-                          </span>
+                          <RecipeApprovalStatusBadge status={recipe.approvalStatus} />
                         </td>
                         <td className="px-5 py-4 font-medium">
                           {formatPrice(estimatedCost)}
@@ -3882,12 +3865,8 @@ const SuperadminMenuManagementPage = () => {
               </div>
               <div className="rounded-md border border-border bg-background p-4">
                 <p className="text-xs text-muted">Approval status</p>
-                <p
-                  className={`mt-2 text-sm font-medium ${approvalStatusClass(
-                    selectedRecipe.approvalStatus,
-                  )}`}
-                >
-                  {getApprovalStatusLabel(selectedRecipe.approvalStatus)}
+                <p className="mt-2">
+                  <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
                 </p>
               </div>
             </div>

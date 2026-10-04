@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
@@ -555,12 +556,10 @@ const UnitManagerRecipeDataPage = ({
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
-                          {recipe.isActive === false
-                            ? 'Disabled'
-                            : statusLabel(recipe.status)}
+                          <RecipeStatusBadge status={recipe.status} isActive={recipe.isActive} />
                         </td>
                         <td className="px-5 py-4">
-                          {getApprovalStatusLabel(recipe.approvalStatus)}
+                          <RecipeApprovalStatusBadge status={recipe.approvalStatus} />
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap gap-2">
@@ -645,8 +644,8 @@ const UnitManagerRecipeDataPage = ({
             </div>
             <div className="rounded-md border border-border bg-background p-4">
               <p className="text-xs text-muted">Approval status</p>
-              <p className="mt-2 text-sm font-medium">
-                {getApprovalStatusLabel(selectedRecipe.approvalStatus)}
+              <p className="mt-2">
+                <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
               </p>
             </div>
           </div>
