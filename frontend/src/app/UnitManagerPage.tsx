@@ -13,6 +13,7 @@ import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
+import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
@@ -899,7 +900,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                             <td className="px-4 py-3">{item.category}</td>
                             <td className="px-4 py-3">{submittedBy}</td>
                             <td className="px-4 py-3">
-                              {item.status === 'active' ? 'Active' : 'Draft'}
+                              <RecipeStatusBadge status={item.status} />
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-2">
