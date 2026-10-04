@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
@@ -605,7 +606,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
         </div>
       ) : null}
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">Approval Centers</h1>
+        <PageHeading className="text-2xl font-semibold">Approval Centers</PageHeading>
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-full max-w-xs">
             <label className="text-xs font-medium text-muted">Site</label>

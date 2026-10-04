@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -1160,6 +1161,25 @@ const ChefCreateMenu = ({
     setImportOpen(false)
   }
 
+  const handleCancelRecipeDraft = () => {
+    if (embedded && onClose) {
+      onClose()
+      return
+    }
+    baseRecipeRef.current = null
+    setRecipeForm(initialRecipeForm)
+    setIngredientRows([createIngredientRow()])
+    setSelectedSite('')
+    setCurrentApprovalStatus(undefined)
+    setResubmitFeedback('')
+    setResubmitModalOpen(false)
+    setIngredientPage(1)
+    setActiveIngredientDropdownId(null)
+    setSubmitError('')
+    setSubmitMessage('')
+    navigate(location.pathname + location.search, { replace: true, state: null })
+  }
+
   const handleImportRecipes = async () => {
     if (!importFile) {
       setImportError('Select an Excel file first')
@@ -1576,7 +1596,11 @@ const ChefCreateMenu = ({
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">
+            <PageHeading
+              className="text-2xl font-semibold"
+              showBack={!embedded}
+              backTo={isDraftRecipe ? recipeDraftsPath : undefined}
+            >
               {isEditMode
                 ? 'Edit Recipe'
                 : isCreateFromRecipe
@@ -1584,7 +1608,7 @@ const ChefCreateMenu = ({
                   : isCreateFromTemplate
                     ? 'Create Recipe from Template'
                     : 'Create New Recipe'}
-            </h1>
+            </PageHeading>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {showImport ? (
@@ -2260,6 +2284,9 @@ const ChefCreateMenu = ({
             ) : null}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
+            {isDraftRecipe ? (
+              <ActionButton action="cancel" onClick={handleCancelRecipeDraft} />
+            ) : null}
             {isRejectedRecipe ? (
               <ActionButton
                 action="save"

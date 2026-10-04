@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { apiFetch } from '../lib/api'
 import { readStoredToken } from '../lib/auth'
@@ -331,7 +332,7 @@ const ChefAddRawMaterial = () => {
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Add Raw Material</h1>
+            <PageHeading className="text-2xl font-semibold">Add Raw Material</PageHeading>
           </div>
           <ActionButton
             action="import"

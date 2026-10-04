@@ -1,3 +1,4 @@
+import PageHeading from '../components/PageHeading'
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -621,7 +622,7 @@ const SuperadminStoreRequestExportPage = () => {
       <div className="space-y-6">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-semibold">Store Request Export</h1>
+            <PageHeading className="text-2xl font-semibold">Store Request Export</PageHeading>
           </div>
         </div>
 
