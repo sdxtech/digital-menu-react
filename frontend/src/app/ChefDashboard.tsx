@@ -54,7 +54,7 @@ const ChefDashboard = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          <PageHeading className="text-2xl font-semibold">Quick View</PageHeading>
+          <PageHeading className="text-2xl font-semibold" showBack={false}>Quick View</PageHeading>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}
