@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
+import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
@@ -68,14 +69,6 @@ type PresignResponse = {
 
 const statusLabel = (status: 'draft' | 'active') =>
   status === 'active' ? 'Active' : 'Draft'
-
-const approvalStatusClass = (
-  status: 'pending' | 'approved' | 'rejected',
-) => {
-  if (status === 'approved') return 'text-primary'
-  if (status === 'rejected') return 'text-danger'
-  return 'text-muted'
-}
 
 const formatActorLabel = (name?: string) => {
   if (name) return name
@@ -928,20 +921,10 @@ const ChefMenuBank = () => {
                         <td className="px-5 py-4">{recipe.category}</td>
                         <td className="px-5 py-4">{formatRecipeSite(recipe)}</td>
                         <td className="px-5 py-4">
-                          <span>
-                            {recipe.isActive === false
-                              ? 'Disabled'
-                              : statusLabel(recipe.status)}
-                          </span>
+                          <RecipeStatusBadge status={recipe.status} isActive={recipe.isActive} />
                         </td>
                         <td className="px-5 py-4">
-                          <span
-                            className={`font-medium ${approvalStatusClass(
-                              recipe.approvalStatus,
-                            )}`}
-                          >
-                            {getApprovalStatusLabel(recipe.approvalStatus)}
-                          </span>
+                          <RecipeApprovalStatusBadge status={recipe.approvalStatus} />
                         </td>
                         <td className="px-5 py-4">
                           <button
@@ -1061,12 +1044,8 @@ const ChefMenuBank = () => {
               <p className="text-xs text-muted">
                 Approval
               </p>
-              <p
-                className={`mt-2 text-sm font-medium ${approvalStatusClass(
-                  selectedRecipe.approvalStatus,
-                )}`}
-              >
-                {getApprovalStatusLabel(selectedRecipe.approvalStatus)}
+              <p className="mt-2">
+                <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
               </p>
             </div>
           </div>
