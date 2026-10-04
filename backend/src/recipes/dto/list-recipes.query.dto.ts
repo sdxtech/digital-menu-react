@@ -1,7 +1,19 @@
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListRecipesQueryDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-fA-F0-9]{24}(,[a-fA-F0-9]{24})*$/)
+  ids?: string;
+
   @IsOptional()
   @IsString()
   search?: string;
