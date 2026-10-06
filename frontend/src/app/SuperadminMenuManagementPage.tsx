@@ -989,12 +989,23 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
     estimatedCosts.length > 0 && estimatedCosts.every((cost) => cost !== undefined)
       ? estimatedCosts.reduce<number>((total, cost) => total + (cost ?? 0), 0)
       : undefined
+  const costsPerPax = selectedRows.map((row, index) => {
+    const estimatedCost = estimatedCosts[index]
+    const targetPortion = getRecipeTargetPortion(recipeById.get(row.recipeId)!, row.portion)
+    return estimatedCost !== undefined && targetPortion > 0
+      ? estimatedCost / targetPortion
+      : undefined
+  })
+  const totalCostPerPax =
+    costsPerPax.length > 0 && costsPerPax.every((cost) => cost !== undefined)
+      ? costsPerPax.reduce<number>((total, cost) => total + (cost ?? 0), 0)
+      : undefined
   const targetPercentage = Number(targetFoodCostPercentage)
   const isValidTargetPercentage =
     Number.isFinite(targetPercentage) && targetPercentage > 0 && targetPercentage <= 100
   const salesPriceRecommendation =
-    totalEstimatedCost !== undefined && isValidTargetPercentage
-      ? totalEstimatedCost / (targetPercentage / 100)
+    totalCostPerPax !== undefined && isValidTargetPercentage
+      ? totalCostPerPax / (targetPercentage / 100)
       : undefined
 
   return (
@@ -1193,19 +1204,14 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
                           }}
                           aria-label={`Target food cost percentage for recipe row ${rowNumber}`}
                           aria-invalid={row.targetFoodCostPercentage !== '' && !isValidRowTargetPercentage}
-                          aria-describedby={`calculator-target-help-${row.id}`}
                           placeholder="Enter target"
                           className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         />
                         <span>%</span>
                       </div>
-                      <p id={`calculator-target-help-${row.id}`} className="mt-1 text-xs text-muted">
-                        Enter a percentage greater than 0 and up to 100.
-                      </p>
                     </td>
                     <td className="px-4 py-3 font-medium">
                       {formatPrice(rowSalesPriceRecommendation)}
-                      <p className="mt-1 text-xs font-normal text-muted">Price per pax.</p>
                     </td>
                     <td className="px-4 py-3">
                       <button
@@ -1528,6 +1534,14 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
             </tr>
             <tr className="border-t border-border">
               <th colSpan={8} scope="row" className="px-4 py-3 text-right font-semibold">
+                Total Cost/Pax
+              </th>
+              <td colSpan={5} className="px-4 py-3 font-semibold">
+                {formatPrice(totalCostPerPax)}
+              </td>
+            </tr>
+            <tr className="border-t border-border">
+              <th colSpan={8} scope="row" className="px-4 py-3 text-right font-semibold">
                 <label htmlFor="calculator-target-food-cost">Target Food Cost Percentage</label>
               </th>
               <td colSpan={5} className="px-4 py-3">
@@ -1541,26 +1555,19 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
                     value={targetFoodCostPercentage}
                     onChange={(event) => setTargetFoodCostPercentage(event.target.value)}
                     aria-invalid={targetFoodCostPercentage !== '' && !isValidTargetPercentage}
-                    aria-describedby="calculator-target-food-cost-help"
                     placeholder="Enter target"
                     className="w-32 rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                   />
                   <span>%</span>
                 </div>
-                <p id="calculator-target-food-cost-help" className="mt-1 text-xs text-muted">
-                  Enter a percentage greater than 0 and up to 100.
-                </p>
               </td>
             </tr>
             <tr className="border-t border-border">
               <th colSpan={8} scope="row" className="px-4 py-3 text-right font-semibold">
-                Sales Price Recommendation
+                Sales Price Recommendation (Package)
               </th>
               <td colSpan={5} className="px-4 py-3 font-semibold">
                 {formatPrice(salesPriceRecommendation)}
-                <p className="mt-1 text-xs font-normal text-muted">
-                  Total price for all selected recipes and portions, across all pages.
-                </p>
               </td>
             </tr>
           </tfoot>
