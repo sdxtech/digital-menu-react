@@ -78,14 +78,6 @@ const navItems = [
     ],
   },
   {
-    label: 'Add Raw Material',
-    to: '/chef/raw-material/add',
-    icon: (className: string) => (
-      <i className={`bi bi-plus-square ${className}`} aria-hidden="true" />
-    ),
-    componentKey: 'ADD_RAW_MATERIAL_FLOW',
-  },
-  {
     label: 'Raw Material Data',
     to: '/chef/raw-material/data',
     icon: (className: string) => (
