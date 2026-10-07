@@ -31,6 +31,11 @@ import { AppRole } from '../auth/roles.constants';
 import { UnitOfMeasuresService } from '../unit-of-measures/unit-of-measures.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WorkflowMailService } from '../mail/workflow-mail.service';
+import {
+  RecipeSettings,
+  RecipeSettingsDocument,
+} from './schemas/recipe-settings.schema';
+import { UpdateRecipeSettingsDto } from './dto/update-recipe-settings.dto';
 
 const QUANTITY_DECIMAL_PLACES = 6;
 
@@ -124,6 +129,7 @@ type BlockMeta = {
   recipeName: string;
   category: string;
   portionSize: number;
+  targetFoodCostPercentage?: number;
 };
 
 const DEFAULT_WARNING_LIMIT = 120;
@@ -136,6 +142,11 @@ const LEGACY_HEADER_ALIASES = {
   status: ['status', 'state'],
   portionSize: ['portion', 'portions', 'porsi', 'serving', 'servings', 'yield'],
   foodCostRecipe: ['food cost recipe', 'food cost', 'total cost'],
+  targetFoodCostPercentage: [
+    'target food cost percentage',
+    'target food cost (%)',
+    'target food cost',
+  ],
 } as const;
 
 type LegacyHeaderKey = keyof typeof LEGACY_HEADER_ALIASES;
@@ -187,9 +198,51 @@ export class RecipesService {
     private readonly unitOfMeasures: UnitOfMeasuresService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED
     private readonly workflowMail: WorkflowMailService,
+    @InjectModel(RecipeSettings.name)
+    private readonly recipeSettingsModel: Model<RecipeSettingsDocument>,
   ) {}
 
+  async getSettings() {
+    const settings = await this.recipeSettingsModel
+      .findOne({ key: 'global' })
+      .lean();
+    return { targetFoodCostRequired: settings?.targetFoodCostRequired ?? true };
+  }
+
+  async updateSettings(input: UpdateRecipeSettingsDto) {
+    const settings = await this.recipeSettingsModel
+      .findOneAndUpdate(
+        { key: 'global' },
+        { $set: { targetFoodCostRequired: input.targetFoodCostRequired } },
+        { upsert: true, new: true, runValidators: true },
+      )
+      .lean();
+    if (!settings) throw new NotFoundException('Recipe settings not found');
+    return { targetFoodCostRequired: settings.targetFoodCostRequired };
+  }
+
+  private async validateTargetFoodCost(
+    value?: number | null,
+    required?: boolean,
+  ) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    ) {
+      throw new BadRequestException(
+        'Target food cost must be a number greater than 0.',
+      );
+    }
+    const targetRequired =
+      required ?? (await this.getSettings()).targetFoodCostRequired;
+    if (targetRequired && (value === undefined || value === null)) {
+      throw new BadRequestException('Target food cost percentage is required.');
+    }
+  }
+
   async create(input: CreateRecipeDto, actor?: RecipeActor) {
+    await this.validateTargetFoodCost(input.targetFoodCostPercentage);
     const normalizedName = input.name.trim();
     if (!input.baseRecipeId) {
       const duplicate = await this.recipeModel.exists({
@@ -247,6 +300,7 @@ export class RecipesService {
       imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
+      targetFoodCostPercentage: input.targetFoodCostPercentage ?? undefined,
       ...(!autoApprove && inputFoodCostRecipe !== undefined
         ? { foodCostRecipe: inputFoodCostRecipe }
         : !autoApprove && 'foodCostRecipe' in costFields
@@ -493,6 +547,7 @@ export class RecipesService {
     );
     const existing = await this.recipeModel.findOne(filter).lean();
     if (!existing) throw new NotFoundException('Recipe draft not found');
+    await this.validateTargetFoodCost(existing.targetFoodCostPercentage);
     if (!existing.name?.trim() || !existing.category?.trim()) {
       throw new BadRequestException('Recipe name and category are required.');
     }
@@ -981,6 +1036,8 @@ export class RecipesService {
       );
     }
 
+    await this.validateTargetFoodCost(existing.targetFoodCostPercentage);
+
     const updatedFields = this.buildActorFields(actor, 'updated');
     const approvalHistory = existing.approvalHistory ?? [];
     const lastHistoryIndex = approvalHistory.length - 1;
@@ -1078,23 +1135,32 @@ export class RecipesService {
   }
 
   async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
+    const targetRecipe = await this.recipeModel
+      .findOne(this.withSiteFilter({ _id: id }, this.getActorSiteScope(actor)))
+      .select({ targetFoodCostPercentage: 1, site: 1, approvalStatus: 1 })
+      .lean();
+    if (!targetRecipe) throw new NotFoundException('Recipe not found');
+    await this.validateTargetFoodCost(
+      input.targetFoodCostPercentage !== undefined
+        ? input.targetFoodCostPercentage
+        : targetRecipe.targetFoodCostPercentage,
+    );
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, unknown> = {};
+    if (input.targetFoodCostPercentage === null) {
+      $unset.targetFoodCostPercentage = '';
+    } else if (input.targetFoodCostPercentage !== undefined) {
+      $set.targetFoodCostPercentage = input.targetFoodCostPercentage;
+    }
     const isCorporateChefActor = this.isCorporateChefActor(actor);
     const preserveDraft = input.saveAsDraft === true;
     const autoApprove = isCorporateChefActor && !preserveDraft;
     let clearEstimates = autoApprove;
     let recipeSite = actor?.site;
     if (input.ingredients !== undefined || input.foodCostRecipe !== undefined) {
-      const existing = await this.recipeModel
-        .findOne(
-          this.withSiteFilter({ _id: id }, this.getActorSiteScope(actor)),
-        )
-        .select({ site: 1, approvalStatus: 1 })
-        .lean();
-      if (!existing) throw new NotFoundException('Recipe not found');
-      recipeSite = existing.site ?? actor?.site;
-      clearEstimates = autoApprove || existing.approvalStatus === 'approved';
+      recipeSite = targetRecipe.site ?? actor?.site;
+      clearEstimates =
+        autoApprove || targetRecipe.approvalStatus === 'approved';
     }
 
     if (input.name !== undefined) {
@@ -1241,6 +1307,14 @@ export class RecipesService {
   ) {
     if (!records.length) return [];
 
+    const settings = await this.getSettings();
+    for (const record of records) {
+      await this.validateTargetFoodCost(
+        record.targetFoodCostPercentage,
+        settings.targetFoodCostRequired,
+      );
+    }
+
     const normalizedSite = this.normalizeSite(actor?.site);
     const createdFields = this.buildActorFields(actor, 'created');
     const updatedFields = this.buildActorFields(actor, 'updated');
@@ -1255,6 +1329,7 @@ export class RecipesService {
       imageUrl: record.imageUrl?.trim(),
       price: record.price ?? 0,
       portionSize: record.portionSize ?? 1,
+      targetFoodCostPercentage: record.targetFoodCostPercentage ?? undefined,
       foodCostRecipe: this.normalizeOptionalNumber(record.foodCostRecipe),
       status: record.status ?? 'draft',
       approvalStatus: 'pending',
@@ -1461,6 +1536,7 @@ export class RecipesService {
         name: meta.recipeName,
         category: meta.category,
         portionSize: meta.portionSize,
+        targetFoodCostPercentage: meta.targetFoodCostPercentage,
         status: 'draft',
         ingredients,
         price: 0,
@@ -1517,6 +1593,9 @@ export class RecipesService {
       const foodCostRecipe = headerMap.foodCostRecipe
         ? this.cellToNumber(values[headerMap.foodCostRecipe] ?? null)
         : undefined;
+      const targetFoodCostPercentage = headerMap.targetFoodCostPercentage
+        ? this.cellToNumber(values[headerMap.targetFoodCostPercentage] ?? null)
+        : undefined;
 
       records.push({
         name,
@@ -1526,6 +1605,7 @@ export class RecipesService {
         portionSize:
           portionSize !== undefined && portionSize >= 1 ? portionSize : 1,
         status: this.normalizeStatus(statusRaw),
+        targetFoodCostPercentage,
         ingredients: [],
         ...(foodCostRecipe !== undefined ? { foodCostRecipe } : {}),
       });
@@ -1705,10 +1785,30 @@ export class RecipesService {
       });
     }
 
+    const targetCell = this.findLabelCell(
+      worksheet,
+      block.startRow,
+      block.endRow,
+      [...LEGACY_HEADER_ALIASES.targetFoodCostPercentage],
+    );
+    const targetFoodCostPercentage = targetCell
+      ? (this.cellToNumber(
+          this.readRowCells(worksheet, targetCell.row, 20)[
+            targetCell.col + 1
+          ] ?? null,
+        ) ??
+        this.cellToNumber(
+          this.readRowCells(worksheet, targetCell.row + 1, 20)[
+            targetCell.col
+          ] ?? null,
+        ))
+      : undefined;
+
     return {
       recipeName: normalizedName,
       category,
       portionSize,
+      targetFoodCostPercentage,
     };
   }
 

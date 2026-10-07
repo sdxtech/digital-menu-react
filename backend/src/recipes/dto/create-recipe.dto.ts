@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   IsUrl,
   Min,
@@ -86,6 +87,11 @@ export class RecipeIngredientDto {
 }
 
 export class CreateRecipeDto {
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  targetFoodCostPercentage?: number | null;
+
   @IsOptional()
   @IsBoolean()
   saveAsDraft?: boolean;

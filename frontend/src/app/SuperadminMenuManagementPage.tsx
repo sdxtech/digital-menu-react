@@ -22,6 +22,8 @@ import {
 } from '../lib/recipe-version'
 import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 import SuperadminGroupByManagement from './SuperadminGroupByManagement'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
+import RecipeFoodCostSetting from '../components/RecipeFoodCostSetting'
 
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -46,6 +48,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  targetFoodCostPercentage?: number
   id?: string
   _id?: string
   recipeCode?: string
@@ -2213,8 +2216,10 @@ const SuperadminMenuManagementPage = () => {
       category: recipe.category,
       description: recipe.description ?? '',
       portionSize: recipe.portionSize,
+      targetFoodCostPercentage: recipe.targetFoodCostPercentage,
       approvalStatus: recipe.approvalStatus,
       ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
+        ...ingredient,
         productCode: ingredient.productCode ?? '',
         name: ingredient.name ?? '',
         unitOfMeasures: ingredient.unitOfMeasures ?? '',
@@ -3243,6 +3248,9 @@ const SuperadminMenuManagementPage = () => {
                     disabled={recipeImporting}
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                   />
+                  <p className="mt-2 text-xs text-muted">
+                    Include a Target food cost (%) column or recipe card label with a number such as 40 or 45.5. Required when enabled in recipe settings.
+                  </p>
                   {recipeImportFile ? (
                     <p className="mt-2 text-xs text-muted">
                       Selected file: {recipeImportFile.name}
@@ -3631,6 +3639,7 @@ const SuperadminMenuManagementPage = () => {
 
         {activeTab === 'recipes' ? (
           <>
+        <RecipeFoodCostSetting />
         <section className="rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
@@ -4020,6 +4029,7 @@ const SuperadminMenuManagementPage = () => {
               </div>
             </div>
 
+            <RecipeSalesRecommendation recipe={selectedRecipe} />
             <div className="mt-6">
               <h3 className="font-semibold text-foreground">Ingredients</h3>
               {selectedRecipeIngredients.length === 0 ? (
