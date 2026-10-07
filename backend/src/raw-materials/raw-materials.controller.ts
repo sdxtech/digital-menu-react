@@ -151,6 +151,22 @@ export class RawMaterialsController {
   ) {
     if (req.user.roles?.includes(AppRole.CorporateChef)) {
       const requested = requestedSite?.trim();
+      if (req.user.corporateSite) {
+        const allowed = [
+          req.user.site,
+          ...(req.user.approvalSites ?? []),
+        ].filter((site): site is string => Boolean(site));
+        const matched = requested
+          ? allowed.find(
+              (site) => site.toLowerCase() === requested.toLowerCase(),
+            )
+          : req.user.site;
+        if (!matched)
+          throw new ForbiddenException(
+            'The selected site is outside your recipe scope.',
+          );
+        return matched;
+      }
       const assignedSites = Array.from(
         new Set([req.user.site, ...(req.user.sites ?? [])]),
       )

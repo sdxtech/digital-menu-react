@@ -59,6 +59,9 @@ export class SuperadminSitesController {
       code: dto.code,
       description: dto.description,
       isActive: dto.isActive,
+      siteFunction: dto.siteFunction,
+      materialSource: dto.materialSource,
+      referenceSiteCodes: dto.referenceSiteCodes,
     });
   }
 
@@ -121,6 +124,9 @@ export class SuperadminSitesController {
       code: dto.code,
       description: dto.description,
       isActive: dto.isActive,
+      siteFunction: dto.siteFunction,
+      materialSource: dto.materialSource,
+      referenceSiteCodes: dto.referenceSiteCodes,
     });
   }
 

@@ -12,6 +12,80 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
     );
 
+  it('uses a local price instead of a corporate reference price for production', () => {
+    const service = createService({});
+    const snapshot = service['calculateMenuProductionCostSnapshot'](
+      {
+        recipeId: 'recipe-1',
+        portion: 1,
+        cost: 0,
+        productionDate: '2026-10-07',
+        ingredientVendors: [
+          {
+            ingredientIndex: 0,
+            vendor: 'Local vendor',
+            site: 'Local site',
+            price: 30,
+          },
+        ],
+      },
+      {
+        id: 'recipe-1',
+        name: 'Chicken',
+        category: 'Main',
+        version: 1,
+        portionSize: 1,
+        ingredients: [
+          {
+            productCode: 'IT001',
+            name: 'Chicken',
+            unitOfMeasures: 'KG',
+            qty: 2,
+            priceUom: 10,
+            priceSourceSite: 'JAKARTA-A',
+          },
+        ],
+      },
+    );
+    expect(snapshot.estimatedTotalCost).toBe(60);
+  });
+
+  it('requires an explicit local price for reference ingredients and leaves incomplete drafts unpriced', () => {
+    const service = createService({});
+    const input = {
+      recipeId: 'recipe-1',
+      portion: 1,
+      cost: 0,
+      productionDate: '2026-10-07',
+    };
+    const recipe = {
+      id: 'recipe-1',
+      name: 'Chicken',
+      category: 'Main',
+      version: 1,
+      portionSize: 1,
+      ingredients: [
+        {
+          productCode: 'IT001',
+          name: 'Chicken',
+          unitOfMeasures: 'KG',
+          qty: 2,
+          priceUom: 10,
+          priceSourceSite: 'JAKARTA-A',
+        },
+      ],
+    };
+    expect(() =>
+      service['calculateMenuProductionCostSnapshot'](input, recipe),
+    ).toThrow('Local price is required');
+    expect(
+      service['calculateMenuProductionCostSnapshot'](
+        { ...input, saveAsDraft: true },
+        recipe,
+      ).estimatedTotalCost,
+    ).toBeUndefined();
+  });
+
   it('only updates pending menu productions', async () => {
     const findOneAndUpdate = jest.fn().mockResolvedValue(null);
     const service = createService({ findOneAndUpdate });
@@ -199,6 +273,57 @@ describe('MenuProductionsService sales input', () => {
         },
       },
     );
+  });
+
+  it('does not submit an incomplete production draft using corporate reference prices', async () => {
+    const draft = {
+      recipeId: '507f1f77bcf86cd799439011',
+      portion: 1,
+      productionDate: '2026-10-07',
+      ingredientVendors: [],
+    };
+    const model = {
+      find: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue([draft]) }),
+      updateMany: jest.fn(),
+    };
+    const recipes = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: draft.recipeId,
+              name: 'Chicken',
+              category: 'Main',
+              portionSize: 1,
+              ingredients: [
+                {
+                  productCode: 'IT001',
+                  name: 'Chicken',
+                  unitOfMeasures: 'KG',
+                  qty: 1,
+                  priceUom: 10,
+                  priceSourceSite: 'JAKARTA-A',
+                },
+              ],
+            },
+          ]),
+        }),
+      }),
+    };
+    const service = new MenuProductionsService(
+      model as never,
+      {} as never,
+      recipes as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.submitDraftBatch('MPR001', 'chef-1', 'LOCAL'),
+    ).rejects.toThrow('Local price is required');
+    expect(model.updateMany).not.toHaveBeenCalled();
   });
 });
 

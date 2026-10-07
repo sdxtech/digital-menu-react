@@ -123,7 +123,7 @@ export class AuthController {
     const assignedSites = Array.from(
       new Set([
         ...(effectiveSite ? [effectiveSite] : []),
-        ...(storedUser?.sites?.length ? storedUser.sites : sites ?? []),
+        ...(storedUser?.sites?.length ? storedUser.sites : (sites ?? [])),
       ]),
     );
     const siteSummaries = assignedSites?.length
@@ -133,6 +133,14 @@ export class AuthController {
       const summary = siteSummaries.get(code);
       return { code, name: summary?.name ?? code };
     });
+    const corporateSite = req.user.corporateSite === true;
+    const approvalSiteOptions = corporateSite
+      ? await this.sites.findApprovalSites()
+      : [];
+    const materialReferenceSites =
+      corporateSite && effectiveSite
+        ? await this.sites.findMaterialSourceSites(effectiveSite)
+        : [];
     return {
       id: sub,
       name,
@@ -144,6 +152,15 @@ export class AuthController {
       siteName: primarySummary?.name ?? siteName,
       sites: assignedSites,
       siteOptions,
+      corporateSite,
+      approvalSiteOptions: approvalSiteOptions.map(({ code, name }) => ({
+        code,
+        name,
+      })),
+      materialReferenceSites: materialReferenceSites.map(({ code, name }) => ({
+        code,
+        name,
+      })),
     };
   }
 

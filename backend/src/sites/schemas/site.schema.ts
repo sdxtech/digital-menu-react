@@ -14,6 +14,15 @@ export class Site {
   @Prop({ type: String, trim: true })
   description?: string;
 
+  @Prop({ enum: ['operational', 'corporate'], default: 'operational' })
+  siteFunction: 'operational' | 'corporate';
+
+  @Prop({ enum: ['own', 'reference'], default: 'own' })
+  materialSource: 'own' | 'reference';
+
+  @Prop({ type: [String], default: [] })
+  referenceSiteCodes: string[];
+
   @Prop({ default: true, index: true })
   isActive: boolean;
 }

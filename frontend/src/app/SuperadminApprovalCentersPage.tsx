@@ -1,10 +1,12 @@
 import PageHeading from '../components/PageHeading'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
+import SiteMultiSelect from '../components/SiteMultiSelect'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useCorporateSite } from '../lib/corporate-site'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
@@ -197,11 +199,21 @@ const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
 }
 
 const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
-  const { accessToken, user, updateUser } = useAuth()
+  const { accessToken } = useAuth()
+  const corporateSettings = useCorporateSite(corporateOnly)
+  const isCorporateSite = corporateOnly && corporateSettings.context?.corporateSite === true
   const [searchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
   const [selectedSite, setSelectedSite] = useState('')
+  const [selectedCorporateSites, setSelectedCorporateSites] = useState<string[] | null>(null)
+  const corporateSiteCodes = useMemo(() =>
+    selectedCorporateSites === null
+      ? siteOptions.map((site) => site.code)
+      : selectedCorporateSites.filter((code) => siteOptions.some((site) => site.code === code)),
+    [selectedCorporateSites, siteOptions],
+  )
+  const hasApprovalScope = corporateOnly ? corporateSiteCodes.length > 0 : Boolean(selectedSite)
   const [activeSection, setActiveSection] = useState<ApprovalSection>(() =>
     isApprovalSection(sectionParam) ? sectionParam : 'recipes',
   )
@@ -250,20 +262,6 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     })
   }
 
-  useEffect(() => {
-    if (!corporateOnly || !accessToken) return
-    apiFetch<{
-      sites?: string[]
-      siteOptions?: Array<{ code: string; name: string }>
-    }>('/auth/me', undefined, accessToken)
-      .then((data) => {
-        if (data.sites?.length) {
-          updateUser({ sites: data.sites, siteOptions: data.siteOptions })
-        }
-      })
-      .catch(() => null)
-  }, [accessToken, corporateOnly, updateUser])
-
   const fetchSites = useCallback(async () => {
     if (!accessToken) {
       setSiteOptions([])
@@ -271,14 +269,19 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     }
 
     if (corporateOnly) {
+      const context = corporateSettings.context
+      if (!context) return
       const assigned = Array.from(
-        new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
+        new Set([...(context.site ? [context.site] : []), ...(context.sites ?? [])]),
       ).map((code) => ({
         code,
-        name: user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
+        name: context.siteOptions?.find((site) => site.code === code)?.name ?? code,
       }))
-      setSiteOptions(assigned)
-      setSelectedSite((current) => current || assigned[0]?.code || '')
+      const options = isCorporateSite ? context.approvalSiteOptions ?? [] : assigned
+      setSiteOptions(options)
+      setSelectedCorporateSites((current) => current === null
+        ? null
+        : current.filter((code) => options.some((site) => site.code === code)))
       return
     }
 
@@ -297,7 +300,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     } catch {
       setSiteOptions([])
     }
-  }, [accessToken, corporateOnly, user?.site, user?.siteOptions, user?.sites])
+  }, [accessToken, corporateOnly, corporateSettings.context, isCorporateSite])
 
   const fetchApprovals = useCallback(async () => {
     const requestId = ++approvalRequestId.current
@@ -305,7 +308,15 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       setError('Please log in first to load approval data.')
       return
     }
-    if (!selectedSite) {
+    if (corporateOnly && (corporateSettings.loading || corporateSettings.error)) {
+      setRecipes([])
+      setRecipeTotal(0)
+      setMenuGroups([])
+      setLoading(false)
+      setError(corporateSettings.error)
+      return
+    }
+    if (!hasApprovalScope) {
       setRecipes([])
       setRecipeTotal(0)
       setMenuGroups([])
@@ -318,7 +329,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     setError('')
     try {
       const recipeParams = new URLSearchParams()
-      recipeParams.set('site', selectedSite)
+      if (corporateOnly) {
+        if (selectedCorporateSites !== null || !isCorporateSite) {
+          recipeParams.set('sites', corporateSiteCodes.join(','))
+        }
+      } else if (selectedSite) recipeParams.set('site', selectedSite)
       recipeParams.set('strictSite', 'true')
       recipeParams.set('page', String(recipePage))
       recipeParams.set('limit', String(ITEMS_PER_PAGE))
@@ -366,7 +381,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     } finally {
       if (requestId === approvalRequestId.current) setLoading(false)
     }
-  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite])
+  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite, hasApprovalScope, corporateSettings.loading, corporateSettings.error, corporateSiteCodes, selectedCorporateSites, isCorporateSite])
 
   useEffect(() => {
     fetchSites().catch(() => null)
@@ -399,7 +414,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     setOverrideError('')
     setMessage('')
     setError('')
-  }, [selectedSite, approvalFilter])
+  }, [selectedSite, selectedCorporateSites, approvalFilter])
 
   const recipeTotalPages = Math.max(1, Math.ceil(recipeTotal / ITEMS_PER_PAGE))
   const menuTotalPages = Math.max(1, Math.ceil(menuGroups.length / ITEMS_PER_PAGE))
@@ -614,7 +629,17 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-full max-w-xs">
             <label className="text-xs font-medium text-muted">Site</label>
-            <select
+            {corporateOnly ? (
+              <SiteMultiSelect
+                options={siteOptions}
+                selected={selectedCorporateSites}
+                onChange={(sites) => {
+                  setSelectedCorporateSites(sites)
+                  setRecipePage(1)
+                }}
+                disabled={corporateSettings.loading || Boolean(corporateSettings.error)}
+              />
+            ) : <select
               value={selectedSite}
               onChange={(event) => {
                 setSelectedSite(event.target.value)
@@ -628,7 +653,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   {site.name || site.code}
                 </option>
               ))}
-            </select>
+            </select>}
           </div>
           <div className="w-full max-w-xs">
             <label className="text-xs font-medium text-muted">
@@ -651,7 +676,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
           <button
             type="button"
             onClick={() => fetchApprovals().catch(() => null)}
-            disabled={loading || !selectedSite}
+            disabled={loading || !hasApprovalScope || corporateSettings.loading || Boolean(corporateSettings.error)}
             className="rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Refresh
@@ -703,7 +728,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-10 text-center text-muted">
-                      {selectedSite ? 'No recipes found.' : 'Select a site first.'}
+                      {corporateSettings.loading ? 'Loading approval sites...' : hasApprovalScope ? 'No recipes found.' : corporateOnly ? 'Select at least one site.' : 'Select a site first.'}
                     </td>
                   </tr>
                 ) : (

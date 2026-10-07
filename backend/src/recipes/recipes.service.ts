@@ -46,6 +46,8 @@ type RecipeActor = {
   site?: string;
   sites?: string[];
   roles?: AppRole[];
+  corporateSite?: boolean;
+  approvalSites?: string[];
 };
 
 type RecipeAuditFields = {
@@ -397,7 +399,7 @@ export class RecipesService {
 
   async findAll(
     query: ListRecipesQueryDto,
-    site?: string,
+    site?: string | string[],
     includeInactive = false,
   ) {
     const filter: Record<string, unknown> = {
@@ -689,7 +691,9 @@ export class RecipesService {
         _id: id,
         ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
-      this.isCorporateChefActor(actor) ? actor?.sites : actor?.site,
+      this.isCorporateChefActor(actor)
+        ? this.getActorSiteScope(actor)
+        : actor?.site,
     );
     const updatedFields = this.buildActorFields(actor, 'updated');
     const reviewedFields = this.buildActorFields(actor, 'reviewed');
@@ -2341,6 +2345,12 @@ export class RecipesService {
     ingredients: RecipeIngredient[],
     site?: string,
   ) {
+    const siteSummary = site
+      ? (await this.sites.findSummariesByCodes([site])).get(site)
+      : undefined;
+    const usesReferences = siteSummary?.materialSource === 'reference';
+    if (usesReferences)
+      await this.validateSiteScopedIngredients(ingredients, site);
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(
         ingredients
@@ -2356,6 +2366,15 @@ export class RecipesService {
     >();
     const nextIngredients = await Promise.all(
       ingredients.map(async (ingredient) => {
+        if (
+          usesReferences &&
+          ingredient.ingredientType === 'IT' &&
+          !ingredient.vendor?.trim()
+        ) {
+          throw new BadRequestException(
+            `Select a reference vendor with a valid price for ${ingredient.name || ingredient.productCode}.`,
+          );
+        }
         const result = await this.applyIngredientCostFromLookup(
           ingredient,
           rawMaterialByCode,
@@ -2404,6 +2423,8 @@ export class RecipesService {
     if (!rawMaterial) return { status: 'missing_raw_material' };
 
     let unitPrice = this.normalizeOptionalNumber(rawMaterial.price);
+    let priceSourceSite: string | undefined;
+    let priceSourceSiteName: string | undefined;
     if (ingredient.vendor) {
       if (!site?.trim()) return { status: 'missing_price' };
       const key = JSON.stringify([
@@ -2424,6 +2445,8 @@ export class RecipesService {
             this.normalizeUomCode(ingredient.unitOfMeasures),
       );
       unitPrice = this.normalizeOptionalNumber(selected?.price);
+      priceSourceSite = selected?.priceSourceSite;
+      priceSourceSiteName = selected?.priceSourceSiteName;
     }
     if (unitPrice === undefined) return { status: 'missing_price' };
 
@@ -2436,6 +2459,8 @@ export class RecipesService {
     const nextIngredient: RecipeIngredient = {
       ...ingredient,
       priceUom: unitPrice,
+      priceSourceSite,
+      priceSourceSiteName,
       ...(foodCost !== undefined ? { foodCost } : {}),
     };
 
@@ -2642,7 +2667,7 @@ export class RecipesService {
   }
 
   // BACKEND LOGIC: category list for frontend filters.
-  async listCategories(site?: string): Promise<string[]> {
+  async listCategories(site?: string | string[]): Promise<string[]> {
     const visibilityFilter = this.buildVisibilityFilter(site);
     const filter = Object.keys(visibilityFilter).length
       ? {
@@ -2685,6 +2710,11 @@ export class RecipesService {
     actor?: RecipeActor,
   ): string | string[] | undefined {
     if (!this.isCorporateChefActor(actor)) return actor?.site;
+    if (actor?.corporateSite)
+      return [
+        ...(actor.site ? [actor.site] : []),
+        ...(actor.approvalSites ?? []),
+      ];
     const assignedSites = Array.from(
       new Set(
         [actor?.site, ...(actor?.sites ?? [])].filter((site): site is string =>
@@ -2762,7 +2792,7 @@ export class RecipesService {
       const sites = site
         .map((item) => this.normalizeSite(item))
         .filter(Boolean);
-      return sites.length ? { site: { $in: sites } } : {};
+      return { site: { $in: sites } };
     }
     const normalizedSite = this.normalizeSite(site);
     if (!normalizedSite) return {};
@@ -2770,7 +2800,7 @@ export class RecipesService {
   }
 
   private buildVisibilityFilter(
-    site?: string,
+    site?: string | string[],
     approvalStatus?: ApprovalStatus,
   ) {
     const siteFilter = this.buildSiteFilter(site);

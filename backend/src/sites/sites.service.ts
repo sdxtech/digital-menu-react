@@ -26,6 +26,9 @@ export type CreateSiteInput = {
   code: string;
   description?: string;
   isActive?: boolean;
+  siteFunction?: 'operational' | 'corporate';
+  materialSource?: 'own' | 'reference';
+  referenceSiteCodes?: string[];
 };
 
 export type UpdateSiteInput = Partial<CreateSiteInput>;
@@ -43,6 +46,9 @@ export type SiteSummary = {
   code: string;
   description?: string;
   isActive: boolean;
+  siteFunction: 'operational' | 'corporate';
+  materialSource: 'own' | 'reference';
+  referenceSiteCodes: string[];
 };
 
 export type ImportSiteRow = {
@@ -78,12 +84,17 @@ export class SitesService {
       throw new BadRequestException('Site name and code are required.');
     }
 
+    const materialSettings = await this.validateMaterialSettings({
+      ...input,
+      code,
+    });
     try {
       return await this.siteModel.create({
         name,
         code,
         description: this.normalizeOptionalText(input.description),
         isActive: input.isActive ?? true,
+        ...materialSettings,
       });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
@@ -149,8 +160,32 @@ export class SitesService {
     }
 
     if (Object.keys(updateFields).length === 0) {
-      throw new BadRequestException('No changes provided');
+      if (
+        input.siteFunction === undefined &&
+        input.materialSource === undefined &&
+        input.referenceSiteCodes === undefined
+      ) {
+        throw new BadRequestException('No changes provided');
+      }
     }
+
+    const existing = await this.findById(id);
+    await this.assertReferenceAvailable(existing.code, {
+      ...input,
+      code: updateFields.code ?? existing.code,
+    });
+    Object.assign(
+      updateFields,
+      await this.validateMaterialSettings({
+        code: updateFields.code ?? existing.code,
+        siteFunction:
+          input.siteFunction ?? existing.siteFunction ?? 'operational',
+        materialSource:
+          input.materialSource ?? existing.materialSource ?? 'own',
+        referenceSiteCodes:
+          input.referenceSiteCodes ?? existing.referenceSiteCodes ?? [],
+      }),
+    );
 
     try {
       const updated = await this.siteModel.findByIdAndUpdate(id, updateFields, {
@@ -171,6 +206,8 @@ export class SitesService {
       throw new BadRequestException('Invalid site id.');
     }
 
+    const existing = await this.findById(id);
+    await this.assertReferenceAvailable(existing.code, { isActive });
     const updated = await this.siteModel.findByIdAndUpdate(
       id,
       { isActive },
@@ -185,6 +222,8 @@ export class SitesService {
       throw new BadRequestException('Invalid site id.');
     }
 
+    const existing = await this.findById(id);
+    await this.assertReferenceAvailable(existing.code, { isActive: false });
     const deleted = await this.siteModel.findByIdAndDelete(id);
     if (!deleted) throw new NotFoundException('Site not found');
     return deleted;
@@ -286,6 +325,9 @@ export class SitesService {
     code: string;
     description?: string;
     isActive?: boolean;
+    siteFunction?: 'operational' | 'corporate';
+    materialSource?: 'own' | 'reference';
+    referenceSiteCodes?: string[];
   }): SiteSummary {
     return {
       id: String(site._id),
@@ -293,7 +335,102 @@ export class SitesService {
       code: site.code,
       description: site.description,
       isActive: site.isActive ?? true,
+      siteFunction: site.siteFunction ?? 'operational',
+      materialSource: site.materialSource ?? 'own',
+      referenceSiteCodes: site.referenceSiteCodes ?? [],
     };
+  }
+
+  async findApprovalSites() {
+    const items = await this.siteModel
+      .find({
+        isActive: { $ne: false },
+      })
+      .sort({ name: 1 })
+      .lean();
+    return items.map((site) => this.toSummary(site));
+  }
+
+  async findMaterialSourceSites(code: string): Promise<SiteSummary[]> {
+    const site = (await this.findSummariesByCodes([code])).get(
+      this.normalizeCode(code),
+    );
+    if (!site) return [];
+    if (!site.isActive)
+      throw new BadRequestException('The material source site is inactive.');
+    if (site.materialSource !== 'reference') return [site];
+    const references = await this.findSummariesByCodes(site.referenceSiteCodes);
+    if (
+      !site.referenceSiteCodes.length ||
+      site.referenceSiteCodes.some((reference) => {
+        const source = references.get(reference);
+        return (
+          !source?.isActive ||
+          source.siteFunction !== 'operational' ||
+          source.materialSource !== 'own'
+        );
+      })
+    ) {
+      throw new BadRequestException(
+        'Configure active operational sites with their own prices as material references.',
+      );
+    }
+    return site.referenceSiteCodes.map(
+      (reference) => references.get(reference)!,
+    );
+  }
+
+  private async validateMaterialSettings(input: Partial<CreateSiteInput>) {
+    const siteFunction = input.siteFunction ?? 'operational';
+    const materialSource = input.materialSource ?? 'own';
+    const references = (input.referenceSiteCodes ?? []).map((code) =>
+      this.normalizeCode(code),
+    );
+    if (materialSource === 'own')
+      return { siteFunction, materialSource, referenceSiteCodes: [] };
+    if (
+      !references.length ||
+      references.some((code) => !code || code === input.code) ||
+      new Set(references).size !== references.length
+    ) {
+      throw new BadRequestException(
+        'Select distinct reference sites other than this site, in priority order.',
+      );
+    }
+    const sites = await this.findSummariesByCodes(references);
+    if (
+      references.some((code) => {
+        const site = sites.get(code);
+        return (
+          !site?.isActive ||
+          site.siteFunction !== 'operational' ||
+          site.materialSource !== 'own'
+        );
+      })
+    ) {
+      throw new BadRequestException(
+        'Reference sites must be active operational sites using their own material data.',
+      );
+    }
+    return { siteFunction, materialSource, referenceSiteCodes: references };
+  }
+
+  private async assertReferenceAvailable(code: string, input: UpdateSiteInput) {
+    if (
+      input.isActive !== false &&
+      input.siteFunction !== 'corporate' &&
+      input.materialSource !== 'reference' &&
+      (!input.code || input.code === code)
+    )
+      return;
+    const dependent = await this.siteModel.exists({
+      materialSource: 'reference',
+      referenceSiteCodes: code,
+    });
+    if (dependent)
+      throw new BadRequestException(
+        'This site is used as a material reference. Update dependent sites before changing its availability, function, source, or code.',
+      );
   }
 
   private normalizeCode(value?: string) {

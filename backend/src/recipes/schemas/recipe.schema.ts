@@ -7,6 +7,8 @@ export type RecipeStatus = 'draft' | 'active';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 export type RecipeIngredient = {
+  priceSourceSite?: string;
+  priceSourceSiteName?: string;
   vendor?: string;
   ingredientType?: 'IT' | 'NMP';
   productCode?: string;
@@ -143,6 +145,8 @@ export class Recipe {
       {
         ingredientType: { type: String, enum: ['IT', 'NMP'] },
         vendor: { type: String, trim: true },
+        priceSourceSite: { type: String, trim: true },
+        priceSourceSiteName: { type: String, trim: true },
         productCode: { type: String, trim: true },
         name: { type: String, trim: true },
         unitOfMeasures: { type: String, trim: true },

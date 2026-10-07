@@ -12,6 +12,7 @@ import {
 } from '../lib/chef-data'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useCorporateSite } from '../lib/corporate-site'
 import { formatQuantity, roundQuantity } from '../lib/quantity'
 import {
   formatRecipeVersion,
@@ -58,6 +59,8 @@ type VendorPriceOption = {
   vendor: string
   unitOfMeasures: string
   price?: number
+  priceSourceSite?: string
+  priceSourceSiteName?: string
 }
 
 type VendorPriceState = {
@@ -213,6 +216,8 @@ const ChefCreateMenu = ({
   )
   const baseRecipeVersion = getRecipeVersion(baseRecipe?.version)
   const isCorporateChef = user?.role === 'corporate-chef'
+  const corporateSettings = useCorporateSite(isCorporateChef)
+  const isCorporateSite = corporateSettings.context?.corporateSite === true
   const isChef = user?.role === 'chef'
   const useVendorPrices = isChef || isCorporateChef
   const showIngredientCostColumns = isChef || isCorporateChef
@@ -238,7 +243,10 @@ const ChefCreateMenu = ({
       ),
     ).values(),
   )
-  const [selectedSite, setSelectedSite] = useState(baseRecipe?.site ?? '')
+  const [chosenSite, setSelectedSite] = useState(baseRecipe?.site ?? '')
+  const selectedSite = isCorporateSite
+    ? isEditMode ? baseRecipe?.site ?? corporateSettings.context?.site ?? '' : corporateSettings.context?.site ?? ''
+    : chosenSite
   const rawMaterialSite = isCorporateChef
     ? selectedSite
     : user?.role === 'superadmin' ? undefined : user?.site
@@ -606,6 +614,8 @@ const ChefCreateMenu = ({
             unitOfMeasures: item.unitOfMeasures.trim(),
             price: item.price != null && Number.isFinite(Number(item.price)) && Number(item.price) >= 0
               ? Number(item.price) : undefined,
+            priceSourceSite: item.priceSourceSite,
+            priceSourceSiteName: item.priceSourceSiteName,
           }))
           .sort((a, b) => a.vendor.localeCompare(b.vendor))
         setVendorPrices((current) => ({ ...current, [key]: { loading: false, options } }))
@@ -1237,6 +1247,11 @@ const ChefCreateMenu = ({
     const nextDescription = recipeForm.description.trim()
     const nextResubmitFeedback = resubmitFeedback.trim()
 
+    if (isCorporateChef && (corporateSettings.loading || corporateSettings.error)) {
+      setSubmitError(corporateSettings.error || 'Corporate site settings are still loading.')
+      return
+    }
+
     if (isCorporateChef && !selectedSite) {
       setSubmitError('Select a site before creating the recipe.')
       setSubmitMessage('')
@@ -1786,10 +1801,14 @@ const ChefCreateMenu = ({
               <label className="text-sm font-medium text-foreground">
                 Site <span className="text-danger">*</span>
               </label>
-              <select
+              {isCorporateSite ? (
+                <div className="mt-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm">
+                  {isEditMode ? assignedSiteOptions.find((site) => site.code === selectedSite)?.name ?? selectedSite : corporateSettings.context?.siteName ?? selectedSite}
+                </div>
+              ) : <select
                 value={selectedSite}
                 onChange={(event) => handleSiteChange(event.target.value)}
-                disabled={isEditMode}
+                disabled={isEditMode || corporateSettings.loading || Boolean(corporateSettings.error)}
                 className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:bg-slate-200 disabled:text-muted"
               >
                 <option value="">Select site</option>
@@ -1798,11 +1817,16 @@ const ChefCreateMenu = ({
                     {site.code} - {site.name}
                   </option>
                 ))}
-              </select>
+              </select>}
               <p className="mt-2 text-xs text-muted">
-                IT raw materials are limited to the selected site. Changing the
-                site clears previously selected IT ingredients.
+                {isCorporateSite
+                  ? isEditMode && selectedSite !== corporateSettings.context?.site
+                    ? 'Ingredients and prices use the operational site of this recipe.'
+                    : `Material & price references: ${corporateSettings.context?.materialReferenceSites?.map((site) => site.name).join(' → ') || 'No references configured'}`
+                  : 'IT raw materials are limited to the selected site. Changing the site clears previously selected IT ingredients.'}
               </p>
+              {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading site settings...</p> : null}
+              {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}
               {assignedSiteOptions.length === 0 ? (
                 <p className="mt-2 text-xs text-red-600">
                   No site is assigned to this Corporate Chef account.
@@ -2251,6 +2275,9 @@ const ChefCreateMenu = ({
                               {row.vendor && !selectedVendor ? <option value={row.vendor}>{row.vendor} (unavailable)</option> : null}
                               {vendorOptions.map((option) => <option key={option.vendor} value={option.vendor}>{option.vendor}</option>)}
                             </select>
+                            {selectedVendor?.priceSourceSite ? (
+                              <p className="mt-1 text-xs text-muted">Price source: {selectedVendor.priceSourceSiteName ?? selectedVendor.priceSourceSite}</p>
+                            ) : null}
                             {vendorState?.error ? <button type="button" className="mt-1 text-xs text-primary underline"
                               onClick={() => setVendorPrices((current) => {
                                 const next = { ...current }
