@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import ActionButton from '../components/ActionButton'
 import {
   useChefData,
@@ -30,6 +31,7 @@ const formatPrice = (value?: number) => {
 }
 
 type RecipeForm = {
+  targetFoodCostPercentage: string
   name: string
   category: string
   description: string
@@ -113,6 +115,7 @@ type CategoryApi = {
 }
 
 export type BaseRecipe = {
+  targetFoodCostPercentage?: number
   id?: string
   sourceRecipeId?: string
   recipeCode?: string
@@ -158,6 +161,7 @@ const createIngredientRow = (
 })
 
 const initialRecipeForm: RecipeForm = {
+  targetFoodCostPercentage: '',
   name: '',
   category: '',
   description: '',
@@ -245,6 +249,26 @@ const ChefCreateMenu = ({
   const [resubmitModalOpen, setResubmitModalOpen] = useState(false)
   const [approving, setApproving] = useState(false)
   const [recipeForm, setRecipeForm] = useState<RecipeForm>(initialRecipeForm)
+  const [targetFoodCostRequired, setTargetFoodCostRequired] = useState(true)
+  const [recipeSettingsLoading, setRecipeSettingsLoading] = useState(true)
+  const [recipeSettingsError, setRecipeSettingsError] = useState('')
+
+  useEffect(() => {
+    if (!accessToken) return
+    let active = true
+    apiFetch<{ targetFoodCostRequired: boolean }>('/recipes/settings', undefined, accessToken)
+      .then((settings) => {
+        if (active) {
+          setTargetFoodCostRequired(settings.targetFoodCostRequired)
+          setRecipeSettingsError('')
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) setRecipeSettingsError(reason instanceof Error ? reason.message : 'Failed to load recipe settings.')
+      })
+      .finally(() => { if (active) setRecipeSettingsLoading(false) })
+    return () => { active = false }
+  }, [accessToken])
   const [ingredientRows, setIngredientRows] = useState<IngredientRow[]>([
     createIngredientRow(),
   ])
@@ -306,6 +330,8 @@ const ChefCreateMenu = ({
         : '1'
 
     setRecipeForm({
+      targetFoodCostPercentage: baseRecipe.targetFoodCostPercentage != null
+        ? String(baseRecipe.targetFoodCostPercentage) : '',
       name: baseRecipe.name ?? '',
       category: baseRecipe.category ?? '',
       description: baseRecipe.description ?? '',
@@ -1223,6 +1249,19 @@ const ChefCreateMenu = ({
       return
     }
     const portionRaw = recipeForm.portionSize.trim()
+    if (recipeSettingsLoading || recipeSettingsError) {
+      setSubmitError(recipeSettingsError || 'Please wait for recipe settings to load.')
+      setSubmitMessage('')
+      return
+    }
+    const targetRaw = recipeForm.targetFoodCostPercentage.trim()
+    const targetFoodCostPercentage = targetRaw ? Number(targetRaw) : null
+    if ((targetFoodCostRequired && targetFoodCostPercentage === null) ||
+      (targetFoodCostPercentage !== null && (!Number.isFinite(targetFoodCostPercentage) || targetFoodCostPercentage <= 0))) {
+      setSubmitError('Target food cost must be a number greater than 0.' + (targetFoodCostRequired ? ' This field is required.' : ''))
+      setSubmitMessage('')
+      return
+    }
 
     if (!nextName || !nextCategory) {
       setSubmitError('Complete the recipe name and category first.')
@@ -1408,6 +1447,7 @@ const ChefCreateMenu = ({
 
     try {
       const basePayload = {
+        targetFoodCostPercentage,
         name: nextName,
         category: nextCategory,
         description: nextDescription,
@@ -1708,6 +1748,9 @@ const ChefCreateMenu = ({
                     onChange={handleImportFileChange}
                     className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                   />
+                  <p className="mt-2 text-xs text-muted">
+                    Include a Target food cost (%) column or recipe card label with a number such as 40 or 45.5. Required when enabled by superadmin.
+                  </p>
                   {importFile ? (
                     <p className="mt-2 text-xs text-muted">
                       Selected file: {importFile.name}
@@ -1838,6 +1881,20 @@ const ChefCreateMenu = ({
             <p className="mt-2 text-xs text-muted">
               Enter how many pax this recipe yields (e.g., 1 or 10).
             </p>
+          </div>
+          <div>
+            <label htmlFor="recipe-target-food-cost" className="text-sm font-medium text-foreground">
+              Target food cost (%) {targetFoodCostRequired ? '*' : '(optional)'}
+            </label>
+            <input id="recipe-target-food-cost" type="number" step="any"
+              required={targetFoodCostRequired}
+              value={recipeForm.targetFoodCostPercentage}
+              onChange={(event) => updateRecipeForm('targetFoodCostPercentage', event.target.value)}
+              onWheel={(event) => event.currentTarget.blur()}
+              placeholder="e.g. 40 or 45.5"
+              className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20" />
+            <p className="mt-2 text-xs text-muted">Enter any percentage greater than 0.</p>
+            {recipeSettingsError ? <p className="mt-2 text-xs text-danger" role="alert">{recipeSettingsError}</p> : null}
           </div>
           <div className="sm:col-span-2">
             <label className="text-sm font-medium text-foreground">
@@ -2235,23 +2292,32 @@ const ChefCreateMenu = ({
                 {showIngredientCostColumns ? (
                   <>
                     <tr className="border-t border-border bg-background">
-                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="bg-primary px-4 py-3 text-right font-semibold text-surface">
                         Estimated total cost
                       </th>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold">
+                      <td className="whitespace-nowrap border-l border-border px-4 py-3 font-semibold">
                         {formatPrice(estimatedTotalCost)}
                       </td>
                     </tr>
                     <tr className="border-t border-border bg-background">
-                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="px-4 py-3 text-right font-semibold">
+                      <th scope="row" colSpan={(enableIngredientUomConversion ? 9 : 7) + 1 + (useVendorPrices ? 1 : 0)} className="bg-primary px-4 py-3 text-right font-semibold text-surface">
                         Cost per pax
                       </th>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold">
+                      <td className="whitespace-nowrap border-l border-border px-4 py-3 font-semibold">
                         {formatPrice(costPerPax)}
                       </td>
                     </tr>
                   </>
                 ) : null}
+                <RecipeSalesRecommendation
+                  recipe={{ targetFoodCostPercentage: recipeForm.targetFoodCostPercentage.trim()
+                    ? Number(recipeForm.targetFoodCostPercentage) : undefined }}
+                  costPerPax={ingredientRows.some((row) => row.productCode || row.name) &&
+                    ingredientRows.filter((row) => row.productCode || row.name)
+                      .every((row) => ingredientCosts.get(row.id) !== undefined) ? costPerPax : undefined}
+                  labelColSpan={(enableIngredientUomConversion ? 9 : 7) +
+                    (showIngredientCostColumns ? 2 : 0) + (useVendorPrices ? 1 : 0) - 1}
+                />
                 <tr className="border-t border-border">
                   <td
                     colSpan={(enableIngredientUomConversion ? 9 : 7) + (showIngredientCostColumns ? 2 : 0) + (useVendorPrices ? 1 : 0)}

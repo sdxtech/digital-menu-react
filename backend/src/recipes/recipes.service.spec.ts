@@ -26,6 +26,7 @@ describe('RecipesService site visibility', () => {
       exists: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn(),
       updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+      insertMany: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnThis(),
         lean: jest.fn().mockResolvedValue({ approvalStatus: 'pending' }),
@@ -58,6 +59,14 @@ describe('RecipesService site visibility', () => {
       notifyRecipeSubmitted: jest.fn().mockResolvedValue(undefined),
       notifyRecipeDecision: jest.fn().mockResolvedValue(undefined),
     };
+    const recipeSettingsModel = {
+      findOne: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ targetFoodCostRequired: false }),
+      }),
+      findOneAndUpdate: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ targetFoodCostRequired: false }),
+      }),
+    };
 
     const service = new RecipesService(
       recipeModel as never,
@@ -68,6 +77,7 @@ describe('RecipesService site visibility', () => {
       unitOfMeasures as never,
       notifications as never,
       workflowMail as never,
+      recipeSettingsModel as never,
     );
     jest
       .spyOn(
@@ -85,6 +95,7 @@ describe('RecipesService site visibility', () => {
       service,
       unitOfMeasures,
       workflowMail,
+      recipeSettingsModel,
     };
   };
 
@@ -136,6 +147,213 @@ describe('RecipesService site visibility', () => {
     priceUom: 10,
     foodCost: 20,
   };
+
+  describe('target food cost', () => {
+    const requireTarget = (
+      settingsModel: ReturnType<typeof makeService>['recipeSettingsModel'],
+    ) => {
+      settingsModel.findOne.mockReturnValue(
+        mockRecipeQuery({ targetFoodCostRequired: true }),
+      );
+    };
+
+    it('defaults to required when no settings document exists', async () => {
+      const { service, recipeSettingsModel } = makeService();
+      recipeSettingsModel.findOne.mockReturnValue(mockRecipeQuery(null));
+      await expect(service.getSettings()).resolves.toEqual({
+        targetFoodCostRequired: true,
+      });
+      await expect(
+        service.create({ name: 'New', category: 'Main' }),
+      ).rejects.toThrow('Target food cost percentage is required.');
+    });
+
+    it.each([AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin])(
+      'requires a target for %s without assigning it to the selling price',
+      async (role) => {
+        const { service, recipeModel, recipeSettingsModel } = makeService();
+        requireTarget(recipeSettingsModel);
+        recipeModel.create.mockImplementation((payload: object) =>
+          Promise.resolve({ _id: 'recipe', ...payload }),
+        );
+        await expect(
+          service.create({ name: 'New', category: 'Main' }, { roles: [role] }),
+        ).rejects.toThrow('Target food cost percentage is required.');
+        await service.create(
+          { name: 'New', category: 'Main', targetFoodCostPercentage: 45.5 },
+          { roles: [role] },
+        );
+        expect(recipeModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            targetFoodCostPercentage: 45.5,
+            price: 0,
+          }),
+        );
+      },
+    );
+
+    it.each([0, -1, NaN, Infinity])(
+      'rejects invalid percentage %s even when optional',
+      async (target) => {
+        const { service, recipeModel } = makeService();
+        await expect(
+          service.create({
+            name: 'New',
+            category: 'Main',
+            targetFoodCostPercentage: target,
+          }),
+        ).rejects.toThrow('Target food cost must be a number greater than 0.');
+        expect(recipeModel.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts percentages above 100 without a fixed selection', async () => {
+      const { service, recipeModel } = makeService();
+      recipeModel.create.mockImplementation((payload: object) =>
+        Promise.resolve({ _id: 'recipe', ...payload }),
+      );
+      await service.create({
+        name: 'New',
+        category: 'Main',
+        targetFoodCostPercentage: 125.25,
+      });
+      expect(recipeModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ targetFoodCostPercentage: 125.25 }),
+      );
+    });
+
+    it('requires filling the target when updating a legacy recipe and preserves existing prices', async () => {
+      const { service, recipeModel, recipeSettingsModel } = makeService();
+      requireTarget(recipeSettingsModel);
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'legacy', targetFoodCostPercentage: 40 }),
+      );
+      await expect(
+        service.updateById('legacy', { name: 'Updated' }),
+      ).rejects.toThrow('Target food cost percentage is required.');
+      await service.updateById('legacy', { targetFoodCostPercentage: 40 });
+      expect(getUpdatePayload(recipeModel).$set.targetFoodCostPercentage).toBe(
+        40,
+      );
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty('price');
+    });
+
+    it('retains the stored target during partial updates and prevents clearing it while required', async () => {
+      const { service, recipeModel, recipeSettingsModel } = makeService();
+      requireTarget(recipeSettingsModel);
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ targetFoodCostPercentage: 35 }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe' }),
+      );
+      await service.updateById('recipe', { name: 'Updated' });
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty(
+        'targetFoodCostPercentage',
+      );
+      await expect(
+        service.updateById('recipe', { targetFoodCostPercentage: null }),
+      ).rejects.toThrow('Target food cost percentage is required.');
+    });
+
+    it('allows clearing the target when optional', async () => {
+      const { service, recipeModel } = makeService();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ targetFoodCostPercentage: 35 }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe' }),
+      );
+      await service.updateById('recipe', { targetFoodCostPercentage: null });
+      expect(getUpdatePayload(recipeModel).$unset).toEqual({
+        targetFoodCostPercentage: '',
+      });
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty('price');
+    });
+
+    it('checks targets before submitting old drafts or resubmitting rejected recipes', async () => {
+      const { service, recipeModel, recipeSettingsModel } = makeService();
+      requireTarget(recipeSettingsModel);
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ approvalStatus: 'rejected' }),
+      );
+      await expect(
+        service.submitDraft('draft', { id: 'chef' }),
+      ).rejects.toThrow('Target food cost percentage is required.');
+      await expect(
+        service.resubmitRejectedRecipe('rejected', { id: 'chef' }, 'Fixed'),
+      ).rejects.toThrow('Target food cost percentage is required.');
+    });
+
+    it('validates the entire import before inserting any recipes', async () => {
+      const { service, recipeModel, recipeSettingsModel } = makeService();
+      requireTarget(recipeSettingsModel);
+      await expect(
+        service.bulkCreate([
+          { name: 'Valid', category: 'Main', targetFoodCostPercentage: 40 },
+          { name: 'Missing', category: 'Main' },
+        ]),
+      ).rejects.toThrow('Target food cost percentage is required.');
+      expect(recipeModel.create).not.toHaveBeenCalled();
+      expect(recipeModel.insertMany).not.toHaveBeenCalled();
+    });
+
+    it('persists the global required/optional setting', async () => {
+      const { service, recipeSettingsModel } = makeService();
+      await expect(
+        service.updateSettings({ targetFoodCostRequired: false }),
+      ).resolves.toEqual({ targetFoodCostRequired: false });
+      expect(recipeSettingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { key: 'global' },
+        { $set: { targetFoodCostRequired: false } },
+        { upsert: true, new: true, runValidators: true },
+      );
+    });
+
+    it('keeps the target and selling price intact during recipe approval', async () => {
+      const { service, recipeModel } = makeService();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({
+          ingredients: [estimatedIngredient],
+          targetFoodCostPercentage: 40,
+        }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe', targetFoodCostPercentage: 40 }),
+      );
+      const result = await service.setApprovalStatus('recipe', 'approved', {
+        roles: [AppRole.CorporateChef],
+        sites: ['SITE-A'],
+      });
+      expect(result.targetFoodCostPercentage).toBe(40);
+      const payload = getUpdatePayload(recipeModel);
+      expect(payload.$unset).not.toHaveProperty('targetFoodCostPercentage');
+      expect(payload.$set).not.toHaveProperty('targetFoodCostPercentage');
+      expect(payload.$set).not.toHaveProperty('price');
+    });
+
+    it('imports decimal targets and allows blank targets only when optional', async () => {
+      const { service, recipeModel } = makeService();
+      await service.bulkCreate([
+        { name: 'Decimal', category: 'Main', targetFoodCostPercentage: 45.5 },
+        { name: 'Optional', category: 'Main' },
+      ]);
+      expect(recipeModel.insertMany).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            name: 'Decimal',
+            targetFoodCostPercentage: 45.5,
+            price: 0,
+          }),
+          expect.objectContaining({
+            name: 'Optional',
+            targetFoodCostPercentage: undefined,
+          }),
+        ],
+        { ordered: false },
+      );
+    });
+  });
 
   it.each([AppRole.Chef, AppRole.CorporateChef])(
     'retains estimates while %s saves a draft',

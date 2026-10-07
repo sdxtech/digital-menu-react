@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
 import RecipeFilters from '../components/RecipeFilters'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -13,6 +14,8 @@ const ITEMS_PER_PAGE = 10
 const RECIPE_NOTIFICATION_COMPONENT_KEY = 'RECIPE_DATA_BANK'
 
 type RecipeIngredient = {
+  priceUom?: number
+  foodCost?: number
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -21,6 +24,8 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  targetFoodCostPercentage?: number
+  foodCostRecipe?: number
   id?: string
   _id?: string
   recipeCode?: string
@@ -359,6 +364,7 @@ const ChefMenuBank = () => {
     category: recipe.category,
     description: recipe.description ?? '',
     portionSize: recipe.portionSize,
+    targetFoodCostPercentage: recipe.targetFoodCostPercentage,
     ingredients: recipe.ingredients ?? [],
   })
 
@@ -399,6 +405,7 @@ const ChefMenuBank = () => {
           category: recipe.category,
           description: recipe.description ?? '',
           portionSize: recipe.portionSize,
+          targetFoodCostPercentage: recipe.targetFoodCostPercentage,
           approvalStatus: recipe.approvalStatus,
           rejectionReason: recipe.rejectionReason ?? '',
           approvalHistory: recipe.approvalHistory ?? [],
@@ -899,6 +906,8 @@ const ChefMenuBank = () => {
               </p>
             </div>
           </div>
+
+          <RecipeSalesRecommendation recipe={selectedRecipe} />
 
           {selectedRecipe.approvalStatus !== 'approved' &&
           selectedRecipe.approvalHistory?.length ? (

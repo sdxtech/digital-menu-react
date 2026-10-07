@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   IsUrl,
   Min,
@@ -13,6 +14,11 @@ import { Type } from 'class-transformer';
 import { RecipeIngredientDto } from './create-recipe.dto';
 
 export class UpdateRecipeDto {
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  targetFoodCostPercentage?: number | null;
+
   @IsOptional()
   @IsBoolean()
   saveAsDraft?: boolean;

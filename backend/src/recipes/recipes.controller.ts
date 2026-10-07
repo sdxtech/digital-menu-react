@@ -31,6 +31,7 @@ import { ResubmitRecipeDto } from './dto/resubmit-recipe.dto';
 import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
 import { UpdateRecipePhotoDto } from './dto/update-recipe-photo.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
+import { UpdateRecipeSettingsDto } from './dto/update-recipe-settings.dto';
 import { RecipesService } from './recipes.service';
 
 const RECIPE_IMPORT_EXTENSIONS = new Set(['.xlsx', '.xls']);
@@ -46,6 +47,18 @@ type UploadFilterCallback = (error: Error | null, acceptFile: boolean) => void;
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class RecipesController {
   constructor(private readonly recipes: RecipesService) {}
+
+  @Get('settings')
+  @Roles(...ALL_APP_ROLES)
+  getSettings() {
+    return this.recipes.getSettings();
+  }
+
+  @Patch('settings')
+  @Roles(AppRole.Superadmin)
+  updateSettings(@Body() dto: UpdateRecipeSettingsDto) {
+    return this.recipes.updateSettings(dto);
+  }
 
   @Post()
   @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)

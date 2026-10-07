@@ -15,6 +15,7 @@ import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel } from '../lib/status-labels'
 import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
@@ -30,6 +31,8 @@ const MENU_GROUP_ITEMS_PER_PAGE = 10
 type ApprovalCenterSection = 'recipes' | 'menu-productions'
 
 type RecipeIngredient = {
+  priceUom?: number
+  foodCost?: number
   ingredientType?: 'IT' | 'NMP'
   productCode?: string
   name?: string
@@ -38,6 +41,9 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  targetFoodCostPercentage?: number
+  portionSize?: number
+  foodCostRecipe?: number
   id?: string
   _id?: string
   recipeCode?: string
@@ -967,6 +973,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     <p className="mt-1 text-sm font-medium">
                                       {submittedBy}
                                     </p>
+                                    <RecipeSalesRecommendation recipe={item} />
                                     <p className="mt-3 text-xs text-muted">Description</p>
                                     <p className="mt-1 text-sm text-foreground">
                                       {description}

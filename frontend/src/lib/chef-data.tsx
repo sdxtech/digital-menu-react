@@ -50,6 +50,7 @@ export type RecipeApprovalHistoryEntry = {
 }
 
 export type Recipe = {
+  targetFoodCostPercentage?: number
   id: string
   recipeCode?: string
   name: string
@@ -155,6 +156,7 @@ type ChefDataState = {
 }
 
 type CreateRecipeInput = {
+  targetFoodCostPercentage?: number | null
   site?: string
   baseRecipeId?: string
   name: string
@@ -169,6 +171,7 @@ type CreateRecipeInput = {
 }
 
 type UpdateRecipeInput = {
+  targetFoodCostPercentage?: number | null
   saveAsDraft?: boolean
   name?: string
   category?: string
@@ -337,6 +340,7 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     portionSize: Number.isFinite(Number(item.portionSize))
       ? Number(item.portionSize)
       : 1,
+    targetFoodCostPercentage: item.targetFoodCostPercentage ?? undefined,
     status: (item.status ?? 'draft') as RecipeStatus,
     approvalStatus,
     isDraft: item.isDraft === true,

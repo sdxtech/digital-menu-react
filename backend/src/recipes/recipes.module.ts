@@ -10,6 +10,10 @@ import {
   RecipeCodeCounterSchema,
 } from './schemas/recipe-code-counter.schema';
 import { Recipe, RecipeSchema } from './schemas/recipe.schema';
+import {
+  RecipeSettings,
+  RecipeSettingsSchema,
+} from './schemas/recipe-settings.schema';
 import { RecipesController } from './recipes.controller';
 import { RecipesService } from './recipes.service';
 import { NotificationsModule } from '../notifications/notifications.module'; // 🌟 ADDED IMPORT
@@ -19,6 +23,7 @@ import { MailModule } from '../mail/mail.module';
   imports: [
     MongooseModule.forFeature([
       { name: Recipe.name, schema: RecipeSchema },
+      { name: RecipeSettings.name, schema: RecipeSettingsSchema },
       { name: RecipeCodeCounter.name, schema: RecipeCodeCounterSchema },
     ]),
     AuthModule,

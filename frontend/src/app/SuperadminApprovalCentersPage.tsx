@@ -14,6 +14,7 @@ import {
 } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
+import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type ApprovalSection = 'recipes' | 'menu-productions'
@@ -34,6 +35,7 @@ type SiteOption = {
 }
 
 type RecipeIngredient = {
+  priceUom?: number
   ingredientType?: 'IT' | 'NMP'
   productCode?: string
   name?: string
@@ -43,6 +45,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  targetFoodCostPercentage?: number
   id?: string
   _id?: string
   recipeCode?: string
@@ -234,6 +237,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       category: recipe.category,
       description: recipe.description ?? '',
       portionSize: recipe.portionSize ?? 1,
+      targetFoodCostPercentage: recipe.targetFoodCostPercentage,
       site: recipe.site,
       approvalStatus: recipe.approvalStatus,
       ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
@@ -813,6 +817,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                       <div className="flex h-full items-center justify-center text-xs text-muted">No photo</div>
                                     )}
                                   </div>
+                                  <RecipeSalesRecommendation recipe={recipe} />
                                   <p className="mt-3 text-xs text-muted">Description</p>
                                   <p className="mt-1 text-sm text-foreground">
                                     {recipe.description?.trim() || 'No description.'}
