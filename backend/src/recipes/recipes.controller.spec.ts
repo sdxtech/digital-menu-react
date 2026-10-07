@@ -77,6 +77,134 @@ describe('RecipesController corporate chef creation', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('automatically owns new recipes at the corporate assignment', async () => {
+    const { controller, recipes } = makeController();
+    const corporateRequest = {
+      user: {
+        ...request.user,
+        corporateSite: true,
+        approvalSites: ['SITE-002'],
+      },
+    };
+    const dto = { name: 'Corporate Recipe', category: 'Main Course' };
+    await controller.create(corporateRequest as never, dto);
+    expect(recipes.create).toHaveBeenCalledWith(
+      dto,
+      expect.objectContaining({ site: 'SITE-001', corporateSite: true }),
+    );
+    expect(() =>
+      controller.create(corporateRequest as never, {
+        ...dto,
+        site: 'SITE-002',
+      }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('includes corporate sites in all-site approvals and rejects unrelated sites', async () => {
+    const { controller, recipes } = makeController();
+    const corporateRequest = {
+      user: {
+        ...request.user,
+        corporateSite: true,
+        approvalSites: ['SITE-001', 'SITE-002', 'CORP-OTHER'],
+      },
+    };
+    await controller.list(corporateRequest as never, {
+      approvalStatus: 'pending',
+    });
+    expect(recipes.findAll).toHaveBeenCalledWith(
+      { approvalStatus: 'pending' },
+      ['SITE-001', 'SITE-002', 'CORP-OTHER'],
+      false,
+    );
+    await controller.list(corporateRequest as never, { site: 'CORP-OTHER' });
+    expect(recipes.findAll).toHaveBeenLastCalledWith(
+      { site: 'CORP-OTHER' },
+      'CORP-OTHER',
+      false,
+    );
+    expect(() =>
+      controller.list(corporateRequest as never, { site: 'SITE-999' }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('filters corporate approvals to a selected set of authorized sites', async () => {
+    const { controller, recipes } = makeController();
+    const corporateRequest = {
+      user: {
+        ...request.user,
+        corporateSite: true,
+        approvalSites: ['SITE-001', 'SITE-002', 'CORP-OTHER'],
+      },
+    };
+    const query = {
+      sites: 'site-002, CORP-OTHER,SITE-002',
+      strictSite: 'true' as const,
+      approvalStatus: 'pending' as const,
+    };
+    await controller.list(corporateRequest as never, query);
+    expect(recipes.findAll).toHaveBeenCalledWith(
+      query,
+      ['SITE-002', 'CORP-OTHER'],
+      false,
+    );
+  });
+
+  it('rejects the entire multi-site request if one site is unauthorized', () => {
+    const { controller, recipes } = makeController();
+    const corporateRequest = {
+      user: {
+        ...request.user,
+        corporateSite: true,
+        approvalSites: ['SITE-001', 'SITE-002'],
+      },
+    };
+    expect(() =>
+      controller.list(corporateRequest as never, {
+        sites: 'SITE-002,SITE-999',
+      }),
+    ).toThrow(ForbiddenException);
+    expect(recipes.findAll).not.toHaveBeenCalled();
+  });
+
+  it('keeps a corporate chef at an operational site within their assignments', async () => {
+    const { controller, recipes } = makeController();
+    await controller.list(request as never, { sites: 'SITE-001,SITE-002' });
+    expect(recipes.findAll).toHaveBeenCalledWith(
+      { sites: 'SITE-001,SITE-002' },
+      ['SITE-001', 'SITE-002'],
+      false,
+    );
+    expect(() =>
+      controller.list(request as never, { sites: 'SITE-001,CORP-OTHER' }),
+    ).toThrow(ForbiddenException);
+  });
+
+  it.each(['', ' ', 'SITE-002,', ',SITE-002'])(
+    'rejects an empty or malformed multi-site filter: %j',
+    (sites) => {
+      const { controller, recipes } = makeController();
+      expect(() => controller.list(request as never, { sites })).toThrow(
+        BadRequestException,
+      );
+      expect(recipes.findAll).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects conflicting filters and prevents a Chef from accessing multiple sites', () => {
+    const { controller } = makeController();
+    expect(() =>
+      controller.list(request as never, {
+        site: 'SITE-001',
+        sites: 'SITE-002',
+      }),
+    ).toThrow(BadRequestException);
+    const chefRequest = { user: { ...request.user, roles: [AppRole.Chef] } };
+    expect(() =>
+      controller.list(chefRequest as never, { sites: 'SITE-001,SITE-002' }),
+    ).toThrow(ForbiddenException);
+  });
+
   it('rejects a site outside the corporate chef assignments', () => {
     const { controller } = makeController();
 

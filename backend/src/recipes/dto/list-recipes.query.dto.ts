@@ -23,6 +23,10 @@ export class ListRecipesQueryDto {
   site?: string;
 
   @IsOptional()
+  @IsString()
+  sites?: string;
+
+  @IsOptional()
   @IsIn(['true', 'false'])
   strictSite?: 'true' | 'false';
 

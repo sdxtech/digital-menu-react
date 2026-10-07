@@ -89,7 +89,7 @@ export class RecipesController {
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {
     return this.recipes.findAll(
       query,
-      this.resolveQuerySite(req, query.site),
+      this.resolveListSites(req, query),
       req.user.roles?.includes(AppRole.Superadmin) ?? false,
     );
   }
@@ -243,6 +243,8 @@ export class RecipesController {
       roles: req.user.roles,
       site,
       sites: req.user.sites,
+      corporateSite: req.user.corporateSite,
+      approvalSites: req.user.approvalSites,
     };
   }
 
@@ -253,6 +255,19 @@ export class RecipesController {
   ) {
     if (!req.user.roles?.includes(AppRole.CorporateChef)) {
       return getUserSiteScope(req.user);
+    }
+
+    if (req.user.corporateSite) {
+      const ownerSite = getUserSiteScope(req.user);
+      if (
+        requestedSite?.trim() &&
+        requestedSite.trim().toLowerCase() !== ownerSite?.toLowerCase()
+      ) {
+        throw new ForbiddenException(
+          'Corporate recipes belong to your assigned corporate site.',
+        );
+      }
+      return ownerSite;
     }
 
     const requested = requestedSite?.trim();
@@ -279,7 +294,65 @@ export class RecipesController {
     return assignedSite;
   }
 
+  private resolveListSites(
+    req: AuthenticatedRequest,
+    query: ListRecipesQueryDto,
+  ) {
+    if (query.sites === undefined)
+      return this.resolveQuerySite(req, query.site);
+    if (query.site?.trim())
+      throw new BadRequestException(
+        'Use either site or sites as the recipe filter.',
+      );
+    const requested = query.sites.split(',').map((site) => site.trim());
+    if (!requested.length || requested.some((site) => !site)) {
+      throw new BadRequestException('Select at least one site.');
+    }
+    if (req.user.roles?.includes(AppRole.Superadmin))
+      return Array.from(new Set(requested));
+    if (!req.user.roles?.includes(AppRole.CorporateChef)) {
+      throw new ForbiddenException(
+        'Multiple site filters are only available to Corporate Chefs and Superadmins.',
+      );
+    }
+    const allowed = [
+      req.user.site,
+      ...(req.user.corporateSite
+        ? (req.user.approvalSites ?? [])
+        : (req.user.sites ?? [])),
+    ].filter((site): site is string => Boolean(site));
+    const resolved = requested.map((site) => {
+      const matched = allowed.find(
+        (value) => value.toLowerCase() === site.toLowerCase(),
+      );
+      if (!matched)
+        throw new ForbiddenException(
+          'A selected site is outside your recipe scope.',
+        );
+      return matched;
+    });
+    return Array.from(new Set(resolved));
+  }
+
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (
+      req.user.roles?.includes(AppRole.CorporateChef) &&
+      req.user.corporateSite
+    ) {
+      const allowed = [req.user.site, ...(req.user.approvalSites ?? [])].filter(
+        (site): site is string => Boolean(site),
+      );
+      const requested = requestedSite?.trim();
+      if (!requested) return req.user.approvalSites ?? [];
+      const matched = allowed.find(
+        (site) => site.toLowerCase() === requested.toLowerCase(),
+      );
+      if (!matched)
+        throw new ForbiddenException(
+          'The selected site is outside your recipe scope.',
+        );
+      return matched;
+    }
     if (req.user.roles?.includes(AppRole.Executive)) {
       const assignedSites = Array.from(
         new Set([req.user.site, ...(req.user.sites ?? [])]),

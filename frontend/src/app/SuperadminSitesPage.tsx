@@ -1,5 +1,5 @@
 import PageHeading from '../components/PageHeading'
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import TablePagination from '../components/TablePagination'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
@@ -13,6 +13,9 @@ type SiteApi = {
   description?: string
   isActive?: boolean
   createdAt?: string
+  siteFunction?: 'operational' | 'corporate'
+  materialSource?: 'own' | 'reference'
+  referenceSiteCodes?: string[]
 }
 
 type Site = {
@@ -22,6 +25,9 @@ type Site = {
   description: string
   isActive: boolean
   createdAt: string
+  siteFunction: 'operational' | 'corporate'
+  materialSource: 'own' | 'reference'
+  referenceSiteCodes: string[]
 }
 
 type SiteMeta = {
@@ -38,6 +44,9 @@ type SiteForm = {
   code: string
   description: string
   isActive: boolean
+  siteFunction: 'operational' | 'corporate'
+  materialSource: 'own' | 'reference'
+  referenceSiteCodes: string[]
 }
 
 type SiteImportError = {
@@ -63,6 +72,9 @@ const emptyForm: SiteForm = {
   code: '',
   description: '',
   isActive: true,
+  siteFunction: 'operational',
+  materialSource: 'own',
+  referenceSiteCodes: [],
 }
 
 const mapSite = (item: SiteApi): Site => ({
@@ -72,11 +84,124 @@ const mapSite = (item: SiteApi): Site => ({
   description: item.description ?? '',
   isActive: item.isActive ?? true,
   createdAt: item.createdAt ?? '',
+  siteFunction: item.siteFunction ?? 'operational',
+  materialSource: item.materialSource ?? 'own',
+  referenceSiteCodes: item.referenceSiteCodes ?? [],
 })
+
+const SiteMaterialSettings = ({ form, onChange, options }: {
+  form: SiteForm
+  onChange: (form: SiteForm) => void
+  options: Site[]
+}) => {
+  const moveReference = (index: number, direction: number) => {
+    const codes = [...form.referenceSiteCodes]
+    const movedCode = codes[index]
+    codes[index] = codes[index + direction]
+    codes[index + direction] = movedCode
+    onChange({ ...form, referenceSiteCodes: codes })
+  }
+  const availableReferences = options.filter((site) =>
+    site.isActive && site.siteFunction === 'operational' &&
+    site.materialSource === 'own' &&
+    site.code.toLowerCase() !== form.code.trim().toLowerCase() &&
+    !form.referenceSiteCodes.includes(site.code),
+  )
+  return (
+    <div className="space-y-3">
+      <label className="block text-sm font-medium">
+        Site function
+        <select
+          value={form.siteFunction}
+          onChange={(event) => onChange({
+            ...form,
+            siteFunction: event.target.value as SiteForm['siteFunction'],
+          })}
+          className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2"
+        >
+          <option value="operational">Operational</option>
+          <option value="corporate">Corporate</option>
+        </select>
+      </label>
+      <label className="block text-sm font-medium">
+        Material & price source
+        <select
+          value={form.materialSource}
+          onChange={(event) => onChange({
+            ...form,
+            materialSource: event.target.value as SiteForm['materialSource'],
+            referenceSiteCodes: event.target.value === 'own' ? [] : form.referenceSiteCodes,
+          })}
+          className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2"
+        >
+          <option value="own">Own site data</option>
+          <option value="reference">Reference sites</option>
+        </select>
+      </label>
+      {form.materialSource === 'reference' ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted">
+            References are checked from top to bottom for each ingredient and unit.
+            Select active operational sites with their own data.
+          </p>
+          <ol className="space-y-2">
+            {form.referenceSiteCodes.map((code, index) => (
+              <li key={code} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                <span className="flex-1 text-sm">
+                  {index + 1}. {options.find((site) => site.code === code)?.name ?? code}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => moveReference(index, -1)}
+                  disabled={index === 0}
+                  aria-label={`Move ${code} up`}
+                  className="rounded border px-2 py-1 disabled:opacity-30"
+                >↑</button>
+                <button
+                  type="button"
+                  onClick={() => moveReference(index, 1)}
+                  disabled={index === form.referenceSiteCodes.length - 1}
+                  aria-label={`Move ${code} down`}
+                  className="rounded border px-2 py-1 disabled:opacity-30"
+                >↓</button>
+                <button
+                  type="button"
+                  onClick={() => onChange({
+                    ...form,
+                    referenceSiteCodes: form.referenceSiteCodes.filter((item) => item !== code),
+                  })}
+                  className="text-xs text-red-600"
+                >Remove</button>
+              </li>
+            ))}
+          </ol>
+          <select
+            aria-label="Add reference site"
+            value=""
+            onChange={(event) => {
+              if (event.target.value) onChange({
+                ...form,
+                referenceSiteCodes: [...form.referenceSiteCodes, event.target.value],
+              })
+            }}
+            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm"
+          >
+            <option value="">Add reference site</option>
+            {availableReferences.map((site) => (
+              <option key={site.code} value={site.code}>{site.code} - {site.name}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 const SuperadminSitesPage = () => {
   const { accessToken } = useAuth()
   const [sites, setSites] = useState<Site[]>([])
+  const [referenceOptions, setReferenceOptions] = useState<Site[]>([])
+  const [referenceError, setReferenceError] = useState('')
   const [meta, setMeta] = useState<SiteMeta>({
     page: 1,
     limit: DEFAULT_LIMIT,
@@ -103,6 +228,25 @@ const SuperadminSitesPage = () => {
   const [importResult, setImportResult] = useState<SiteImportResult | null>(
     null,
   )
+
+  useEffect(() => {
+    if (!accessToken || (!createOpen && !editingId)) return
+    let active = true
+    const loadOptions = async () => {
+      const options: Site[] = []
+      let page = 1
+      let totalPages = 1
+      do {
+        const data = await apiFetch<{ items: SiteApi[]; totalPages: number }>(`/superadmin/sites?page=${page}&limit=200&isActive=true`, undefined, accessToken)
+        options.push(...data.items.map(mapSite))
+        totalPages = data.totalPages
+        page += 1
+      } while (page <= totalPages)
+      if (active) { setReferenceOptions(options); setReferenceError('') }
+    }
+    loadOptions().catch((reason: unknown) => { if (active) setReferenceError(reason instanceof Error ? reason.message : 'Failed to load reference sites.') })
+    return () => { active = false }
+  }, [accessToken, createOpen, editingId])
 
   const fetchSites = useCallback(
     async (page = 1, limit = DEFAULT_LIMIT, searchValue = search) => {
@@ -283,6 +427,9 @@ const SuperadminSitesPage = () => {
             code,
             description: description || undefined,
             isActive: createForm.isActive,
+            siteFunction: createForm.siteFunction,
+            materialSource: createForm.materialSource,
+            referenceSiteCodes: createForm.referenceSiteCodes,
           }),
         },
         accessToken,
@@ -305,6 +452,9 @@ const SuperadminSitesPage = () => {
       code: site.code,
       description: site.description,
       isActive: site.isActive,
+      siteFunction: site.siteFunction,
+      materialSource: site.materialSource,
+      referenceSiteCodes: site.referenceSiteCodes,
     })
     setEditError('')
     setMessage('')
@@ -335,6 +485,9 @@ const SuperadminSitesPage = () => {
             code,
             description,
             isActive: editForm.isActive,
+            siteFunction: editForm.siteFunction,
+            materialSource: editForm.materialSource,
+            referenceSiteCodes: editForm.referenceSiteCodes,
           }),
         },
         accessToken,
@@ -408,7 +561,7 @@ const SuperadminSitesPage = () => {
         {createOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
@@ -483,6 +636,8 @@ const SuperadminSitesPage = () => {
                     {createError}
                   </p>
                 ) : null}
+                <SiteMaterialSettings form={createForm} onChange={setCreateForm} options={referenceOptions} />
+                {referenceError ? <p className="text-xs text-red-600">{referenceError}</p> : null}
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -669,6 +824,8 @@ const SuperadminSitesPage = () => {
                   <th className="px-5 py-4 font-semibold">Name</th>
                   <th className="px-5 py-4 font-semibold">Code</th>
                   <th className="px-5 py-4 font-semibold">Description</th>
+                  <th className="px-5 py-4 font-semibold">Site function</th>
+                  <th className="px-5 py-4 font-semibold">Material & price source</th>
                   <th className="px-5 py-4 font-semibold">Status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
@@ -676,19 +833,20 @@ const SuperadminSitesPage = () => {
               <tbody>
                 {meta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       Loading sites...
                     </td>
                   </tr>
                 ) : sites.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {meta.error ? meta.error : 'No sites found.'}
                     </td>
                   </tr>
                 ) : (
                   sites.map((site, index) => (
-                    <tr key={site.id} className="border-t border-border">
+                    <Fragment key={site.id}>
+                    <tr className="border-t border-border">
                       <td className="px-5 py-4 text-sm text-muted">
                         {(meta.page - 1) * meta.limit + index + 1}
                       </td>
@@ -735,6 +893,12 @@ const SuperadminSitesPage = () => {
                         ) : (
                           '-'
                         )}
+                      </td>
+                      <td className="px-5 py-4">
+                        {site.siteFunction === 'corporate' ? 'Corporate' : 'Operational'}
+                      </td>
+                      <td className="px-5 py-4">
+                        {site.materialSource === 'reference' ? `Reference sites (${site.referenceSiteCodes.length})` : 'Own site data'}
                       </td>
                       <td className="px-5 py-4">
                         {editingId === site.id ? (
@@ -802,6 +966,14 @@ const SuperadminSitesPage = () => {
                         )}
                       </td>
                     </tr>
+                    {editingId === site.id ? (
+                      <tr className="border-t border-border bg-background"><td colSpan={8} className="px-5 py-4">
+                        <div className="max-w-xl"><SiteMaterialSettings form={editForm} onChange={setEditForm} options={referenceOptions} />
+                          {referenceError ? <p className="mt-2 text-xs text-red-600">{referenceError}</p> : null}
+                        </div>
+                      </td></tr>
+                    ) : null}
+                    </Fragment>
                   ))
                 )}
               </tbody>

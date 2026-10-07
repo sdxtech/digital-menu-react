@@ -397,21 +397,33 @@ export class RawMaterialsService {
     if (!productCodeNormalized) return [];
 
     const filter: Record<string, unknown> = { productCodeNormalized };
-    const siteNormalizedValues = await this.resolveSiteNormalizedValues(
-      query.site,
-    );
+    const sourceSites = query.site?.trim()
+      ? await this.sites.findMaterialSourceSites(query.site)
+      : [];
+    const sourceKeys = sourceSites.map((site) => ({
+      site,
+      keys: this.siteNormalizedKeys(site.code, site.name),
+    }));
+    const usesReferences =
+      sourceSites.length > 1 ||
+      (sourceSites.length === 1 &&
+        sourceSites[0].code.toLowerCase() !== query.site?.trim().toLowerCase());
+    const siteNormalizedValues = sourceKeys.length
+      ? sourceKeys.flatMap(({ keys }) => keys)
+      : await this.resolveSiteNormalizedValues(query.site);
     const vendorNormalized = this.normalizeOptionalText(
       query.vendor,
     )?.toLowerCase();
-    if (siteNormalizedValues.length) {
+    if (query.site?.trim()) {
       filter.siteNormalized = { $in: siteNormalizedValues };
     }
-    if (vendorNormalized) filter.vendorNormalized = vendorNormalized;
+    if (vendorNormalized && !usesReferences)
+      filter.vendorNormalized = vendorNormalized;
 
     const items = await this.rawMaterialVendorPriceModel
       .find(filter)
       .sort({ site: 1, vendor: 1, updatedAt: -1, minimumQuantity: 1 })
-      .limit(500)
+      .limit(usesReferences ? 0 : 500)
       .lean<
         Array<
           RawMaterialVendorPrice & {
@@ -421,10 +433,54 @@ export class RawMaterialsService {
         >
       >();
 
-    const latestByVendor = new Map<string, (typeof items)[number]>();
+    // Each unit uses the first reference site that has a valid price.
+    const preferredSiteByUnit = new Map<string, number>();
     for (const item of items) {
+      if (item.price == null || !Number.isFinite(item.price) || item.price < 0)
+        continue;
+      const priority = sourceKeys.findIndex(({ keys }) =>
+        keys.includes(item.siteNormalized),
+      );
+      if (priority < 0) continue;
+      const unit = item.unitOfMeasures.trim().toUpperCase();
+      preferredSiteByUnit.set(
+        unit,
+        Math.min(preferredSiteByUnit.get(unit) ?? Infinity, priority),
+      );
+    }
+    const latestByVendor = new Map<
+      string,
+      (typeof items)[number] & {
+        priceSourceSite?: string;
+        priceSourceSiteName?: string;
+      }
+    >();
+    for (const item of items) {
+      const priority = sourceKeys.findIndex(({ keys }) =>
+        keys.includes(item.siteNormalized),
+      );
+      if (
+        usesReferences &&
+        (priority !==
+          preferredSiteByUnit.get(item.unitOfMeasures.trim().toUpperCase()) ||
+          item.price == null ||
+          !Number.isFinite(item.price) ||
+          item.price < 0)
+      )
+        continue;
+      if (vendorNormalized && item.vendorNormalized !== vendorNormalized)
+        continue;
       const key = siteNormalizedValues.length
-        ? [item.productCodeNormalized, item.vendorNormalized].join('|')
+        ? [
+            item.productCodeNormalized,
+            item.vendorNormalized,
+            ...(usesReferences
+              ? [
+                  item.unitOfMeasures.trim().toUpperCase(),
+                  item.currencyNormalized,
+                ]
+              : []),
+          ].join('|')
         : [
             item.productCodeNormalized,
             item.siteNormalized,
@@ -434,7 +490,13 @@ export class RawMaterialsService {
       const itemUpdatedAt = new Date(item.updatedAt ?? 0).getTime();
       const existingUpdatedAt = new Date(existing?.updatedAt ?? 0).getTime();
       if (!existing || itemUpdatedAt > existingUpdatedAt) {
-        latestByVendor.set(key, item);
+        const source = usesReferences ? sourceKeys[priority]?.site : undefined;
+        latestByVendor.set(key, {
+          ...item,
+          ...(source
+            ? { priceSourceSite: source.code, priceSourceSiteName: source.name }
+            : {}),
+        });
       }
     }
 
@@ -1248,6 +1310,11 @@ export class RawMaterialsService {
 
     const siteCode = this.normalizeOptionalText(site);
     if (siteCode) {
+      const sources = await this.sites.findMaterialSourceSites(siteCode);
+      if (sources.length)
+        return sources.flatMap((source) =>
+          this.siteNormalizedKeys(source.code, source.name),
+        );
       const siteSummary = Array.from(
         (await this.sites.findSummariesByCodes([siteCode])).values(),
       )[0];
@@ -1260,6 +1327,19 @@ export class RawMaterialsService {
     }
 
     return Array.from(values);
+  }
+
+  private siteNormalizedKeys(code: string, name: string) {
+    return Array.from(
+      new Set(
+        [code, name]
+          .flatMap((value) => [
+            this.normalizeSiteKey(value),
+            this.normalizeSiteKeyLegacy(value),
+          ])
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
   }
 
   private normalizeSiteKeyLegacy(value?: string) {

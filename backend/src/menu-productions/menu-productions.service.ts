@@ -162,6 +162,7 @@ type EligibleRecipe = {
     qty?: number;
     priceUom?: number;
     foodCost?: number;
+    priceSourceSite?: string;
   }>;
 };
 
@@ -402,15 +403,26 @@ export class MenuProductionsService implements OnModuleInit {
         const vendorPrice = Number(selectedVendor?.price);
         const priceUom = Number(ingredient.priceUom);
         const foodCost = Number(ingredient.foodCost);
+        if (
+          ingredient.priceSourceSite &&
+          !Number.isFinite(vendorPrice) &&
+          !input.saveAsDraft
+        ) {
+          throw new BadRequestException(
+            `Local price is required for ingredient ${name || productCode}. Corporate reference prices cannot be used as operational prices.`,
+          );
+        }
         const unitPrice = Number.isFinite(vendorPrice)
           ? vendorPrice
-          : Number.isFinite(priceUom)
-            ? priceUom
-            : Number.isFinite(foodCost) &&
-                Number.isFinite(baseQty) &&
-                baseQty > 0
-              ? foodCost / baseQty
-              : undefined;
+          : ingredient.priceSourceSite
+            ? undefined
+            : Number.isFinite(priceUom)
+              ? priceUom
+              : Number.isFinite(foodCost) &&
+                  Number.isFinite(baseQty) &&
+                  baseQty > 0
+                ? foodCost / baseQty
+                : undefined;
         const ingredientCost =
           unitPrice !== undefined
             ? this.roundQuantity(qty * unitPrice)
@@ -667,6 +679,35 @@ export class MenuProductionsService implements OnModuleInit {
       { productionCode: normalizedCode, createdBy: chefId, isDraft: true },
       site,
     );
+    const drafts = await this.menuProductionModel.find(draftFilter).lean();
+    const recipeIds = drafts.flatMap((draft) =>
+      draft.recipeId ? [draft.recipeId] : [],
+    );
+    if (recipeIds.length) {
+      const referenceRecipes = await this.recipeModel
+        .find({
+          _id: { $in: recipeIds },
+          'ingredients.priceSourceSite': { $exists: true },
+        })
+        .select({ name: 1, category: 1, portionSize: 1, ingredients: 1 })
+        .lean();
+      for (const draft of drafts) {
+        const recipe = referenceRecipes.find(
+          (item) => String(item._id) === String(draft.recipeId),
+        );
+        if (!recipe) continue;
+        this.calculateMenuProductionCostSnapshot(
+          {
+            recipeId: String(draft.recipeId),
+            portion: draft.portion,
+            cost: 0,
+            productionDate: draft.productionDate,
+            ingredientVendors: draft.ingredientVendors,
+          },
+          { ...recipe, id: String(recipe._id), version: recipe.version ?? 1 },
+        );
+      }
+    }
     const result = await this.menuProductionModel.updateMany(draftFilter, {
       $set: { isDraft: false, submittedAt: new Date() },
     });
@@ -2029,6 +2070,7 @@ export class MenuProductionsService implements OnModuleInit {
           qty: Number(ingredient.qty),
           priceUom: Number(ingredient.priceUom),
           foodCost: Number(ingredient.foodCost),
+          priceSourceSite: ingredient.priceSourceSite,
         })),
       });
     });

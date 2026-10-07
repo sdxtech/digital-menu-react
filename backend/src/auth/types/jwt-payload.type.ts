@@ -10,6 +10,8 @@ export type JwtPayload = {
   siteId?: string;
   siteName?: string;
   sites?: string[];
+  corporateSite?: boolean;
+  approvalSites?: string[];
   sessionVersion?: number;
   iat?: number;
   exp?: number;
