@@ -5,6 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { JwtPayload } from '../types/jwt-payload.type';
 import { UsersService } from '../../users/users.service';
 import { AppRole } from '../roles.constants';
+import { SitesService } from '../../sites/sites.service';
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
 const ACTIVITY_UPDATE_MIN_INTERVAL_MS = 60_000;
@@ -16,6 +17,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly config: ConfigService,
     private readonly users: UsersService,
+    private readonly sites: SitesService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -58,7 +60,31 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ACTIVITY_UPDATE_MIN_INTERVAL_MS,
     );
 
-    return payload;
+    // Corporate permissions follow current database settings, never token claims.
+    const scopedPayload = {
+      ...payload,
+      corporateSite: false,
+      approvalSites: undefined as string[] | undefined,
+    };
+    if (payload.roles.includes(AppRole.CorporateChef)) {
+      const primary = user.siteId
+        ? await this.sites.findSummaryById(user.siteId)
+        : (await this.sites.findSummariesByCodes([payload.site ?? ''])).get(
+            payload.site ?? '',
+          );
+      if (primary) {
+        scopedPayload.site = primary.code;
+        scopedPayload.siteName = primary.name;
+        scopedPayload.corporateSite =
+          primary.isActive && primary.siteFunction === 'corporate';
+      }
+      if (scopedPayload.corporateSite) {
+        scopedPayload.approvalSites = (
+          await this.sites.findApprovalSites()
+        ).map((site) => site.code);
+      }
+    }
+    return scopedPayload;
   }
 
   private resolveIdleTimeoutMs(value?: string) {

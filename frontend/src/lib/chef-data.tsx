@@ -19,6 +19,8 @@ export type StoreRequestStatus =
   | 'cancelled'
 
 export type RecipeIngredient = {
+  priceSourceSite?: string
+  priceSourceSiteName?: string
   vendor?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
@@ -348,6 +350,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     ingredients: Array.isArray(item.ingredients)
       ? item.ingredients.map((ingredient) => ({
           vendor: ingredient.vendor,
+          priceSourceSite: ingredient.priceSourceSite,
+          priceSourceSiteName: ingredient.priceSourceSiteName,
           ingredientType: ingredient.ingredientType,
           productCode: ingredient.productCode ?? '',
           name: ingredient.name ?? '',

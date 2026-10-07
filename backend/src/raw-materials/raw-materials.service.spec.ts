@@ -468,6 +468,7 @@ describe('RawMaterialsService price updates', () => {
     const vendorModel = { find: jest.fn().mockReturnValue({ sort }) };
     const sites = {
       findSummariesByCodes: jest.fn().mockResolvedValue(new Map()),
+      findMaterialSourceSites: jest.fn().mockResolvedValue([]),
     };
     const service = new RawMaterialsService(
       {} as never,

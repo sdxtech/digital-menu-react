@@ -46,6 +46,28 @@ describe('RawMaterialsController site scope', () => {
     },
   };
 
+  it('uses corporate references through the owner site and allows operational recipe review', async () => {
+    const { controller, rawMaterials } = makeController();
+    const request = {
+      user: {
+        ...corporateChefRequest.user,
+        corporateSite: true,
+        approvalSites: ['SITE-003'],
+      },
+    };
+    await controller.list({}, request as never);
+    expect(rawMaterials.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'SITE-001' }),
+    );
+    await controller.listVendorPrices(request as never, 'IT001', 'SITE-003');
+    expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'SITE-003' }),
+    );
+    expect(() =>
+      controller.listVendorPrices(request as never, 'IT001', 'SITE-999'),
+    ).toThrow(ForbiddenException);
+  });
+
   it('forces raw material lists to the authenticated user site', async () => {
     const { controller, rawMaterials } = makeController();
 

@@ -476,6 +476,7 @@ const ChefMenuCycle = ({
     if (Number.isFinite(getVendorUnitPrice(vendorPrice))) {
       return getVendorUnitPrice(vendorPrice)
     }
+    if (ingredient.priceSourceSite) return undefined
     if (Number.isFinite(Number(ingredient.priceUom))) {
       return Number(ingredient.priceUom)
     }

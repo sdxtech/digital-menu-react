@@ -14,6 +14,8 @@ const ITEMS_PER_PAGE = 10
 const RECIPE_NOTIFICATION_COMPONENT_KEY = 'RECIPE_DATA_BANK'
 
 type RecipeIngredient = {
+  priceSourceSite?: string
+  priceSourceSiteName?: string
   priceUom?: number
   foodCost?: number
   ingredientType?: 'IT' | 'NMP'
@@ -1022,6 +1024,7 @@ const ChefMenuBank = () => {
                                 {missingIngredientName
                                   ? 'Missing ingredient name'
                                   : ingredient.name}
+                                {ingredient.priceSourceSite ? <p className="mt-1 text-xs text-muted">Price source: {ingredient.priceSourceSiteName ?? ingredient.priceSourceSite}</p> : null}
                               </div>
                             </td>
                             <td

@@ -5,6 +5,7 @@ import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
 import { useChefData } from '../lib/chef-data'
 import { useAuth } from '../lib/auth'
+import { useCorporateSite } from '../lib/corporate-site'
 import {
   calculateFoodCostPercentage,
   formatFoodCostPercentage,
@@ -31,6 +32,8 @@ const MENU_GROUP_ITEMS_PER_PAGE = 10
 type ApprovalCenterSection = 'recipes' | 'menu-productions'
 
 type RecipeIngredient = {
+  priceSourceSite?: string
+  priceSourceSiteName?: string
   priceUom?: number
   foodCost?: number
   ingredientType?: 'IT' | 'NMP'
@@ -163,16 +166,20 @@ const formatPrice = (value?: number) => {
 }
 
 const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
-  const { accessToken, user, updateUser } = useAuth()
+  const { accessToken, user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const sectionParam = searchParams.get('section')
   const requestedSite = searchParams.get('site')
+  const corporateSettings = useCorporateSite(corporateOnly)
+  const isCorporateSite = corporateSettings.context?.corporateSite === true
   const assignedSites = corporateOnly
-    ? Array.from(new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]))
+    ? isCorporateSite
+      ? (corporateSettings.context?.approvalSiteOptions ?? []).map((site) => site.code)
+      : Array.from(new Set([...(corporateSettings.context?.site ? [corporateSettings.context.site] : user?.site ? [user.site] : []), ...(corporateSettings.context?.sites ?? user?.sites ?? [])]))
     : []
   const selectedSite =
     assignedSites.find((site) => site.toLowerCase() === requestedSite?.toLowerCase()) ??
-    assignedSites[0]
+    (isCorporateSite ? '' : assignedSites[0])
   const {
     approveRecipe,
     rejectRecipe,
@@ -213,24 +220,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     isApprovalCenterSection(sectionParam) ? sectionParam : 'recipes',
   )
 
-  useEffect(() => {
-    if (!corporateOnly || !accessToken) return
-    apiFetch<{
-      sites?: string[]
-      siteOptions?: Array<{ code: string; name: string }>
-    }>('/auth/me', undefined, accessToken)
-      .then((data) => {
-        if (data.sites?.length) {
-          updateUser({ sites: data.sites, siteOptions: data.siteOptions })
-        }
-      })
-      .catch(() => null)
-  }, [accessToken, corporateOnly, updateUser])
-
   // FRONTEND VIEW: pending approvals are fetched from backend.
   const fetchPending = useCallback(async () => {
     const requestId = ++approvalRequestId.current
     if (!accessToken) return
+    if (corporateOnly && (corporateSettings.loading || corporateSettings.error)) return
     setLoadingApprovals(true)
     try {
       const recipeParams = new URLSearchParams({
@@ -272,7 +266,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     } finally {
       if (requestId === approvalRequestId.current) setLoadingApprovals(false)
     }
-  }, [accessToken, corporateOnly, recipePage, selectedSite])
+  }, [accessToken, corporateOnly, recipePage, selectedSite, corporateSettings.loading, corporateSettings.error])
 
   useEffect(() => {
     setActionError('')
@@ -649,10 +643,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
           <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
           <p className="mt-2 text-sm text-muted">
             {corporateOnly
-              ? 'Review recipes from your assigned sites.'
+              ? isCorporateSite ? 'Review recipes from all corporate and operational sites.' : 'Review recipes from your assigned sites.'
               : 'Review recipes and production menus from the Chef team.'}
           </p>
-          {corporateOnly && assignedSites.length > 0 ? (
+          {corporateOnly && (isCorporateSite || assignedSites.length > 0) ? (
             <label className="mt-4 block max-w-sm text-sm font-medium text-foreground">
               Site
               <select
@@ -666,14 +660,17 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 }}
                 className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
               >
+                {isCorporateSite ? <option value="">All approval sites</option> : null}
                 {assignedSites.map((site) => (
                   <option key={site} value={site}>
-                    {user?.siteOptions?.find((item) => item.code === site)?.name ?? site}
+                    {(isCorporateSite ? corporateSettings.context?.approvalSiteOptions : corporateSettings.context?.siteOptions ?? user?.siteOptions)?.find((item) => item.code === site)?.name ?? site}
                   </option>
                 ))}
               </select>
             </label>
           ) : null}
+          {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading approval sites...</p> : null}
+          {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}
           {actionError ? (
             <p className="mt-2 text-xs font-medium text-red-600">
               {actionError}
@@ -1060,6 +1057,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                   </td>
                                                   <td className="px-4 py-3">
                                                     {ingredient.name || '-'}
+                                                    {ingredient.priceSourceSite ? <p className="mt-1 text-xs text-muted">Price source: {ingredient.priceSourceSiteName ?? ingredient.priceSourceSite}</p> : null}
                                                   </td>
                                                   <td className="px-4 py-3">
                                                     {typeof ingredient.qty === 'number'
