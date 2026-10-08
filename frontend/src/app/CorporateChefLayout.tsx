@@ -33,6 +33,14 @@ const navItems = [
     ),
     componentKey: 'MGR_RECIPE_DATA',
   },
+  {
+    label: 'Calculator Recipe',
+    to: '/corporate-chef/recipe-calculator',
+    icon: (className: string) => (
+      <i className={`bi bi-calculator ${className}`} aria-hidden="true" />
+    ),
+    componentKey: 'CHEF_CALCULATOR',
+  },
 ]
 
 const CorporateChefLayout = () => (
