@@ -230,6 +230,7 @@ function App() {
             />
             <Route path="recipe-drafts" element={<ChefRecipeDrafts />} />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
+            <Route path="recipe-calculator" element={<RecipeCalculator />} />
           </Route>
         </Route>
 

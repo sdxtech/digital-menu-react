@@ -113,6 +113,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Recipe Data',
   },
   {
+    path: '/corporate-chef/recipe-calculator',
+    getPageTitle: () => 'Calculator Recipe',
+  },
+  {
     path: '/corporate-chef/profile',
     getPageTitle: () => 'My Profile',
   },
