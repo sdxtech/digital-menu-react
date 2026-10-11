@@ -1,4 +1,10 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { REDIS_OPTIONS } from '../../redis/redis.constants';
@@ -11,6 +17,10 @@ import { FilesService } from '../../files/files.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
+import {
+  RecipeExportsService,
+  type RecipeExportJob,
+} from '../recipe-exports.service';
 
 type ExportJob = {
   userId: string;
@@ -20,12 +30,14 @@ type ExportJob = {
 @Injectable()
 export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker<ExportJob>;
+  private readonly logger = new Logger(ExportsProcessor.name);
 
   constructor(
     @Inject(REDIS_OPTIONS) private readonly redisOptions: RedisOptions,
     private readonly products: ProductsService,
     private readonly files: FilesService,
     private readonly notifications: NotificationsService,
+    private readonly recipeExports: RecipeExportsService,
   ) {}
 
   onModuleInit() {
@@ -34,7 +46,7 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<ExportJob>(
       'exports',
       async (job) => this.handle(job),
-      { connection: this.redisOptions },
+      { connection: this.redisOptions, concurrency: 1 },
     );
   }
 
@@ -43,6 +55,26 @@ export class ExportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handle(job: Job<ExportJob>) {
+    if (job.name === 'export-recipes') {
+      try {
+        return await this.recipeExports.generate(
+          job.data as RecipeExportJob,
+          async (completed) => {
+            await job.updateProgress(completed);
+          },
+        );
+      } catch (error) {
+        this.logger.error(
+          `Recipe export ${job.id} failed`,
+          error instanceof Error ? error.stack : undefined,
+        );
+        throw new Error(
+          error instanceof BadRequestException
+            ? error.message
+            : 'Recipe export failed. Please try again or contact your administrator.',
+        );
+      }
+    }
     const { userId, site } = job.data;
     try {
       this.notifications.emitJobProgress(userId, {
