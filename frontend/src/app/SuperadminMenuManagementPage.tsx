@@ -15,6 +15,7 @@ import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import { formatQuantity } from '../lib/quantity'
 import {
   formatRecipeVersion,
@@ -1606,6 +1607,8 @@ const SuperadminMenuManagementPage = () => {
   const [recipeStatus, setRecipeStatus] = useState<'' | RecipeStatus>('')
   const [approvalStatus, setApprovalStatus] = useState<'' | ApprovalStatus>('')
   const [recipeCategory, setRecipeCategory] = useState('')
+  const [recipeSite, setRecipeSite] = useState('')
+  const { sites: recipeSites, error: recipeSiteError } = useRecipeSiteOptions(accessToken)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [selectedRecipeVendorPricesByProductKey, setSelectedRecipeVendorPricesByProductKey] =
     useState<Record<string, RawMaterialVendorPriceOption[]>>({})
@@ -1857,6 +1860,7 @@ const SuperadminMenuManagementPage = () => {
         if (recipeStatus) params.set('status', recipeStatus)
         if (approvalStatus) params.set('approvalStatus', approvalStatus)
         if (recipeCategory) params.set('category', recipeCategory)
+        if (recipeSite) params.set('siteFilter', recipeSite)
 
         const data = await apiFetch<{
           items?: Recipe[]
@@ -1889,7 +1893,7 @@ const SuperadminMenuManagementPage = () => {
         }))
       }
     },
-    [accessToken, approvalStatus, recipeCategory, recipeSearch, recipeStatus],
+    [accessToken, approvalStatus, recipeCategory, recipeSearch, recipeStatus, recipeSite],
   )
 
   const fetchCategories = useCallback(
@@ -3761,12 +3765,32 @@ const SuperadminMenuManagementPage = () => {
                 ))}
               </select>
             </div>
+            <div className="w-full sm:w-60">
+              <label htmlFor="superadmin-recipe-site" className="sr-only">Site</label>
+              <select
+                id="superadmin-recipe-site"
+                value={recipeSite}
+                onChange={(event) => {
+                  setRecipeSite(event.target.value)
+                  setRecipeMeta((prev) => ({ ...prev, page: 1 }))
+                  setSelectedRecipeId(null)
+                }}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">All sites</option>
+                {recipeSites.map((site) => (
+                  <option key={site.code} value={site.code}>{site.name}</option>
+                ))}
+              </select>
+              {recipeSiteError ? <p className="mt-1 text-xs text-red-600" role="alert">{recipeSiteError}</p> : null}
+            </div>
             <button
               type="button"
               onClick={() => {
                 setRecipeStatus('')
                 setApprovalStatus('')
                 setRecipeCategory('')
+                setRecipeSite('')
                 setRecipeMeta((prev) => ({ ...prev, page: 1 }))
               }}
               className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"

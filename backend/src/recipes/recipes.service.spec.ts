@@ -729,6 +729,70 @@ describe('RecipesService site visibility', () => {
     );
   });
 
+  it('narrows visible recipes by origin site without bypassing visibility', async () => {
+    const { recipeModel, service } = makeService();
+    mockRecipeList(recipeModel);
+    await service.findAll(
+      { siteFilter: 'SITE-002', page: 2, limit: 10 },
+      'SITE-001',
+    );
+    const expected = {
+      $and: [
+        { $or: [{ approvalStatus: 'approved' }, { site: 'SITE-001' }] },
+        { site: 'SITE-002' },
+      ],
+    };
+    expect(recipeModel.find).toHaveBeenCalledWith(
+      expect.objectContaining(expected),
+    );
+    expect(recipeModel.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining(expected),
+    );
+  });
+
+  it('filters approved recipes by their origin site', async () => {
+    const { recipeModel, service } = makeService();
+    mockRecipeList(recipeModel);
+    await service.findAll(
+      { siteFilter: 'SITE-002', approvalStatus: 'approved' },
+      'SITE-001',
+    );
+    expect(recipeModel.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalStatus: 'approved',
+        $and: [{ site: 'SITE-002' }],
+      }),
+    );
+  });
+
+  it('lists site options only from visible recipes with site name fallback', async () => {
+    const { recipeModel, sites, service } = makeService();
+    recipeModel.distinct.mockResolvedValue(['SITE-002', '', 'SITE-001']);
+    sites.findSummariesByCodes.mockResolvedValue(
+      new Map([['SITE-002', { name: 'Alpha' }]]),
+    );
+    await expect(service.listSites('SITE-001')).resolves.toEqual([
+      { code: 'SITE-002', name: 'Alpha' },
+      { code: 'SITE-001', name: 'SITE-001' },
+    ]);
+    expect(recipeModel.distinct).toHaveBeenCalledWith('site', {
+      deletedAt: { $exists: false },
+      isDraft: { $ne: true },
+      isActive: { $ne: false },
+      $or: [{ approvalStatus: 'approved' }, { site: 'SITE-001' }],
+    });
+  });
+
+  it('includes disabled recipes in superadmin site options', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.distinct.mockResolvedValue([]);
+    await service.listSites(undefined, true);
+    expect(recipeModel.distinct).toHaveBeenCalledWith('site', {
+      deletedAt: { $exists: false },
+      isDraft: { $ne: true },
+    });
+  });
+
   it('filters pending approvals to several selected sites before pagination', async () => {
     const { recipeModel, service } = makeService();
     mockRecipeList(recipeModel);

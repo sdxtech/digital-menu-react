@@ -24,6 +24,10 @@ export class ListRecipesQueryDto {
 
   @IsOptional()
   @IsString()
+  siteFilter?: string;
+
+  @IsOptional()
+  @IsString()
   sites?: string;
 
   @IsOptional()
