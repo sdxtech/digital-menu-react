@@ -15,6 +15,10 @@ type RecipeFiltersProps = {
   onStatusesChange: (statuses: RecipeStatus[]) => void
   onApprovalStatusChange: (status: ApprovalStatus) => void
   onCategoriesChange: (categories: string[]) => void
+  sites?: Array<{ code: string; name: string }>
+  selectedSite?: string
+  onSiteChange?: (site: string) => void
+  siteError?: string
 }
 
 const fieldClassName =
@@ -31,6 +35,10 @@ const RecipeFilters = ({
   onStatusesChange,
   onApprovalStatusChange,
   onCategoriesChange,
+  sites = [],
+  selectedSite = '',
+  onSiteChange,
+  siteError,
 }: RecipeFiltersProps) => {
   const [openField, setOpenField] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -167,12 +175,31 @@ const RecipeFilters = ({
           ))}
         </select>
       </div>
+      {onSiteChange ? (
+        <div className="order-3 w-full sm:w-60">
+          <label htmlFor={`${id}-site`} className="sr-only">Site</label>
+          <select
+            id={`${id}-site`}
+            value={selectedSite}
+            onFocus={() => setOpenField(null)}
+            onChange={(event) => onSiteChange(event.target.value)}
+            className={fieldClassName}
+          >
+            <option value="">All sites</option>
+            {sites.map((site) => (
+              <option key={site.code} value={site.code}>{site.name}</option>
+            ))}
+          </select>
+          {siteError ? <p className="mt-1 text-xs text-red-600" role="alert">{siteError}</p> : null}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => {
           onStatusesChange([])
           onApprovalStatusChange('')
           onCategoriesChange([])
+          onSiteChange?.('')
           setOpenField(null)
         }}
         className="order-4 h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"

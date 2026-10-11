@@ -420,6 +420,9 @@ export class RecipesService {
     if (Object.keys(visibilityFilter).length) {
       andFilters.push(visibilityFilter);
     }
+    if (query.siteFilter?.trim()) {
+      andFilters.push(this.buildSiteFilter(query.siteFilter));
+    }
 
     await this.backfillMissingRecipeCodes();
 
@@ -2664,6 +2667,23 @@ export class RecipesService {
     const normalized = value.trim().toLowerCase();
     if (normalized === 'active' || normalized === 'aktif') return 'active';
     return 'draft';
+  }
+
+  async listSites(site?: string | string[], includeInactive = false) {
+    const filter: Record<string, unknown> = {
+      deletedAt: { $exists: false },
+      isDraft: { $ne: true },
+      ...this.buildVisibilityFilter(site),
+    };
+    if (!includeInactive) filter.isActive = { $ne: false };
+    const codes = (await this.recipeModel.distinct('site', filter)).filter(
+      (code): code is string =>
+        typeof code === 'string' && Boolean(code.trim()),
+    );
+    const summaries = await this.sites.findSummariesByCodes(codes);
+    return codes
+      .map((code) => ({ code, name: summaries.get(code)?.name ?? code }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // BACKEND LOGIC: category list for frontend filters.

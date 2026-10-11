@@ -2,6 +2,7 @@ import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import RecipeFilters from '../components/RecipeFilters'
+import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
@@ -95,6 +96,8 @@ const UnitManagerRecipeDataPage = ({
   description?: string
 }) => {
   const { accessToken, user } = useAuth()
+  const { sites: recipeSites, error: siteError } = useRecipeSiteOptions(accessToken)
+  const [siteFilter, setSiteFilter] = useState('')
   const siteOptions = useMemo(
     () =>
       Array.from(
@@ -168,6 +171,11 @@ const UnitManagerRecipeDataPage = ({
       if (searchTerm.trim()) {
         params.set('search', searchTerm.trim())
       }
+      if (enableSiteSelection) {
+        params.set('siteFilter', selectedSite)
+      } else if (siteFilter) {
+        params.set('siteFilter', siteFilter)
+      }
 
       if (statusFilters.length) {
         params.set('statuses', statusFilters.join(','))
@@ -207,6 +215,7 @@ const UnitManagerRecipeDataPage = ({
     page,
     searchTerm,
     selectedSite,
+    siteFilter,
     statusFilters,
   ])
 
@@ -361,6 +370,14 @@ const UnitManagerRecipeDataPage = ({
         </div>
 
         <RecipeFilters
+          sites={recipeSites}
+          selectedSite={siteFilter}
+          onSiteChange={enableSiteSelection ? undefined : (site) => {
+            setSiteFilter(site)
+            setPage(1)
+            setSelectedRecipeId(null)
+          }}
+          siteError={siteError}
           searchTerm={searchInput}
           onSearchChange={setSearchInput}
           onSearch={() => {

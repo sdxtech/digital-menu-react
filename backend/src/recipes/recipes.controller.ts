@@ -84,6 +84,15 @@ export class RecipesController {
     return this.recipes.findDrafts(this.buildActor(req));
   }
 
+  @Get('sites')
+  @Roles(...ALL_APP_ROLES)
+  listSites(@Req() req: AuthenticatedRequest) {
+    return this.recipes.listSites(
+      this.resolveQuerySite(req),
+      req.user.roles?.includes(AppRole.Superadmin) ?? false,
+    );
+  }
+
   @Get()
   @Roles(...ALL_APP_ROLES)
   list(@Req() req: AuthenticatedRequest, @Query() query: ListRecipesQueryDto) {

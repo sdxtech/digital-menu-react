@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
 import RecipeFilters from '../components/RecipeFilters'
+import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
@@ -168,6 +169,8 @@ const MenuPhotoFrame = ({
 
 const ChefMenuBank = () => {
   const { user, accessToken } = useAuth()
+  const { sites: recipeSites, error: siteError } = useRecipeSiteOptions(accessToken)
+  const [siteFilter, setSiteFilter] = useState('')
   const rawRole = user?.roles?.[0] || user?.role || ''
   const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole
   const targetUserRole = cleanRole === 'unit-manager' ? 'unit.manager' : cleanRole
@@ -271,6 +274,7 @@ const ChefMenuBank = () => {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('limit', String(ITEMS_PER_PAGE))
+      if (siteFilter) params.set('siteFilter', siteFilter)
       if (searchTerm.trim()) params.set('search', searchTerm.trim())
       if (statusFilters.length) {
         params.set('statuses', statusFilters.join(','))
@@ -300,7 +304,7 @@ const ChefMenuBank = () => {
     } finally {
       setLoading(false)
     }
-  }, [accessToken, page, searchTerm, statusFilters, categoryFilters, approvalFilter])
+  }, [accessToken, page, searchTerm, statusFilters, categoryFilters, approvalFilter, siteFilter])
 
   useEffect(() => {
     fetchCategories().catch(() => null)
@@ -312,7 +316,7 @@ const ChefMenuBank = () => {
 
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, statusFilters, categoryFilters, approvalFilter])
+  }, [searchTerm, statusFilters, categoryFilters, approvalFilter, siteFilter])
 
   const selectedRecipe =
     selectedRecipeId === null
@@ -681,6 +685,14 @@ const ChefMenuBank = () => {
         </div>
 
         <RecipeFilters
+          sites={recipeSites}
+          selectedSite={siteFilter}
+          onSiteChange={(site) => {
+            setSiteFilter(site)
+            setPage(1)
+            setSelectedRecipeId(null)
+          }}
+          siteError={siteError}
           searchTerm={searchInput}
           onSearchChange={setSearchInput}
           onSearch={() => {

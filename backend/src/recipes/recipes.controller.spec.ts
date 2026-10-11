@@ -8,6 +8,7 @@ describe('RecipesController corporate chef creation', () => {
     const recipes = {
       create: jest.fn().mockResolvedValue({ id: 'recipe-1' }),
       findAll: jest.fn(),
+      listSites: jest.fn(),
     };
     return {
       controller: new RecipesController(recipes as never),
@@ -25,6 +26,20 @@ describe('RecipesController corporate chef creation', () => {
       sites: ['SITE-001', 'SITE-002'],
     },
   };
+
+  it('scopes recipe site options to the current user visibility', async () => {
+    const { controller, recipes } = makeController();
+    await controller.listSites(request as never);
+    expect(recipes.listSites).toHaveBeenCalledWith('SITE-001', false);
+  });
+
+  it('allows superadmins to see site options for disabled recipes', async () => {
+    const { controller, recipes } = makeController();
+    await controller.listSites({
+      user: { ...request.user, roles: [AppRole.Superadmin] },
+    } as never);
+    expect(recipes.listSites).toHaveBeenCalledWith(undefined, true);
+  });
 
   it('restricts conversion sync to superadmin', () => {
     const handler = Object.getOwnPropertyDescriptor(
