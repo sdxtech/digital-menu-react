@@ -99,10 +99,20 @@ export class FilesService {
     return Readable.from(response.Body as AsyncIterable<Uint8Array>);
   }
 
-  async presignDownload(key: string, expiresIn = 7 * 24 * 60 * 60) {
+  async presignDownload(
+    key: string,
+    expiresIn = 7 * 24 * 60 * 60,
+    filename?: string,
+  ) {
     return getSignedUrl(
       this.s3,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ...(filename
+          ? { ResponseContentDisposition: `attachment; filename="${filename}"` }
+          : {}),
+      }),
       { expiresIn },
     );
   }
@@ -111,6 +121,7 @@ export class FilesService {
     key: string,
     body: Readable | string,
     contentType: string,
+    contentLength?: number,
   ) {
     await this.s3.send(
       new PutObjectCommand({
@@ -118,6 +129,9 @@ export class FilesService {
         Key: key,
         Body: body,
         ContentType: contentType,
+        ...(contentLength !== undefined
+          ? { ContentLength: contentLength }
+          : {}),
       }),
     );
 

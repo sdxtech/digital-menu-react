@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
 import RecipeFilters from '../components/RecipeFilters'
+import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
+import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
 import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
@@ -240,6 +242,7 @@ const ChefMenuBank = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(false)
+  const recipeExport = useRecipeExportSelection(accessToken, user?.id ?? user?.email, { loading })
   const [error, setError] = useState('')
   const [photoModalOpen, setPhotoModalOpen] = useState(false)
   const [photoModalRecipeId, setPhotoModalRecipeId] = useState<string | null>(null)
@@ -589,6 +592,7 @@ const ChefMenuBank = () => {
 
   return (
     <div className="space-y-6">
+      <RecipeExportDialog exportState={recipeExport} />
       {photoModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div
@@ -682,6 +686,7 @@ const ChefMenuBank = () => {
           <div>
             <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
           </div>
+          <RecipeExportToolbar exportState={recipeExport} variant="primary" />
         </div>
 
         <RecipeFilters
@@ -739,6 +744,7 @@ const ChefMenuBank = () => {
             <table className="dm-table min-w-full text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-12 px-5 py-4"><RecipeExportCheckbox exportState={recipeExport} /></th>
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe ID</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
@@ -753,13 +759,13 @@ const ChefMenuBank = () => {
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={10} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={10} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes yet.'}
                     </td>
                   </tr>
@@ -779,6 +785,7 @@ const ChefMenuBank = () => {
                             : 'hover:bg-slate-50/50'
                         }`}
                       >
+                        <td className="px-5 py-4"><RecipeExportCheckbox exportState={recipeExport} id={recipeKey ?? ''} name={recipe.name} /></td>
                         <td className="px-5 py-4 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
