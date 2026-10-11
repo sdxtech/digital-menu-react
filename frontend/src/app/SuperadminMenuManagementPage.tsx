@@ -25,6 +25,8 @@ import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 import SuperadminGroupByManagement from './SuperadminGroupByManagement'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import RecipeFoodCostSetting from '../components/RecipeFoodCostSetting'
+import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
+import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
 
 type RecipeStatus = 'draft' | 'active'
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
@@ -1592,7 +1594,7 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
 }
 
 const SuperadminMenuManagementPage = () => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState<MenuManagementTab>(() =>
@@ -1602,6 +1604,7 @@ const SuperadminMenuManagementPage = () => {
   const [recipeCategories, setRecipeCategories] = useState<string[]>([])
   const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
   const [recipeMeta, setRecipeMeta] = useState<TableMeta>(emptyMeta)
+  const recipeExport = useRecipeExportSelection(accessToken, user?.id ?? user?.email, { loading: recipeMeta.loading })
   const [recipeSearchInput, setRecipeSearchInput] = useState('')
   const [recipeSearch, setRecipeSearch] = useState('')
   const [recipeStatus, setRecipeStatus] = useState<'' | RecipeStatus>('')
@@ -3211,6 +3214,8 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        <RecipeExportDialog exportState={recipeExport} />
+
         {recipeImportOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
@@ -3648,18 +3653,16 @@ const SuperadminMenuManagementPage = () => {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="text-lg font-semibold">Recipe Data</h2>
-              <p className="mt-1 text-xs text-muted">
-                Recipes created by chef and reviewed through the approval flow.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <RecipeExportToolbar exportState={recipeExport} />
               <button
                 type="button"
                 onClick={syncRecipeCosts}
                 disabled={!accessToken || recipeCostSyncing || recipeConversionSyncing}
-                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
+                <i className="bi bi-arrow-repeat text-base leading-none" aria-hidden="true" />
                 <span>{recipeCostSyncing ? 'Syncing...' : 'Sync costs'}</span>
               </button>
               <button
@@ -3667,15 +3670,16 @@ const SuperadminMenuManagementPage = () => {
                 onClick={syncRecipeConversions}
                 disabled={!accessToken || recipeConversionSyncing || recipeCostSyncing}
                 title="Recalculate approved, submitted, and rejected recipe SR quantities using current conversion rules. Manual SR quantities are preserved."
-                className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <i className="bi bi-arrow-repeat text-base" aria-hidden="true" />
+                <i className="bi bi-arrow-repeat text-base leading-none" aria-hidden="true" />
                 <span>{recipeConversionSyncing ? 'Syncing...' : 'Sync Conversion'}</span>
               </button>
               <ActionButton
                 action="import"
                 onClick={openRecipeImportModal}
-                iconClassName="bi bi-upload text-base"
+                className="h-9"
+                iconClassName="bi bi-upload text-base leading-none"
                 size="sm"
               />
               <button
@@ -3685,16 +3689,16 @@ const SuperadminMenuManagementPage = () => {
                 }
                 aria-label="Refresh recipe data"
                 title="Refresh recipe data"
-                className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
               >
-                <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
+                <i className="bi bi-arrow-clockwise text-base leading-none" aria-hidden="true" />
               </button>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
             <div className="flex w-full items-center gap-3 sm:w-auto">
-              <div className="min-w-0 flex-1 sm:w-64 md:w-72">
+              <div className="min-w-0 flex-1 sm:w-[180px] sm:flex-none md:w-[200px]">
                 <label htmlFor="superadmin-recipe-search" className="sr-only">Search recipes</label>
                 <input
                   id="superadmin-recipe-search"
@@ -3713,7 +3717,7 @@ const SuperadminMenuManagementPage = () => {
                 Search
               </button>
             </div>
-            <div className="w-full sm:w-60">
+            <div className="w-full text-sm sm:w-[calc(13ch+3rem)]">
               <label htmlFor="superadmin-recipeStatus" className="sr-only">Recipe status</label>
               <select
                 id="superadmin-recipeStatus"
@@ -3729,7 +3733,7 @@ const SuperadminMenuManagementPage = () => {
                 <option value="active">Active</option>
               </select>
             </div>
-            <div className="w-full sm:w-60">
+            <div className="w-full text-sm sm:w-[calc(15ch+3rem)]">
               <label htmlFor="superadmin-approvalStatus" className="sr-only">Approval status</label>
               <select
                 id="superadmin-approvalStatus"
@@ -3746,7 +3750,7 @@ const SuperadminMenuManagementPage = () => {
                 <option value="rejected">Rejected</option>
               </select>
             </div>
-            <div className="w-full sm:w-60">
+            <div className="w-full text-sm sm:w-[calc(8ch+3rem)]">
               <label htmlFor="superadmin-recipeCategory" className="sr-only">Category</label>
               <select
                 id="superadmin-recipeCategory"
@@ -3765,7 +3769,7 @@ const SuperadminMenuManagementPage = () => {
                 ))}
               </select>
             </div>
-            <div className="w-full sm:w-60">
+            <div className="w-full text-sm sm:w-[calc(9ch+3rem)]">
               <label htmlFor="superadmin-recipe-site" className="sr-only">Site</label>
               <select
                 id="superadmin-recipe-site"
@@ -3814,6 +3818,9 @@ const SuperadminMenuManagementPage = () => {
             <table className="dm-table min-w-full text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  <th className="w-12 px-5 py-4">
+                    <RecipeExportCheckbox exportState={recipeExport} />
+                  </th>
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe Code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
@@ -3830,13 +3837,13 @@ const SuperadminMenuManagementPage = () => {
               <tbody>
                 {recipeMeta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
                       Loading recipe data...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={11} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
                       {recipeMeta.error ? recipeMeta.error : 'No recipes found.'}
                     </td>
                   </tr>
@@ -3853,6 +3860,9 @@ const SuperadminMenuManagementPage = () => {
 
                     return (
                       <tr key={recipeKey} className="border-t border-border">
+                        <td className="px-5 py-4">
+                          <RecipeExportCheckbox exportState={recipeExport} id={recipe.id ?? recipe._id ?? ''} name={recipe.name} />
+                        </td>
                         <td className="px-5 py-4 text-sm text-muted">
                           {(recipeMeta.page - 1) * recipeMeta.limit + index + 1}
                         </td>

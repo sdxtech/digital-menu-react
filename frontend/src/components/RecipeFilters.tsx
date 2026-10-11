@@ -69,6 +69,7 @@ const RecipeFilters = ({
     {
       key: 'status',
       label: 'Recipe status',
+      widthClassName: 'sm:w-[calc(13ch+3rem)]',
       options: (['draft', 'active'] as const).map((value) => ({
         value,
         label: value === 'active' ? 'Active' : 'Draft',
@@ -85,6 +86,7 @@ const RecipeFilters = ({
     {
       key: 'category',
       label: 'Category',
+      widthClassName: 'sm:w-[calc(8ch+3rem)]',
       options: categories.map((value) => ({ value, label: value })),
       selected: selectedCategories,
       onToggle: (value: string) => onCategoriesChange(selectedCategories.includes(value)
@@ -104,7 +106,7 @@ const RecipeFilters = ({
           onSearch()
         }}
       >
-        <div className="min-w-0 flex-1 sm:w-64 md:w-72">
+        <div className="min-w-0 flex-1 sm:w-[180px] sm:flex-none md:w-[200px]">
           <label htmlFor={`${id}-search`} className="sr-only">Search recipes</label>
           <input
             id={`${id}-search`}
@@ -124,7 +126,7 @@ const RecipeFilters = ({
         </button>
       </form>
       {fields.map((field) => (
-        <div key={field.key} className={`relative w-full sm:w-60 ${field.key === 'status' ? 'order-1' : 'order-3'}`}>
+        <div key={field.key} className={`relative w-full text-sm ${field.widthClassName} ${field.key === 'status' ? 'order-1' : 'order-3'}`}>
           <button
             type="button"
             aria-expanded={openField === field.key}
@@ -138,7 +140,7 @@ const RecipeFilters = ({
             <i className={`bi bi-chevron-down text-xs transition-transform ${openField === field.key ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
           {openField === field.key ? (
-            <div id={`${id}-${field.key}`} className="absolute left-0 top-full z-40 mt-2 w-full rounded-xl border border-border bg-white p-4 shadow-xl">
+            <div id={`${id}-${field.key}`} className="absolute left-0 top-full z-40 mt-2 w-full rounded-xl border border-border bg-white p-4 shadow-xl sm:min-w-60">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="text-xs text-muted">{field.label}</p>
                 <button type="button" onClick={field.onReset} className="text-xs font-semibold text-primary">Reset</button>
@@ -160,7 +162,7 @@ const RecipeFilters = ({
           ) : null}
         </div>
       ))}
-      <div className="order-2 w-full sm:w-60">
+      <div className="order-2 w-full text-sm sm:w-[calc(15ch+3rem)]">
         <label htmlFor={`${id}-approval`} className="sr-only">Approval status</label>
         <select
           id={`${id}-approval`}
@@ -176,7 +178,7 @@ const RecipeFilters = ({
         </select>
       </div>
       {onSiteChange ? (
-        <div className="order-3 w-full sm:w-60">
+        <div className="order-3 w-full text-sm sm:w-[calc(9ch+3rem)]">
           <label htmlFor={`${id}-site`} className="sr-only">Site</label>
           <select
             id={`${id}-site`}

@@ -2,20 +2,15 @@ import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import RecipeFilters from '../components/RecipeFilters'
+import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
+import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
 import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
-import { getApprovalStatusLabel } from '../lib/status-labels'
 import { formatUnitLabel } from '../lib/unit-of-measures'
-import {
-  downloadSpreadsheet,
-  toSpreadsheetDate,
-  toSpreadsheetDecimal,
-  type SpreadsheetCell,
-} from '../lib/spreadsheet-export'
 
 const ITEMS_PER_PAGE = 10
 
@@ -66,9 +61,6 @@ type Recipe = {
   ingredients?: RecipeIngredient[]
 }
 
-const statusLabel = (status: 'draft' | 'active') =>
-  status === 'active' ? 'Active' : 'Draft'
-
 const formatActorLabel = (name?: string, email?: string, fallback?: string) =>
   name?.trim() || email?.trim() || fallback?.trim() || 'Unknown'
 
@@ -86,7 +78,7 @@ const getRecipeKey = (recipe: Recipe) =>
   recipe.id ?? recipe._id ?? recipe.recipeCode ?? recipe.name
 
 const UnitManagerRecipeDataPage = ({
-  showExport = false,
+  showExport = true,
   enableSiteSelection = false,
   description =
     'View approved, pending, and rejected recipes without leaving the Unit Manager workspace.',
@@ -126,6 +118,7 @@ const UnitManagerRecipeDataPage = ({
   const [totalPages, setTotalPages] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const [loading, setLoading] = useState(false)
+  const recipeExport = useRecipeExportSelection(accessToken, user?.id ?? user?.email, { loading, site: enableSiteSelection ? selectedSite : undefined, enabled: showExport && (!enableSiteSelection || Boolean(selectedSite)) })
   const [error, setError] = useState('')
 
   const fetchCategories = useCallback(async () => {
@@ -268,72 +261,10 @@ const UnitManagerRecipeDataPage = ({
     : 'Unknown'
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
 
-  const handleExportRecipe = (recipe: Recipe) => {
-    const rows: SpreadsheetCell[][] = [
-      [
-        'Recipe Code',
-        'Name',
-        'Version',
-        'Category',
-        'Site',
-        'Portion Size',
-        'Recipe Status',
-        'Approval Status',
-        'Description',
-        'Created By',
-        'Created At',
-        'Ingredient Type',
-        'IT Code',
-        'Ingredient Name',
-        'QTY',
-        'Unit Of Measures',
-      ],
-    ]
-    const ingredients = recipe.ingredients ?? []
-    const commonCells: SpreadsheetCell[] = [
-      recipe.recipeCode ?? '',
-      recipe.name,
-      formatRecipeVersion(recipe.version),
-      recipe.category,
-      formatRecipeSite(recipe),
-      toSpreadsheetDecimal(recipe.portionSize),
-      recipe.isActive === false ? 'Disabled' : statusLabel(recipe.status),
-      getApprovalStatusLabel(recipe.approvalStatus),
-      recipe.description ?? '',
-      formatActorLabel(
-        recipe.createdByName,
-        recipe.createdByEmail,
-        recipe.createdBy,
-      ),
-      toSpreadsheetDate(recipe.createdAt),
-    ]
-
-    if (ingredients.length === 0) {
-      rows.push([...commonCells, '', '', '', '', ''])
-    } else {
-      ingredients.forEach((ingredient) => {
-        rows.push([
-          ...commonCells,
-          ingredient.ingredientType ?? '',
-          ingredient.productCode,
-          ingredient.name,
-          toSpreadsheetDecimal(ingredient.qty),
-          formatUnitLabel(ingredient.unitOfMeasures),
-        ])
-      })
-    }
-
-    const safeCode = (recipe.recipeCode ?? recipe.name).replace(
-      /[\\/:*?"<>|]/g,
-      '-',
-    )
-    downloadSpreadsheet(`recipe-${safeCode}.xlsx`, [
-      { name: 'Recipe Data', rows },
-    ])
-  }
 
   return (
     <div className="space-y-6">
+      <RecipeExportDialog exportState={recipeExport} />
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -342,9 +273,10 @@ const UnitManagerRecipeDataPage = ({
               {description}
             </p>
           </div>
-          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
+          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
+            {showExport ? <RecipeExportToolbar exportState={recipeExport} variant="primary" /> : null}
             {enableSiteSelection ? (
-              <div className="w-full sm:w-52">
+              <div className="w-full text-sm sm:w-[calc(11ch+3rem)]">
                 <label
                   className="sr-only"
                   htmlFor="executive-recipe-site"
@@ -405,6 +337,7 @@ const UnitManagerRecipeDataPage = ({
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                  {showExport ? <th className="w-12 px-5 py-4"><RecipeExportCheckbox exportState={recipeExport} /></th> : null}
                   <th className="w-16 px-5 py-4 font-semibold">No</th>
                   <th className="px-5 py-4 font-semibold">Recipe code</th>
                   <th className="px-5 py-4 font-semibold">Name</th>
@@ -419,13 +352,13 @@ const UnitManagerRecipeDataPage = ({
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={showExport ? 10 : 9} className="px-5 py-10 text-center text-muted">
                       Loading recipes...
                     </td>
                   </tr>
                 ) : recipes.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={showExport ? 10 : 9} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes found.'}
                     </td>
                   </tr>
@@ -436,6 +369,7 @@ const UnitManagerRecipeDataPage = ({
 
                     return (
                       <tr key={recipeKey} className="border-t border-border">
+                        {showExport ? <td className="px-5 py-4"><RecipeExportCheckbox exportState={recipeExport} id={recipe.id ?? recipe._id ?? ''} name={recipe.name} /></td> : null}
                         <td className="px-5 py-4 text-sm text-muted">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
@@ -467,21 +401,6 @@ const UnitManagerRecipeDataPage = ({
                             >
                               {isSelected ? 'Hide details' : 'View details'}
                             </button>
-                            {showExport ? (
-                              <button
-                                type="button"
-                                onClick={() => handleExportRecipe(recipe)}
-                                className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
-                              >
-                                <span className="flex items-center gap-2">
-                                  <i
-                                    className="bi bi-download text-sm"
-                                    aria-hidden="true"
-                                  />
-                                  <span>Export</span>
-                                </span>
-                              </button>
-                            ) : null}
                           </div>
                         </td>
                       </tr>

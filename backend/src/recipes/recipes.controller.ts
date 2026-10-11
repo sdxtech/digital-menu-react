@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppRole, ALL_APP_ROLES } from '../auth/roles.constants';
+import { resolveRecipeReadSite } from './recipe-read-scope';
 import { getUserSiteScope } from '../auth/site-scope';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { getUploadDir } from '../common/upload-dir';
@@ -344,56 +345,6 @@ export class RecipesController {
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
-    if (
-      req.user.roles?.includes(AppRole.CorporateChef) &&
-      req.user.corporateSite
-    ) {
-      const allowed = [req.user.site, ...(req.user.approvalSites ?? [])].filter(
-        (site): site is string => Boolean(site),
-      );
-      const requested = requestedSite?.trim();
-      if (!requested) return req.user.approvalSites ?? [];
-      const matched = allowed.find(
-        (site) => site.toLowerCase() === requested.toLowerCase(),
-      );
-      if (!matched)
-        throw new ForbiddenException(
-          'The selected site is outside your recipe scope.',
-        );
-      return matched;
-    }
-    if (req.user.roles?.includes(AppRole.Executive)) {
-      const assignedSites = Array.from(
-        new Set([req.user.site, ...(req.user.sites ?? [])]),
-      )
-        .map((site) => site?.trim())
-        .filter((site): site is string => Boolean(site));
-      const requested = requestedSite?.trim();
-      if (!requested) return req.user.site?.trim() || assignedSites[0];
-
-      const assignedSite = assignedSites.find(
-        (site) => site.toLowerCase() === requested.toLowerCase(),
-      );
-      if (!assignedSite) {
-        throw new ForbiddenException(
-          'The selected site is not assigned to this Executive.',
-        );
-      }
-      return assignedSite;
-    }
-
-    if (req.user.roles?.includes(AppRole.CorporateChef)) {
-      const assignedSites = (req.user.sites ?? []).map((site) =>
-        site.trim().toLowerCase(),
-      );
-      const requested = requestedSite?.trim();
-      if (requested && assignedSites.includes(requested.toLowerCase())) {
-        return requested;
-      }
-      return req.user.site?.trim() || undefined;
-    }
-    const siteScope = getUserSiteScope(req.user);
-    if (siteScope) return siteScope;
-    return requestedSite?.trim() || undefined;
+    return resolveRecipeReadSite(req.user, requestedSite);
   }
 }
