@@ -118,7 +118,7 @@ export class ExportsService {
     if ((await job.getState()) !== 'completed') {
       throw new ConflictException('The export is not ready to download.');
     }
-    return { url: await this.recipeExports.downloadUrl(job.returnvalue) };
+    return this.recipeExports.downloadFile(job.returnvalue);
   }
 
   private async ownedRecipeJob(

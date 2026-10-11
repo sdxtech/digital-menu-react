@@ -1,5 +1,13 @@
-import { existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
 import ExcelJS from 'exceljs';
 import { Types } from 'mongoose';
@@ -25,11 +33,23 @@ const recipe = (index: number, ingredientCount = 2) => ({
   })),
 });
 
+const exportDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of exportDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  delete process.env.RECIPE_EXPORT_DIR;
+});
+
 type TestRecipe = Omit<ReturnType<typeof recipe>, 'ingredients'> & {
   ingredients: RecipeIngredient[];
 };
 
 const setup = (records: TestRecipe[]) => {
+  const exportDirectory = mkdtempSync(join(tmpdir(), 'recipe-export-test-'));
+  exportDirectories.push(exportDirectory);
+  process.env.RECIPE_EXPORT_DIR = exportDirectory;
   let offset = 0;
   const query = {
     select: jest.fn().mockReturnThis(),
@@ -52,36 +72,14 @@ const setup = (records: TestRecipe[]) => {
         new Map([['000000000000000000000001', 'Current author']]),
       ),
   };
-  let uploaded: Buffer = Buffer.alloc(0);
-  let temporaryDirectory = '';
-  const files = {
-    uploadObject: jest
-      .fn()
-      .mockImplementation(
-        async (_key: string, body: Readable & { path: string }) => {
-          temporaryDirectory = dirname(body.path);
-          const chunks: Buffer[] = [];
-          for await (const chunk of body)
-            chunks.push(Buffer.from(chunk as Uint8Array));
-          uploaded = Buffer.concat(chunks);
-        },
-      ),
-    presignDownload: jest
-      .fn()
-      .mockResolvedValue('https://storage.example/download'),
-  };
   return {
-    service: new RecipeExportsService(
-      model as never,
-      users as never,
-      files as never,
-    ),
+    service: new RecipeExportsService(model as never, users as never),
     model,
     query,
     users,
-    files,
-    uploaded: () => uploaded,
-    temporaryDirectory: () => temporaryDirectory,
+    exportDirectory,
+    uploaded: () =>
+      readFileSync(join(exportDirectory, readdirSync(exportDirectory)[0])),
   };
 };
 
@@ -126,20 +124,17 @@ describe('RecipeExportsService', () => {
     expect(result.count).toBe(2);
     expect(result.filename).toBe('Recipes-2026-10-11-2.xlsx');
     expect(result.key).toMatch(/^exports\/recipes-[\da-f-]+\.xlsx$/);
-    await context.service.downloadUrl(result);
-    expect(context.files.presignDownload).toHaveBeenCalledWith(
-      result.key,
-      300,
-      'Recipes-2026-10-11-2.xlsx',
+    const download = await context.service.downloadFile(result);
+    expect(download.getHeaders().type).toContain('spreadsheetml');
+    expect(download.getHeaders().disposition).toBe(
+      `attachment; filename="${result.filename}"`,
     );
+    expect(download.getHeaders().length).toBe(context.uploaded().length);
+    await download.getStream().toArray();
     expect(progress).toHaveBeenLastCalledWith(2);
-    expect(context.files.uploadObject).toHaveBeenCalledWith(
-      result.key,
-      expect.any(Readable),
-      expect.stringContaining('spreadsheetml'),
-      context.uploaded().length,
-    );
-    expect(existsSync(context.temporaryDirectory())).toBe(false);
+    expect(
+      existsSync(join(context.exportDirectory, result.key.split('/')[1])),
+    ).toBe(true);
   });
 
   it('preserves legacy SR quantities without inventing production quantities or interpreting text as formulas', async () => {
@@ -285,7 +280,7 @@ describe('RecipeExportsService', () => {
     },
   );
 
-  it('fails explicitly for an empty export and does not upload a blank workbook', async () => {
+  it('fails explicitly for an empty export and removes the blank workbook', async () => {
     const context = setup([]);
     await expect(
       context.service.generate(
@@ -293,29 +288,22 @@ describe('RecipeExportsService', () => {
         () => Promise.resolve(),
       ),
     ).rejects.toThrow('No recipes');
-    expect(context.files.uploadObject).not.toHaveBeenCalled();
+    expect(readdirSync(context.exportDirectory)).toHaveLength(0);
   });
 
-  it('cleans up its temporary file when storage upload fails', async () => {
+  it('rejects missing and invalid local export files', async () => {
     const context = setup([recipe(1)]);
-    context.files.uploadObject.mockImplementationOnce(
-      (_key: string, body: Readable & { path: string }) => {
-        const directory = dirname(body.path);
-        expect(existsSync(directory)).toBe(true);
-        return Promise.reject(new Error(`Upload failed: ${directory}`));
-      },
+    const result = await context.service.generate(
+      { userId: 'owner', total: 1, requestedAt: new Date().toISOString() },
+      () => Promise.resolve(),
     );
-    let directory = '';
-    try {
-      await context.service.generate(
-        { userId: 'owner', total: 1, requestedAt: new Date().toISOString() },
-        () => Promise.resolve(),
-      );
-    } catch (error) {
-      directory = (error as Error).message.replace('Upload failed: ', '');
-    }
-    expect(directory).not.toBe('');
-    expect(existsSync(directory)).toBe(false);
+    await expect(
+      context.service.downloadFile({ ...result, key: '../outside.xlsx' }),
+    ).rejects.toThrow('not found');
+    rmSync(join(context.exportDirectory, result.key.split('/')[1]));
+    await expect(context.service.downloadFile(result)).rejects.toThrow(
+      'expired',
+    );
   });
 
   it('fails rather than downloading a partial selection when recipes disappear during processing', async () => {
@@ -331,7 +319,7 @@ describe('RecipeExportsService', () => {
         () => Promise.resolve(),
       ),
     ).rejects.toThrow('Some selected recipes');
-    expect(context.files.uploadObject).not.toHaveBeenCalled();
+    expect(readdirSync(context.exportDirectory)).toHaveLength(0);
   });
 
   it('rejects an export that exceeds the single-sheet Excel row limit', async () => {
@@ -350,18 +338,12 @@ describe('RecipeExportsService', () => {
         () => Promise.resolve(),
       ),
     ).rejects.toThrow('single-sheet row limit');
-    expect(context.files.uploadObject).not.toHaveBeenCalled();
+    expect(readdirSync(context.exportDirectory)).toHaveLength(0);
   });
 
   it('generates 10,000 recipes with 20 ingredients using 100 bounded batches', async () => {
     const context = setup(
       Array.from({ length: 10000 }, (_, i) => recipe(i + 1, 20)),
-    );
-    let bytes = 0;
-    context.files.uploadObject.mockImplementationOnce(
-      async (_key: string, body: Readable) => {
-        for await (const chunk of body) bytes += (chunk as Buffer).length;
-      },
     );
     const progress = jest.fn().mockResolvedValue(undefined);
     const startedAt = performance.now();
@@ -373,6 +355,9 @@ describe('RecipeExportsService', () => {
     expect(context.users.findNamesByIds).toHaveBeenCalledTimes(100);
     expect(context.model.find).toHaveBeenCalledTimes(101);
     expect(progress).toHaveBeenLastCalledWith(10000);
+    const bytes = statSync(
+      join(context.exportDirectory, result.key.split('/')[1]),
+    ).size;
     expect(bytes).toBeGreaterThan(0);
     console.info(
       `Synthetic recipe export: 10000 recipes, 200000 ingredients, ${bytes} bytes, ${Math.round(performance.now() - startedAt)} ms`,
