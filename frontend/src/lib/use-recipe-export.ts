@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, apiFetch } from './api'
+import { ApiError, apiFetch, apiFetchBlob } from './api'
 
 type RecipeExportStatus = {
   jobId: string
@@ -98,10 +98,17 @@ export const useRecipeExport = (accessToken: string | null, userKey: string | un
     setDownloading(true)
     setError('')
     try {
-      const result = await apiFetch<{ url: string }>(
-        `/exports/recipes/${encodeURIComponent(jobId)}/download`, undefined, accessToken,
+      const blob = await apiFetchBlob(
+        `/exports/recipes/${encodeURIComponent(jobId)}/download`, accessToken,
       )
-      window.location.assign(result.url)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = job.filename ?? 'Recipes.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to download recipe export.')
     } finally {

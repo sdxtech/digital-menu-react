@@ -1,16 +1,23 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+  StreamableFile,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import ExcelJS, { type CellValue, type Worksheet } from 'exceljs';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { createReadStream, createWriteStream, type Dirent } from 'node:fs';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { finished } from 'node:stream/promises';
 import { Recipe, type RecipeDocument } from '../recipes/schemas/recipe.schema';
 import { UsersService } from '../users/users.service';
-import { FilesService } from '../files/files.service';
 
 export type RecipeExportScope = {
   site?: string | string[];
@@ -35,6 +42,9 @@ export type RecipeExportResult = {
 
 const BATCH_SIZE = 100;
 const MAX_EXCEL_ROWS = 1048576;
+const EXPORT_RETENTION_MS = 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const EXPORT_KEY_PATTERN = /^exports\/(recipes-[\da-f-]+\.xlsx)$/;
 const XLSX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -52,13 +62,34 @@ type ExportRecipe = Pick<
 > & { _id: Types.ObjectId };
 
 @Injectable()
-export class RecipeExportsService {
+export class RecipeExportsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RecipeExportsService.name);
+  private readonly exportDirectory =
+    process.env.RECIPE_EXPORT_DIR ||
+    join(tmpdir(), 'digital-menu-recipe-exports');
+  private cleanupTimer?: NodeJS.Timeout;
+
   constructor(
     @InjectModel(Recipe.name)
     private readonly recipes: Model<RecipeDocument>,
     private readonly users: UsersService,
-    private readonly files: FilesService,
   ) {}
+
+  onModuleInit() {
+    void this.cleanupExpiredExports().catch((error: unknown) =>
+      this.logger.warn(`Could not clean up recipe exports: ${String(error)}`),
+    );
+    this.cleanupTimer = setInterval(() => {
+      void this.cleanupExpiredExports().catch((error: unknown) =>
+        this.logger.warn(`Could not clean up recipe exports: ${String(error)}`),
+      );
+    }, CLEANUP_INTERVAL_MS);
+    this.cleanupTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+  }
 
   count(
     ids: string[] | undefined,
@@ -75,10 +106,10 @@ export class RecipeExportsService {
     input: RecipeExportJob,
     onProgress: (completed: number) => Promise<void>,
   ): Promise<RecipeExportResult> {
-    const directory = await mkdtemp(join(tmpdir(), 'recipe-export-'));
+    await mkdir(this.exportDirectory, { recursive: true, mode: 0o700 });
     const storageFilename = `recipes-${randomUUID()}.xlsx`;
-    const path = join(directory, storageFilename);
-    const output = createWriteStream(path);
+    const path = join(this.exportDirectory, storageFilename);
+    const output = createWriteStream(path, { mode: 0o600 });
     // Attach the rejection handler immediately, including failures before commit.
     const outputFinished = finished(output);
     void outputFinished.catch(() => undefined);
@@ -173,7 +204,6 @@ export class RecipeExportsService {
       await workbook.commit();
       await outputFinished;
       await onProgress(count);
-      const { size } = await stat(path);
       const exportDate = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Asia/Jakarta',
         year: 'numeric',
@@ -185,23 +215,58 @@ export class RecipeExportsService {
           ? storageFilename
           : `Recipes-${exportDate}-${count}.xlsx`;
       const key = `exports/${storageFilename}`;
-      const body = createReadStream(path);
-      try {
-        await this.files.uploadObject(key, body, XLSX_CONTENT_TYPE, size);
-      } finally {
-        body.destroy();
-        await finished(body).catch(() => undefined);
-      }
       return { key, filename, count };
-    } finally {
+    } catch (error) {
       output.destroy();
       await outputFinished.catch(() => undefined);
-      await rm(directory, { recursive: true, force: true });
+      await rm(path, { force: true });
+      throw error;
     }
   }
 
-  downloadUrl(result: RecipeExportResult) {
-    return this.files.presignDownload(result.key, 300, result.filename);
+  async downloadFile(result: RecipeExportResult) {
+    const match = EXPORT_KEY_PATTERN.exec(result.key);
+    if (!match) throw new NotFoundException('Recipe export file not found.');
+    const path = join(this.exportDirectory, match[1]);
+    let size: number;
+    try {
+      size = (await stat(path)).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new NotFoundException('Recipe export file has expired.');
+      }
+      throw error;
+    }
+    return new StreamableFile(createReadStream(path), {
+      type: XLSX_CONTENT_TYPE,
+      disposition: `attachment; filename="${result.filename}"`,
+      length: size,
+    });
+  }
+
+  private async cleanupExpiredExports() {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(this.exportDirectory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    const cutoff = Date.now() - EXPORT_RETENTION_MS;
+    for (const entry of entries) {
+      if (
+        !entry.isFile() ||
+        !EXPORT_KEY_PATTERN.test(`exports/${entry.name}`)
+      ) {
+        continue;
+      }
+      const path = join(this.exportDirectory, entry.name);
+      try {
+        if ((await stat(path)).mtimeMs < cutoff) await rm(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
   }
 
   private buildFilter(

@@ -138,6 +138,7 @@ export const apiFetch = async <T>(
   options?: RequestInit,
   accessToken?: string,
   allowRefresh = true,
+  responseType: 'json' | 'blob' = 'json',
 ): Promise<T> => {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
@@ -154,7 +155,7 @@ export const apiFetch = async <T>(
     if (response.status === 401 && accessToken && allowRefresh) {
       const refreshedToken = await tryRefreshAccessToken()
       if (refreshedToken) {
-        return apiFetch<T>(path, options, refreshedToken, false)
+        return apiFetch<T>(path, options, refreshedToken, false, responseType)
       }
       handleUnauthorized()
     }
@@ -174,5 +175,8 @@ export const apiFetch = async <T>(
     return undefined as T
   }
 
-  return (await response.json()) as T
+  return (await (responseType === 'blob' ? response.blob() : response.json())) as T
 }
+
+export const apiFetchBlob = (path: string, accessToken: string) =>
+  apiFetch<Blob>(path, undefined, accessToken, true, 'blob')

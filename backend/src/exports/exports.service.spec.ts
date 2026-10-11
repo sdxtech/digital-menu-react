@@ -32,7 +32,7 @@ const setup = () => {
   };
   const recipes = {
     count: jest.fn().mockResolvedValue(2),
-    downloadUrl: jest.fn().mockResolvedValue('https://storage.example/signed'),
+    downloadFile: jest.fn().mockResolvedValue('local file stream'),
   };
   return {
     service: new ExportsService(queue as never, recipes as never),
@@ -347,7 +347,7 @@ describe('Recipe exports', () => {
     expect(queue.add).not.toHaveBeenCalled();
   });
 
-  it('checks ownership and job type before exposing status or signed downloads', async () => {
+  it('checks ownership and job type before exposing status or downloads', async () => {
     const { service, job, recipes } = setup();
     await expect(service.recipeStatus('someone-else', '42')).rejects.toThrow(
       NotFoundException,
@@ -359,10 +359,10 @@ describe('Recipe exports', () => {
     await expect(service.recipeStatus('owner', '42')).rejects.toThrow(
       NotFoundException,
     );
-    expect(recipes.downloadUrl).not.toHaveBeenCalled();
+    expect(recipes.downloadFile).not.toHaveBeenCalled();
   });
 
-  it('exposes progress and only signs the download after completion', async () => {
+  it('exposes progress and only opens the download after completion', async () => {
     const { service, job, recipes } = setup();
     await expect(service.recipeStatus('owner', '42')).resolves.toEqual({
       jobId: '42',
@@ -375,9 +375,9 @@ describe('Recipe exports', () => {
       ForbiddenException,
     );
     job.getState.mockResolvedValue('completed');
-    await expect(service.recipeDownload('owner', '42')).resolves.toEqual({
-      url: 'https://storage.example/signed',
-    });
-    expect(recipes.downloadUrl).toHaveBeenCalledWith(job.returnvalue);
+    await expect(service.recipeDownload('owner', '42')).resolves.toBe(
+      'local file stream',
+    );
+    expect(recipes.downloadFile).toHaveBeenCalledWith(job.returnvalue);
   });
 });
