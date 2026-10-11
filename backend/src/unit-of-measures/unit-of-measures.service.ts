@@ -217,8 +217,11 @@ export class UnitOfMeasuresService {
       'prodUomCode',
       'srUomCode',
       'conversionId',
-      'ext',
     ]);
+    const search = query.search?.trim();
+    if (search && Number.isFinite(Number(search))) {
+      (filter.$or as Record<string, unknown>[]).push({ ext: Number(search) });
+    }
     if (query.isActive !== undefined) filter.isActive = query.isActive;
     const skip = (page - 1) * limit;
 
@@ -262,13 +265,7 @@ export class UnitOfMeasuresService {
     const ext = this.normalizePositiveNumber(input.ext);
     const weight = this.normalizePositiveNumber(input.weight);
 
-    if (
-      !prodUomCode ||
-      !srUomCode ||
-      !multiplier ||
-      !ext ||
-      !weight
-    ) {
+    if (!prodUomCode || !srUomCode || !multiplier || !ext || !weight) {
       throw new BadRequestException(
         'Prod UOM, SR UOM, multiplier, EXT, and weight are required.',
       );
@@ -340,7 +337,7 @@ export class UnitOfMeasuresService {
   }
 
   private calculateMultiplier(ext: number, weight: number) {
-    return this.roundUpNumber((1 / ext) / weight, 6);
+    return this.roundUpNumber(1 / ext / weight, 6);
   }
 
   private normalizePage(page?: number) {
