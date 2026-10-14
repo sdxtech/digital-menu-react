@@ -1,4 +1,5 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { AnalyticsQueryDto } from './dto/analytics-query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -16,6 +17,12 @@ export class DashboardController {
   @Roles(AppRole.Superadmin)
   superadminSummary() {
     return this.dashboard.getSuperadminSummary();
+  }
+
+  @Get('superadmin/analytics')
+  @Roles(AppRole.Superadmin)
+  analytics(@Query() query: AnalyticsQueryDto) {
+    return this.dashboard.getSuperadminAnalytics(query);
   }
 
   // BACKEND LOGIC: chef dashboard data comes from backend.

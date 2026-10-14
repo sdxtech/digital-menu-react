@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
+import { MenuProductionsModule } from '../menu-productions/menu-productions.module';
 import {
   MenuProduction,
   MenuProductionSchema,
@@ -14,6 +15,7 @@ import { DashboardService } from './dashboard.service';
 @Module({
   imports: [
     AuthModule,
+    MenuProductionsModule,
     MongooseModule.forFeature([
       { name: MenuProduction.name, schema: MenuProductionSchema },
       { name: User.name, schema: UserSchema },

@@ -12,6 +12,48 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
     );
 
+  it('reads analytics batches by date and site without backfilling or including drafts', async () => {
+    const find = jest.fn().mockReturnValue({
+      sort: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+    });
+    const service = createService({ find });
+    expect(
+      await service.buildAnalyticsProductionGroups(
+        '2026-10-01',
+        '2026-10-13',
+        'SITE-001',
+      ),
+    ).toEqual([]);
+    expect(find).toHaveBeenCalledWith({
+      isDraft: { $ne: true },
+      productionDate: { $gte: '2026-10-01', $lte: '2026-10-13' },
+      site: 'SITE-001',
+    });
+  });
+
+  it('filters analytics by client code together with production date and site', async () => {
+    const find = jest.fn().mockReturnValue({
+      sort: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+    });
+    const service = createService({ find });
+    await service.buildAnalyticsProductionGroups(
+      '2026-10-01',
+      '2026-10-13',
+      'SITE-001',
+      ' KTB ',
+    );
+    expect(find).toHaveBeenCalledWith({
+      isDraft: { $ne: true },
+      productionDate: { $gte: '2026-10-01', $lte: '2026-10-13' },
+      site: 'SITE-001',
+      clientId: 'KTB',
+    });
+  });
+
   it('uses a local price instead of a corporate reference price for production', () => {
     const service = createService({});
     const snapshot = service['calculateMenuProductionCostSnapshot'](

@@ -2006,6 +2006,28 @@ export class MenuProductionsService implements OnModuleInit {
     return { items: filteredGroups };
   }
 
+  async buildAnalyticsProductionGroups(
+    startDate: string,
+    endDate: string,
+    site?: string,
+    clientId?: string,
+  ) {
+    const items = await this.menuProductionModel
+      .find({
+        isDraft: { $ne: true },
+        productionDate: { $gte: startDate, $lte: endDate },
+        ...this.buildSiteFilter(site),
+        ...(clientId?.trim() ? { clientId: clientId.trim() } : {}),
+      })
+      .sort({ productionDate: 1, createdAt: -1 })
+      .lean();
+    if (!items.length) return [] as StoreRequestGroup[];
+    return this.buildGroupedStoreRequestsFromMenus(
+      items,
+      this.normalizeSite(site),
+    );
+  }
+
   async listStoreRequestSites() {
     const rawSites = await this.menuProductionModel.distinct('site', {
       approvalStatus: 'approved',
