@@ -10,6 +10,13 @@ const navItems = [
     ),
   },
   {
+    label: 'Analytics Dashboard',
+    to: '/superadmin/analytics',
+    icon: (className: string) => (
+      <i className={`bi bi-graph-up-arrow ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'User Management',
     to: '/superadmin/users',
     icon: (className: string) => (

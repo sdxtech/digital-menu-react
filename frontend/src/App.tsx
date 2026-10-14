@@ -31,6 +31,7 @@ import AdminSiteMenuProductionHistoryPage from './app/AdminSiteMenuProductionHis
 import SuperadminLayout from './app/SuperadminLayout'
 import SuperadminApprovalCentersPage from './app/SuperadminApprovalCentersPage'
 import SuperadminDashboardPage from './app/SuperadminDashboardPage'
+import SuperadminAnalyticsPage from './app/SuperadminAnalyticsPage'
 import SuperadminMenuManagementPage, {
   RecipeCalculator,
 } from './app/SuperadminMenuManagementPage'
@@ -262,6 +263,7 @@ function App() {
         <Route element={<RequireRole role="superadmin" />}>
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route index element={<SuperadminDashboardPage />} />
+            <Route path="analytics" element={<SuperadminAnalyticsPage />} />
             <Route path="profile" element={<ProfileView />} />
             
             {/* ➕ Added security tracking sub-path route */}
