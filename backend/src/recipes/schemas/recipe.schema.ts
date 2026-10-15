@@ -71,6 +71,13 @@ export class Recipe {
   @Prop({ trim: true })
   description?: string;
 
+  @Prop({ type: [String], default: undefined })
+  cookingMethod?: string[];
+
+  // Present only for recipes imported with the block template.
+  @Prop({ type: [String], default: undefined })
+  importIssues?: string[];
+
   @Prop({ trim: true })
   imageUrl?: string;
 

@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import RecipeFilters from '../components/RecipeFilters'
@@ -25,6 +26,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number
   foodCostRecipe?: number
   id?: string
@@ -427,6 +429,7 @@ const UnitManagerRecipeDataPage = ({
               <p className="mt-2 text-sm text-muted">
                 {selectedRecipe.description?.trim() || 'No description.'}
               </p>
+              <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
             </div>
             <button
               type="button"

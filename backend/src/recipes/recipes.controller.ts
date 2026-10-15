@@ -80,7 +80,7 @@ export class RecipesController {
   }
 
   @Get('drafts')
-  @Roles(AppRole.Chef, AppRole.CorporateChef)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   listDrafts(@Req() req: AuthenticatedRequest) {
     return this.recipes.findDrafts(this.buildActor(req));
   }
@@ -127,7 +127,7 @@ export class RecipesController {
   }
 
   @Patch(':id/submit-draft')
-  @Roles(AppRole.Chef, AppRole.CorporateChef)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   submitDraft(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.submitDraft(id, this.buildActor(req));
   }
@@ -140,6 +140,12 @@ export class RecipesController {
     @Body() dto: SetRecipeActiveDto,
   ) {
     return this.recipes.setActive(id, dto.isActive, this.buildActor(req));
+  }
+
+  @Delete('drafts/:id')
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
+  removeDraft(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.deleteDraft(id, this.buildActor(req));
   }
 
   @Delete(':id')
@@ -200,7 +206,7 @@ export class RecipesController {
   }
 
   @Post('import')
-  @Roles(AppRole.Chef, AppRole.Superadmin)
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   @UseInterceptors(
     FileInterceptor('file', {
       dest: getUploadDir(),
@@ -228,12 +234,31 @@ export class RecipesController {
   async importRecipes(
     @Req() req: AuthenticatedRequest,
     @UploadedFile() file?: { path: string },
+    @Query('site') site?: string,
   ) {
     if (!file) {
       throw new BadRequestException('file is required');
     }
 
-    return this.recipes.importFromExcel(file.path, this.buildActor(req));
+    if (site !== undefined && typeof site !== 'string') {
+      throw new BadRequestException('Site must be a string.');
+    }
+    if (req.user.roles?.includes(AppRole.CorporateChef)) {
+      return this.recipes.importFromExcel(
+        file.path,
+        this.buildActor(req, site, true),
+      );
+    }
+    const resolvedSite = this.resolveQuerySite(req, site);
+    if (Array.isArray(resolvedSite) && resolvedSite.length !== 1) {
+      throw new BadRequestException(
+        'Select exactly one site for recipe import.',
+      );
+    }
+    return this.recipes.importFromExcel(file.path, {
+      ...this.buildActor(req),
+      site: Array.isArray(resolvedSite) ? resolvedSite[0] : resolvedSite,
+    });
   }
 
   private buildActor(
