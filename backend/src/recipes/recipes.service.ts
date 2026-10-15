@@ -74,6 +74,7 @@ type ImportWarningCode =
   | 'invalid_portion'
   | 'missing_name'
   | 'missing_header'
+  | 'incomplete_recipe'
   | 'legacy_row_skipped';
 
 type RecipeImportWarning = {
@@ -92,6 +93,7 @@ type RecipeImportFallbackRows = {
 
 export type RecipeImportResult = {
   insertedCount: number;
+  draftsCount?: number;
   ingredientsCount: number;
   warningsCount: number;
   warnings?: RecipeImportWarning[];
@@ -107,6 +109,20 @@ type RecipeImportParseResult = {
 
 type ImportRecipeRecord = Omit<CreateRecipeDto, 'ingredients'> & {
   ingredients?: RecipeIngredient[];
+  importIssues?: string[];
+};
+
+type ImportLookupContext = {
+  rawMaterials: Map<string, RawMaterialLookup | null>;
+  vendorPrices: Map<
+    string,
+    ReturnType<RawMaterialsService['findVendorPrices']>
+  >;
+  conversions: Map<
+    string,
+    ReturnType<UnitOfMeasuresService['findActiveConversion']>
+  >;
+  targetRequired: boolean;
 };
 
 type RecipeCardHeaderMap = {
@@ -299,6 +315,9 @@ export class RecipesService {
         : {}),
       category: input.category.trim(),
       description: input.description?.trim(),
+      cookingMethod: input.cookingMethod
+        ?.map((step) => step.trim())
+        .filter(Boolean),
       imageUrl: imageUrl || undefined,
       price: input.price ?? 0,
       portionSize: input.portionSize ?? 1,
@@ -562,7 +581,17 @@ export class RecipesService {
       );
     }
 
-    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    if (existing.importIssues !== undefined) {
+      const checked = await this.prepareImportedRecipe(existing, existing.site);
+      if (checked.importIssues?.length) {
+        throw new BadRequestException(checked.importIssues.join(' '));
+      }
+      existing.ingredients = checked.ingredients ?? [];
+      existing.foodCostRecipe = checked.foodCostRecipe;
+    }
+
+    const isCorporateChefActor =
+      this.isCorporateChefActor(actor) || this.isSuperadminActor(actor);
     const reviewedFields = isCorporateChefActor
       ? this.buildActorFields(actor, 'reviewed')
       : {};
@@ -572,6 +601,15 @@ export class RecipesService {
         {
           $set: {
             isDraft: false,
+            ...(existing.importIssues !== undefined
+              ? {
+                  importIssues: [],
+                  ingredients: existing.ingredients,
+                  ...(!isCorporateChefActor
+                    ? { foodCostRecipe: existing.foodCostRecipe }
+                    : {}),
+                }
+              : {}),
             status: isCorporateChefActor ? 'active' : 'draft',
             approvalStatus: isCorporateChefActor ? 'approved' : 'pending',
             ...this.buildActorFields(actor, 'updated'),
@@ -654,6 +692,37 @@ export class RecipesService {
     return updated;
   }
 
+  async deleteDraft(id: string, actor?: RecipeActor) {
+    if (!actor?.id) {
+      throw new BadRequestException(
+        'Recipe author identity is required to delete a draft.',
+      );
+    }
+    const updated = await this.recipeModel
+      .findOneAndUpdate(
+        this.withSiteFilter(
+          {
+            _id: id,
+            createdBy: actor.id,
+            isDraft: true,
+            deletedAt: { $exists: false },
+          },
+          this.getActorSiteScope(actor),
+        ),
+        {
+          $set: {
+            isActive: false,
+            deletedAt: new Date(),
+            ...this.buildActorFields(actor, 'updated'),
+          },
+        },
+        { new: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Recipe draft not found');
+    return { id: String(updated._id), recipeCode: updated.recipeCode };
+  }
+
   async softDeleteById(id: string, actor?: RecipeActor) {
     const updatedFields = this.buildActorFields(actor, 'updated');
     const updated = await this.recipeModel
@@ -692,6 +761,7 @@ export class RecipesService {
     const filter = this.withSiteFilter(
       {
         _id: id,
+        isDraft: { $ne: true },
         ...(this.isSuperadminActor(actor) ? {} : { approvalStatus: 'pending' }),
       },
       this.isCorporateChefActor(actor)
@@ -1144,14 +1214,32 @@ export class RecipesService {
   async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
     const targetRecipe = await this.recipeModel
       .findOne(this.withSiteFilter({ _id: id }, this.getActorSiteScope(actor)))
-      .select({ targetFoodCostPercentage: 1, site: 1, approvalStatus: 1 })
+      .select({
+        targetFoodCostPercentage: 1,
+        site: 1,
+        approvalStatus: 1,
+        isDraft: 1,
+        importIssues: 1,
+        name: 1,
+        category: 1,
+        portionSize: 1,
+        ingredients: 1,
+      })
       .lean();
     if (!targetRecipe) throw new NotFoundException('Recipe not found');
-    await this.validateTargetFoodCost(
-      input.targetFoodCostPercentage !== undefined
-        ? input.targetFoodCostPercentage
-        : targetRecipe.targetFoodCostPercentage,
-    );
+    const importedDraft =
+      targetRecipe.isDraft && targetRecipe.importIssues !== undefined;
+    if (importedDraft && input.saveAsDraft !== true) {
+      throw new BadRequestException(
+        'Save the imported draft and use Submit for approval after resolving its issues.',
+      );
+    }
+    if (!importedDraft)
+      await this.validateTargetFoodCost(
+        input.targetFoodCostPercentage !== undefined
+          ? input.targetFoodCostPercentage
+          : targetRecipe.targetFoodCostPercentage,
+      );
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, unknown> = {};
     if (input.targetFoodCostPercentage === null) {
@@ -1191,6 +1279,12 @@ export class RecipesService {
       }
     }
 
+    if (input.cookingMethod !== undefined) {
+      $set.cookingMethod = input.cookingMethod
+        .map((step) => step.trim())
+        .filter(Boolean);
+    }
+
     if (input.imageUrl !== undefined) {
       const imageUrl = input.imageUrl.trim();
       if (!imageUrl) {
@@ -1216,7 +1310,29 @@ export class RecipesService {
       $set.foodCostRecipe = inputFoodCostRecipe;
     }
 
-    if (input.ingredients !== undefined) {
+    if (importedDraft) {
+      const checked = await this.prepareImportedRecipe(
+        {
+          name: input.name ?? targetRecipe.name,
+          category: input.category ?? targetRecipe.category,
+          portionSize: input.portionSize ?? targetRecipe.portionSize,
+          targetFoodCostPercentage:
+            input.targetFoodCostPercentage !== undefined
+              ? input.targetFoodCostPercentage
+              : targetRecipe.targetFoodCostPercentage,
+          ingredients: input.ingredients ?? targetRecipe.ingredients,
+        },
+        targetRecipe.site,
+      );
+      $set.ingredients = checked.ingredients;
+      $set.importIssues = checked.importIssues;
+      if (checked.foodCostRecipe !== undefined)
+        $set.foodCostRecipe = checked.foodCostRecipe;
+      else {
+        delete $set.foodCostRecipe;
+        $unset.foodCostRecipe = '';
+      }
+    } else if (input.ingredients !== undefined) {
       const ingredients = await this.applyIngredientUomConversions(
         this.normalizeIngredients(input.ingredients),
       );
@@ -1304,18 +1420,12 @@ export class RecipesService {
     return updated;
   }
 
-  async bulkCreate(
-    records: Array<
-      Omit<CreateRecipeDto, 'ingredients'> & {
-        ingredients?: RecipeIngredient[];
-      }
-    >,
-    actor?: RecipeActor,
-  ) {
+  async bulkCreate(records: ImportRecipeRecord[], actor?: RecipeActor) {
     if (!records.length) return [];
 
     const settings = await this.getSettings();
     for (const record of records) {
+      if (record.importIssues !== undefined) continue;
       await this.validateTargetFoodCost(
         record.targetFoodCostPercentage,
         settings.targetFoodCostRequired,
@@ -1333,6 +1443,10 @@ export class RecipesService {
       versionGroupId: recipeCodes[index],
       category: record.category.trim(),
       description: record.description?.trim(),
+      cookingMethod: record.cookingMethod,
+      ...(record.importIssues !== undefined
+        ? { isDraft: true, importIssues: record.importIssues }
+        : {}),
       imageUrl: record.imageUrl?.trim(),
       price: record.price ?? 0,
       portionSize: record.portionSize ?? 1,
@@ -1358,7 +1472,7 @@ export class RecipesService {
     const worksheet = workbook.worksheets[0];
     if (!worksheet) throw new BadRequestException('Sheet tidak ditemukan.');
 
-    const parseResult = await this.parseImportWorksheet(worksheet);
+    const parseResult = await this.parseImportWorksheet(worksheet, actor?.site);
     if (!parseResult.records.length) {
       return {
         insertedCount: 0,
@@ -1372,6 +1486,9 @@ export class RecipesService {
     const created = await this.bulkCreate(parseResult.records, actor);
     return {
       insertedCount: created.length,
+      draftsCount: parseResult.records.filter(
+        (record) => record.importIssues !== undefined,
+      ).length,
       ingredientsCount: parseResult.ingredientsCount,
       warningsCount: parseResult.warnings.length,
       warnings: parseResult.warnings.slice(0, DEFAULT_WARNING_LIMIT),
@@ -1381,12 +1498,321 @@ export class RecipesService {
 
   private async parseImportWorksheet(
     worksheet: Worksheet,
+    site?: string,
   ): Promise<RecipeImportParseResult> {
+    const blockHeaders: number[] = [];
+    for (let row = 1; row <= worksheet.rowCount; row += 1) {
+      if (
+        this.normalizeLabel(
+          this.cellToText(worksheet.getCell(row, 1).value),
+        ) === 'recipe name' &&
+        [3, 10, 11].some((col) =>
+          ['base pax', 'prod qty', 'prod uom'].includes(
+            this.normalizeLabel(
+              this.cellToText(worksheet.getCell(row, col).value),
+            ),
+          ),
+        )
+      ) {
+        blockHeaders.push(row);
+      }
+    }
+    if (blockHeaders.length) {
+      if (!site?.trim())
+        throw new BadRequestException(
+          'Select a site before importing the recipe block template.',
+        );
+      return this.parseBlockWorksheet(worksheet, blockHeaders, site);
+    }
     const blockStarts = this.findRecipeCardBlockStarts(worksheet);
     if (blockStarts.length > 0) {
       return this.parseRecipeCardWorksheet(worksheet, blockStarts);
     }
     return this.parseLegacyWorksheet(worksheet);
+  }
+
+  private async parseBlockWorksheet(
+    worksheet: Worksheet,
+    headers: number[],
+    site?: string,
+  ): Promise<RecipeImportParseResult> {
+    const records: ImportRecipeRecord[] = [];
+    const warnings: RecipeImportWarning[] = [];
+    const context: ImportLookupContext = {
+      rawMaterials: new Map(),
+      vendorPrices: new Map(),
+      conversions: new Map(),
+      targetRequired: (await this.getSettings()).targetFoodCostRequired,
+    };
+    const expectedHeaders = [
+      'recipe name',
+      'category',
+      'base pax',
+      'target food cost %',
+      'description',
+      'no',
+      'type',
+      'product code',
+      'name',
+      'prod qty',
+      'prod uom',
+    ];
+    for (const [index, headerRow] of headers.entries()) {
+      for (const [column, label] of expectedHeaders.entries()) {
+        const actual = this.normalizeLabel(
+          this.cellToText(worksheet.getCell(headerRow, column + 1).value),
+        );
+        if (actual !== label) {
+          throw new BadRequestException(
+            `Row ${headerRow}, column ${column + 1}: expected ${label}.`,
+          );
+        }
+      }
+      const endRow = (headers[index + 1] ?? worksheet.rowCount + 1) - 1;
+      const firstRow = headerRow + 1;
+      const text = (row: number, column: number) =>
+        this.cellToText(worksheet.getCell(row, column).value);
+      const record: ImportRecipeRecord = {
+        name: text(firstRow, 1),
+        category: text(firstRow, 2),
+        portionSize:
+          this.cellToNumber(worksheet.getCell(firstRow, 3).value) ?? 0,
+        targetFoodCostPercentage: this.cellToNumber(
+          worksheet.getCell(firstRow, 4).value,
+        ),
+        description: text(firstRow, 5),
+        cookingMethod: [],
+        ingredients: [],
+      };
+      let readingMethod = false;
+      const steps = new Map<number, string>();
+      for (let row = firstRow; row <= endRow; row += 1) {
+        if (
+          [6, 7].some(
+            (col) => this.normalizeLabel(text(row, col)) === 'cooking method',
+          )
+        ) {
+          readingMethod = true;
+        }
+        if (readingMethod) {
+          const instruction = text(row, 9);
+          if (!instruction) continue;
+          const step = this.cellToNumber(worksheet.getCell(row, 8).value);
+          if (
+            step === undefined ||
+            !Number.isInteger(step) ||
+            step < 1 ||
+            steps.has(step)
+          ) {
+            throw new BadRequestException(
+              `Row ${row}: cooking method requires a unique positive step number.`,
+            );
+          }
+          steps.set(step, instruction);
+          continue;
+        }
+        if (![8, 9, 10, 11].some((col) => text(row, col))) continue;
+        const type = text(row, 7).toUpperCase();
+        if (type && type !== 'IT' && type !== 'NMP') {
+          throw new BadRequestException(
+            `Row ${row}: ingredient Type must be IT or NMP.`,
+          );
+        }
+        record.ingredients!.push({
+          ingredientType: type === 'NMP' ? 'NMP' : 'IT',
+          productCode: text(row, 8),
+          name: text(row, 9),
+          prodQty: this.cellToNumber(worksheet.getCell(row, 10).value),
+          prodUomCode: this.normalizeUomCode(text(row, 11)),
+        });
+      }
+      record.cookingMethod = [...steps.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, step]) => step);
+      const checked = await this.prepareImportedRecipe(record, site, context);
+      records.push(checked);
+      for (const issue of checked.importIssues ?? []) {
+        warnings.push({
+          code: 'incomplete_recipe',
+          row: firstRow,
+          recipeName: record.name,
+          message: issue,
+        });
+      }
+    }
+    return {
+      records,
+      warnings,
+      fallbackRows: this.createFallbackRowsCounter(),
+      ingredientsCount: records.reduce(
+        (sum, record) => sum + (record.ingredients?.length ?? 0),
+        0,
+      ),
+    };
+  }
+
+  private async prepareImportedRecipe(
+    record: ImportRecipeRecord,
+    site?: string,
+    context?: ImportLookupContext,
+  ): Promise<ImportRecipeRecord> {
+    context ??= {
+      rawMaterials: new Map(),
+      vendorPrices: new Map(),
+      conversions: new Map(),
+      targetRequired: (await this.getSettings()).targetFoodCostRequired,
+    };
+    const issues: string[] = [];
+    if (!record.name?.trim()) issues.push('Recipe name is required.');
+    if (!record.category?.trim()) issues.push('Category is required.');
+    if (!record.portionSize || record.portionSize < 1)
+      issues.push('Base Pax must be at least 1.');
+    try {
+      await this.validateTargetFoodCost(
+        record.targetFoodCostPercentage,
+        context.targetRequired,
+      );
+    } catch (error) {
+      if (!(error instanceof BadRequestException)) throw error;
+      issues.push(error.message);
+    }
+    if (!record.ingredients?.length) issues.push('Add at least 1 ingredient.');
+    const ingredients: RecipeIngredient[] = [];
+    for (const [index, original] of (record.ingredients ?? []).entries()) {
+      const label = `Ingredient ${index + 1} (${original.productCode || original.name || 'unknown'})`;
+      let ingredient = { ...original };
+      delete ingredient.foodCost;
+      delete ingredient.priceUom;
+      // Derived quantities must never survive a failed recalculation.
+      if (!ingredient.srQtyManual) {
+        delete ingredient.qty;
+        delete ingredient.srQty;
+        delete ingredient.conversionId;
+        delete ingredient.conversionMultiplier;
+      }
+      const isNmp = ingredient.ingredientType === 'NMP';
+      const rawMaterial = isNmp
+        ? {
+            productCode: original.productCode ?? '',
+            productCodeNormalized:
+              original.productCode?.trim().toLowerCase() ?? '',
+            name: original.name ?? '',
+            unitOfMeasures: original.unitOfMeasures ?? original.srUomCode ?? '',
+          }
+        : await this.resolveRawMaterial(
+            original.productCode ?? '',
+            context.rawMaterials,
+          );
+      if (!rawMaterial) {
+        issues.push(`${label}: product code not found in raw materials.`);
+        ingredients.push(ingredient);
+        continue;
+      }
+      ingredient.name = rawMaterial.name;
+      if (!ingredient.name?.trim() || !ingredient.productCode?.trim()) {
+        issues.push(`${label}: product code and name are required.`);
+      }
+      ingredient.unitOfMeasures = this.normalizeUomCode(
+        rawMaterial.unitOfMeasures,
+      );
+      ingredient.srUomCode = ingredient.unitOfMeasures;
+      if (
+        !(ingredient.prodQty && ingredient.prodQty > 0) ||
+        !ingredient.prodUomCode ||
+        !ingredient.srUomCode
+      ) {
+        issues.push(
+          `${label}: positive Prod Qty, Prod UOM and SR UOM are required.`,
+        );
+      } else {
+        try {
+          [ingredient] = await this.applyIngredientUomConversions(
+            [ingredient],
+            context.rawMaterials,
+            context.conversions,
+          );
+          if (!(ingredient.srQty && ingredient.srQty > 0)) {
+            issues.push(`${label}: SR Qty must be greater than 0.`);
+          }
+        } catch (error) {
+          if (!(error instanceof BadRequestException)) throw error;
+          issues.push(`${label}: ${error.message}`);
+        }
+      }
+      if (isNmp) {
+        const price = this.normalizeOptionalNumber(original.priceUom);
+        if (price === undefined)
+          issues.push(`${label}: enter the NMP ingredient price manually.`);
+        else {
+          ingredient.priceUom = price;
+          if (ingredient.srQty !== undefined)
+            ingredient.foodCost = this.roundQuantity(ingredient.srQty * price);
+        }
+        ingredients.push(ingredient);
+        continue;
+      }
+      if (!site?.trim()) {
+        issues.push(
+          `${label}: a recipe site is required to resolve vendor prices.`,
+        );
+      } else {
+        const key = JSON.stringify([
+          site.toLowerCase(),
+          rawMaterial.productCodeNormalized,
+        ]);
+        let prices = context.vendorPrices.get(key);
+        if (!prices) {
+          prices = this.rawMaterials.findVendorPrices({
+            productCode: rawMaterial.productCode,
+            site,
+          });
+          context.vendorPrices.set(key, prices);
+        }
+        const options = (await prices).filter(
+          (option) =>
+            option.vendor &&
+            option.price != null &&
+            Number.isFinite(option.price) &&
+            option.price >= 0 &&
+            this.normalizeUomCode(option.unitOfMeasures) ===
+              ingredient.srUomCode,
+        );
+        const selected = original.vendor
+          ? options.find(
+              (option) =>
+                option.vendor.toLowerCase() === original.vendor!.toLowerCase(),
+            )
+          : options.reduce<(typeof options)[number] | undefined>(
+              (best, option) =>
+                !best || option.price! > best.price! ? option : best,
+              undefined,
+            );
+        if (!selected) {
+          issues.push(
+            `${label}: no valid vendor price for this site and SR UOM.`,
+          );
+        } else {
+          ingredient.vendor = selected.vendor;
+          ingredient.priceUom = selected.price;
+          ingredient.priceSourceSite = selected.priceSourceSite;
+          ingredient.priceSourceSiteName = selected.priceSourceSiteName;
+          if (ingredient.srQty !== undefined) {
+            ingredient.foodCost = this.roundQuantity(
+              ingredient.srQty * selected.price!,
+            );
+          }
+        }
+      }
+      ingredients.push(ingredient);
+    }
+    return {
+      ...record,
+      ingredients,
+      importIssues: issues,
+      foodCostRecipe: issues.length
+        ? undefined
+        : this.roundQuantity(this.calculateFoodCostRecipe(ingredients)),
+    };
   }
 
   private async parseRecipeCardWorksheet(
@@ -2184,6 +2610,10 @@ export class RecipesService {
   private async applyIngredientUomConversions(
     ingredients: RecipeIngredient[],
     rawMaterialCache = new Map<string, RawMaterialLookup | null>(),
+    conversions = new Map<
+      string,
+      ReturnType<UnitOfMeasuresService['findActiveConversion']>
+    >(),
   ): Promise<RecipeIngredient[]> {
     const nextIngredients: RecipeIngredient[] = [];
 
@@ -2258,10 +2688,19 @@ export class RecipesService {
         continue;
       }
 
-      const conversion = await this.unitOfMeasures.findActiveConversion(
-        prodUomCode,
-        srUomCode,
-      );
+      const conversionKey = JSON.stringify([
+        normalizedProdUomCode,
+        normalizedSrUomCode,
+      ]);
+      let conversionRequest = conversions.get(conversionKey);
+      if (!conversionRequest) {
+        conversionRequest = this.unitOfMeasures.findActiveConversion(
+          prodUomCode,
+          srUomCode,
+        );
+        conversions.set(conversionKey, conversionRequest);
+      }
+      const conversion = await conversionRequest;
 
       if (!conversion) {
         throw new BadRequestException(

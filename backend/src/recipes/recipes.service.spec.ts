@@ -1,5 +1,9 @@
 import { RecipesService } from './recipes.service';
 import { AppRole } from '../auth/roles.constants';
+import ExcelJS from 'exceljs';
+import { mkdtemp, unlink, rmdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 type TestIngredient = Record<string, unknown> & {
   conversionMultiplier?: number;
@@ -99,6 +103,496 @@ describe('RecipesService site visibility', () => {
       recipeSettingsModel,
     };
   };
+
+  describe('recipe block import', () => {
+    const addBlock = (
+      sheet: ExcelJS.Worksheet,
+      name: string,
+      count: number,
+      steps: string[],
+    ) => {
+      sheet.addRow([
+        'Recipe Name',
+        'Category',
+        'Base Pax',
+        'Target Food Cost %',
+        'Description',
+        'No',
+        'Type',
+        'Product Code',
+        'Name',
+        'Prod Qty',
+        'Prod UOM',
+      ]);
+      const start = sheet.rowCount + 1;
+      for (let i = 0; i < count; i += 1) {
+        sheet.addRow([
+          i === 0 ? name : null,
+          i === 0 ? 'Main Course' : null,
+          i === 0 ? 10 : null,
+          i === 0 ? 40 : null,
+          i === 0 ? 'Notes' : null,
+          i + 1,
+          'IT',
+          'IT001',
+          'Fish',
+          400,
+          'gr',
+        ]);
+      }
+      const methodStart = sheet.rowCount + 1;
+      steps.forEach((step, index) => {
+        sheet.addRow([
+          null,
+          null,
+          null,
+          null,
+          null,
+          index === 0 ? 'Cooking Method' : null,
+          null,
+          index + 1,
+          step,
+        ]);
+      });
+      if (steps.length) sheet.mergeCells(methodStart, 6, sheet.rowCount, 7);
+      for (let col = 1; col <= 5; col += 1) {
+        if (sheet.rowCount > start)
+          sheet.mergeCells(start, col, sheet.rowCount, col);
+      }
+      sheet.addRow([]);
+    };
+    const configureMaterials = (setup: ReturnType<typeof makeService>) => {
+      setup.rawMaterials.findLookupByNormalizedCode.mockResolvedValue({
+        productCode: 'IT001',
+        productCodeNormalized: 'it001',
+        name: 'Master fish',
+        unitOfMeasures: 'KG',
+      } as never);
+      setup.rawMaterials.findVendorPrices.mockResolvedValue([
+        { vendor: 'Vendor A', unitOfMeasures: 'KG', price: 29000 },
+        { vendor: 'Vendor B', unitOfMeasures: 'KG', price: 28000 },
+      ] as never);
+      setup.unitOfMeasures.findActiveConversion.mockResolvedValue({
+        prodUomCode: 'GR',
+        srUomCode: 'KG',
+        conversionId: 'GR To KG',
+        multiplier: 0.001,
+      } as never);
+    };
+
+    it('reads merged recipe metadata, repeated headers and different ingredient/step counts', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      const sheet = new ExcelJS.Workbook().addWorksheet('Recipes');
+      addBlock(sheet, 'Woku', 3, ['Wash fish', 'Cook fish']);
+      addBlock(sheet, 'Soup', 1, ['Simmer']);
+      addBlock(sheet, 'Rice', 2, []);
+      const parsed = await setup.service['parseImportWorksheet'](
+        sheet,
+        'SITE-A',
+      );
+      expect(parsed.records.map((r) => r.ingredients?.length)).toEqual([
+        3, 1, 2,
+      ]);
+      expect(parsed.records.map((r) => r.cookingMethod)).toEqual([
+        ['Wash fish', 'Cook fish'],
+        ['Simmer'],
+        [],
+      ]);
+      expect(parsed.warnings).toEqual([]);
+      expect(parsed.records[0]).toMatchObject({
+        name: 'Woku',
+        category: 'Main Course',
+        portionSize: 10,
+        targetFoodCostPercentage: 40,
+        description: 'Notes',
+        foodCostRecipe: 34800,
+      });
+      expect(parsed.records[0].ingredients?.[0]).toMatchObject({
+        name: 'Master fish',
+        prodQty: 400,
+        prodUomCode: 'GR',
+        srQty: 0.4,
+        vendor: 'Vendor A',
+        priceUom: 29000,
+        foodCost: 11600,
+      });
+      await setup.service.bulkCreate(parsed.records, {
+        id: 'chef',
+        site: 'SITE-A',
+      });
+      expect(setup.recipeModel.insertMany).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            isDraft: true,
+            approvalStatus: 'pending',
+            cookingMethod: ['Wash fish', 'Cook fish'],
+          }),
+        ]),
+        { ordered: false },
+      );
+      expect(
+        setup.notifications.createHierarchicalNotification,
+      ).not.toHaveBeenCalled();
+      expect(setup.workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+    });
+
+    it('imports an actual XLSX file as drafts with generated codes and no notifications', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      const workbook = new ExcelJS.Workbook();
+      addBlock(workbook.addWorksheet('Recipes'), 'Woku', 2, [
+        'Wash fish',
+        'Cook fish',
+      ]);
+      setup.recipeModel.insertMany.mockImplementation((rows: object[]) =>
+        Promise.resolve(rows),
+      );
+      const directory = await mkdtemp(join(tmpdir(), 'recipe-block-test-'));
+      const file = join(directory, 'recipes.xlsx');
+      try {
+        await workbook.xlsx.writeFile(file);
+        const result = await setup.service.importFromExcel(file, {
+          id: 'chef',
+          site: 'SITE-A',
+        });
+        expect(result).toMatchObject({
+          insertedCount: 1,
+          draftsCount: 1,
+          ingredientsCount: 2,
+          warningsCount: 0,
+        });
+        expect(setup.recipeModel.insertMany).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              recipeCode: 'RCP0001',
+              isDraft: true,
+              site: 'SITE-A',
+              createdBy: 'chef',
+              cookingMethod: ['Wash fish', 'Cook fish'],
+            }),
+          ],
+          { ordered: false },
+        );
+        expect(
+          setup.notifications.createHierarchicalNotification,
+        ).not.toHaveBeenCalled();
+        expect(setup.workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+      } finally {
+        await unlink(file);
+        await rmdir(directory);
+      }
+    });
+
+    it('retains missing materials, quantities, conversions and prices as draft issues without a partial total', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      setup.rawMaterials.findVendorPrices.mockResolvedValue([]);
+      setup.unitOfMeasures.findActiveConversion.mockResolvedValue(null);
+      const sheet = new ExcelJS.Workbook().addWorksheet('Recipes');
+      addBlock(sheet, 'Incomplete', 3, []);
+      sheet.getCell('H3').value = 'UNKNOWN';
+      sheet.getCell('J4').value = null;
+      setup.rawMaterials.findLookupByNormalizedCode
+        .mockResolvedValueOnce({
+          productCode: 'IT001',
+          name: 'Fish',
+          unitOfMeasures: 'KG',
+        } as never)
+        .mockResolvedValueOnce(null);
+      const parsed = await setup.service['parseImportWorksheet'](
+        sheet,
+        'SITE-A',
+      );
+      const recipe = parsed.records[0];
+      expect(recipe.ingredients).toHaveLength(3);
+      expect(recipe.foodCostRecipe).toBeUndefined();
+      expect(recipe.importIssues?.join(' ')).toMatch(/Conversion/);
+      expect(recipe.importIssues?.join(' ')).toMatch(/no valid vendor price/);
+      expect(recipe.importIssues?.join(' ')).toMatch(/product code not found/);
+      expect(recipe.importIssues?.join(' ')).toMatch(/positive Prod Qty/);
+      expect(recipe.ingredients?.[0].srQty).toBeUndefined();
+      expect(recipe.ingredients?.[0].foodCost).toBeUndefined();
+    });
+
+    it('calculates SR Qty even when a vendor price is missing', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      setup.rawMaterials.findVendorPrices.mockResolvedValue([]);
+      const sheet = new ExcelJS.Workbook().addWorksheet('Recipes');
+      addBlock(sheet, 'No price', 1, []);
+      const parsed = await setup.service['parseImportWorksheet'](
+        sheet,
+        'SITE-A',
+      );
+      expect(parsed.records[0].ingredients?.[0].srQty).toBe(0.4);
+      expect(parsed.records[0].ingredients?.[0].priceUom).toBeUndefined();
+      expect(parsed.records[0].foodCostRecipe).toBeUndefined();
+    });
+
+    it('reuses lookups for 1000 recipes and preserves separate blocks with the same name', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      const sheet = new ExcelJS.Workbook().addWorksheet('Recipes');
+      for (let i = 0; i < 1000; i += 1) addBlock(sheet, 'Same name', 1, []);
+      const parsed = await setup.service['parseImportWorksheet'](
+        sheet,
+        'SITE-A',
+      );
+      expect(parsed.records).toHaveLength(1000);
+      expect(
+        setup.rawMaterials.findLookupByNormalizedCode,
+      ).toHaveBeenCalledTimes(1);
+      expect(setup.rawMaterials.findVendorPrices).toHaveBeenCalledTimes(1);
+      expect(setup.unitOfMeasures.findActiveConversion).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('blocks submit when current pricing is missing, even if saved draft issues were empty', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      setup.rawMaterials.findVendorPrices.mockResolvedValue([]);
+      setup.recipeModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          name: 'Woku',
+          category: 'Main',
+          portionSize: 10,
+          site: 'SITE-A',
+          importIssues: [],
+          ingredients: [
+            {
+              ingredientType: 'IT',
+              productCode: 'IT001',
+              prodQty: 400,
+              prodUomCode: 'GRAM',
+              srQty: 0.4,
+              priceUom: 29000,
+            },
+          ],
+        }),
+      });
+      await expect(
+        setup.service.submitDraft('draft', { id: 'chef' }),
+      ).rejects.toThrow('no valid vendor price');
+      expect(setup.recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(
+        setup.notifications.createHierarchicalNotification,
+      ).not.toHaveBeenCalled();
+    });
+
+    it.each([AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin])(
+      'submits a complete imported draft as %s without conflicting total updates',
+      async (role) => {
+        const setup = makeService();
+        configureMaterials(setup);
+        setup.recipeModel.findOne.mockReturnValue(
+          mockRecipeQuery({
+            _id: 'draft',
+            name: 'Woku',
+            category: 'Main',
+            portionSize: 10,
+            site: 'SITE-A',
+            importIssues: [],
+            ingredients: [
+              {
+                ingredientType: 'IT',
+                productCode: 'IT001',
+                prodQty: 400,
+                prodUomCode: 'GR',
+              },
+            ],
+          }),
+        );
+        setup.recipeModel.findOneAndUpdate.mockReturnValue(
+          mockRecipeQuery({ _id: 'draft', name: 'Woku', site: 'SITE-A' }),
+        );
+        await setup.service.submitDraft('draft', {
+          id: 'chef',
+          roles: [role],
+          site: 'SITE-A',
+        });
+        const update = getUpdatePayload(setup.recipeModel);
+        expect(update.$set).toMatchObject({ isDraft: false, importIssues: [] });
+        expect(update.$set.ingredients?.[0]).toMatchObject({
+          srQty: 0.4,
+          priceUom: 29000,
+        });
+        if (role === AppRole.Chef) {
+          expect(update.$set.foodCostRecipe).toBe(11600);
+          expect(
+            setup.notifications.createHierarchicalNotification,
+          ).toHaveBeenCalledTimes(2);
+        } else {
+          expect(update.$set.foodCostRecipe).toBeUndefined();
+          expect(update.$unset?.foodCostRecipe).toBe('');
+          expect(
+            setup.notifications.createHierarchicalNotification,
+          ).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('clears draft issues and recalculates costs when the missing price is fixed', async () => {
+      const setup = makeService();
+      configureMaterials(setup);
+      setup.recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({
+          isDraft: true,
+          name: 'Woku',
+          category: 'Main',
+          portionSize: 10,
+          site: 'SITE-A',
+          importIssues: ['Missing price'],
+          ingredients: [
+            {
+              ingredientType: 'IT',
+              productCode: 'IT001',
+              prodQty: 400,
+              prodUomCode: 'GR',
+            },
+          ],
+        }),
+      );
+      setup.recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'draft' }),
+      );
+      await setup.service.updateById(
+        'draft',
+        { saveAsDraft: true, cookingMethod: ['Wash', 'Cook'] },
+        { id: 'chef' },
+      );
+      expect(getUpdatePayload(setup.recipeModel).$set).toMatchObject({
+        importIssues: [],
+        foodCostRecipe: 11600,
+        cookingMethod: ['Wash', 'Cook'],
+      });
+      expect(
+        setup.notifications.createHierarchicalNotification,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('keeps legacy table and recipe-card imports available', async () => {
+      const setup = makeService();
+      const workbook = new ExcelJS.Workbook();
+      const legacy = workbook.addWorksheet('Legacy');
+      legacy.addRows([
+        ['name', 'category', 'portion'],
+        ['Soup', 'Main', 10],
+      ]);
+      expect(
+        (await setup.service['parseImportWorksheet'](legacy)).records[0],
+      ).toMatchObject({ name: 'Soup', portionSize: 10, ingredients: [] });
+      const card = workbook.addWorksheet('Card');
+      card.addRows([
+        ['RECIPE CARD'],
+        ['Recipe Name', 'Fish'],
+        ['Food Type', 'Main'],
+        ['Portion', 10],
+        ['QTY', 'PRODUCT CODE', 'INGREDIENT'],
+        [1, 'IT001', 'Fish'],
+      ]);
+      expect(
+        (await setup.service['parseImportWorksheet'](card)).records[0],
+      ).toMatchObject({
+        name: 'Fish',
+        portionSize: 10,
+        ingredients: [
+          expect.objectContaining({ productCode: 'IT001', qty: 1 }),
+        ],
+      });
+    });
+
+    it('rejects incorrect headers and duplicate step numbers before inserting', async () => {
+      const setup = makeService();
+      const sheet = new ExcelJS.Workbook().addWorksheet('Recipes');
+      addBlock(sheet, 'Woku', 1, ['Wash', 'Cook']);
+      sheet.getCell('H4').value = 1;
+      await expect(
+        setup.service['parseImportWorksheet'](sheet, 'SITE-A'),
+      ).rejects.toThrow('unique positive step number');
+      sheet.getCell('J1').value = 'Wrong Qty';
+      await expect(
+        setup.service['parseImportWorksheet'](sheet, 'SITE-A'),
+      ).rejects.toThrow('expected prod qty');
+      expect(setup.recipeModel.insertMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('delete recipe drafts', () => {
+    it.each([AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin])(
+      'soft deletes only an owned draft for %s',
+      async (role) => {
+        const { service, recipeModel, notifications, workflowMail } =
+          makeService();
+        recipeModel.findOneAndUpdate.mockReturnValue(
+          mockRecipeQuery({ _id: 'draft-1', recipeCode: 'RCP0001' }),
+        );
+        await expect(
+          service.deleteDraft('draft-1', {
+            id: 'author',
+            site: 'SITE-A',
+            roles: [role],
+          }),
+        ).resolves.toEqual({ id: 'draft-1', recipeCode: 'RCP0001' });
+        expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+          {
+            _id: 'draft-1',
+            createdBy: 'author',
+            isDraft: true,
+            deletedAt: { $exists: false },
+            site:
+              role === AppRole.CorporateChef ? { $in: ['SITE-A'] } : 'SITE-A',
+          },
+          expect.any(Object),
+          { new: true },
+        );
+        const update = getUpdatePayload(recipeModel);
+        expect(update.$set).toMatchObject({
+          isActive: false,
+          updatedBy: 'author',
+        });
+        expect(update.$set.deletedAt).toBeInstanceOf(Date);
+        expect(
+          notifications.createHierarchicalNotification,
+        ).not.toHaveBeenCalled();
+        expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+      },
+    );
+
+    it('requires author identity before deleting a draft', async () => {
+      const { service, recipeModel } = makeService();
+      await expect(service.deleteDraft('draft-1')).rejects.toThrow(
+        'Recipe author identity is required',
+      );
+      expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { createdBy: 'other-chef', isDraft: true },
+      { createdBy: 'author', isDraft: false },
+    ])(
+      'does not delete a recipe that is not an owned draft: %o',
+      async (stored) => {
+        const { service, recipeModel } = makeService();
+        recipeModel.findOneAndUpdate.mockImplementation(
+          (filter: { createdBy: string; isDraft: boolean }) =>
+            mockRecipeQuery(
+              filter.createdBy === stored.createdBy &&
+                filter.isDraft === stored.isDraft
+                ? { _id: 'recipe-1' }
+                : null,
+            ),
+        );
+        await expect(
+          service.deleteDraft('recipe-1', {
+            id: 'author',
+            roles: [AppRole.Chef],
+          }),
+        ).rejects.toThrow('Recipe draft not found');
+      },
+    );
+  });
 
   const getUpdatePayload = (
     recipeModel: ReturnType<typeof makeService>['recipeModel'],
@@ -831,6 +1325,7 @@ describe('RecipesService site visibility', () => {
         _id: 'recipe-a',
         approvalStatus: 'pending',
         site: { $in: ['CORP', 'SITE-A', 'SITE-B'] },
+        isDraft: { $ne: true },
       },
       expect.any(Object),
       { new: true },
@@ -902,7 +1397,12 @@ describe('RecipesService site visibility', () => {
     const updatePayload = getUpdatePayload(recipeModel);
 
     expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: 'recipe-a', approvalStatus: 'pending', site: 'SITE-002' },
+      {
+        _id: 'recipe-a',
+        approvalStatus: 'pending',
+        site: 'SITE-002',
+        isDraft: { $ne: true },
+      },
       expect.any(Object),
       { new: true },
     );
