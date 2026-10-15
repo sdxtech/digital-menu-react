@@ -9,6 +9,10 @@ describe('RecipesController corporate chef creation', () => {
       create: jest.fn().mockResolvedValue({ id: 'recipe-1' }),
       findAll: jest.fn(),
       listSites: jest.fn(),
+      deleteDraft: jest.fn().mockResolvedValue({ id: 'draft-1' }),
+      importFromExcel: jest
+        .fn()
+        .mockResolvedValue({ insertedCount: 1, draftsCount: 1 }),
     };
     return {
       controller: new RecipesController(recipes as never),
@@ -26,6 +30,97 @@ describe('RecipesController corporate chef creation', () => {
       sites: ['SITE-001', 'SITE-002'],
     },
   };
+
+  it('allows draft deletion for recipe authors without broadening general recipe deletion', async () => {
+    const { controller, recipes } = makeController();
+    const draftHandler = Object.getOwnPropertyDescriptor(
+      RecipesController.prototype,
+      'removeDraft',
+    )?.value as object;
+    const recipeHandler = Object.getOwnPropertyDescriptor(
+      RecipesController.prototype,
+      'remove',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, draftHandler)).toEqual([
+      AppRole.Chef,
+      AppRole.CorporateChef,
+      AppRole.Superadmin,
+    ]);
+    expect(Reflect.getMetadata(ROLES_KEY, recipeHandler)).toEqual([
+      AppRole.Superadmin,
+    ]);
+    await controller.removeDraft(request as never, 'draft-1');
+    expect(recipes.deleteDraft).toHaveBeenCalledWith(
+      'draft-1',
+      expect.objectContaining({
+        id: request.user.sub,
+        site: request.user.site,
+        roles: [AppRole.CorporateChef],
+      }),
+    );
+  });
+
+  it('allows corporate chefs to call the import endpoint', () => {
+    const handler = Object.getOwnPropertyDescriptor(
+      RecipesController.prototype,
+      'importRecipes',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Chef,
+      AppRole.CorporateChef,
+      AppRole.Superadmin,
+    ]);
+  });
+
+  it('imports corporate chef recipes only into the selected assigned site', async () => {
+    const { controller, recipes } = makeController();
+    await controller.importRecipes(
+      request as never,
+      { path: 'recipes.xlsx' },
+      'SITE-002',
+    );
+    expect(recipes.importFromExcel).toHaveBeenCalledWith(
+      'recipes.xlsx',
+      expect.objectContaining({ id: 'corporate-chef-1', site: 'SITE-002' }),
+    );
+    await expect(
+      controller.importRecipes(request as never, { path: 'recipes.xlsx' }),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      controller.importRecipes(
+        request as never,
+        { path: 'recipes.xlsx' },
+        'OTHER-SITE',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(recipes.importFromExcel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps corporate-site imports at the owner site instead of approval sites', async () => {
+    const { controller, recipes } = makeController();
+    const corporateRequest = {
+      user: {
+        ...request.user,
+        corporateSite: true,
+        approvalSites: ['SITE-002'],
+      },
+    };
+    await controller.importRecipes(corporateRequest as never, {
+      path: 'recipes.xlsx',
+    });
+    expect(recipes.importFromExcel).toHaveBeenCalledWith(
+      'recipes.xlsx',
+      expect.objectContaining({ site: 'SITE-001', corporateSite: true }),
+    );
+    await expect(
+      controller.importRecipes(
+        corporateRequest as never,
+        { path: 'recipes.xlsx' },
+        'SITE-002',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(recipes.importFromExcel).toHaveBeenCalledTimes(1);
+  });
 
   it('scopes recipe site options to the current user visibility', async () => {
     const { controller, recipes } = makeController();

@@ -20,10 +20,11 @@ const formatUpdatedAt = (value?: string) => {
 const ChefRecipeDrafts = () => {
   const navigate = useNavigate()
   const { accessToken, user } = useAuth()
-  const workspacePath = user?.role === 'corporate-chef' ? '/corporate-chef' : '/chef'
+  const workspacePath = user?.role === 'superadmin' ? '/superadmin' : user?.role === 'corporate-chef' ? '/corporate-chef' : '/chef'
   const [drafts, setDrafts] = useState<RecipeApi[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const fetchDrafts = useCallback(async () => {
     if (!accessToken) return
@@ -47,6 +48,22 @@ const ChefRecipeDrafts = () => {
     fetchDrafts().catch(() => null)
   }, [fetchDrafts])
 
+  const deleteDraft = async (draft: RecipeApi) => {
+    const id = draft.id ?? draft._id
+    if (!id || !accessToken || deletingId) return
+    if (!window.confirm(`Delete draft "${draft.name}"?`)) return
+    setDeletingId(id)
+    setError('')
+    try {
+      await apiFetch(`/recipes/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }, accessToken)
+      setDrafts((current) => current.filter((item) => (item.id ?? item._id) !== id))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to delete recipe draft.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const continueDraft = (draft: RecipeApi) => {
     const id = draft.id ?? draft._id
     if (!id) return
@@ -59,6 +76,8 @@ const ChefRecipeDrafts = () => {
           name: draft.name,
           category: draft.category,
           description: draft.description ?? '',
+          cookingMethod: draft.cookingMethod ?? [],
+          importIssues: draft.importIssues,
           portionSize: draft.portionSize,
           targetFoodCostPercentage: draft.targetFoodCostPercentage,
           site: draft.site,
@@ -99,6 +118,7 @@ const ChefRecipeDrafts = () => {
                 <th className="px-5 py-3">RECIPE NAME</th>
                 <th className="px-5 py-3">CATEGORY</th>
                 <th className="px-5 py-3">INGREDIENTS</th>
+                <th className="px-5 py-3">ISSUES</th>
                 <th className="px-5 py-3">LAST UPDATED</th>
                 <th className="px-5 py-3">ACTION</th>
               </tr>
@@ -106,13 +126,13 @@ const ChefRecipeDrafts = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     Loading recipe drafts...
                   </td>
                 </tr>
               ) : drafts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
                     No recipe drafts yet.
                   </td>
                 </tr>
@@ -121,18 +141,43 @@ const ChefRecipeDrafts = () => {
                   <tr key={draft.id ?? draft._id} className="border-t border-border">
                     <td className="px-5 py-4">{index + 1}</td>
                     <td className="px-5 py-4 text-muted">{draft.recipeCode ?? '-'}</td>
-                    <td className="px-5 py-4 font-medium text-foreground">{draft.name}</td>
+                    <td className="px-5 py-4 font-medium text-foreground">
+                      {draft.name}
+                    </td>
                     <td className="px-5 py-4">{draft.category}</td>
                     <td className="px-5 py-4">{draft.ingredients?.length ?? 0}</td>
+                    <td className="px-5 py-4">
+                      {draft.importIssues?.length ? (
+                        <details className="text-xs text-amber-700">
+                          <summary className="cursor-pointer whitespace-nowrap font-semibold">{draft.importIssues.length} issues</summary>
+                          <p className="mt-2 text-muted">Issues at last check</p>
+                          <ul className="mt-2 max-h-48 min-w-64 max-w-md list-disc space-y-1 overflow-y-auto pl-4">
+                            {draft.importIssues.map((issue, index) => <li key={index}>{issue}</li>)}
+                          </ul>
+                        </details>
+                      ) : (
+                        <span className="whitespace-nowrap text-xs text-muted">{draft.importIssues ? 'No issues' : '-'}</span>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-muted">{formatUpdatedAt(draft.updatedAt)}</td>
                     <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => continueDraft(draft)}
-                        className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft"
-                      >
-                        Continue
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={deletingId !== null}
+                          onClick={() => continueDraft(draft)}
+                          className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Continue
+                        </button>
+                        <button type="button" disabled={deletingId !== null}
+                          onClick={() => { void deleteDraft(draft) }}
+                          aria-label={`Delete draft ${draft.name}`}
+                          className="inline-flex items-center gap-2 rounded-md border border-red-600 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
+                          <i className="bi bi-trash3" aria-hidden="true" />
+                          {deletingId === (draft.id ?? draft._id) ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

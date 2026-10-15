@@ -1,4 +1,7 @@
 import PageHeading from '../components/PageHeading'
+import RecipeImportTemplateDownload from '../components/RecipeImportTemplateDownload'
+import RecipeImportForm from '../components/RecipeImportForm'
+import RecipeImportSummary, { type RecipeImportSummaryResult } from '../components/RecipeImportSummary'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -21,6 +24,8 @@ import {
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 const INGREDIENT_ROWS_PER_PAGE = 30
+const isPositiveNumber = (value: string | number | undefined) =>
+  Number.isFinite(Number(value)) && Number(value) > 0
 
 const formatPrice = (value?: number) => {
   if (value === undefined || !Number.isFinite(value)) return '-'
@@ -32,6 +37,7 @@ const formatPrice = (value?: number) => {
 }
 
 type RecipeForm = {
+  cookingMethod: string[]
   targetFoodCostPercentage: string
   name: string
   category: string
@@ -118,6 +124,8 @@ type CategoryApi = {
 }
 
 export type BaseRecipe = {
+  cookingMethod?: string[]
+  importIssues?: string[]
   targetFoodCostPercentage?: number
   id?: string
   sourceRecipeId?: string
@@ -164,6 +172,7 @@ const createIngredientRow = (
 })
 
 const initialRecipeForm: RecipeForm = {
+  cookingMethod: [''],
   targetFoodCostPercentage: '',
   name: '',
   category: '',
@@ -219,12 +228,12 @@ const ChefCreateMenu = ({
   const corporateSettings = useCorporateSite(isCorporateChef)
   const isCorporateSite = corporateSettings.context?.corporateSite === true
   const isChef = user?.role === 'chef'
-  const useVendorPrices = isChef || isCorporateChef
+  const useVendorPrices = isChef || isCorporateChef || baseRecipe?.importIssues !== undefined
   const showIngredientCostColumns = isChef || isCorporateChef
-  const recipeDraftsPath = isCorporateChef
+  const recipeDraftsPath = user?.role === 'superadmin' ? '/superadmin/recipe-drafts' : isCorporateChef
     ? '/corporate-chef/recipe-drafts'
     : '/chef/recipe-drafts'
-  const recipeDataPath = isCorporateChef
+  const recipeDataPath = user?.role === 'superadmin' ? '/superadmin/menu-management' : isCorporateChef
     ? '/corporate-chef/recipe-data'
     : '/chef/menu-bank'
   const assignedSiteOptions = Array.from(
@@ -249,7 +258,7 @@ const ChefCreateMenu = ({
     : chosenSite
   const rawMaterialSite = isCorporateChef
     ? selectedSite
-    : user?.role === 'superadmin' ? undefined : user?.site
+    : user?.role === 'superadmin' ? baseRecipe?.site : user?.site
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -309,8 +318,9 @@ const ChefCreateMenu = ({
   const ingredientDropdownRef = useRef<HTMLDivElement | null>(null)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState('')
-  const [importMessage, setImportMessage] = useState('')
+  const [importResult, setImportResult] = useState<RecipeImportSummaryResult | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
 
   const searchTimeoutRef = useRef<number | null>(null)
   const searchRequestRef = useRef(0)
@@ -343,6 +353,7 @@ const ChefCreateMenu = ({
       name: baseRecipe.name ?? '',
       category: baseRecipe.category ?? '',
       description: baseRecipe.description ?? '',
+      cookingMethod: baseRecipe.cookingMethod?.length ? [...baseRecipe.cookingMethod] : [''],
       portionSize,
     })
 
@@ -1170,7 +1181,7 @@ const ChefCreateMenu = ({
 
   const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextFile = event.target.files?.[0] ?? null
-    setImportMessage('')
+    setImportResult(null)
 
     if (!nextFile) {
       setImportFile(null)
@@ -1190,10 +1201,14 @@ const ChefCreateMenu = ({
   }
 
   const openImportModal = () => {
+    setImportResult(null)
+    setImportFile(null)
+    setImportError('')
     setImportOpen(true)
   }
 
   const closeImportModal = () => {
+    if (importing) return
     setImportOpen(false)
   }
 
@@ -1217,25 +1232,36 @@ const ChefCreateMenu = ({
   }
 
   const handleImportRecipes = async () => {
+    if (importing) return
+    if (isCorporateChef && (corporateSettings.loading || corporateSettings.error || !selectedSite)) {
+      setImportError(corporateSettings.error || (corporateSettings.loading
+        ? 'Corporate site settings are still loading.' : 'Select a site in the recipe form before importing.'))
+      setImportResult(null)
+      return
+    }
     if (!importFile) {
       setImportError('Select an Excel file first')
-      setImportMessage('')
+      setImportResult(null)
       return
     }
 
+    setImporting(true)
+    setImportResult(null)
+    setImportError('')
     try {
-      const importedCount = await importRecipesFromExcel(importFile)
+      const result = await importRecipesFromExcel(importFile, isCorporateChef ? selectedSite : undefined)
       setImportError('')
-      setImportMessage(
-        `${importedCount} recipes imported from ${importFile.name}`,
-      )
+      setImportResult({ ...result, fileName: importFile.name })
+      setImportFile(null)
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : 'Failed to import recipes.'
       setImportError(message)
-      setImportMessage('')
+      setImportResult(null)
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -1466,6 +1492,7 @@ const ChefCreateMenu = ({
         name: nextName,
         category: nextCategory,
         description: nextDescription,
+        cookingMethod: recipeForm.cookingMethod.map((step) => step.trim()).filter(Boolean),
         price: 0,
         portionSize,
         ingredients: parsedIngredients,
@@ -1491,6 +1518,10 @@ const ChefCreateMenu = ({
           return
         }
         onSaved?.()
+        if (isDraftRecipe && options.saveAsDraft) {
+          navigate(recipeDraftsPath, { replace: true })
+          return
+        }
       } else {
         const createdRecipe = await createRecipe({
           ...basePayload,
@@ -1515,9 +1546,7 @@ const ChefCreateMenu = ({
       setSubmitMessage(
         options.resubmit
           ? 'Recipe updated and resubmitted to the Unit Manager.'
-          : isDraftRecipe && options.saveAsDraft
-            ? 'Recipe draft updated successfully.'
-            : isRejectedRecipe
+          : isRejectedRecipe
             ? 'Recipe draft saved. Resubmit when ready.'
           : isEditMode
             ? 'Recipe updated successfully.'
@@ -1558,6 +1587,9 @@ const ChefCreateMenu = ({
   const estimatedTotalCost = roundQuantity(
     Array.from(ingredientCosts.values()).reduce<number>((total, cost) => total + (cost ?? 0), 0),
   )
+  const hasCompleteIngredientCosts = ingredientRows.some((row) => row.productCode || row.name) &&
+    ingredientRows.filter((row) => row.productCode || row.name)
+      .every((row) => ingredientCosts.get(row.id) !== undefined)
   const basePax = Number(recipeForm.portionSize)
   const costPerPax = Number.isFinite(basePax) && basePax > 0
     ? estimatedTotalCost / basePax
@@ -1579,8 +1611,17 @@ const ChefCreateMenu = ({
     baseRecipe?.reviewedBy?.trim() ||
     'Unit Manager'
 
+  const invalidRecipeFields = {
+    name: isDraftRecipe && !recipeForm.name.trim(),
+    category: isDraftRecipe && !recipeForm.category.trim(),
+    portionSize: isDraftRecipe && (!isPositiveNumber(recipeForm.portionSize) || Number(recipeForm.portionSize) < 1),
+    targetFoodCostPercentage: isDraftRecipe && !recipeSettingsLoading &&
+      (recipeForm.targetFoodCostPercentage.trim()
+        ? !isPositiveNumber(recipeForm.targetFoodCostPercentage) : targetFoodCostRequired),
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 [&_[aria-invalid=true]]:border-red-500 [&_[aria-invalid=true]:focus]:border-red-500 [&_[aria-invalid=true]:focus]:ring-red-500/20">
       {resubmitModalOpen && isRejectedRecipe ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div
@@ -1667,12 +1708,15 @@ const ChefCreateMenu = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {showImport ? (
-              <ActionButton
-                action="import"
-                onClick={openImportModal}
-                iconClassName="bi bi-upload text-base"
-                size="sm"
-              />
+              <>
+                <RecipeImportTemplateDownload />
+                <ActionButton
+                  action="import"
+                  onClick={openImportModal}
+                  iconClassName="bi bi-upload text-base"
+                  size="sm"
+                />
+              </>
             ) : null}
             {embedded && onClose ? (
               <button
@@ -1727,68 +1771,21 @@ const ChefCreateMenu = ({
         {importOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-foreground">
-                    Import Recipe
-                  </h3>
-                  <p className="mt-1 text-xs text-muted">
-                    Import recipes from Excel
-                  </p>
-                  <p className="mt-2 text-sm text-muted">
-                    Use .xlsx or .xls to import multiple recipes at once.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeImportModal}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    File Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleImportFileChange}
-                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-                  />
-                  <p className="mt-2 text-xs text-muted">
-                    Include a Target food cost (%) column or recipe card label with a number such as 40 or 45.5. Required when enabled by superadmin.
-                  </p>
-                  {importFile ? (
-                    <p className="mt-2 text-xs text-muted">
-                      Selected file: {importFile.name}
-                    </p>
-                  ) : null}
-                  {importError ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">
-                      {importError}
-                    </p>
-                  ) : null}
-                  {importMessage ? (
-                    <p className="mt-2 text-xs font-medium text-primary">
-                      {importMessage}
-                    </p>
-                  ) : null}
-                </div>
-
-                <ActionButton
-                  action="import"
-                  onClick={handleImportRecipes}
-                  className="h-fit self-end"
+              {importResult ? (
+                <RecipeImportSummary result={importResult} draftsPath={recipeDraftsPath}
+                  onClose={closeImportModal} onImportAnother={() => setImportResult(null)} />
+              ) : (
+                <RecipeImportForm
+                  siteLabel={user?.siteOptions?.find((site) => site.code.toLowerCase() === (isCorporateChef ? selectedSite : user?.site)?.toLowerCase())?.name
+                    || (isCorporateChef ? selectedSite : user?.site)}
+                  importing={importing} error={importError}
+                  onFileChange={handleImportFileChange} onClose={closeImportModal} onImport={handleImportRecipes}
                 />
-              </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -1835,12 +1832,15 @@ const ChefCreateMenu = ({
             </div>
           ) : null}
           <div>
-            <label className="text-sm font-medium text-foreground">
-              Recipe name
+            <label htmlFor="recipe-name" className="text-sm font-medium text-foreground">
+              Recipe Name <span className="text-red-600" aria-hidden="true">*</span>
             </label>
             <input
+              id="recipe-name"
               type="text"
+              required
               value={recipeForm.name}
+              aria-invalid={invalidRecipeFields.name}
               onChange={(event) => updateRecipeForm('name', event.target.value)}
               readOnly={isCreateFromRecipe}
               aria-readonly={isCreateFromRecipe}
@@ -1858,9 +1858,12 @@ const ChefCreateMenu = ({
             ) : null}
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground">Category</label>
+            <label htmlFor="recipe-category" className="text-sm font-medium text-foreground">Category <span className="text-red-600" aria-hidden="true">*</span></label>
             <select
+              id="recipe-category"
+              required
               value={recipeForm.category}
+              aria-invalid={invalidRecipeFields.category}
               onChange={(event) => updateRecipeForm('category', event.target.value)}
               disabled={categoriesLoading}
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
@@ -1889,12 +1892,15 @@ const ChefCreateMenu = ({
             ) : null}
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground">Base pax</label>
+            <label htmlFor="recipe-base-pax" className="text-sm font-medium text-foreground">Base Pax <span className="text-red-600" aria-hidden="true">*</span></label>
             <input
+              id="recipe-base-pax"
               type="number"
+              required
               min={1}
               step="1"
               value={recipeForm.portionSize}
+              aria-invalid={invalidRecipeFields.portionSize}
               onChange={(event) =>
                 updateRecipeForm('portionSize', event.target.value)
               }
@@ -1908,11 +1914,12 @@ const ChefCreateMenu = ({
           </div>
           <div>
             <label htmlFor="recipe-target-food-cost" className="text-sm font-medium text-foreground">
-              Target food cost (%) {targetFoodCostRequired ? '*' : '(optional)'}
+              Target Food Cost (%) {targetFoodCostRequired ? <span className="text-red-600" aria-hidden="true">*</span> : <span className="text-muted">(Optional)</span>}
             </label>
             <input id="recipe-target-food-cost" type="number" step="any"
               required={targetFoodCostRequired}
               value={recipeForm.targetFoodCostPercentage}
+              aria-invalid={invalidRecipeFields.targetFoodCostPercentage}
               onChange={(event) => updateRecipeForm('targetFoodCostPercentage', event.target.value)}
               onWheel={(event) => event.currentTarget.blur()}
               placeholder="e.g. 40 or 45.5"
@@ -1920,20 +1927,57 @@ const ChefCreateMenu = ({
             <p className="mt-2 text-xs text-muted">Enter any percentage greater than 0.</p>
             {recipeSettingsError ? <p className="mt-2 text-xs text-danger" role="alert">{recipeSettingsError}</p> : null}
           </div>
-          <div className="sm:col-span-2">
-            <label className="text-sm font-medium text-foreground">
-              Description
+          <div>
+            <label htmlFor="recipe-description" className="text-sm font-medium text-foreground">
+              Description <span className="text-muted">(Optional)</span>
             </label>
             <textarea
+              id="recipe-description"
               value={recipeForm.description}
               onChange={(event) =>
                 updateRecipeForm('description', event.target.value)
               }
               placeholder="Short recipe notes..."
-              rows={3}
+              rows={6}
               className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
             />
           </div>
+          <fieldset className="min-w-0">
+            <legend className="text-sm font-medium text-foreground">Cooking Method <span className="text-muted">(Optional)</span></legend>
+            <div className="mt-2 space-y-2">
+              {recipeForm.cookingMethod.map((step, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <label htmlFor={`recipe-cooking-step-${index}`} className="w-6 shrink-0 text-center text-sm font-medium text-muted">
+                    <span className="sr-only">Step </span>{index + 1}
+                  </label>
+                  <input id={`recipe-cooking-step-${index}`} type="text" value={step}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setRecipeForm((current) => ({ ...current,
+                        cookingMethod: current.cookingMethod.map((item, stepIndex) => stepIndex === index ? value : item),
+                      }))
+                    }}
+                    placeholder={`Cooking step ${index + 1}`}
+                    className="min-w-0 flex-1 rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20" />
+                  <button type="button" aria-label={`Remove cooking step ${index + 1}`}
+                    title={`Remove step ${index + 1}`}
+                    onClick={() => setRecipeForm((current) => ({ ...current,
+                      cookingMethod: current.cookingMethod.length > 1
+                        ? current.cookingMethod.filter((_, stepIndex) => stepIndex !== index) : [''],
+                    }))}
+                    className="shrink-0 rounded-md border border-border px-3 py-3 text-danger hover:bg-background">
+                    <i className="bi bi-trash3" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setRecipeForm((current) => ({ ...current,
+              cookingMethod: [...current.cookingMethod, ''],
+            }))}
+              className="mt-2 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90">
+              <i className="bi bi-plus-lg" aria-hidden="true" /> Add step
+            </button>
+          </fieldset>
         </div>
 
         <div className="mt-6">
@@ -1943,6 +1987,13 @@ const ChefCreateMenu = ({
           <p className="mt-1 text-xs text-muted">
             Add ingredients
           </p>
+          {baseRecipe?.importIssues?.length ? (
+            <details className="mt-3 rounded-md border border-border p-3 text-xs text-danger">
+              <summary>{baseRecipe.importIssues.length} import issues at last check</summary>
+              <p className="mt-2">Fix the listed ingredients or master data. The server checks again when saving and submitting.</p>
+              <ul className="mt-2 list-disc pl-4">{baseRecipe.importIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
+            </details>
+          ) : null}
           <TablePagination
             page={ingredientPage}
             totalPages={ingredientTotalPages}
@@ -2009,6 +2060,22 @@ const ChefCreateMenu = ({
                   const price = useVendorPrices && row.ingredientType === 'IT'
                     ? selectedVendor?.price : row.priceUom
                   const ingredientCost = ingredientCosts.get(row.id)
+                  const srQty = row.srQtyManual ? row.srQty : conversionResult?.srQty ?? row.srQty
+                  const matchedMaterial = row.ingredientType === 'IT' ? findRawMaterialForRow(row) : undefined
+                  const invalid = {
+                    ingredientType: isDraftRecipe && !row.ingredientType,
+                    productCode: isDraftRecipe && (!row.productCode.trim() ||
+                      (row.ingredientType === 'IT' && normalizeValue(matchedMaterial?.productCode ?? '') !== normalizeValue(row.productCode))),
+                    name: isDraftRecipe && !row.name.trim(),
+                    qty: isDraftRecipe && !isPositiveNumber(row.qty),
+                    prodUomCode: isDraftRecipe && !row.prodUomCode.trim(),
+                    srQty: isDraftRecipe && !isPositiveNumber(srQty),
+                    unitOfMeasures: isDraftRecipe && !row.unitOfMeasures.trim(),
+                    vendor: isDraftRecipe && row.ingredientType === 'IT' && Boolean(vendorState && !vendorState.loading &&
+                      (vendorState.error || !selectedVendor || selectedVendor.price === undefined)),
+                    price: isDraftRecipe && row.ingredientType === 'NMP' &&
+                      (row.priceUom === undefined || !Number.isFinite(row.priceUom) || row.priceUom < 0),
+                  }
                   return (
                   <tr key={row.id} className="border-t border-border">
                     <td className="px-2 py-3">
@@ -2033,6 +2100,7 @@ const ChefCreateMenu = ({
                     <td className="px-3 py-3">
                       <select
                         value={row.ingredientType}
+                        aria-invalid={invalid.ingredientType}
                         onChange={(event) =>
                           updateIngredientRow(
                             row.id,
@@ -2052,6 +2120,8 @@ const ChefCreateMenu = ({
                       <input
                         type="text"
                         value={row.productCode}
+                        aria-invalid={invalid.productCode}
+                        title={invalid.productCode ? 'Select a valid product code from raw material data.' : undefined}
                         readOnly={row.ingredientType === 'NMP'}
                         aria-readonly={row.ingredientType === 'NMP'}
                         onChange={(event) =>
@@ -2073,6 +2143,7 @@ const ChefCreateMenu = ({
                         <input
                           type="text"
                           value={row.name}
+                          aria-invalid={invalid.name}
                           onChange={(event) =>
                             handleIngredientInputChange(
                               row.id,
@@ -2134,6 +2205,7 @@ const ChefCreateMenu = ({
                         min={0}
                         step="any"
                         value={row.qty}
+                        aria-invalid={invalid.qty}
                         onChange={(event) =>
                           updateIngredientRow(row.id, 'qty', event.target.value)
                         }
@@ -2147,6 +2219,7 @@ const ChefCreateMenu = ({
                         <td className="px-4 py-3">
                           <select
                             value={row.prodUomCode}
+                            aria-invalid={invalid.prodUomCode}
                             onChange={(event) =>
                               updateIngredientRow(
                                 row.id,
@@ -2190,6 +2263,8 @@ const ChefCreateMenu = ({
                             }
                             onWheel={(event) => event.currentTarget.blur()}
                             aria-label={`SR QTY for ${row.name || `ingredient ${index + 1}`}`}
+                            aria-invalid={invalid.srQty}
+                            title={invalid.srQty ? 'Enter a positive SR Qty manually or configure the Prod UOM to SR UOM conversion.' : undefined}
                             className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           />
                         </td>
@@ -2205,12 +2280,14 @@ const ChefCreateMenu = ({
                               readOnly
                               aria-readonly="true"
                               aria-label={`SR UOM for ${row.name || `ingredient ${index + 1}`}`}
+                              aria-invalid={invalid.unitOfMeasures}
                               placeholder="Auto"
                               className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none"
                             />
                           ) : (
                             <select
                               value={row.unitOfMeasures}
+                              aria-invalid={invalid.unitOfMeasures}
                               onChange={(event) =>
                                 updateIngredientRow(
                                   row.id,
@@ -2252,6 +2329,7 @@ const ChefCreateMenu = ({
                           readOnly
                           aria-readonly="true"
                           placeholder="Auto-filled from raw material"
+                          aria-invalid={invalid.unitOfMeasures}
                           className="w-full rounded-xl border border-border bg-slate-200 px-3 py-2 text-sm text-muted outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                         />
                       </td>
@@ -2268,6 +2346,8 @@ const ChefCreateMenu = ({
                               onChange={(event) => updateIngredientRow(row.id, 'vendor', event.target.value)}
                               disabled={!vendorState || vendorState.loading}
                               aria-label={`Vendor for ${row.name || `ingredient ${index + 1}`}`}
+                              aria-invalid={invalid.vendor}
+                              title={invalid.vendor ? 'Select a vendor with a valid price for this site and SR UOM.' : undefined}
                               className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${vendorOptions.length > 1 ? 'border-amber-400 bg-amber-100' : 'border-border bg-white'}`}
                             >
                               {!vendorState || vendorState.loading ? <option value="">Loading vendors...</option>
@@ -2297,6 +2377,7 @@ const ChefCreateMenu = ({
                               min={0}
                               step="any"
                               value={row.priceUom ?? ''}
+                              aria-invalid={invalid.price}
                               onChange={(event) => updateIngredientRow(
                                 row.id,
                                 'priceUom',
@@ -2323,7 +2404,7 @@ const ChefCreateMenu = ({
                         Estimated total cost
                       </th>
                       <td className="whitespace-nowrap border-l border-border px-4 py-3 font-semibold">
-                        {formatPrice(estimatedTotalCost)}
+                        {hasCompleteIngredientCosts ? formatPrice(estimatedTotalCost) : 'Incomplete'}
                       </td>
                     </tr>
                     <tr className="border-t border-border bg-background">
@@ -2331,7 +2412,7 @@ const ChefCreateMenu = ({
                         Cost per pax
                       </th>
                       <td className="whitespace-nowrap border-l border-border px-4 py-3 font-semibold">
-                        {formatPrice(costPerPax)}
+                        {hasCompleteIngredientCosts ? formatPrice(costPerPax) : 'Incomplete'}
                       </td>
                     </tr>
                   </>
@@ -2339,9 +2420,7 @@ const ChefCreateMenu = ({
                 <RecipeSalesRecommendation
                   recipe={{ targetFoodCostPercentage: recipeForm.targetFoodCostPercentage.trim()
                     ? Number(recipeForm.targetFoodCostPercentage) : undefined }}
-                  costPerPax={ingredientRows.some((row) => row.productCode || row.name) &&
-                    ingredientRows.filter((row) => row.productCode || row.name)
-                      .every((row) => ingredientCosts.get(row.id) !== undefined) ? costPerPax : undefined}
+                  costPerPax={hasCompleteIngredientCosts ? costPerPax : undefined}
                   labelColSpan={(enableIngredientUomConversion ? 9 : 7) +
                     (showIngredientCostColumns ? 2 : 0) + (useVendorPrices ? 1 : 0) - 1}
                 />

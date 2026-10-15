@@ -225,7 +225,6 @@ function App() {
                 <ChefCreateMenu
                   enableIngredientUomConversion
                   lockSrUomToRawMaterial
-                  showImport={false}
                 />
               }
             />
@@ -274,6 +273,8 @@ function App() {
             <Route path="clients" element={<SuperadminClientManagementPage />} />
             <Route path="unit-of-measures" element={<SuperadminUnitOfMeasuresPage />} />
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
+            <Route path="recipe-drafts" element={<ChefRecipeDrafts />} />
+            <Route path="menu-create" element={<ChefCreateMenu enableIngredientUomConversion lockSrUomToRawMaterial showImport={false} />} />
             <Route
               path="approval-centers"
               element={<SuperadminApprovalCentersPage />}

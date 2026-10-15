@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import SiteMultiSelect from '../components/SiteMultiSelect'
@@ -47,6 +48,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number
   id?: string
   _id?: string
@@ -248,6 +250,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       name: recipe.name,
       category: recipe.category,
       description: recipe.description ?? '',
+      cookingMethod: recipe.cookingMethod ?? [],
       portionSize: recipe.portionSize ?? 1,
       targetFoodCostPercentage: recipe.targetFoodCostPercentage,
       site: recipe.site,
@@ -847,6 +850,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                   <p className="mt-1 text-sm text-foreground">
                                     {recipe.description?.trim() || 'No description.'}
                                   </p>
+                                  <RecipeCookingMethod steps={recipe.cookingMethod} />
                                   <p className="mt-3 text-xs text-muted">
                                     Submitted by
                                   </p>

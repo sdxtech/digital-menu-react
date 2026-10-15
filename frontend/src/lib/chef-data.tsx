@@ -61,6 +61,8 @@ export type Recipe = {
   parentRecipeId?: string
   category: string
   description: string
+  cookingMethod?: string[]
+  importIssues?: string[]
   imageUrl?: string
   price: number
   portionSize: number
@@ -157,7 +159,15 @@ type ChefDataState = {
   rawMaterials: RawMaterial[]
 }
 
+export type RecipeImportResult = {
+  insertedCount: number
+  draftsCount?: number
+  warningsCount: number
+  warnings?: Array<{ recipeName?: string; row?: number; message: string }>
+}
+
 type CreateRecipeInput = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number | null
   site?: string
   baseRecipeId?: string
@@ -173,6 +183,7 @@ type CreateRecipeInput = {
 }
 
 type UpdateRecipeInput = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number | null
   saveAsDraft?: boolean
   name?: string
@@ -264,7 +275,7 @@ type ChefDataContextValue = ChefDataState & {
   createRecipe: (input: CreateRecipeInput) => Promise<Recipe>
   updateRecipe: (id: string, input: UpdateRecipeInput) => Promise<void>
   submitRecipeDraft: (id: string) => Promise<Recipe>
-  importRecipesFromExcel: (file: File) => Promise<number>
+  importRecipesFromExcel: (file: File, site?: string) => Promise<RecipeImportResult>
   approveRecipe: (id: string) => Promise<void>
   rejectRecipe: (id: string, reason: string) => Promise<void>
   resubmitRecipe: (id: string, feedback: string) => Promise<void>
@@ -337,6 +348,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
     parentRecipeId: item.parentRecipeId ?? undefined,
     category: item.category ?? '',
     description: item.description ?? '',
+    cookingMethod: item.cookingMethod ?? [],
+    importIssues: item.importIssues,
     imageUrl: item.imageUrl ?? undefined,
     price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
     portionSize: Number.isFinite(Number(item.portionSize))
@@ -664,15 +677,15 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     return mapped
   }
 
-  const importRecipesFromExcel = async (file: File) => {
+  const importRecipesFromExcel = async (file: File, site?: string) => {
     if (!accessToken) {
       throw new Error('Please log in first to save data to the database.')
     }
     const formData = new FormData()
     formData.append('file', file)
 
-    const result = await apiFetch<{ insertedCount: number }>(
-      '/recipes/import',
+    const result = await apiFetch<RecipeImportResult>(
+      `/recipes/import${site ? `?site=${encodeURIComponent(site)}` : ''}`,
       {
         method: 'POST',
         body: formData,
@@ -681,7 +694,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
     )
 
     await fetchRecipes()
-    return result.insertedCount ?? 0
+    return result
   }
 
   const approveRecipe = async (id: string) => {

@@ -38,6 +38,11 @@ export class UpdateRecipeDto {
   description?: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  cookingMethod?: string[];
+
+  @IsOptional()
   @IsUrl({
     require_protocol: true,
     require_tld: false,

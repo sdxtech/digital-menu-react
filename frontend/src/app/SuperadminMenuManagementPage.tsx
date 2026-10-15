@@ -1,4 +1,9 @@
 import PageHeading from '../components/PageHeading'
+import RecipeImportTemplateDownload from '../components/RecipeImportTemplateDownload'
+import RecipeImportForm from '../components/RecipeImportForm'
+import RecipeCookingMethod from '../components/RecipeCookingMethod'
+import RecipeImportSummary, { type RecipeImportSummaryResult } from '../components/RecipeImportSummary'
+import type { RecipeImportResult } from '../lib/chef-data'
 import {
   Fragment,
   useCallback,
@@ -51,6 +56,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number
   id?: string
   _id?: string
@@ -1628,7 +1634,7 @@ const SuperadminMenuManagementPage = () => {
   const [recipeImportOpen, setRecipeImportOpen] = useState(false)
   const [recipeImportFile, setRecipeImportFile] = useState<File | null>(null)
   const [recipeImportError, setRecipeImportError] = useState('')
-  const [recipeImportMessage, setRecipeImportMessage] = useState('')
+  const [recipeImportResult, setRecipeImportResult] = useState<RecipeImportSummaryResult | null>(null)
   const [recipeImporting, setRecipeImporting] = useState(false)
   const [recipeCostSyncing, setRecipeCostSyncing] = useState(false)
   const [recipeConversionSyncing, setRecipeConversionSyncing] = useState(false)
@@ -2222,6 +2228,7 @@ const SuperadminMenuManagementPage = () => {
       name: recipe.name,
       category: recipe.category,
       description: recipe.description ?? '',
+      cookingMethod: recipe.cookingMethod ?? [],
       portionSize: recipe.portionSize,
       targetFoodCostPercentage: recipe.targetFoodCostPercentage,
       approvalStatus: recipe.approvalStatus,
@@ -2313,7 +2320,8 @@ const SuperadminMenuManagementPage = () => {
 
   const openRecipeImportModal = () => {
     setRecipeImportError('')
-    setRecipeImportMessage('')
+    setRecipeImportResult(null)
+    setRecipeImportFile(null)
     setRecipeImportOpen(true)
   }
 
@@ -2326,7 +2334,7 @@ const SuperadminMenuManagementPage = () => {
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     const nextFile = event.target.files?.[0] ?? null
-    setRecipeImportMessage('')
+    setRecipeImportResult(null)
 
     if (!nextFile) {
       setRecipeImportFile(null)
@@ -2349,29 +2357,26 @@ const SuperadminMenuManagementPage = () => {
     if (!accessToken) return
     if (!recipeImportFile) {
       setRecipeImportError('Select an Excel file first.')
-      setRecipeImportMessage('')
+      setRecipeImportResult(null)
       return
     }
 
     setRecipeImporting(true)
     setRecipeImportError('')
-    setRecipeImportMessage('')
+    setRecipeImportResult(null)
 
     try {
       const formData = new FormData()
       formData.append('file', recipeImportFile)
-      const result = await apiFetch<{ insertedCount?: number }>(
-        '/recipes/import',
+      const result = await apiFetch<RecipeImportResult>(
+        `/recipes/import${recipeSite ? `?site=${encodeURIComponent(recipeSite)}` : ''}`,
         {
           method: 'POST',
           body: formData,
         },
         accessToken,
       )
-      const insertedCount = result.insertedCount ?? 0
-      setRecipeImportMessage(
-        `${insertedCount} recipes imported from ${recipeImportFile.name}`,
-      )
+      setRecipeImportResult({ ...result, fileName: recipeImportFile.name })
       setRecipeImportFile(null)
       fetchRecipes(1, recipeMeta.limit, recipeSearch).catch(() => null)
       fetchRecipeCategories().catch(() => null)
@@ -2379,7 +2384,7 @@ const SuperadminMenuManagementPage = () => {
       const message =
         error instanceof Error ? error.message : 'Failed to import recipes.'
       setRecipeImportError(message)
-      setRecipeImportMessage('')
+      setRecipeImportResult(null)
     } finally {
       setRecipeImporting(false)
     }
@@ -3219,71 +3224,26 @@ const SuperadminMenuManagementPage = () => {
         {recipeImportOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div
-              className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+              className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-md border border-border bg-surface p-6 shadow-xl"
               role="dialog"
               aria-modal="true"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-foreground">
-                    Import Recipe
-                  </h3>
-                  <p className="mt-1 text-xs text-muted">
-                    Import recipes from Excel
-                  </p>
-                  <p className="mt-2 text-sm text-muted">
-                    Use .xlsx or .xls to import multiple recipes at once.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeRecipeImportModal}
-                  disabled={recipeImporting}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
-                <div>
-                  <label className="text-sm font-medium text-foreground">
-                    File Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleRecipeImportFileChange}
-                    disabled={recipeImporting}
-                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-                  />
-                  <p className="mt-2 text-xs text-muted">
-                    Include a Target food cost (%) column or recipe card label with a number such as 40 or 45.5. Required when enabled in recipe settings.
-                  </p>
-                  {recipeImportFile ? (
-                    <p className="mt-2 text-xs text-muted">
-                      Selected file: {recipeImportFile.name}
-                    </p>
-                  ) : null}
-                  {recipeImportError ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">
-                      {recipeImportError}
-                    </p>
-                  ) : null}
-                  {recipeImportMessage ? (
-                    <p className="mt-2 text-xs font-medium text-primary">
-                      {recipeImportMessage}
-                    </p>
-                  ) : null}
-                </div>
-
-                <ActionButton
-                  action="import"
-                  onClick={handleImportRecipes}
-                  disabled={recipeImporting}
-                  className="h-fit self-end"
+              {recipeImportResult ? (
+                <RecipeImportSummary result={recipeImportResult} draftsPath="/superadmin/recipe-drafts"
+                  onClose={closeRecipeImportModal} onImportAnother={() => setRecipeImportResult(null)} />
+              ) : (
+                <RecipeImportForm
+                  siteControl={(
+                    <select value={recipeSite} onChange={(event) => setRecipeSite(event.target.value)} disabled={recipeImporting}
+                      aria-label="Import recipe site" className="min-w-0 max-w-full flex-1 rounded-md border border-border bg-background p-2 text-sm">
+                      <option value="">Select site for block template</option>
+                      {recipeSites.map((site) => <option key={site.code} value={site.code}>{site.name}</option>)}
+                    </select>
+                  )}
+                  importing={recipeImporting} error={recipeImportError}
+                  onFileChange={handleRecipeImportFileChange} onClose={closeRecipeImportModal} onImport={handleImportRecipes}
                 />
-              </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -3675,6 +3635,7 @@ const SuperadminMenuManagementPage = () => {
                 <i className="bi bi-arrow-repeat text-base leading-none" aria-hidden="true" />
                 <span>{recipeConversionSyncing ? 'Syncing...' : 'Sync Conversion'}</span>
               </button>
+              <RecipeImportTemplateDownload />
               <ActionButton
                 action="import"
                 onClick={openRecipeImportModal}
@@ -4018,6 +3979,7 @@ const SuperadminMenuManagementPage = () => {
                 <p className="mt-2 text-sm text-muted">
                   {selectedRecipe.description?.trim() || 'No description.'}
                 </p>
+                <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
               </div>
               <button
                 type="button"

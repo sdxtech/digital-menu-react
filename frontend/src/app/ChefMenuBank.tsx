@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ActionButton from '../components/ActionButton'
@@ -29,6 +30,7 @@ type RecipeIngredient = {
 }
 
 type Recipe = {
+  cookingMethod?: string[]
   targetFoodCostPercentage?: number
   foodCostRecipe?: number
   id?: string
@@ -372,6 +374,7 @@ const ChefMenuBank = () => {
     name: recipe.name,
     category: recipe.category,
     description: recipe.description ?? '',
+    cookingMethod: recipe.cookingMethod ?? [],
     portionSize: recipe.portionSize,
     targetFoodCostPercentage: recipe.targetFoodCostPercentage,
     ingredients: recipe.ingredients ?? [],
@@ -413,6 +416,7 @@ const ChefMenuBank = () => {
           name: recipe.name,
           category: recipe.category,
           description: recipe.description ?? '',
+          cookingMethod: recipe.cookingMethod ?? [],
           portionSize: recipe.portionSize,
           targetFoodCostPercentage: recipe.targetFoodCostPercentage,
           approvalStatus: recipe.approvalStatus,
@@ -843,6 +847,7 @@ const ChefMenuBank = () => {
               <p className="mt-2 text-sm text-muted">
                 {selectedRecipe.description}
               </p>
+              <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
             </div>
             <div className="flex items-center gap-2">
               {canCreateFromSelectedRecipe ? (
