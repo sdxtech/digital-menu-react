@@ -87,6 +87,7 @@ type StoreRequestMenu = {
   recipeCode?: string;
   recipeVersion?: number;
   menuName: string;
+  clientId?: string;
   clientName?: string;
   category: string;
   group?: string;
@@ -2691,6 +2692,7 @@ export class MenuProductionsService implements OnModuleInit {
         recipeCode: resolvedRecipeCode,
         recipeVersion: resolvedRecipeVersion,
         menuName: String(menu.menuName ?? ''),
+        clientId: String(menu.clientId ?? '').trim() || undefined,
         clientName: String(menu.clientName ?? '').trim() || undefined,
         category: String(menu.category ?? ''),
         group: String(menu.group ?? '').trim() || undefined,

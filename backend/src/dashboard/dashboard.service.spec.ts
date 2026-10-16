@@ -34,6 +34,7 @@ describe('DashboardService', () => {
 describe('Superadmin analytics', () => {
   const menu = (overrides = {}) => ({
     id: 'menu-1',
+    clientId: 'CLIENT-A',
     clientName: 'Client A',
     sellingQuantity: 100,
     sellingPricePerPax: 100,
@@ -123,7 +124,107 @@ describe('Superadmin analytics', () => {
       period: '2026-10-02',
       batches: 0,
       foodCostPercentage: null,
+      paxByClient: [],
     });
+  });
+
+  it.each(['daily', 'weekly', 'monthly'] as const)(
+    'aggregates pax per client once per batch for %s charts, independently of pagination',
+    async (interval) => {
+      const { service } = setup([
+        group(),
+        group({
+          date: '2026-10-02',
+          productionCode: 'MPR002',
+          items: [menu({ sellingQuantity: 50 })],
+        }),
+        group({
+          productionCode: 'MPR003',
+          items: [
+            menu({
+              clientId: 'CLIENT-B',
+              clientName: 'Client B',
+              sellingQuantity: 40,
+            }),
+          ],
+        }),
+        group({
+          productionCode: 'MPR004',
+          items: [
+            menu({
+              clientId: 'CLIENT-B',
+              clientName: 'Client B',
+              approvalStatus: 'pending',
+            }),
+          ],
+        }),
+      ]);
+      const result = await service.getSuperadminAnalytics({
+        ...query,
+        interval,
+        limit: 1,
+      });
+      expect(result.items).toHaveLength(1);
+      const totals = new Map<string, number>();
+      for (const point of result.trend) {
+        expect(
+          point.paxByClient.reduce((sum, client) => sum + (client.pax ?? 0), 0),
+        ).toBe(point.pax);
+        for (const client of point.paxByClient) {
+          totals.set(
+            client.client,
+            (totals.get(client.client) ?? 0) + (client.pax ?? 0),
+          );
+        }
+      }
+      expect([...totals]).toEqual([
+        ['Client A', 150],
+        ['Client B', 40],
+      ]);
+      expect(result.trend).toHaveLength(interval === 'daily' ? 2 : 1);
+    },
+  );
+
+  it('keeps clients with the same name separate by client code', async () => {
+    const { service } = setup([
+      group(),
+      group({
+        productionCode: 'MPR002',
+        items: [menu({ clientId: 'CLIENT-B' })],
+      }),
+    ]);
+    const result = await service.getSuperadminAnalytics(query);
+    expect(result.trend[0].paxByClient).toHaveLength(2);
+    expect(
+      new Set(result.trend[0].paxByClient.map((client) => client.clientKey))
+        .size,
+    ).toBe(2);
+    expect(result.trend[0].paxByClient.map((client) => client.pax)).toEqual([
+      100, 100,
+    ]);
+  });
+
+  it('retains legacy, unassigned, and mixed-client batches without duplicating their pax', async () => {
+    const { service } = setup([
+      group({ items: [menu({ clientId: undefined })] }),
+      group({
+        productionCode: 'MPR002',
+        items: [menu({ clientId: undefined, clientName: undefined })],
+      }),
+      group({
+        productionCode: 'MPR003',
+        items: [menu(), menu({ clientId: 'CLIENT-B', clientName: 'Client B' })],
+      }),
+    ]);
+    const result = await service.getSuperadminAnalytics(query);
+    expect(
+      result.trend[0].paxByClient.map(({ client, pax }) => ({ client, pax })),
+    ).toEqual([
+      { client: 'Client A', pax: 100 },
+      { client: 'Unassigned client', pax: 100 },
+      { client: 'Client A, Client B', pax: 100 },
+    ]);
+    expect(result.trend[0].pax).toBe(300);
   });
 
   it('excludes partially approved and returned batches from analytics while counting their workflow', async () => {
@@ -225,6 +326,7 @@ describe('Superadmin analytics', () => {
       incompleteBatches: 1,
     });
     expect(result.items[0].sellingPricePerPax).toBeNull();
+    expect(result.trend[0].paxByClient[0].pax).toBeNull();
   });
 
   it('shows zero sales with no food cost percentage', async () => {
