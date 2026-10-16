@@ -416,19 +416,19 @@ const SuperadminAnalyticsPage = () => {
           title: 'Production Approval Status',
           icon: 'bi-clipboard-check',
           values: [
-            ['Submitted', data.workflow.approval.submitted],
-            ['Pending (Sales Input)', data.workflow.approval.pendingSales],
-            ['Approved', data.workflow.approval.approved],
-            ['Rejected', data.workflow.approval.returned],
+            ['Submitted', data.workflow.approval.submitted, 'bg-gray-100 text-gray-700'],
+            ['Pending (Sales Input)', data.workflow.approval.pendingSales, 'bg-yellow-100 text-yellow-800'],
+            ['Approved', data.workflow.approval.approved, 'bg-green-100 text-green-800'],
+            ['Rejected', data.workflow.approval.returned, 'bg-red-100 text-red-800'],
           ] as const,
         },
         {
           title: 'Store Request Status',
           icon: 'bi-box-seam',
           values: [
-            ['Requested', data.workflow.storeRequest.requested],
-            ['Completed', data.workflow.storeRequest.fulfilled],
-            ['Cancelled', data.workflow.storeRequest.cancelled],
+            ['Requested', data.workflow.storeRequest.requested, 'bg-gray-100 text-gray-700'],
+            ['Completed', data.workflow.storeRequest.fulfilled, 'bg-green-100 text-green-800'],
+            ['Cancelled', data.workflow.storeRequest.cancelled, 'bg-red-100 text-red-800'],
           ] as const,
         },
       ]
@@ -597,14 +597,18 @@ const SuperadminAnalyticsPage = () => {
               >
                 <p className="text-sm font-bold">
                   {metric.key === 'foodCostPercentage'
-                    ? 'Average Food Cost %'
+                    ? 'Average Food Cost (%)'
                     : `Total ${metric.label}`}
                   {metric.key === 'estimatedCost' || metric.key === 'estimatedRevenue'
                     ? ' (IDR)'
-                    : ''}
+                    : metric.key === 'pax'
+                      ? ' (Pax)'
+                      : ''}
                 </p>
-                <p className="mt-2 break-words text-2xl font-semibold tabular-nums">
-                  {format(data.summary[metric.key], metric.key)}
+                <p className="mt-2 break-words !text-[32px] !leading-10 font-semibold tabular-nums">
+                  {metric.key === 'foodCostPercentage' && data.summary.foodCostPercentage !== null
+                    ? data.summary.foodCostPercentage.toFixed(2)
+                    : format(data.summary[metric.key], metric.key)}
                 </p>
               </div>
             ))}
@@ -635,9 +639,11 @@ const SuperadminAnalyticsPage = () => {
                     {card.title}
                   </h3>
                   <dl className="mt-4 space-y-3 text-sm">
-                    {card.values.map(([label, value]) => (
-                      <div key={label} className="flex justify-between gap-4">
-                        <dt className="text-muted">{label}</dt>
+                    {card.values.map(([label, value, badgeClass]) => (
+                      <div key={label} className="flex items-center justify-between gap-4">
+                        <dt className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${badgeClass}`}>
+                          {label}
+                        </dt>
                         <dd className="font-semibold tabular-nums">
                           {numberFormat.format(value)}
                         </dd>
