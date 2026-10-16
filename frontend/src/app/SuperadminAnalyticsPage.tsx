@@ -1,4 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type { FormEvent } from 'react'
 import PageHeading from '../components/PageHeading'
 import { apiFetch } from '../lib/api'
@@ -12,7 +26,12 @@ type Values = {
 }
 type Metric = keyof Values
 type Interval = 'daily' | 'weekly' | 'monthly'
-type Trend = Values & { period: string; batches: number }
+type ClientPax = { clientKey: string; client: string; pax: number | null }
+type Trend = Values & {
+  period: string
+  batches: number
+  paxByClient: ClientPax[]
+}
 type AnalyticsData = {
   summary: Values & { approvedBatches: number; incompleteBatches: number }
   workflow: {
@@ -96,130 +115,224 @@ const metrics: Array<{
   },
 ]
 
+const buildPaxSeries = (points: Trend[], topClientsOnly: boolean) => {
+  const clients = new Map<string, { label: string; total: number }>()
+  for (const point of points) {
+    if (!point.batches) continue
+    for (const client of point.paxByClient ?? []) {
+      const current = clients.get(client.clientKey)
+      clients.set(client.clientKey, {
+        label: client.client,
+        total: (current?.total ?? 0) + (client.pax ?? 0),
+      })
+    }
+  }
+  const ranked = [...clients].sort(([keyA, a], [keyB, b]) =>
+    (topClientsOnly ? b.total - a.total : 0) || keyA.localeCompare(keyB),
+  )
+  const visible = topClientsOnly ? ranked.slice(0, 3) : ranked
+  const result = visible.map(([key, client], index) => ({
+    key,
+    label: client.label,
+    color: `hsl(${(index * 137.508 + 265) % 360}, 65%, 48%)`,
+    value: (point: Trend) => {
+      if (!point.batches) return null
+      const entry = (point.paxByClient ?? []).find((item) => item.clientKey === key)
+      return entry ? entry.pax : 0
+    },
+  }))
+  if (topClientsOnly && ranked.length > 3) {
+    const otherKeys = new Set(ranked.slice(3).map(([key]) => key))
+    result.push({
+      key: 'others',
+      label: 'Others',
+      color: '#64748b',
+      value: (point: Trend) => {
+        if (!point.batches) return null
+        const others = (point.paxByClient ?? []).filter((item) => otherKeys.has(item.clientKey))
+        return others.some((item) => item.pax === null)
+          ? null
+          : others.reduce((total, item) => total + (item.pax ?? 0), 0)
+      },
+    })
+  }
+  return result
+}
+
+const orderPaxSeries = (series: ReturnType<typeof buildPaxSeries>, point: Trend) =>
+  [...series].sort((a, b) => {
+    if (a.key === 'others') return 1
+    if (b.key === 'others') return -1
+    return (b.value(point) ?? -1) - (a.value(point) ?? -1) || a.key.localeCompare(b.key)
+  })
+
 const TrendChart = ({
   points,
-  metric,
-  color,
+  series,
   interval,
+  topClientsOnly,
 }: {
   points: Trend[]
-  metric: Metric
-  color: string
+  series: typeof metrics
   interval: Interval
+  topClientsOnly: boolean
 }) => {
-  const valid = points.filter(
-    (point) => point.batches > 0 && point[metric] !== null,
-  )
-  if (!valid.length)
+  const metric = series[0].key
+  const isBarChart = series.length === 1 && metric === 'pax'
+  const chartSizeClass = series.length > 1
+    ? 'mb-6 h-[420px] md:h-[480px]'
+    : 'h-72'
+  const chartSeries = isBarChart
+    ? buildPaxSeries(points, topClientsOnly)
+    : series.map((item) => ({
+        ...item,
+        value: (point: Trend) => point[item.key],
+      }))
+  const chartData = points.map((point) => ({
+    ...point,
+    pax: point.batches > 0 ? point.pax : null,
+    foodCostPercentage: point.batches > 0 ? point.foodCostPercentage : null,
+    estimatedCost: point.batches > 0 ? point.estimatedCost : null,
+    estimatedRevenue: point.batches > 0 ? point.estimatedRevenue : null,
+    paxStack: isBarChart && topClientsOnly
+      ? orderPaxSeries(chartSeries, point).reverse().map((item) => ({
+          key: item.key,
+          color: item.color,
+          value: item.value(point),
+        }))
+      : [],
+  }))
+  if (!chartData.some((point) => chartSeries.some((item) => item.value(point) !== null)))
     return (
-      <p className="flex h-52 items-center justify-center text-sm text-muted">
+      <p className={`flex items-center justify-center text-sm text-muted ${chartSizeClass}`}>
         No approved data available.
       </p>
     )
-  const isBarChart = metric === 'pax'
-  const upperBound =
-    Math.max(1, ...valid.map((point) => point[metric] ?? 0)) * 1.1
-  const max = isBarChart ? Math.ceil(upperBound / 2) * 2 : upperBound
-  const barWidth = Math.min(40, (520 / points.length) * 0.7)
-  const x = (index: number) =>
-    isBarChart
-      ? 70 + ((index + 0.5) / points.length) * 520
-      : 70 + (points.length > 1 ? index / (points.length - 1) : 0.5) * 520
-  const y = (value: number) => 170 - (value / max) * 145
-  const path = points
-    .map((point, index) => {
-      const value = point[metric]
-      if (value === null || !point.batches) return ''
-      const previous = points[index - 1]
-      const command =
-        previous && previous.batches > 0 && previous[metric] !== null
-          ? 'L'
-          : 'M'
-      return `${command}${x(index)},${y(value)}`
-    })
-    .join(' ')
-  const label = (period: string) =>
-    interval === 'monthly' ? period : period.slice(5)
-  const ticks = [
-    ...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1]),
-  ]
+
+  const Chart = isBarChart ? BarChart : LineChart
   return (
-    <svg
-      viewBox="0 0 620 210"
-      className="mt-3 w-full"
+    <div
+      className={`mt-4 min-w-0 text-xs text-muted ${chartSizeClass}`}
       role="img"
-      aria-label={`${metrics.find((item) => item.key === metric)?.label} ${isBarChart ? 'bar chart' : 'trend'}`}
+      aria-label={`${series.map((item) => item.label).join(' and ')} ${isBarChart ? 'stacked bar chart by client' : 'trend'}`}
     >
-      {[0, 0.5, 1].map((ratio) => (
-        <g key={ratio}>
-          <line
-            x1="70"
-            x2="590"
-            y1={y(max * ratio)}
-            y2={y(max * ratio)}
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <Chart data={chartData} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+          <CartesianGrid
             stroke="currentColor"
             className="text-border"
+            strokeDasharray="3 3"
+            vertical={false}
           />
-          <text
-            x="60"
-            y={y(max * ratio) + 4}
-            textAnchor="end"
-            fontSize="11"
-            fill="currentColor"
-            className="text-muted"
-          >
-            {compactFormat.format(max * ratio)}
-            {metric === 'foodCostPercentage' ? '%' : ''}
-          </text>
-        </g>
-      ))}
-      {!isBarChart ? (
-        <path d={path} stroke={color} strokeWidth="2.5" fill="none" />
-      ) : null}
-      {points.map((point, index) =>
-        point[metric] !== null && point.batches > 0 ? (
-          isBarChart ? (
-            <rect
-              key={point.period}
-              x={x(index) - barWidth / 2}
-              y={y(point[metric])}
-              width={barWidth}
-              height={170 - y(point[metric])}
-              fill={color}
+          <XAxis
+            dataKey="period"
+            tickFormatter={(period: string) =>
+              interval === 'monthly' ? period : period.slice(5)
+            }
+            minTickGap={32}
+            tickLine={false}
+            stroke="currentColor"
+          />
+          <YAxis
+            width={64}
+            tickFormatter={(value: number) =>
+              `${compactFormat.format(value)}${metric === 'foodCostPercentage' ? '%' : ''}`
+            }
+            allowDecimals={metric !== 'pax'}
+            tickLine={false}
+            axisLine={false}
+            stroke="currentColor"
+          />
+          <Tooltip
+            shared
+            filterNull={false}
+            cursor={isBarChart
+              ? { fill: 'currentColor', fillOpacity: 0.06 }
+              : { stroke: 'currentColor', strokeDasharray: '3 3' }}
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null
+              const point = chartData.find((item) => item.period === label)
+              if (!point) return null
+              const tooltipSeries = isBarChart && topClientsOnly
+                ? orderPaxSeries(chartSeries, point)
+                : chartSeries
+              return (
+                <div className="rounded-md border border-border bg-surface p-3 text-sm text-foreground shadow-md">
+                  <p className="mb-2 font-semibold">{String(label)}</p>
+                  {tooltipSeries.map((item) => (
+                    <p key={item.key} className="flex justify-between gap-6">
+                      <span style={{ color: item.color }}>{item.label}</span>
+                      <span className="font-semibold tabular-nums">
+                        {item.value(point) !== null &&
+                        (item.key === 'estimatedCost' || item.key === 'estimatedRevenue')
+                          ? 'Rp '
+                          : ''}
+                        {format(item.value(point), metric)}
+                      </span>
+                    </p>
+                  ))}
+                  {isBarChart ? (
+                    <p className="mt-2 flex justify-between gap-6 border-t border-border pt-2 font-semibold">
+                      <span>Total pax</span>
+                      <span className="tabular-nums">{format(point.pax)}</span>
+                    </p>
+                  ) : null}
+                </div>
+              )
+            }}
+          />
+          {isBarChart || series.length > 1 ? (
+            <Legend
+              wrapperStyle={{ paddingTop: 12 }}
+              content={() => (
+                <ul className={`flex flex-wrap justify-center gap-y-1 ${isBarChart ? 'gap-x-4' : 'gap-x-6 text-base font-bold'}`}>
+                  {chartSeries.map((item) => (
+                    <li key={item.key} className={`flex items-center ${isBarChart ? 'gap-1.5' : 'gap-2'}`}>
+                      <span
+                        className={isBarChart ? 'h-2.5 w-2.5' : 'h-1 w-10 rounded-full'}
+                        style={{ backgroundColor: item.color }}
+                        aria-hidden="true"
+                      />
+                      <span style={isBarChart ? undefined : { color: item.color }}>{item.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : null}
+          {chartSeries.map((item, index) => isBarChart ? (
+            <Bar
+              key={topClientsOnly ? `pax-rank-${index}` : item.key}
+              dataKey={topClientsOnly
+                ? (point: (typeof chartData)[number]) => point.paxStack[index]?.value ?? null
+                : item.value}
+              stackId="pax"
+              name={topClientsOnly ? undefined : item.label}
+              fill={item.color}
+              maxBarSize={40}
+              isAnimationActive={false}
             >
-              <title>
-                {point.period}: {format(point[metric], metric)}
-              </title>
-            </rect>
+              {topClientsOnly ? chartData.map((point) => (
+                <Cell key={point.period} fill={point.paxStack[index]?.color ?? item.color} />
+              )) : null}
+            </Bar>
           ) : (
-            <circle
-              key={point.period}
-              cx={x(index)}
-              cy={y(point[metric])}
-              r="3"
-              fill={color}
-            >
-              <title>
-                {point.period}: {format(point[metric], metric)}
-              </title>
-            </circle>
-          )
-        ) : null,
-      )}
-      {ticks.map((index) => (
-        <text
-          key={index}
-          x={x(index)}
-          y="195"
-          textAnchor="middle"
-          fontSize="11"
-          fill="currentColor"
-          className="text-muted"
-        >
-          {label(points[index].period)}
-        </text>
-      ))}
-    </svg>
+            <Line
+              key={item.key}
+              dataKey={item.key}
+              name={item.label}
+              type="monotone"
+              stroke={item.color}
+              strokeWidth={2.5}
+              dot={{ r: 2 }}
+              activeDot={{ r: 5 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          ))}
+        </Chart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -227,105 +340,55 @@ const SuperadminAnalyticsPage = () => {
   const { accessToken } = useAuth()
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [applied, setApplied] = useState<Filters>(filters)
-  const [refresh, setRefresh] = useState(0)
-  const [data, setData] = useState<AnalyticsData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [filterError, setFilterError] = useState('')
-  const [clientOptions, setClientOptions] = useState<{
-    site: string
-    items: Array<{ clientId: string; name: string }>
-  } | null>(null)
-  const [clientError, setClientError] = useState('')
-
-  useEffect(() => {
-    if (!accessToken) return
-    let active = true
-    const controller = new AbortController()
-    const loadClients = async () => {
+  const clientsQuery = useQuery({
+    queryKey: ['analytics', 'clients', filters.site],
+    enabled: Boolean(accessToken),
+    queryFn: async ({ signal }) => {
       type ClientResponse = {
         items: Array<{ clientId: string; name: string }>
         totalPages?: number
       }
-      const options = { signal: controller.signal }
       if (filters.site) {
-        return (
-          await apiFetch<ClientResponse>(
-            `/clients/by-site/${encodeURIComponent(filters.site)}`,
-            options,
-            accessToken,
-          )
-        ).items
+        const response = await apiFetch<ClientResponse>(
+          `/clients/by-site/${encodeURIComponent(filters.site)}`,
+          { signal },
+          accessToken ?? undefined,
+        )
+        return { site: filters.site, items: response.items }
       }
       const first = await apiFetch<ClientResponse>(
         '/superadmin/clients?limit=100&page=1',
-        options,
-        accessToken,
+        { signal },
+        accessToken ?? undefined,
       )
       const items = [...first.items]
       for (let page = 2; page <= (first.totalPages ?? 1); page++) {
         const response = await apiFetch<ClientResponse>(
           `/superadmin/clients?limit=100&page=${page}`,
-          options,
-          accessToken,
+          { signal },
+          accessToken ?? undefined,
         )
         items.push(...response.items)
       }
-      return items
-    }
-    loadClients()
-      .then((items) => {
-        if (active) {
-          setClientOptions({ site: filters.site, items })
-          setClientError('')
-        }
-      })
-      .catch((err: unknown) => {
-        if (active)
-          setClientError(
-            err instanceof Error ? err.message : 'Failed to load clients.',
-          )
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [accessToken, filters.site, refresh])
-
-  useEffect(() => {
-    if (!accessToken) return
-    let active = true
-    const controller = new AbortController()
-    const params = new URLSearchParams({
-      ...applied,
-    })
-    apiFetch<AnalyticsData>(
-      `/dashboard/superadmin/analytics?${params}`,
-      { signal: controller.signal },
-      accessToken,
-    )
-      .then((response) => {
-        if (active) setData(response)
-      })
-      .catch((err: unknown) => {
-        if (active)
-          setError(
-            err instanceof Error ? err.message : 'Failed to load analytics.',
-          )
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [accessToken, applied, refresh])
-
-  const beginLoading = () => {
-    setLoading(true)
-    setError('')
-  }
+      return { site: filters.site, items }
+    },
+  })
+  const analyticsQuery = useQuery({
+    queryKey: ['analytics', 'superadmin', applied],
+    enabled: Boolean(accessToken),
+    queryFn: ({ signal }) =>
+      apiFetch<AnalyticsData>(
+        `/dashboard/superadmin/analytics?${new URLSearchParams({ ...applied })}`,
+        { signal },
+        accessToken ?? undefined,
+      ),
+  })
+  const data = analyticsQuery.data
+  const loading = analyticsQuery.isPending || analyticsQuery.isFetching
+  const error = analyticsQuery.error?.message ?? ''
+  const clientOptions = clientsQuery.data
+  const clientError = clientsQuery.error?.message ?? ''
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const days =
@@ -337,8 +400,13 @@ const SuperadminAnalyticsPage = () => {
       return
     }
     setFilterError('')
-    beginLoading()
-    setApplied({ ...filters })
+    if (Object.keys(filters).every(
+      (key) => filters[key as keyof Filters] === applied[key as keyof Filters],
+    )) {
+      void analyticsQuery.refetch()
+    } else {
+      setApplied({ ...filters })
+    }
   }
   const inputClass =
     'mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm'
@@ -367,11 +435,11 @@ const SuperadminAnalyticsPage = () => {
     : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <PageHeading className="text-2xl font-semibold" showBack={false}>
-            Dynamic Analytics Dashboard
+            Dashboard
           </PageHeading>
           <p className="mt-1 text-sm text-muted">
             Monitor approved production costs, sales, and pax across sites.
@@ -381,8 +449,8 @@ const SuperadminAnalyticsPage = () => {
           type="button"
           disabled={loading}
           onClick={() => {
-            beginLoading()
-            setRefresh((value) => value + 1)
+            void analyticsQuery.refetch()
+            void clientsQuery.refetch()
           }}
           className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-semibold text-primary disabled:opacity-50"
         >
@@ -430,8 +498,6 @@ const SuperadminAnalyticsPage = () => {
                   site: event.target.value,
                   clientId: '',
                 })
-                setClientOptions(null)
-                setClientError('')
               }}
               className={inputClass}
             >
@@ -533,6 +599,9 @@ const SuperadminAnalyticsPage = () => {
                   {metric.key === 'foodCostPercentage'
                     ? 'Average Food Cost %'
                     : `Total ${metric.label}`}
+                  {metric.key === 'estimatedCost' || metric.key === 'estimatedRevenue'
+                    ? ' (IDR)'
+                    : ''}
                 </p>
                 <p className="mt-2 break-words text-2xl font-semibold tabular-nums">
                   {format(data.summary[metric.key], metric.key)}
@@ -592,17 +661,33 @@ const SuperadminAnalyticsPage = () => {
               </h2>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
-              {metrics.map((metric) => (
+              {[
+                ...metrics
+                  .filter(
+                    (metric) =>
+                      metric.key === 'foodCostPercentage' ||
+                      metric.key === 'pax',
+                  )
+                  .map((metric) => ({ label: metric.label, series: [metric] })),
+                {
+                  label: 'Estimated Cost & Revenue',
+                  series: metrics.filter(
+                    (metric) =>
+                      metric.key === 'estimatedCost' ||
+                      metric.key === 'estimatedRevenue',
+                  ),
+                },
+              ].map((chart) => (
                 <div
-                  key={metric.key}
-                  className="min-w-0 rounded-md border border-border bg-surface p-4 shadow-sm"
+                  key={chart.label}
+                  className={`min-w-0 rounded-md border border-border bg-surface p-4 shadow-sm ${chart.series.length > 1 ? 'lg:col-span-2' : ''}`}
                 >
-                  <h3 className="text-sm font-semibold">{metric.label}</h3>
+                  <h3 className="text-sm font-semibold">{chart.label}</h3>
                   <TrendChart
                     points={data.trend}
-                    metric={metric.key}
-                    color={metric.color}
+                    series={chart.series}
                     interval={applied.interval}
+                    topClientsOnly={!applied.clientId}
                   />
                 </div>
               ))}

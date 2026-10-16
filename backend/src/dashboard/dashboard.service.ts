@@ -23,6 +23,7 @@ type AnalyticsRow = AnalyticsValues & {
   date: string;
   site: string;
   client: string;
+  clientKey: string;
   productionCode: string;
   sellingPricePerPax: number | null;
   foodCostPercentage: number | null;
@@ -173,6 +174,17 @@ export class DashboardService {
         client: [
           ...new Set(items.map((item) => item.clientName).filter(Boolean)),
         ].join(', '),
+        clientKey: JSON.stringify(
+          [
+            ...new Set(
+              items.map((item) =>
+                item.clientId
+                  ? `id:${item.clientId}`
+                  : `name:${item.clientName ?? ''}`,
+              ),
+            ),
+          ].sort(),
+        ),
         productionCode: group.productionCode ?? first.id,
         sellingPricePerPax: consistentSales ? sellingPricePerPax : null,
         foodCostPercentage: foodCostPercentage(values),
@@ -221,11 +233,24 @@ export class DashboardService {
         ).length,
       },
       workflow,
-      trend: [...periods].map(([period, periodRows]) => ({
-        period,
-        batches: periodRows.length,
-        ...totalAnalyticsRows(periodRows),
-      })),
+      trend: [...periods].map(([period, periodRows]) => {
+        const clients = new Map<string, AnalyticsRow[]>();
+        for (const row of periodRows) {
+          const clientRows = clients.get(row.clientKey) ?? [];
+          clientRows.push(row);
+          clients.set(row.clientKey, clientRows);
+        }
+        return {
+          period,
+          batches: periodRows.length,
+          ...totalAnalyticsRows(periodRows),
+          paxByClient: [...clients].map(([clientKey, clientRows]) => ({
+            clientKey,
+            client: clientRows[0].client || 'Unassigned client',
+            pax: totalAnalyticsRows(clientRows).pax,
+          })),
+        };
+      }),
       bySite: [...siteRows]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([site, items]) => ({

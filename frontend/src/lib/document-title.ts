@@ -231,7 +231,7 @@ const titleMatchers: TitleMatcher[] = [
 
   {
     path: '/superadmin/analytics',
-    getPageTitle: () => 'Dynamic Analytics Dashboard',
+    getPageTitle: () => 'Dashboard',
   },
   {
     path: '/superadmin/users',
