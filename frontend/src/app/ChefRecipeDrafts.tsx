@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import TablePagination from '../components/TablePagination'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -6,6 +7,11 @@ import { useAuth } from '../lib/auth'
 import type { Recipe } from '../lib/chef-data'
 
 type RecipeApi = Omit<Recipe, 'id'> & { id?: string; _id?: string }
+type IssueFilter = '' | 'issues' | 'no-issues'
+
+const DRAFTS_PER_PAGE = 20
+const filterClassName =
+  'h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-primary shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20'
 
 const formatUpdatedAt = (value?: string) => {
   if (!value) return '-'
@@ -22,9 +28,26 @@ const ChefRecipeDrafts = () => {
   const { accessToken, user } = useAuth()
   const workspacePath = user?.role === 'superadmin' ? '/superadmin' : user?.role === 'corporate-chef' ? '/corporate-chef' : '/chef'
   const [drafts, setDrafts] = useState<RecipeApi[]>([])
+  const [page, setPage] = useState(1)
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const categories = Array.from(new Set([
+    ...drafts.map((draft) => (draft.category ?? '').trim()),
+    categoryFilter,
+  ])).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  const filteredDrafts = drafts.filter((draft) => {
+    const matchesCategory = !categoryFilter || (draft.category ?? '').trim() === categoryFilter
+    const hasIssues = (draft.importIssues?.length ?? 0) > 0
+    const matchesIssues = !issueFilter || (issueFilter === 'issues' ? hasIssues : !hasIssues)
+    return matchesCategory && matchesIssues
+  })
+  const totalPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFTS_PER_PAGE))
+  const currentPage = Math.min(page, totalPages)
+  const startIndex = (currentPage - 1) * DRAFTS_PER_PAGE
+  const pageDrafts = filteredDrafts.slice(startIndex, startIndex + DRAFTS_PER_PAGE)
 
   const fetchDrafts = useCallback(async () => {
     if (!accessToken) return
@@ -37,6 +60,7 @@ const ChefRecipeDrafts = () => {
         accessToken,
       )
       setDrafts(data.items ?? [])
+      setPage(1)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to load recipe drafts.')
     } finally {
@@ -98,16 +122,62 @@ const ChefRecipeDrafts = () => {
             Continue recipes that have not been submitted for approval.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate(`${workspacePath}/menu-create`)}
-          className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90"
-        >
-          + Create new recipe
-        </button>
       </div>
 
       <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+          <div className="w-full text-sm sm:w-[calc(8ch+3rem)]">
+            <label htmlFor="recipe-drafts-category" className="sr-only">Category</label>
+            <select
+              id="recipe-drafts-category"
+              value={categoryFilter}
+              onChange={(event) => {
+                setCategoryFilter(event.target.value)
+                setPage(1)
+              }}
+              className={filterClassName}
+            >
+              <option value="">Category</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full text-sm sm:w-[calc(12ch+3rem)]">
+            <label htmlFor="recipe-drafts-issues" className="sr-only">Issue status</label>
+            <select
+              id="recipe-drafts-issues"
+              value={issueFilter}
+              onChange={(event) => {
+                setIssueFilter(event.target.value as IssueFilter)
+                setPage(1)
+              }}
+              className={filterClassName}
+            >
+              <option value="">Issue status</option>
+              <option value="issues">Issues</option>
+              <option value="no-issues">No issues</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryFilter('')
+              setIssueFilter('')
+              setPage(1)
+            }}
+            className="h-10 rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
+          >
+            Reset filters
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`${workspacePath}/menu-create`)}
+            className="h-10 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+          >
+            + Create new recipe
+          </button>
+        </div>
         {error ? <p className="p-5 text-sm text-danger">{error}</p> : null}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -130,16 +200,16 @@ const ChefRecipeDrafts = () => {
                     Loading recipe drafts...
                   </td>
                 </tr>
-              ) : drafts.length === 0 ? (
+              ) : filteredDrafts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-10 text-center text-muted">
-                    No recipe drafts yet.
+                    {drafts.length ? 'No recipe drafts match the selected filters.' : 'No recipe drafts yet.'}
                   </td>
                 </tr>
               ) : (
-                drafts.map((draft, index) => (
+                pageDrafts.map((draft, index) => (
                   <tr key={draft.id ?? draft._id} className="border-t border-border">
-                    <td className="px-5 py-4">{index + 1}</td>
+                    <td className="px-5 py-4">{startIndex + index + 1}</td>
                     <td className="px-5 py-4 text-muted">{draft.recipeCode ?? '-'}</td>
                     <td className="px-5 py-4 font-medium text-foreground">
                       {draft.name}
@@ -185,6 +255,16 @@ const ChefRecipeDrafts = () => {
             </tbody>
           </table>
         </div>
+        <TablePagination
+          page={currentPage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          loading={loading || deletingId !== null}
+          summary={filteredDrafts.length === 0
+            ? 'Showing 0 drafts'
+            : `Showing ${startIndex + 1}-${startIndex + pageDrafts.length} of ${filteredDrafts.length} drafts`}
+          className="border-t border-border px-5 py-4"
+        />
       </div>
     </div>
   )
