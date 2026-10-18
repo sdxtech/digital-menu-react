@@ -28,7 +28,7 @@ import {
 } from '../lib/recipe-version'
 import { formatUnitLabel, unitOfMeasuresOptions } from '../lib/unit-of-measures'
 import SuperadminGroupByManagement from './SuperadminGroupByManagement'
-import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
+import { getRecipeSalesRecommendation } from '../components/RecipeSalesRecommendation'
 import RecipeFoodCostSetting from '../components/RecipeFoodCostSetting'
 import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
 import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
@@ -1714,6 +1714,9 @@ const SuperadminMenuManagementPage = () => {
   )
 
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
+  const selectedRecipeSales = selectedRecipe
+    ? getRecipeSalesRecommendation(selectedRecipe)
+    : null
   const siteNameByCode = useMemo(() => {
     const map = new Map<string, string>()
     siteOptions.forEach((site) => {
@@ -3968,19 +3971,7 @@ const SuperadminMenuManagementPage = () => {
         {selectedRecipe ? (
           <section className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">Recipe Detail</h2>
-                <p className="mt-1 text-xs text-muted">
-                  Code: {selectedRecipe.recipeCode ?? '-'}
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  {selectedRecipe.name} | {formatRecipeVersion(selectedRecipe.version)}
-                </p>
-                <p className="mt-2 text-sm text-muted">
-                  {selectedRecipe.description?.trim() || 'No description.'}
-                </p>
-                <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
-              </div>
+              <h2 className="text-lg font-semibold">Recipe Detail</h2>
               <button
                 type="button"
                 onClick={() => setSelectedRecipeId(null)}
@@ -3992,40 +3983,62 @@ const SuperadminMenuManagementPage = () => {
               </button>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="rounded-md border border-border bg-background p-4">
-                <p className="text-xs text-muted">Version</p>
-                <p className="mt-2 text-sm font-semibold text-primary">
-                  {formatRecipeVersion(selectedRecipe.version)}
-                </p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-4">
-                <p className="text-xs text-muted">Category</p>
-                <p className="mt-2 text-sm font-medium">
-                  {selectedRecipe.category || '-'}
-                </p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-4">
-                <p className="text-xs text-muted">Created from site</p>
-                <p className="mt-2 text-sm font-medium">
-                  {getRecipeSiteLabel(selectedRecipe)}
-                </p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-4">
-                <p className="text-xs text-muted">Base pax</p>
-                <p className="mt-2 text-sm font-medium">
-                  {selectedRecipe.portionSize}
-                </p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-4">
-                <p className="text-xs text-muted">Approval status</p>
-                <p className="mt-2">
-                  <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
-                </p>
-              </div>
-            </div>
+            <dl className="mt-4 grid gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-2">
+              {[
+                [
+                  { label: 'Recipe code', value: selectedRecipe.recipeCode || '-' },
+                  { label: 'Recipe status', value: <RecipeStatusBadge status={selectedRecipe.status} isActive={selectedRecipe.isActive} /> },
+                ],
+                [
+                  { label: 'Recipe name', value: selectedRecipe.name },
+                  { label: 'Approval status', value: <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} /> },
+                ],
+                [
+                  { label: 'Version', value: formatRecipeVersion(selectedRecipe.version) },
+                  { label: 'Base pax', value: selectedRecipe.portionSize },
+                ],
+                [
+                  { label: 'Category', value: selectedRecipe.category || '-' },
+                  { label: 'Target food cost (%)', value: `${selectedRecipeSales?.targetFoodCostPercentage ?? 0}%` },
+                ],
+                [
+                  { label: 'Created from site', value: getRecipeSiteLabel(selectedRecipe) },
+                  { label: 'Sales price/pax (recommendation)', value: selectedRecipeSales?.salesPricePerPax === undefined ? 'Rp. 0' : formatPrice(selectedRecipeSales.salesPricePerPax) },
+                ],
+              ].flat().map(({ label, value }, index) => (
+                <div key={label} className={`grid min-h-6 grid-cols-2 ${index % 2 === 1 ? 'order-1 lg:order-none' : ''}`}>
+                  <dt className="flex items-center justify-between gap-3 bg-primary px-3 py-1 text-xs font-semibold uppercase text-white">
+                    <span>{label}</span>
+                    <span aria-hidden="true">:</span>
+                  </dt>
+                  <dd
+                    className={`flex min-w-0 items-center bg-surface px-3 py-1 text-xs font-normal [&>span]:text-xs [&>span]:font-normal ${label === 'Recipe name' ? 'overflow-x-auto whitespace-nowrap' : 'break-words [overflow-wrap:anywhere]'}`}
+                    title={label === 'Recipe name' ? selectedRecipe.name : undefined}
+                  >
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
 
-            <RecipeSalesRecommendation recipe={selectedRecipe} />
+            <div className="mt-6 grid gap-4 lg:grid-cols-2">
+              <section className="min-w-0 overflow-hidden rounded-md border border-border">
+                <h3 className="border-b border-border bg-background px-4 py-3 text-center font-semibold">COOKING METHOD</h3>
+                <div className="p-2 [overflow-wrap:anywhere] [&_ol]:mt-0 [&_ol]:list-inside [&_ol]:pl-0 [&_ol]:text-xs [&_ol]:font-normal">
+                  {selectedRecipe.cookingMethod?.length ? (
+                    <RecipeCookingMethod steps={selectedRecipe.cookingMethod} showHeading={false} />
+                  ) : (
+                    <p className="!text-xs font-normal text-muted">No cooking method.</p>
+                  )}
+                </div>
+              </section>
+              <section className="min-w-0 overflow-hidden rounded-md border border-border">
+                <h3 className="border-b border-border bg-background px-4 py-3 text-center font-semibold">DESCRIPTION</h3>
+                <p className="whitespace-pre-wrap p-2 !text-xs font-normal text-foreground [overflow-wrap:anywhere]">
+                  {selectedRecipe.description?.trim() || 'No description.'}
+                </p>
+              </section>
+            </div>
             <div className="mt-6">
               <h3 className="font-semibold text-foreground">Ingredients</h3>
               {selectedRecipeIngredients.length === 0 ? (

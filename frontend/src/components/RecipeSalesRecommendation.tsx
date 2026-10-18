@@ -31,15 +31,23 @@ export const getRecipeCostPerPax = (recipe: RecipeCost) => {
     ? totalCost / pax : undefined
 }
 
+export const getRecipeSalesRecommendation = (recipe: RecipeCost, costPerPax?: number) => {
+  const target = recipe.targetFoodCostPercentage
+  const hasTarget = typeof target === 'number' && Number.isFinite(target) && target > 0
+  const cost = costPerPax ?? getRecipeCostPerPax(recipe)
+  return {
+    targetFoodCostPercentage: hasTarget ? target : 0,
+    salesPricePerPax: hasTarget && cost !== undefined ? cost / (target / 100) : undefined,
+  }
+}
+
 const RecipeSalesRecommendation = ({ recipe, costPerPax, labelColSpan }: {
   recipe: RecipeCost
   costPerPax?: number
   labelColSpan?: number
 }) => {
-  const target = recipe.targetFoodCostPercentage
-  const hasTarget = typeof target === 'number' && Number.isFinite(target) && target > 0
-  const cost = costPerPax ?? getRecipeCostPerPax(recipe)
-  const recommendation = hasTarget && cost !== undefined ? cost / (target / 100) : undefined
+  const { targetFoodCostPercentage: target, salesPricePerPax: recommendation } =
+    getRecipeSalesRecommendation(recipe, costPerPax)
 
   if (labelColSpan !== undefined) {
     return (
@@ -49,7 +57,7 @@ const RecipeSalesRecommendation = ({ recipe, costPerPax, labelColSpan }: {
             Target food cost (%)
           </th>
           <td className="whitespace-nowrap border-l border-border px-4 py-3 font-semibold">
-            {hasTarget ? `${target}%` : '0%'}
+            {`${target}%`}
           </td>
         </tr>
         <tr className="border-t border-border bg-background">
@@ -68,7 +76,7 @@ const RecipeSalesRecommendation = ({ recipe, costPerPax, labelColSpan }: {
     <div className="my-4 grid gap-3 sm:grid-cols-2">
       <div className="rounded-md border border-border bg-background p-4">
         <p className="text-xs text-muted">Target food cost (%)</p>
-        <p className="mt-2 text-sm font-medium">{hasTarget ? `${target}%` : '0%'}</p>
+        <p className="mt-2 text-sm font-medium">{`${target}%`}</p>
       </div>
       <div className="rounded-md border border-border bg-background p-4">
         <p className="text-xs text-muted">Sales price/pax (recommendation)</p>
