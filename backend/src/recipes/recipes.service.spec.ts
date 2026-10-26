@@ -519,8 +519,63 @@ describe('RecipesService site visibility', () => {
     });
   });
 
+  describe('recipe draft visibility', () => {
+    it('allows superadmins to list drafts from every author and site', async () => {
+      const { service, recipeModel } = makeService();
+      const drafts = [
+        { _id: 'draft-a', createdBy: 'chef-a', site: 'SITE-A' },
+        { _id: 'draft-b', createdBy: 'chef-b', site: 'SITE-B' },
+      ];
+      recipeModel.find.mockReturnValue(mockRecipeQuery(drafts));
+
+      await expect(
+        service.findDrafts({
+          id: 'admin',
+          roles: [AppRole.Superadmin],
+          site: 'SITE-A',
+        }),
+      ).resolves.toEqual({ items: drafts, total: 2 });
+      expect(recipeModel.find).toHaveBeenCalledWith({
+        isDraft: true,
+        deletedAt: { $exists: false },
+      });
+    });
+
+    it.each([AppRole.Chef, AppRole.CorporateChef])(
+      'keeps %s drafts limited to their author and site scope',
+      async (role) => {
+        const { service, recipeModel } = makeService();
+        recipeModel.find.mockReturnValue(mockRecipeQuery([]));
+
+        await service.findDrafts({
+          id: 'chef',
+          roles: [role],
+          site: 'SITE-A',
+          sites: ['SITE-A', 'SITE-B'],
+        });
+        expect(recipeModel.find).toHaveBeenCalledWith({
+          createdBy: 'chef',
+          isDraft: true,
+          deletedAt: { $exists: false },
+          site:
+            role === AppRole.CorporateChef
+              ? { $in: ['SITE-A', 'SITE-B'] }
+              : 'SITE-A',
+        });
+      },
+    );
+
+    it('requires an authenticated author identity even for superadmins', async () => {
+      const { service, recipeModel } = makeService();
+      await expect(
+        service.findDrafts({ roles: [AppRole.Superadmin] }),
+      ).rejects.toThrow('Recipe author identity is required');
+      expect(recipeModel.find).not.toHaveBeenCalled();
+    });
+  });
+
   describe('delete recipe drafts', () => {
-    it.each([AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin])(
+    it.each([AppRole.Chef, AppRole.CorporateChef])(
       'soft deletes only an owned draft for %s',
       async (role) => {
         const { service, recipeModel, notifications, workflowMail } =
@@ -590,6 +645,125 @@ describe('RecipesService site visibility', () => {
             roles: [AppRole.Chef],
           }),
         ).rejects.toThrow('Recipe draft not found');
+      },
+    );
+  });
+
+  describe('superadmin draft management', () => {
+    const actor = {
+      id: 'admin',
+      roles: [AppRole.Superadmin],
+      site: 'SITE-A',
+    };
+    const draft = {
+      _id: 'other-draft',
+      createdBy: 'other-chef',
+      site: 'SITE-B',
+      isDraft: true,
+      name: 'Ready Recipe',
+      category: 'Main',
+      ingredients: [{ name: 'Ingredient', qty: 1, unitOfMeasures: 'KG' }],
+    };
+    const draftFilter = {
+      _id: draft._id,
+      isDraft: true,
+      deletedAt: { $exists: false },
+    };
+
+    it('soft deletes another author draft across sites and records the admin', async () => {
+      const { service, recipeModel } = makeService();
+      recipeModel.findOneAndUpdate.mockReturnValue(mockRecipeQuery(draft));
+      await service.deleteDraft(draft._id, actor);
+      expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+        draftFilter,
+        expect.any(Object),
+        { new: true },
+      );
+      const update = getUpdatePayload(recipeModel).$set;
+      expect(update).toMatchObject({
+        isActive: false,
+        updatedBy: actor.id,
+      });
+      expect(update.deletedAt).toBeInstanceOf(Date);
+      expect(update.createdBy).toBeUndefined();
+    });
+
+    it.each([
+      { roles: [AppRole.Superadmin] },
+      { roles: [AppRole.Superadmin, AppRole.Chef, AppRole.CorporateChef] },
+    ])(
+      'edits another author draft without changing ownership with roles $roles',
+      async ({ roles }) => {
+        const { service, recipeModel } = makeService();
+        recipeModel.findOne.mockReturnValue(mockRecipeQuery(draft));
+        recipeModel.findOneAndUpdate.mockReturnValue(mockRecipeQuery(draft));
+        await service.updateById(
+          draft._id,
+          { name: 'Updated Draft', saveAsDraft: true },
+          { ...actor, roles },
+        );
+        expect(recipeModel.findOne).toHaveBeenCalledWith({ _id: draft._id });
+        expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+          draftFilter,
+          { $set: { name: 'Updated Draft', updatedBy: actor.id } },
+          { new: true },
+        );
+      },
+    );
+
+    it('submits another author draft across sites and records the reviewer', async () => {
+      const { service, recipeModel, notifications, workflowMail } =
+        makeService();
+      recipeModel.findOne.mockReturnValue(mockRecipeQuery(draft));
+      recipeModel.findOneAndUpdate.mockReturnValue(mockRecipeQuery(draft));
+      await service.submitDraft(draft._id, actor);
+      expect(recipeModel.findOne).toHaveBeenCalledWith(draftFilter);
+      expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+        draftFilter,
+        expect.any(Object),
+        { new: true },
+      );
+      const update = getUpdatePayload(recipeModel).$set;
+      expect(update).toMatchObject({
+        isDraft: false,
+        approvalStatus: 'approved',
+        status: 'active',
+        updatedBy: actor.id,
+        reviewedBy: actor.id,
+      });
+      expect(update.createdBy).toBeUndefined();
+      expect(update.site).toBeUndefined();
+      expect(
+        notifications.createHierarchicalNotification,
+      ).not.toHaveBeenCalled();
+      expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+    });
+
+    it('still rejects incomplete drafts when a superadmin submits them', async () => {
+      const { service, recipeModel } = makeService();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ ...draft, ingredients: [] }),
+      );
+      await expect(service.submitDraft(draft._id, actor)).rejects.toThrow(
+        'Add at least 1 ingredient',
+      );
+      expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it.each([AppRole.Chef, AppRole.CorporateChef])(
+      'keeps draft submission scoped to the author for %s',
+      async (role) => {
+        const { service, recipeModel } = makeService();
+        recipeModel.findOne.mockReturnValue(mockRecipeQuery(null));
+        await expect(
+          service.submitDraft(draft._id, { ...actor, roles: [role] }),
+        ).rejects.toThrow('Recipe draft not found');
+        expect(recipeModel.findOne).toHaveBeenCalledWith({
+          ...draftFilter,
+          createdBy: actor.id,
+          site: role === AppRole.CorporateChef ? { $in: ['SITE-A'] } : 'SITE-A',
+        });
+        expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
       },
     );
   });
@@ -976,36 +1150,42 @@ describe('RecipesService site visibility', () => {
     expect(createCalls[0]?.[0].parentRecipeId).toBeUndefined();
   });
 
-  it('stores a chef draft without notifying approvers', async () => {
-    const { notifications, recipeModel, service, workflowMail } = makeService();
-    recipeModel.create.mockImplementation((payload: object) =>
-      Promise.resolve({ _id: 'recipe-draft', ...payload }),
-    );
+  it.each([AppRole.Chef, AppRole.Superadmin])(
+    'stores a %s draft without notifying approvers',
+    async (role) => {
+      const { notifications, recipeModel, service, workflowMail } =
+        makeService();
+      recipeModel.create.mockImplementation((payload: object) =>
+        Promise.resolve({ _id: 'recipe-draft', ...payload }),
+      );
 
-    await service.create(
-      {
-        name: 'Half Finished Recipe',
-        category: 'Main Course',
-        ingredients: [],
-        saveAsDraft: true,
-      },
-      {
-        id: 'chef-1',
-        site: 'SITE-001',
-        roles: [AppRole.Chef],
-      },
-    );
+      await service.create(
+        {
+          name: 'Half Finished Recipe',
+          category: 'Main Course',
+          ingredients: [],
+          saveAsDraft: true,
+        },
+        {
+          id: 'chef-1',
+          site: 'SITE-001',
+          roles: [role],
+        },
+      );
 
-    expect(recipeModel.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        approvalStatus: 'pending',
-        isDraft: true,
-        status: 'draft',
-      }),
-    );
-    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
-    expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
-  });
+      expect(recipeModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approvalStatus: 'pending',
+          isDraft: true,
+          status: 'draft',
+        }),
+      );
+      expect(
+        notifications.createHierarchicalNotification,
+      ).not.toHaveBeenCalled();
+      expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+    },
+  );
 
   it('creates the next version without changing the base recipe name', async () => {
     const { recipeModel, service } = makeService();

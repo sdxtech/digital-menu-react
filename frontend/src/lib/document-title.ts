@@ -15,6 +15,17 @@ type MenuCreateLocationState = {
   }
 }
 
+const getMenuCreatePageTitle = (state: unknown) => {
+  const baseRecipe = (state as MenuCreateLocationState | null)?.baseRecipe
+  const recipeName = baseRecipe?.name?.trim()
+
+  if (baseRecipe?.id) {
+    return recipeName ? `Edit Recipe: ${recipeName}` : 'Edit Recipe'
+  }
+
+  return 'Create New Recipe'
+}
+
 const titleMatchers: TitleMatcher[] = [
   {
     path: '/login',
@@ -73,16 +84,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/chef/menu-create',
-    getPageTitle: (state) => {
-      const baseRecipe = (state as MenuCreateLocationState | null)?.baseRecipe
-      const recipeName = baseRecipe?.name?.trim()
-
-      if (baseRecipe?.id) {
-        return recipeName ? `Edit Recipe: ${recipeName}` : 'Edit Recipe'
-      }
-
-      return 'Create New Recipe'
-    },
+    getPageTitle: getMenuCreatePageTitle,
   },
   {
     path: '/chef/raw-material',
@@ -126,7 +128,7 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/corporate-chef/menu-create',
-    getPageTitle: () => 'Create New Recipe',
+    getPageTitle: getMenuCreatePageTitle,
   },
   {
     path: '/corporate-chef/recipe-drafts',
@@ -254,6 +256,14 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Menu Management',
   },
   {
+    path: '/superadmin/menu-create',
+    getPageTitle: getMenuCreatePageTitle,
+  },
+  {
+    path: '/superadmin/recipe-drafts',
+    getPageTitle: () => 'Recipe Drafts',
+  },
+  {
     path: '/superadmin/production-forecast',
     getPageTitle: () => 'Production Forecast',
   },
@@ -298,7 +308,7 @@ const titleMatchers: TitleMatcher[] = [
 const formatDocumentTitle = (pageTitle?: string) =>
   pageTitle ? `${pageTitle} | ${APP_NAME}` : APP_NAME
 
-const resolveDocumentTitle = (pathname: string, state: unknown) => {
+export const resolveDocumentTitle = (pathname: string, state: unknown) => {
   if (pathname === '/') {
     return formatDocumentTitle()
   }
