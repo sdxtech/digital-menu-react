@@ -8,6 +8,8 @@ describe('RecipesController corporate chef creation', () => {
     const recipes = {
       create: jest.fn().mockResolvedValue({ id: 'recipe-1' }),
       findAll: jest.fn(),
+      findDrafts: jest.fn(),
+      findDraftById: jest.fn(),
       listSites: jest.fn(),
       deleteDraft: jest.fn().mockResolvedValue({ id: 'draft-1' }),
       importFromExcel: jest
@@ -30,6 +32,37 @@ describe('RecipesController corporate chef creation', () => {
       sites: ['SITE-001', 'SITE-002'],
     },
   };
+
+  it('passes pagination and actor scope to draft list and detail endpoints', async () => {
+    const { controller, recipes } = makeController();
+    const query = { page: 2, limit: 20, issueStatus: 'issues' as const };
+    const draftId = '507f1f77bcf86cd799439011';
+    await controller.listDrafts(request as never, query);
+    await controller.getDraft(request as never, draftId);
+    expect(recipes.findDrafts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: request.user.sub,
+        site: request.user.site,
+        roles: [AppRole.CorporateChef],
+      }),
+      query,
+    );
+    expect(recipes.findDraftById).toHaveBeenCalledWith(
+      draftId,
+      expect.objectContaining({ id: request.user.sub }),
+    );
+    for (const name of ['listDrafts', 'getDraft']) {
+      const handler = Object.getOwnPropertyDescriptor(
+        RecipesController.prototype,
+        name,
+      )?.value as object;
+      expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+        AppRole.Chef,
+        AppRole.CorporateChef,
+        AppRole.Superadmin,
+      ]);
+    }
+  });
 
   it('allows draft deletion for recipe authors without broadening general recipe deletion', async () => {
     const { controller, recipes } = makeController();

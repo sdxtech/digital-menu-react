@@ -27,6 +27,7 @@ import type { AuthenticatedRequest } from '../auth/types/authenticated-request.t
 import { getUploadDir } from '../common/upload-dir';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
+import { ListRecipeDraftsQueryDto } from './dto/list-recipe-drafts.query.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
 import { ResubmitRecipeDto } from './dto/resubmit-recipe.dto';
 import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
@@ -81,8 +82,17 @@ export class RecipesController {
 
   @Get('drafts')
   @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
-  listDrafts(@Req() req: AuthenticatedRequest) {
-    return this.recipes.findDrafts(this.buildActor(req));
+  listDrafts(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListRecipeDraftsQueryDto,
+  ) {
+    return this.recipes.findDrafts(this.buildActor(req), query);
+  }
+
+  @Get('drafts/:id')
+  @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
+  getDraft(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.recipes.findDraftById(id, this.buildActor(req));
   }
 
   @Get('sites')
