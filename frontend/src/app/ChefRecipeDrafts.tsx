@@ -18,6 +18,13 @@ type DraftPage = {
   totalPages: number
   categories: string[]
 }
+type DraftRecheckBatch = {
+  checkedCount: number
+  resolvedCount: number
+  remainingCount: number
+  skippedCount: number
+  nextCursor: string | null
+}
 type IssueFilter = '' | 'issues' | 'no-issues'
 
 const DRAFTS_PER_PAGE = 20
@@ -51,6 +58,10 @@ const ChefRecipeDrafts = () => {
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  const [recheckingId, setRecheckingId] = useState<string | null>(null)
+  const [recheckingAll, setRecheckingAll] = useState(false)
+  const [recheckMessage, setRecheckMessage] = useState('')
+  const draftActionPending = deletingId !== null || openingId !== null || recheckingId !== null || recheckingAll
   const startIndex = (page - 1) * DRAFTS_PER_PAGE
 
   const fetchDrafts = useCallback(async (signal?: AbortSignal) => {
@@ -94,6 +105,7 @@ const ChefRecipeDrafts = () => {
     if (!window.confirm(`Delete draft "${draft.name}"?`)) return
     setDeletingId(id)
     setError('')
+    setRecheckMessage('')
     try {
       await apiFetch(`/recipes/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }, accessToken)
       await fetchDrafts()
@@ -104,11 +116,36 @@ const ChefRecipeDrafts = () => {
     }
   }
 
+  const recheckDraft = async (draft: DraftSummary) => {
+    const id = draft.id ?? draft._id
+    if (!id || !accessToken || draftActionPending) return
+    setRecheckingId(id)
+    setError('')
+    setRecheckMessage('')
+    try {
+      const updated = await apiFetch<RecipeApi>(
+        `/recipes/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: JSON.stringify({ saveAsDraft: true }) },
+        accessToken,
+      )
+      const issueCount = updated.importIssues?.length ?? 0
+      setRecheckMessage(issueCount
+        ? `Rechecked "${draft.name}": ${issueCount} issue${issueCount === 1 ? '' : 's'} remaining.`
+        : `Rechecked "${draft.name}": no issues remaining.`)
+      await fetchDrafts()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to recheck recipe draft.')
+    } finally {
+      setRecheckingId(null)
+    }
+  }
+
   const continueDraft = async (draft: DraftSummary) => {
     const id = draft.id ?? draft._id
     if (!id || !accessToken || openingId) return
     setOpeningId(id)
     setError('')
+    setRecheckMessage('')
     try {
       const fullDraft = await apiFetch<RecipeApi>(
         `/recipes/drafts/${encodeURIComponent(id)}`,
@@ -142,6 +179,45 @@ const ChefRecipeDrafts = () => {
     }
   }
 
+  const recheckAllDrafts = async () => {
+    if (!isSuperadmin || !accessToken || draftActionPending) return
+    setRecheckingAll(true)
+    setError('')
+    setRecheckMessage('Checking all imported drafts with issues. Keep this page open until the check finishes.')
+    let afterId: string | null = null
+    let checkedCount = 0
+    let resolvedCount = 0
+    let remainingCount = 0
+    let skippedCount = 0
+    try {
+      do {
+        const result: DraftRecheckBatch = await apiFetch<DraftRecheckBatch>(
+          '/recipes/drafts/recheck',
+          { method: 'POST', body: JSON.stringify(afterId ? { afterId } : {}) },
+          accessToken,
+        )
+        checkedCount += result.checkedCount
+        resolvedCount += result.resolvedCount
+        remainingCount += result.remainingCount
+        skippedCount += result.skippedCount
+        afterId = result.nextCursor
+        setRecheckMessage(
+          `${afterId ? 'Checking' : 'Recheck complete'}: ${checkedCount} drafts checked, ${resolvedCount} now without issues, ${remainingCount} still with issues.`
+          + (skippedCount ? ` ${skippedCount} skipped because they changed during the check; run Recheck again for these drafts.` : '')
+          + (afterId ? ' Keep this page open until the check finishes.' : ''),
+        )
+      } while (afterId)
+      await fetchDrafts()
+    } catch (reason) {
+      await fetchDrafts()
+      setRecheckMessage('')
+      const detail = reason instanceof Error ? reason.message : 'Failed to recheck recipe drafts.'
+      setError(`${detail} Bulk recheck stopped. Some drafts may already have been updated; run Recheck all issues again to check the remaining drafts.`)
+    } finally {
+      setRecheckingAll(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -161,6 +237,7 @@ const ChefRecipeDrafts = () => {
             <label htmlFor="recipe-drafts-category" className="sr-only">Category</label>
             <select
               id="recipe-drafts-category"
+              disabled={draftActionPending}
               value={categoryFilter}
               onChange={(event) => {
                 setCategoryFilter(event.target.value)
@@ -178,6 +255,7 @@ const ChefRecipeDrafts = () => {
             <label htmlFor="recipe-drafts-issues" className="sr-only">Issue status</label>
             <select
               id="recipe-drafts-issues"
+              disabled={draftActionPending}
               value={issueFilter}
               onChange={(event) => {
                 setIssueFilter(event.target.value as IssueFilter)
@@ -192,6 +270,7 @@ const ChefRecipeDrafts = () => {
           </div>
           <button
             type="button"
+            disabled={draftActionPending}
             onClick={() => {
               setCategoryFilter('')
               setIssueFilter('')
@@ -201,14 +280,31 @@ const ChefRecipeDrafts = () => {
           >
             Reset filters
           </button>
+          {isSuperadmin && (
+            <button
+              type="button"
+              disabled={loading || draftActionPending}
+              onClick={() => { void recheckAllDrafts() }}
+              className="h-10 rounded-lg border border-primary px-4 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {recheckingAll ? 'Checking all issues...' : 'Recheck all issues'}
+            </button>
+          )}
           <button
             type="button"
+            disabled={draftActionPending}
             onClick={() => navigate(`${workspacePath}/menu-create`)}
             className="h-10 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90"
           >
             + Create new recipe
           </button>
         </div>
+        <p className="px-5 py-4 text-xs text-muted">
+          {isSuperadmin
+            ? 'After updating conversions or prices, use Recheck all issues to check imported drafts for all users and sites, across all pages and categories, regardless of the current filters.'
+            : 'After updating conversions or prices, use Recheck to refresh imported draft issues and costs.'}
+        </p>
+        {recheckMessage ? <p role="status" className="px-5 pb-4 text-sm text-primary">{recheckMessage}</p> : null}
         {error ? <p className="p-5 text-sm text-danger">{error}</p> : null}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -269,13 +365,24 @@ const ChefRecipeDrafts = () => {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={deletingId !== null || openingId !== null}
+                          disabled={draftActionPending}
                           onClick={() => { void continueDraft(draft) }}
                           className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {openingId === (draft.id ?? draft._id) ? 'Loading...' : 'Continue'}
                         </button>
-                        <button type="button" disabled={deletingId !== null || openingId !== null}
+                        {draft.importIssues !== undefined && (
+                          <button
+                            type="button"
+                            disabled={draftActionPending}
+                            onClick={() => { void recheckDraft(draft) }}
+                            aria-label={`Recheck draft ${draft.name}`}
+                            className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {recheckingId === (draft.id ?? draft._id) ? 'Checking...' : 'Recheck'}
+                          </button>
+                        )}
+                        <button type="button" disabled={draftActionPending}
                           onClick={() => { void deleteDraft(draft) }}
                           aria-label={`Delete draft ${draft.name}`}
                           className="inline-flex items-center gap-2 rounded-md border border-red-600 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -294,7 +401,7 @@ const ChefRecipeDrafts = () => {
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
-          loading={loading || deletingId !== null}
+          loading={loading || draftActionPending}
           summary={loading ? 'Loading drafts...' : drafts.length === 0
             ? 'Showing 0 drafts'
             : `Showing ${startIndex + 1}-${startIndex + drafts.length} of ${total} drafts`}
