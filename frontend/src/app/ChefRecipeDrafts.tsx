@@ -7,6 +7,17 @@ import { useAuth } from '../lib/auth'
 import type { Recipe } from '../lib/chef-data'
 
 type RecipeApi = Omit<Recipe, 'id'> & { id?: string; _id?: string }
+type DraftSummary = Pick<Recipe, 'name' | 'category' | 'recipeCode' | 'createdBy' | 'createdByName' | 'createdByEmail' | 'site' | 'siteName' | 'importIssues' | 'updatedAt'> & {
+  id?: string
+  _id?: string
+  ingredientsCount: number
+}
+type DraftPage = {
+  items: DraftSummary[]
+  total: number
+  totalPages: number
+  categories: string[]
+}
 type IssueFilter = '' | 'issues' | 'no-issues'
 
 const DRAFTS_PER_PAGE = 20
@@ -29,52 +40,55 @@ const ChefRecipeDrafts = () => {
   const isSuperadmin = user?.role === 'superadmin'
   const columnCount = isSuperadmin ? 10 : 8
   const workspacePath = user?.role === 'superadmin' ? '/superadmin' : user?.role === 'corporate-chef' ? '/corporate-chef' : '/chef'
-  const [drafts, setDrafts] = useState<RecipeApi[]>([])
+  const [drafts, setDrafts] = useState<DraftSummary[]>([])
   const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [categories, setCategories] = useState<string[]>([])
   const [categoryFilter, setCategoryFilter] = useState('')
   const [issueFilter, setIssueFilter] = useState<IssueFilter>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const categories = Array.from(new Set([
-    ...drafts.map((draft) => (draft.category ?? '').trim()),
-    categoryFilter,
-  ])).filter(Boolean).sort((a, b) => a.localeCompare(b))
-  const filteredDrafts = drafts.filter((draft) => {
-    const matchesCategory = !categoryFilter || (draft.category ?? '').trim() === categoryFilter
-    const hasIssues = (draft.importIssues?.length ?? 0) > 0
-    const matchesIssues = !issueFilter || (issueFilter === 'issues' ? hasIssues : !hasIssues)
-    return matchesCategory && matchesIssues
-  })
-  const totalPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFTS_PER_PAGE))
-  const currentPage = Math.min(page, totalPages)
-  const startIndex = (currentPage - 1) * DRAFTS_PER_PAGE
-  const pageDrafts = filteredDrafts.slice(startIndex, startIndex + DRAFTS_PER_PAGE)
+  const [openingId, setOpeningId] = useState<string | null>(null)
+  const startIndex = (page - 1) * DRAFTS_PER_PAGE
 
-  const fetchDrafts = useCallback(async () => {
-    if (!accessToken) return
+  const fetchDrafts = useCallback(async (signal?: AbortSignal) => {
+    if (!accessToken) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     try {
-      const data = await apiFetch<{ items?: RecipeApi[] }>(
-        '/recipes/drafts',
-        undefined,
+      const params = new URLSearchParams({ page: String(page), limit: String(DRAFTS_PER_PAGE) })
+      if (categoryFilter) params.set('category', categoryFilter)
+      if (issueFilter) params.set('issueStatus', issueFilter)
+      const data = await apiFetch<DraftPage>(
+        `/recipes/drafts?${params.toString()}`,
+        { signal },
         accessToken,
       )
-      setDrafts(data.items ?? [])
-      setPage(1)
+      if (signal?.aborted) return
+      setDrafts(data.items)
+      setTotal(data.total)
+      setTotalPages(data.totalPages)
+      setCategories(data.categories)
+      if (page > data.totalPages) setPage(data.totalPages)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Failed to load recipe drafts.')
+      if (!signal?.aborted) setError(reason instanceof Error ? reason.message : 'Failed to load recipe drafts.')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, page, categoryFilter, issueFilter])
 
   useEffect(() => {
-    fetchDrafts().catch(() => null)
+    const controller = new AbortController()
+    void fetchDrafts(controller.signal)
+    return () => controller.abort()
   }, [fetchDrafts])
 
-  const deleteDraft = async (draft: RecipeApi) => {
+  const deleteDraft = async (draft: DraftSummary) => {
     const id = draft.id ?? draft._id
     if (!id || !accessToken || deletingId) return
     if (!window.confirm(`Delete draft "${draft.name}"?`)) return
@@ -82,7 +96,7 @@ const ChefRecipeDrafts = () => {
     setError('')
     try {
       await apiFetch(`/recipes/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }, accessToken)
-      setDrafts((current) => current.filter((item) => (item.id ?? item._id) !== id))
+      await fetchDrafts()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to delete recipe draft.')
     } finally {
@@ -90,29 +104,42 @@ const ChefRecipeDrafts = () => {
     }
   }
 
-  const continueDraft = (draft: RecipeApi) => {
+  const continueDraft = async (draft: DraftSummary) => {
     const id = draft.id ?? draft._id
-    if (!id) return
-    navigate(`${workspacePath}/menu-create`, {
-      state: {
-        baseRecipe: {
-          id,
-          recipeCode: draft.recipeCode,
-          version: draft.version,
-          name: draft.name,
-          category: draft.category,
-          description: draft.description ?? '',
-          cookingMethod: draft.cookingMethod ?? [],
-          importIssues: draft.importIssues,
-          portionSize: draft.portionSize,
-          targetFoodCostPercentage: draft.targetFoodCostPercentage,
-          site: draft.site,
-          approvalStatus: draft.approvalStatus,
-          isDraft: true,
-          ingredients: draft.ingredients ?? [],
+    if (!id || !accessToken || openingId) return
+    setOpeningId(id)
+    setError('')
+    try {
+      const fullDraft = await apiFetch<RecipeApi>(
+        `/recipes/drafts/${encodeURIComponent(id)}`,
+        undefined,
+        accessToken,
+      )
+      navigate(`${workspacePath}/menu-create`, {
+        state: {
+          baseRecipe: {
+            id,
+            recipeCode: fullDraft.recipeCode,
+            version: fullDraft.version,
+            name: fullDraft.name,
+            category: fullDraft.category,
+            description: fullDraft.description ?? '',
+            cookingMethod: fullDraft.cookingMethod ?? [],
+            importIssues: fullDraft.importIssues,
+            portionSize: fullDraft.portionSize,
+            targetFoodCostPercentage: fullDraft.targetFoodCostPercentage,
+            site: fullDraft.site,
+            approvalStatus: fullDraft.approvalStatus,
+            isDraft: true,
+            ingredients: fullDraft.ingredients ?? [],
+          },
         },
-      },
-    })
+      })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Failed to load recipe draft.')
+    } finally {
+      setOpeningId(null)
+    }
   }
 
   return (
@@ -206,14 +233,14 @@ const ChefRecipeDrafts = () => {
                     Loading recipe drafts...
                   </td>
                 </tr>
-              ) : filteredDrafts.length === 0 ? (
+              ) : drafts.length === 0 ? (
                 <tr>
                   <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
-                    {drafts.length ? 'No recipe drafts match the selected filters.' : 'No recipe drafts yet.'}
+                    {total ? 'No recipe drafts on this page.' : categoryFilter || issueFilter ? 'No recipe drafts match the selected filters.' : 'No recipe drafts yet.'}
                   </td>
                 </tr>
               ) : (
-                pageDrafts.map((draft, index) => (
+                drafts.map((draft, index) => (
                   <tr key={draft.id ?? draft._id} className="border-t border-border">
                     <td className="px-5 py-4">{startIndex + index + 1}</td>
                     <td className="px-5 py-4 text-muted">{draft.recipeCode ?? '-'}</td>
@@ -223,7 +250,7 @@ const ChefRecipeDrafts = () => {
                     <td className="px-5 py-4">{draft.category}</td>
                     {isSuperadmin && <td className="px-5 py-4">{draft.createdByName || draft.createdByEmail || draft.createdBy || '-'}</td>}
                     {isSuperadmin && <td className="px-5 py-4">{draft.siteName || draft.site || '-'}</td>}
-                    <td className="px-5 py-4">{draft.ingredients?.length ?? 0}</td>
+                    <td className="px-5 py-4">{draft.ingredientsCount}</td>
                     <td className="px-5 py-4">
                       {draft.importIssues?.length ? (
                         <details className="text-xs text-amber-700">
@@ -242,13 +269,13 @@ const ChefRecipeDrafts = () => {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={deletingId !== null}
-                          onClick={() => continueDraft(draft)}
+                          disabled={deletingId !== null || openingId !== null}
+                          onClick={() => { void continueDraft(draft) }}
                           className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          Continue
+                          {openingId === (draft.id ?? draft._id) ? 'Loading...' : 'Continue'}
                         </button>
-                        <button type="button" disabled={deletingId !== null}
+                        <button type="button" disabled={deletingId !== null || openingId !== null}
                           onClick={() => { void deleteDraft(draft) }}
                           aria-label={`Delete draft ${draft.name}`}
                           className="inline-flex items-center gap-2 rounded-md border border-red-600 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -264,13 +291,13 @@ const ChefRecipeDrafts = () => {
           </table>
         </div>
         <TablePagination
-          page={currentPage}
+          page={page}
           totalPages={totalPages}
           onPageChange={setPage}
           loading={loading || deletingId !== null}
-          summary={filteredDrafts.length === 0
+          summary={loading ? 'Loading drafts...' : drafts.length === 0
             ? 'Showing 0 drafts'
-            : `Showing ${startIndex + 1}-${startIndex + pageDrafts.length} of ${filteredDrafts.length} drafts`}
+            : `Showing ${startIndex + 1}-${startIndex + drafts.length} of ${total} drafts`}
           className="border-t border-border px-5 py-4"
         />
       </div>

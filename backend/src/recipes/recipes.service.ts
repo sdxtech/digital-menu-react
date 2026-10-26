@@ -7,8 +7,9 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import ExcelJS, { type CellValue, type Worksheet } from 'exceljs';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model, type PipelineStage } from 'mongoose';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
+import { ListRecipeDraftsQueryDto } from './dto/list-recipe-drafts.query.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import {
@@ -527,7 +528,7 @@ export class RecipesService {
     };
   }
 
-  async findDrafts(actor?: RecipeActor) {
+  async findDrafts(actor?: RecipeActor, query: ListRecipeDraftsQueryDto = {}) {
     if (!actor?.id) {
       throw new BadRequestException(
         'Recipe author identity is required to load drafts.',
@@ -535,10 +536,79 @@ export class RecipesService {
     }
 
     const isSuperadmin = this.isSuperadminActor(actor);
-    const items = await this.recipeModel
-      .find(
+    const baseFilter = this.withSiteFilter(
+      {
+        ...(isSuperadmin ? {} : { createdBy: actor.id }),
+        isDraft: true,
+        deletedAt: { $exists: false },
+      },
+      isSuperadmin ? undefined : this.getActorSiteScope(actor),
+    );
+    const filter = {
+      ...baseFilter,
+      ...(query.category?.trim() ? { category: query.category.trim() } : {}),
+      ...(query.issueStatus
+        ? { 'importIssues.0': { $exists: query.issueStatus === 'issues' } }
+        : {}),
+    };
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const pipeline: PipelineStage[] = [
+      { $match: filter },
+      { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $project: {
+          recipeCode: 1,
+          name: 1,
+          category: 1,
+          createdBy: 1,
+          createdByEmail: 1,
+          site: 1,
+          importIssues: 1,
+          updatedAt: 1,
+          ingredientsCount: { $size: { $ifNull: ['$ingredients', []] } },
+        },
+      },
+    ];
+    const [items, total, allCategories] = await Promise.all([
+      this.recipeModel
+        .aggregate<
+          RecipeAuditFields & { site?: string; siteName?: string }
+        >(pipeline)
+        .exec(),
+      this.recipeModel.countDocuments(filter),
+      this.recipeModel.distinct('category', baseFilter),
+    ]);
+
+    await this.attachActorNames(items);
+    await this.attachSiteNames(items);
+    const categories = Array.from(
+      new Set(
+        allCategories.map((category) => category?.trim()).filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      categories,
+    };
+  }
+
+  async findDraftById(id: string, actor?: RecipeActor) {
+    if (!actor?.id || !isValidObjectId(id)) {
+      throw new NotFoundException('Recipe draft not found');
+    }
+    const isSuperadmin = this.isSuperadminActor(actor);
+    const draft = await this.recipeModel
+      .findOne(
         this.withSiteFilter(
           {
+            _id: id,
             ...(isSuperadmin ? {} : { createdBy: actor.id }),
             isDraft: true,
             deletedAt: { $exists: false },
@@ -546,12 +616,9 @@ export class RecipesService {
           isSuperadmin ? undefined : this.getActorSiteScope(actor),
         ),
       )
-      .sort({ updatedAt: -1, createdAt: -1 })
       .lean();
-
-    await this.attachActorNames(items);
-    await this.attachSiteNames(items);
-    return { items, total: items.length };
+    if (!draft) throw new NotFoundException('Recipe draft not found');
+    return draft;
   }
 
   async submitDraft(id: string, actor?: RecipeActor) {
