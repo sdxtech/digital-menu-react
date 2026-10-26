@@ -9,6 +9,7 @@ import {
 import { Queue } from 'bullmq';
 import { rm } from 'node:fs/promises';
 import { IMPORTS_QUEUE } from '../queue/queue.constants';
+import type { RawMaterialImportResult } from './raw-material-import-result.type';
 
 type ImportJobData = {
   userId: string;
@@ -26,7 +27,11 @@ export class ImportsService {
   private readonly logger = new Logger(ImportsService.name);
 
   constructor(
-    @Inject(IMPORTS_QUEUE) private readonly importsQueue: Queue<ImportJobData>,
+    @Inject(IMPORTS_QUEUE)
+    private readonly importsQueue: Queue<
+      ImportJobData,
+      RawMaterialImportResult | undefined
+    >,
   ) {}
 
   async enqueueProducts(
@@ -64,6 +69,38 @@ export class ImportsService {
     );
 
     return { jobId: job.id };
+  }
+
+  async getImportJobStatus(userId: string, jobId: string) {
+    const job = await this.importsQueue.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Import job was not found.');
+    }
+    if (job.data.userId !== userId) {
+      throw new ForbiddenException('You can only view your own import jobs.');
+    }
+    if (job.name !== 'import-raw-materials') {
+      throw new BadRequestException('This import job cannot be viewed.');
+    }
+
+    const state = await job.getState();
+    if (state === 'unknown') {
+      throw new NotFoundException('Import job was not found.');
+    }
+    // Reload the result after reading the state: a fast job may finish between
+    // getJob() and getState(), leaving the first snapshot without its returnvalue.
+    const result =
+      state === 'completed'
+        ? ((await this.importsQueue.getJob(jobId))?.returnvalue ?? null)
+        : null;
+    return {
+      jobId,
+      status:
+        state === 'completed' && result?.status === 'cancelled'
+          ? ('cancelled' as const)
+          : state,
+      result,
+    };
   }
 
   async cancelImportJob(userId: string, jobId: string) {

@@ -5,6 +5,11 @@ import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import RecipeImportSummary, { type RecipeImportSummaryResult } from '../components/RecipeImportSummary'
 import type { RecipeImportResult } from '../lib/chef-data'
 import {
+  getRawMaterialImportResult,
+  type RawMaterialImportJobStatus,
+  type RawMaterialImportResult,
+} from '../lib/raw-material-import'
+import {
   Fragment,
   useCallback,
   useEffect,
@@ -175,21 +180,6 @@ type RawMaterialForm = {
   productCode: string
   name: string
   unitOfMeasures: string
-}
-
-type NotificationItem = {
-  id?: string
-  _id?: string
-  title?: string
-  message?: string
-  meta?: Record<string, unknown>
-  createdAt?: string
-}
-
-type ImportResult = {
-  status: 'success' | 'error' | 'cancelled'
-  title: string
-  message: string
 }
 
 type RawMaterialPriceUploadResult = {
@@ -1672,14 +1662,12 @@ const SuperadminMenuManagementPage = () => {
   const [rawMaterialImportError, setRawMaterialImportError] = useState('')
   const [rawMaterialImportMessage, setRawMaterialImportMessage] = useState('')
   const [rawMaterialImporting, setRawMaterialImporting] = useState(false)
-  const [rawMaterialImportStartedAt, setRawMaterialImportStartedAt] =
-    useState<number | null>(null)
   const [rawMaterialImportJobId, setRawMaterialImportJobId] =
     useState<string | null>(null)
   const [rawMaterialImportCancelling, setRawMaterialImportCancelling] =
     useState(false)
   const [rawMaterialImportResult, setRawMaterialImportResult] =
-    useState<ImportResult | null>(null)
+    useState<RawMaterialImportResult | null>(null)
   const [rawMaterialPriceUploadOpen, setRawMaterialPriceUploadOpen] =
     useState(false)
   const [rawMaterialPriceUploadFile, setRawMaterialPriceUploadFile] =
@@ -2866,7 +2854,6 @@ const SuperadminMenuManagementPage = () => {
         accessToken,
       )
       setRawMaterialImportJobId(job.jobId)
-      setRawMaterialImportStartedAt(Date.now())
       setRawMaterialImportMessage('Import started. Waiting for completion...')
     } catch (error) {
       const message =
@@ -2876,7 +2863,6 @@ const SuperadminMenuManagementPage = () => {
       setRawMaterialImportError(message)
       setRawMaterialImportMessage('')
       setRawMaterialImporting(false)
-      setRawMaterialImportStartedAt(null)
       setRawMaterialImportJobId(null)
       setRawMaterialImportCancelling(false)
     }
@@ -2913,7 +2899,6 @@ const SuperadminMenuManagementPage = () => {
         setRawMaterialImportOpen(false)
         setRawMaterialImportMessage('')
         setRawMaterialImportFile(null)
-        setRawMaterialImportStartedAt(null)
         setRawMaterialImportJobId(null)
         return
       }
@@ -2930,7 +2915,6 @@ const SuperadminMenuManagementPage = () => {
       setRawMaterialImportOpen(false)
       setRawMaterialImportMessage('')
       setRawMaterialImportFile(null)
-      setRawMaterialImportStartedAt(null)
       setRawMaterialImportJobId(null)
     } catch (error) {
       const message =
@@ -2943,7 +2927,7 @@ const SuperadminMenuManagementPage = () => {
   }
 
   useEffect(() => {
-    if (!rawMaterialImporting || !rawMaterialImportStartedAt || !accessToken) {
+    if (!rawMaterialImporting || !rawMaterialImportJobId || !accessToken) {
       return
     }
 
@@ -2952,55 +2936,24 @@ const SuperadminMenuManagementPage = () => {
 
     const pollStatus = async () => {
       try {
-        const notifications = await apiFetch<NotificationItem[]>(
-          '/notifications?page=1&limit=25',
+        const job = await apiFetch<RawMaterialImportJobStatus>(
+          `/imports/jobs/${encodeURIComponent(rawMaterialImportJobId)}`,
           undefined,
           accessToken,
         )
         if (cancelled) return
 
-        const match = notifications.find((item) => {
-          if (!item?.title || !item.createdAt) return false
-          if (
-            item.title !== 'Raw material import completed' &&
-            item.title !== 'Raw material import failed' &&
-            item.title !== 'Raw material import cancelled'
-          ) {
-            return false
-          }
-          const createdAt = new Date(item.createdAt).getTime()
-          return (
-            Number.isFinite(createdAt) &&
-            createdAt >= rawMaterialImportStartedAt
-          )
-        })
-
-        if (match) {
-          const isSuccess = match.title === 'Raw material import completed'
-          const isCancelled = match.title === 'Raw material import cancelled'
-          let message = match.message ?? ''
-          if (!isSuccess && !isCancelled) {
-            const reason =
-              match.meta && typeof match.meta.reason === 'string'
-                ? match.meta.reason
-                : ''
-            if (reason) message = `${message} (${reason})`
-          }
-
-          setRawMaterialImportResult({
-            status: isSuccess ? 'success' : isCancelled ? 'cancelled' : 'error',
-            title: match.title ?? 'Import finished',
-            message: message || 'Import finished.',
-          })
+        const result = getRawMaterialImportResult(job)
+        if (result) {
+          setRawMaterialImportResult(result)
           setRawMaterialImporting(false)
           setRawMaterialImportOpen(false)
           setRawMaterialImportError('')
           setRawMaterialImportMessage('')
           setRawMaterialImportFile(null)
-          setRawMaterialImportStartedAt(null)
           setRawMaterialImportJobId(null)
           setRawMaterialImportCancelling(false)
-          if (isSuccess) {
+          if (result.status === 'success') {
             fetchRawMaterials(1, rawMaterialMeta.limit, rawMaterialSearch).catch(
               () => null,
             )
@@ -3015,13 +2968,12 @@ const SuperadminMenuManagementPage = () => {
             : 'Failed to check import status.'
         setRawMaterialImportResult({
           status: 'error',
-          title: 'Import failed',
+          title: 'Unable to check import status',
           message,
         })
         setRawMaterialImporting(false)
         setRawMaterialImportOpen(false)
         setRawMaterialImportMessage('')
-        setRawMaterialImportStartedAt(null)
         setRawMaterialImportJobId(null)
         setRawMaterialImportCancelling(false)
         return
@@ -3032,7 +2984,7 @@ const SuperadminMenuManagementPage = () => {
       }
     }
 
-    timeoutId = window.setTimeout(pollStatus, 2000)
+    void pollStatus()
 
     return () => {
       cancelled = true
@@ -3042,7 +2994,7 @@ const SuperadminMenuManagementPage = () => {
     accessToken,
     fetchRawMaterials,
     rawMaterialImporting,
-    rawMaterialImportStartedAt,
+    rawMaterialImportJobId,
     rawMaterialMeta.limit,
     rawMaterialSearch,
   ])
