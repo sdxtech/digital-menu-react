@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Logger,
   Param,
   Post,
@@ -131,6 +132,15 @@ export class ImportsController {
       }
       throw error;
     }
+  }
+
+  @Get('jobs/:jobId')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  async getImportJobStatus(
+    @Req() req: AuthenticatedRequest,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.importsService.getImportJobStatus(req.user.sub, jobId);
   }
 
   @Post('jobs/:jobId/cancel')

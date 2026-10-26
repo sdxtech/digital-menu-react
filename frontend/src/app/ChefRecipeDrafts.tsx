@@ -26,6 +26,8 @@ const formatUpdatedAt = (value?: string) => {
 const ChefRecipeDrafts = () => {
   const navigate = useNavigate()
   const { accessToken, user } = useAuth()
+  const isSuperadmin = user?.role === 'superadmin'
+  const columnCount = isSuperadmin ? 10 : 8
   const workspacePath = user?.role === 'superadmin' ? '/superadmin' : user?.role === 'corporate-chef' ? '/corporate-chef' : '/chef'
   const [drafts, setDrafts] = useState<RecipeApi[]>([])
   const [page, setPage] = useState(1)
@@ -119,7 +121,9 @@ const ChefRecipeDrafts = () => {
         <div>
           <PageHeading className="text-2xl font-semibold text-foreground">Recipe Drafts</PageHeading>
           <p className="mt-1 text-sm text-muted">
-            Continue recipes that have not been submitted for approval.
+            {isSuperadmin
+              ? 'Manage recipe drafts from all users and sites. Continue a draft to edit, save, or submit it.'
+              : 'Continue recipes that have not been submitted for approval.'}
           </p>
         </div>
       </div>
@@ -187,6 +191,8 @@ const ChefRecipeDrafts = () => {
                 <th className="px-5 py-3">RECIPE CODE</th>
                 <th className="px-5 py-3">RECIPE NAME</th>
                 <th className="px-5 py-3">CATEGORY</th>
+                {isSuperadmin && <th className="px-5 py-3">OWNER</th>}
+                {isSuperadmin && <th className="px-5 py-3">SITE</th>}
                 <th className="px-5 py-3">INGREDIENTS</th>
                 <th className="px-5 py-3">ISSUES</th>
                 <th className="px-5 py-3">LAST UPDATED</th>
@@ -196,13 +202,13 @@ const ChefRecipeDrafts = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
                     Loading recipe drafts...
                   </td>
                 </tr>
               ) : filteredDrafts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
                     {drafts.length ? 'No recipe drafts match the selected filters.' : 'No recipe drafts yet.'}
                   </td>
                 </tr>
@@ -215,6 +221,8 @@ const ChefRecipeDrafts = () => {
                       {draft.name}
                     </td>
                     <td className="px-5 py-4">{draft.category}</td>
+                    {isSuperadmin && <td className="px-5 py-4">{draft.createdByName || draft.createdByEmail || draft.createdBy || '-'}</td>}
+                    {isSuperadmin && <td className="px-5 py-4">{draft.siteName || draft.site || '-'}</td>}
                     <td className="px-5 py-4">{draft.ingredients?.length ?? 0}</td>
                     <td className="px-5 py-4">
                       {draft.importIssues?.length ? (

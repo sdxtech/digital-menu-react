@@ -10,5 +10,4 @@ export class CreateUnitOfMeasureDto {
   @IsNotEmpty()
   @MaxLength(120)
   name: string;
-
 }

@@ -84,7 +84,12 @@ export class ClientsService {
 
     const skip = (query.page - 1) * query.limit;
     const [items, total] = await Promise.all([
-      this.clientModel.find(filter).sort({ name: 1 }).skip(skip).limit(query.limit).lean(),
+      this.clientModel
+        .find(filter)
+        .sort({ name: 1 })
+        .skip(skip)
+        .limit(query.limit)
+        .lean(),
       this.clientModel.countDocuments(filter),
     ]);
     const siteIds = items.flatMap((item) => item.siteIds ?? []);
@@ -140,11 +145,16 @@ export class ClientsService {
       fields.clientId = clientId;
     }
     if (siteIds !== undefined) {
-      const normalized = Array.from(new Set(siteIds.map((site) => site.trim()))).filter(Boolean);
-      if (!normalized.length) throw new BadRequestException('At least one site is required.');
+      const normalized = Array.from(
+        new Set(siteIds.map((site) => site.trim())),
+      ).filter(Boolean);
+      if (!normalized.length)
+        throw new BadRequestException('At least one site is required.');
       const siteMap = await this.sites.findSummariesByIds(normalized);
       if (siteMap.size !== normalized.length) {
-        throw new BadRequestException('One or more selected sites do not exist.');
+        throw new BadRequestException(
+          'One or more selected sites do not exist.',
+        );
       }
       fields.siteIds = normalized;
     }

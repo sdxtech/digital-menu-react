@@ -8,6 +8,7 @@ import { AuditInterceptor } from '../audit/audit.interceptor';
 import { ImportsController } from './imports.controller';
 import { ImportsService } from './imports.service';
 import { ImportsProcessor } from './processors/imports.processor';
+import type { RawMaterialImportResult } from './raw-material-import-result.type';
 
 type LocalImportJob = Job<{
   userId: string;
@@ -167,6 +168,55 @@ describe('Raw material uploads without object storage', () => {
       });
     },
   );
+
+  it('keeps duplicate counts available when import completes before the upload response', async () => {
+    const { processor, rawMaterials } = makeProcessor();
+    rawMaterials.findExistingProductCodes.mockResolvedValue(
+      new Set(['rm-001']),
+    );
+    let returnvalue: RawMaterialImportResult | undefined;
+    const enqueueRawMaterials = jest.fn(
+      async (...args: Parameters<ImportsService['enqueueRawMaterials']>) => {
+        returnvalue = await processor['handle']({
+          id: 'fast-job',
+          name: 'import-raw-materials',
+          data: { userId: args[0], fileName: args[2], filePath: args[4] },
+          attemptsMade: 0,
+          opts: { attempts: 3 },
+        } as LocalImportJob);
+        return { jobId: 'fast-job' };
+      },
+    );
+    const controller = new ImportsController({ enqueueRawMaterials } as never);
+    const response = await controller.importRawMaterialsUpload(
+      { user: { sub: 'user-1' } } as never,
+      { path: filePath, originalname: 'prices.csv', mimetype: 'text/csv' },
+    );
+    if (!response.jobId) {
+      throw new Error('Expected the import job ID in the upload response');
+    }
+    expect(returnvalue).toMatchObject({
+      status: 'completed',
+      successCount: 0,
+      failCount: 1,
+    });
+    const service = new ImportsService({
+      getJob: jest.fn().mockResolvedValue({
+        name: 'import-raw-materials',
+        data: { userId: 'user-1' },
+        getState: jest.fn().mockResolvedValue('completed'),
+        returnvalue,
+      }),
+    } as never);
+    await expect(
+      service.getImportJobStatus('user-1', response.jobId),
+    ).resolves.toMatchObject({
+      jobId: 'fast-job',
+      status: 'completed',
+      result: { successCount: 0, failCount: 1 },
+    });
+    expect(rawMaterials.bulkUpsertByProductCode).not.toHaveBeenCalled();
+  });
 
   it('removes the worker copy when enqueue fails and leaves the audit upload available', async () => {
     const error = new Error('Queue unavailable');

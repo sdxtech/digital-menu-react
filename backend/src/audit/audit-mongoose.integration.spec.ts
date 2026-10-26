@@ -413,7 +413,7 @@ describe('audit middleware across application schemas', () => {
       .spyOn(model.collection, 'insertOne')
       .mockResolvedValue({ acknowledged: true, insertedId: doc._id });
     // toObject is used by Mongoose for the write first, then by audit after it.
-    const toObject = doc.toObject.bind(doc) as () => Record<string, unknown>;
+    const toObject = doc.toObject.bind(doc);
     jest.spyOn(doc, 'toObject').mockImplementation(() => {
       if (insert.mock.calls.length)
         throw new Error('Audit serialization failed');

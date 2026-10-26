@@ -1,21 +1,20 @@
 import { Reflector } from '@nestjs/core';
-import type { ExecutionContext } from '@nestjs/common';
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { DashboardController } from './dashboard.controller';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AppRole } from '../auth/roles.constants';
 
 describe('Superadmin analytics access', () => {
   const guard = new RolesGuard(new Reflector());
-  const context = (roles: AppRole[]): ExecutionContext =>
-    ({
-      getHandler: () =>
-        Object.getOwnPropertyDescriptor(
-          DashboardController.prototype,
-          'analytics',
-        )?.value as () => unknown,
-      getClass: () => DashboardController,
-      switchToHttp: () => ({ getRequest: () => ({ user: { roles } }) }),
-    }) as ExecutionContext;
+  const context = (roles: AppRole[]) =>
+    new ExecutionContextHost(
+      [{ user: { roles } }],
+      DashboardController,
+      Object.getOwnPropertyDescriptor(
+        DashboardController.prototype,
+        'analytics',
+      )?.value as () => unknown,
+    );
 
   it('allows superadmin and rejects all other roles', () => {
     expect(guard.canActivate(context([AppRole.Superadmin]))).toBe(true);

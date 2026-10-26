@@ -18,6 +18,7 @@ import { ProductsService } from '../../products/products.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CategoriesService } from '../../categories/categories.service';
 import { RawMaterialsService } from '../../raw-materials/raw-materials.service';
+import type { RawMaterialImportResult } from '../raw-material-import-result.type';
 
 type ImportJob = {
   userId: string;
@@ -165,8 +166,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async handle(job: Job<ImportJob>) {
     if (job.name === 'import-raw-materials') {
-      await this.handleRawMaterials(job);
-      return;
+      return this.handleRawMaterials(job);
     }
 
     const { userId, fileKey, site } = job.data;
@@ -294,7 +294,9 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleRawMaterials(job: Job<ImportJob>) {
+  private async handleRawMaterials(
+    job: Job<ImportJob>,
+  ): Promise<RawMaterialImportResult> {
     const { userId, fileKey, fileName, contentType, filePath } = job.data;
     let retainFileForRetry = false;
     const errors: ImportError[] = [];
@@ -564,6 +566,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         summary,
       );
       this.notifications.emitJobDone(userId, { jobId: job.id, ...summary });
+      return { status: 'completed', ...summary };
     } catch (error) {
       const reason = (error as Error).message;
       retainFileForRetry =
@@ -578,7 +581,7 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           summary,
         );
         this.notifications.emitJobFailed(userId, { jobId: job.id, reason });
-        return;
+        return { status: 'cancelled', successCount, failCount, errors };
       }
 
       await this.notifications.create(
@@ -691,6 +694,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       hyperlinks: 'ignore',
       styles: 'ignore',
     });
+    // ExcelJS can encounter worksheet entries before workbook.xml. Its reader
+    // expects sheet metadata to exist even though this import only uses rows.
+    // The parsed workbook metadata replaces this initial value when available.
+    Object.assign(workbook, { model: { sheets: [] } });
 
     let headerMap: RawMaterialHeaderMap | null = null;
 

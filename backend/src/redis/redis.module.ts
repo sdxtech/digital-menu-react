@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Inject, Module, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import IORedis, { type RedisOptions } from 'ioredis';
 import { REDIS_CLIENT, REDIS_OPTIONS } from './redis.constants';
@@ -21,7 +21,7 @@ import { parseRedisUrl } from './redis.utils';
           ...options,
           connectTimeout: 3000,
           maxRetriesPerRequest: 1,
-          retryStrategy: () => null,
+          retryStrategy: (attempt) => Math.min(attempt * 200, 2000),
         });
         client.on('error', () => undefined);
         return client;
@@ -30,4 +30,10 @@ import { parseRedisUrl } from './redis.utils';
   ],
   exports: [REDIS_CLIENT, REDIS_OPTIONS],
 })
-export class RedisModule {}
+export class RedisModule implements OnModuleDestroy {
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: IORedis) {}
+
+  onModuleDestroy() {
+    this.redis.disconnect();
+  }
+}

@@ -110,6 +110,13 @@ const navItems = [
     ],
   },
   {
+    label: 'Production Forecast',
+    to: '/superadmin/production-forecast',
+    icon: (className: string) => (
+      <i className={`bi bi-calendar2-range ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Approval Centers',
     to: '/superadmin/approval-centers?section=recipes',
     icon: (className: string) => (

@@ -298,7 +298,7 @@ export class RecipesService {
     const isSuperadminActor = this.isSuperadminActor(actor);
     const isCorporateChefActor = this.isCorporateChefActor(actor);
     const isApproverActor = isSuperadminActor || isCorporateChefActor;
-    const saveAsDraft = !isSuperadminActor && input.saveAsDraft === true;
+    const saveAsDraft = input.saveAsDraft === true;
     const autoApprove = isApproverActor && !saveAsDraft;
     const reviewedFields = autoApprove
       ? this.buildActorFields(actor, 'reviewed')
@@ -534,15 +534,16 @@ export class RecipesService {
       );
     }
 
+    const isSuperadmin = this.isSuperadminActor(actor);
     const items = await this.recipeModel
       .find(
         this.withSiteFilter(
           {
-            createdBy: actor.id,
+            ...(isSuperadmin ? {} : { createdBy: actor.id }),
             isDraft: true,
             deletedAt: { $exists: false },
           },
-          this.getActorSiteScope(actor),
+          isSuperadmin ? undefined : this.getActorSiteScope(actor),
         ),
       )
       .sort({ updatedAt: -1, createdAt: -1 })
@@ -560,14 +561,15 @@ export class RecipesService {
       );
     }
 
+    const isSuperadmin = this.isSuperadminActor(actor);
     const filter = this.withSiteFilter(
       {
         _id: id,
-        createdBy: actor.id,
+        ...(isSuperadmin ? {} : { createdBy: actor.id }),
         isDraft: true,
         deletedAt: { $exists: false },
       },
-      this.getActorSiteScope(actor),
+      isSuperadmin ? undefined : this.getActorSiteScope(actor),
     );
     const existing = await this.recipeModel.findOne(filter).lean();
     if (!existing) throw new NotFoundException('Recipe draft not found');
@@ -698,16 +700,17 @@ export class RecipesService {
         'Recipe author identity is required to delete a draft.',
       );
     }
+    const isSuperadmin = this.isSuperadminActor(actor);
     const updated = await this.recipeModel
       .findOneAndUpdate(
         this.withSiteFilter(
           {
             _id: id,
-            createdBy: actor.id,
+            ...(isSuperadmin ? {} : { createdBy: actor.id }),
             isDraft: true,
             deletedAt: { $exists: false },
           },
-          this.getActorSiteScope(actor),
+          isSuperadmin ? undefined : this.getActorSiteScope(actor),
         ),
         {
           $set: {
@@ -1212,8 +1215,14 @@ export class RecipesService {
   }
 
   async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
+    const isSuperadmin = this.isSuperadminActor(actor);
     const targetRecipe = await this.recipeModel
-      .findOne(this.withSiteFilter({ _id: id }, this.getActorSiteScope(actor)))
+      .findOne(
+        this.withSiteFilter(
+          { _id: id },
+          isSuperadmin ? undefined : this.getActorSiteScope(actor),
+        ),
+      )
       .select({
         targetFoodCostPercentage: 1,
         site: 1,
@@ -1247,7 +1256,8 @@ export class RecipesService {
     } else if (input.targetFoodCostPercentage !== undefined) {
       $set.targetFoodCostPercentage = input.targetFoodCostPercentage;
     }
-    const isCorporateChefActor = this.isCorporateChefActor(actor);
+    const isCorporateChefActor =
+      !isSuperadmin && this.isCorporateChefActor(actor);
     const preserveDraft = input.saveAsDraft === true;
     const autoApprove = isCorporateChefActor && !preserveDraft;
     let clearEstimates = autoApprove;
@@ -1396,18 +1406,25 @@ export class RecipesService {
         this.withSiteFilter(
           {
             _id: id,
+            ...(targetRecipe.isDraft
+              ? { isDraft: true, deletedAt: { $exists: false } }
+              : {}),
             ...(isCorporateChefActor
               ? preserveDraft
                 ? { isDraft: true, createdBy: actor?.id }
                 : { approvalStatus: 'pending' }
               : {}),
-            ...(actor?.roles?.includes(AppRole.Chef)
+            ...(!isSuperadmin && actor?.roles?.includes(AppRole.Chef)
               ? {
                   $or: [{ isDraft: { $ne: true } }, { createdBy: actor.id }],
                 }
               : {}),
           },
-          isCorporateChefActor ? corporateSiteScope : actor?.site,
+          isSuperadmin
+            ? undefined
+            : isCorporateChefActor
+              ? corporateSiteScope
+              : actor?.site,
         ),
         updatePayload,
         {

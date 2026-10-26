@@ -40,6 +40,7 @@ import SuperadminUsersPage from './app/SuperadminUsersPage'
 import SuperadminClientManagementPage from './app/SuperadminClientManagementPage'
 import SuperadminStoreRequestExportPage from './app/SuperadminStoreRequestExportPage'
 import SuperadminStoreRequestPage from './app/SuperadminStoreRequestPage'
+import SuperadminProductionForecastPage from './app/SuperadminProductionForecastPage'
 import SuperadminAuditLogPage from './app/SuperadminAuditLogPage'
 import { useRouteDocumentTitle } from './lib/document-title'
 import ProfileView from './app/ProfileView'
@@ -292,6 +293,7 @@ function App() {
               element={<Navigate to="/superadmin/store-request?view=progress" replace />}
             />
             <Route path="store-request" element={<SuperadminStoreRequestPage />} />
+            <Route path="production-forecast" element={<SuperadminProductionForecastPage />} />
             <Route
               path="issuance-history"
               element={<Navigate to="/superadmin/store-request?view=history" replace />}

@@ -5,26 +5,16 @@ import { readStoredToken } from '../lib/auth'
 import { useChefData } from '../lib/chef-data'
 import { unitOfMeasuresOptions } from '../lib/unit-of-measures'
 import ActionButton from '../components/ActionButton'
+import {
+  getRawMaterialImportResult,
+  type RawMaterialImportJobStatus,
+  type RawMaterialImportResult,
+} from '../lib/raw-material-import'
 
 type RawMaterialForm = {
   productCode: string
   name: string
   unitOfMeasures: string
-}
-
-type NotificationItem = {
-  id?: string
-  _id?: string
-  title?: string
-  message?: string
-  meta?: Record<string, unknown>
-  createdAt?: string
-}
-
-type ImportResult = {
-  status: 'success' | 'error' | 'cancelled'
-  title: string
-  message: string
 }
 
 const emptyRawMaterialForm: RawMaterialForm = {
@@ -45,10 +35,9 @@ const ChefAddRawMaterial = () => {
   const [importMessage, setImportMessage] = useState('')
   const [importing, setImporting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
-  const [importStartedAt, setImportStartedAt] = useState<number | null>(null)
   const [importJobId, setImportJobId] = useState<string | null>(null)
   const [importCancelling, setImportCancelling] = useState(false)
-  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importResult, setImportResult] = useState<RawMaterialImportResult | null>(null)
 
   const updateRawMaterialForm = <K extends keyof RawMaterialForm>(
     field: K,
@@ -145,7 +134,6 @@ const ChefAddRawMaterial = () => {
     try {
       const jobId = await importRawMaterialsFromExcel(importFile)
       setImportJobId(jobId)
-      setImportStartedAt(Date.now())
       setImportMessage('Import started. Waiting for completion...')
     } catch (error) {
       const message =
@@ -155,7 +143,6 @@ const ChefAddRawMaterial = () => {
       setImportError(message)
       setImportMessage('')
       setImporting(false)
-      setImportStartedAt(null)
       setImportJobId(null)
       setImportCancelling(false)
     }
@@ -197,7 +184,6 @@ const ChefAddRawMaterial = () => {
         setImportOpen(false)
         setImportMessage('')
         setImportFile(null)
-        setImportStartedAt(null)
         setImportJobId(null)
         return
       }
@@ -214,7 +200,6 @@ const ChefAddRawMaterial = () => {
       setImportOpen(false)
       setImportMessage('')
       setImportFile(null)
-      setImportStartedAt(null)
       setImportJobId(null)
     } catch (error) {
       const message =
@@ -227,7 +212,7 @@ const ChefAddRawMaterial = () => {
   }
 
   useEffect(() => {
-    if (!importing || !importStartedAt) return
+    if (!importing || !importJobId) return
 
     let cancelled = false
     let timeoutId: number | undefined
@@ -238,58 +223,27 @@ const ChefAddRawMaterial = () => {
         setImportError('Please log in first to check import status.')
         setImportMessage('')
         setImporting(false)
-        setImportStartedAt(null)
         return
       }
 
       try {
-        const notifications = await apiFetch<NotificationItem[]>(
-          '/notifications?page=1&limit=25',
+        const job = await apiFetch<RawMaterialImportJobStatus>(
+          `/imports/jobs/${encodeURIComponent(importJobId)}`,
           undefined,
           token,
         )
         if (cancelled) return
-        const match = notifications.find((item) => {
-          if (!item?.title || !item.createdAt) return false
-          if (
-            item.title !== 'Raw material import completed' &&
-            item.title !== 'Raw material import failed' &&
-            item.title !== 'Raw material import cancelled'
-          ) {
-            return false
-          }
-          const createdAt = new Date(item.createdAt).getTime()
-          return Number.isFinite(createdAt) && createdAt >= importStartedAt
-        })
-
-        if (match) {
-          const isSuccess = match.title === 'Raw material import completed'
-          const isCancelled = match.title === 'Raw material import cancelled'
-          let message = match.message ?? ''
-          if (!isSuccess && !isCancelled) {
-            const reason =
-              match.meta && typeof match.meta.reason === 'string'
-                ? match.meta.reason
-                : ''
-            if (reason) {
-              message = `${message} (${reason})`
-            }
-          }
-
-          setImportResult({
-            status: isSuccess ? 'success' : isCancelled ? 'cancelled' : 'error',
-            title: match.title ?? 'Import finished',
-            message: message || 'Import finished.',
-          })
+        const result = getRawMaterialImportResult(job)
+        if (result) {
+          setImportResult(result)
           setImporting(false)
           setImportOpen(false)
           setImportError('')
           setImportMessage('')
           setImportFile(null)
-          setImportStartedAt(null)
           setImportJobId(null)
           setImportCancelling(false)
-          if (isSuccess) {
+          if (result.status === 'success') {
             fetchRawMaterials(1, rawMaterialsMeta.limit).catch(() => null)
           }
           return
@@ -300,13 +254,12 @@ const ChefAddRawMaterial = () => {
           error instanceof Error ? error.message : 'Failed to check import status.'
         setImportResult({
           status: 'error',
-          title: 'Import failed',
+          title: 'Unable to check import status',
           message,
         })
         setImporting(false)
         setImportOpen(false)
         setImportMessage('')
-        setImportStartedAt(null)
         setImportJobId(null)
         setImportCancelling(false)
         return
@@ -317,7 +270,7 @@ const ChefAddRawMaterial = () => {
       }
     }
 
-    timeoutId = window.setTimeout(pollStatus, 2000)
+    void pollStatus()
 
     return () => {
       cancelled = true
@@ -325,7 +278,7 @@ const ChefAddRawMaterial = () => {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [fetchRawMaterials, importing, importStartedAt, rawMaterialsMeta.limit])
+  }, [fetchRawMaterials, importing, importJobId, rawMaterialsMeta.limit])
 
   return (
     <div className="space-y-6">
