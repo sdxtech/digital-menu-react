@@ -26,6 +26,7 @@ describe('RecipesService site visibility', () => {
     const recipeModel = {
       create: jest.fn(),
       find: jest.fn(),
+      aggregate: jest.fn(),
       countDocuments: jest.fn().mockResolvedValue(0),
       exists: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn(),
@@ -526,34 +527,80 @@ describe('RecipesService site visibility', () => {
         { _id: 'draft-a', createdBy: 'chef-a', site: 'SITE-A' },
         { _id: 'draft-b', createdBy: 'chef-b', site: 'SITE-B' },
       ];
-      recipeModel.find.mockReturnValue(mockRecipeQuery(drafts));
+      recipeModel.aggregate.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(drafts),
+      });
+      recipeModel.countDocuments.mockResolvedValue(42);
+      recipeModel.distinct.mockResolvedValue(['Main', 'Soup']);
 
       await expect(
-        service.findDrafts({
-          id: 'admin',
-          roles: [AppRole.Superadmin],
-          site: 'SITE-A',
-        }),
-      ).resolves.toEqual({ items: drafts, total: 2 });
-      expect(recipeModel.find).toHaveBeenCalledWith({
+        service.findDrafts(
+          {
+            id: 'admin',
+            roles: [AppRole.Superadmin],
+            site: 'SITE-A',
+          },
+          { page: 2, limit: 20, category: 'Main', issueStatus: 'issues' },
+        ),
+      ).resolves.toEqual({
+        items: drafts,
+        total: 42,
+        page: 2,
+        limit: 20,
+        totalPages: 3,
+        categories: ['Main', 'Soup'],
+      });
+      const baseFilter = {
         isDraft: true,
         deletedAt: { $exists: false },
-      });
+      };
+      const filtered = {
+        ...baseFilter,
+        category: 'Main',
+        'importIssues.0': { $exists: true },
+      };
+      expect(recipeModel.aggregate).toHaveBeenCalledWith([
+        { $match: filtered },
+        { $sort: { updatedAt: -1, createdAt: -1, _id: -1 } },
+        { $skip: 20 },
+        { $limit: 20 },
+        {
+          $project: {
+            recipeCode: 1,
+            name: 1,
+            category: 1,
+            createdBy: 1,
+            createdByEmail: 1,
+            site: 1,
+            importIssues: 1,
+            updatedAt: 1,
+            ingredientsCount: { $size: { $ifNull: ['$ingredients', []] } },
+          },
+        },
+      ]);
+      expect(recipeModel.countDocuments).toHaveBeenCalledWith(filtered);
+      expect(recipeModel.distinct).toHaveBeenCalledWith('category', baseFilter);
     });
 
     it.each([AppRole.Chef, AppRole.CorporateChef])(
       'keeps %s drafts limited to their author and site scope',
       async (role) => {
         const { service, recipeModel } = makeService();
-        recipeModel.find.mockReturnValue(mockRecipeQuery([]));
-
-        await service.findDrafts({
-          id: 'chef',
-          roles: [role],
-          site: 'SITE-A',
-          sites: ['SITE-A', 'SITE-B'],
+        recipeModel.aggregate.mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
         });
-        expect(recipeModel.find).toHaveBeenCalledWith({
+        recipeModel.distinct.mockResolvedValue([]);
+
+        await service.findDrafts(
+          {
+            id: 'chef',
+            roles: [role],
+            site: 'SITE-A',
+            sites: ['SITE-A', 'SITE-B'],
+          },
+          { issueStatus: 'no-issues' },
+        );
+        const scopedFilter = {
           createdBy: 'chef',
           isDraft: true,
           deletedAt: { $exists: false },
@@ -561,7 +608,20 @@ describe('RecipesService site visibility', () => {
             role === AppRole.CorporateChef
               ? { $in: ['SITE-A', 'SITE-B'] }
               : 'SITE-A',
-        });
+        };
+        expect(recipeModel.aggregate).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            {
+              $match: { ...scopedFilter, 'importIssues.0': { $exists: false } },
+            },
+            { $skip: 0 },
+            { $limit: 20 },
+          ]),
+        );
+        expect(recipeModel.distinct).toHaveBeenCalledWith(
+          'category',
+          scopedFilter,
+        );
       },
     );
 
@@ -570,7 +630,53 @@ describe('RecipesService site visibility', () => {
       await expect(
         service.findDrafts({ roles: [AppRole.Superadmin] }),
       ).rejects.toThrow('Recipe author identity is required');
-      expect(recipeModel.find).not.toHaveBeenCalled();
+      expect(recipeModel.aggregate).not.toHaveBeenCalled();
+    });
+
+    it('loads one full draft only within the actor scope', async () => {
+      const { service, recipeModel } = makeService();
+      const id = '507f1f77bcf86cd799439011';
+      const draft = { _id: id, ingredients: [{ name: 'Fish' }] };
+      recipeModel.findOne.mockReturnValue(mockRecipeQuery(draft));
+      await expect(
+        service.findDraftById(id, {
+          id: 'chef',
+          roles: [AppRole.Chef],
+          site: 'SITE-A',
+        }),
+      ).resolves.toEqual(draft);
+      expect(recipeModel.findOne).toHaveBeenCalledWith({
+        _id: id,
+        createdBy: 'chef',
+        isDraft: true,
+        deletedAt: { $exists: false },
+        site: 'SITE-A',
+      });
+      await service.findDraftById(id, {
+        id: 'admin',
+        roles: [AppRole.Superadmin],
+        site: 'SITE-A',
+      });
+      expect(recipeModel.findOne).toHaveBeenLastCalledWith({
+        _id: id,
+        isDraft: true,
+        deletedAt: { $exists: false },
+      });
+      recipeModel.findOne.mockReturnValue(mockRecipeQuery(null));
+      await expect(
+        service.findDraftById(id, {
+          id: 'chef',
+          roles: [AppRole.Chef],
+          site: 'SITE-A',
+        }),
+      ).rejects.toThrow('Recipe draft not found');
+      await expect(
+        service.findDraftById('invalid', {
+          id: 'chef',
+          roles: [AppRole.Chef],
+          site: 'SITE-A',
+        }),
+      ).rejects.toThrow('Recipe draft not found');
     });
   });
 
