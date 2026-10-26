@@ -1,15 +1,22 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import ExcelJS, { type CellValue, type Worksheet } from 'exceljs';
-import { isValidObjectId, Model, type PipelineStage } from 'mongoose';
+import {
+  isValidObjectId,
+  Model,
+  type PipelineStage,
+  type Types,
+} from 'mongoose';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipeDraftsQueryDto } from './dto/list-recipe-drafts.query.dto';
+import { RecheckRecipeDraftsDto } from './dto/recheck-recipe-drafts.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
 import {
@@ -619,6 +626,85 @@ export class RecipesService {
       .lean();
     if (!draft) throw new NotFoundException('Recipe draft not found');
     return draft;
+  }
+
+  async recheckDrafts(actor?: RecipeActor, input: RecheckRecipeDraftsDto = {}) {
+    if (!actor?.id) {
+      throw new BadRequestException(
+        'Recipe author identity is required to recheck drafts.',
+      );
+    }
+    if (!this.isSuperadminActor(actor)) {
+      throw new ForbiddenException('Only Superadmin can bulk recheck drafts.');
+    }
+    const filter = {
+      isDraft: true,
+      deletedAt: { $exists: false },
+      'importIssues.0': { $exists: true },
+    };
+    const batchSize = 50;
+    // Use a stable cursor because rechecking changes both issues and updatedAt.
+    const drafts = await this.recipeModel
+      .find({
+        ...filter,
+        ...(input.afterId ? { _id: { $gt: input.afterId } } : {}),
+      })
+      .sort({ _id: 1 })
+      .limit(batchSize + 1)
+      .lean<Array<Recipe & { _id: Types.ObjectId; updatedAt?: Date }>>();
+    const batch = drafts.slice(0, batchSize);
+    const result = {
+      checkedCount: 0,
+      resolvedCount: 0,
+      remainingCount: 0,
+      skippedCount: 0,
+      nextCursor:
+        drafts.length > batchSize
+          ? batch[batch.length - 1]._id.toString()
+          : null,
+    };
+    if (!batch.length) return result;
+    const context: ImportLookupContext = {
+      rawMaterials: new Map(),
+      vendorPrices: new Map(),
+      conversions: new Map(),
+      targetRequired: (await this.getSettings()).targetFoodCostRequired,
+    };
+    for (const draft of batch) {
+      const checked = await this.prepareImportedRecipe(
+        draft,
+        draft.site,
+        context,
+      );
+      const update = await this.recipeModel.updateOne(
+        {
+          ...filter,
+          _id: draft._id,
+          updatedAt: draft.updatedAt ?? { $exists: false },
+        },
+        {
+          $set: {
+            ingredients: checked.ingredients,
+            importIssues: checked.importIssues,
+            ...(checked.foodCostRecipe !== undefined
+              ? { foodCostRecipe: checked.foodCostRecipe }
+              : {}),
+            ...this.buildActorFields(actor, 'updated'),
+          },
+          ...(checked.foodCostRecipe === undefined
+            ? { $unset: { foodCostRecipe: '' } }
+            : {}),
+        },
+      );
+      if (!update.matchedCount) {
+        result.skippedCount += 1;
+        continue;
+      }
+      result.checkedCount += 1;
+      if (checked.importIssues?.length) result.remainingCount += 1;
+      else result.resolvedCount += 1;
+    }
+    return result;
   }
 
   async submitDraft(id: string, actor?: RecipeActor) {

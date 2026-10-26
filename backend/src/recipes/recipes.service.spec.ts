@@ -473,6 +473,317 @@ describe('RecipesService site visibility', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it.each([
+      [AppRole.Chef, 'product'],
+      [AppRole.CorporateChef, 'product'],
+      [AppRole.Superadmin, 'product'],
+      [AppRole.Chef, 'global'],
+      [AppRole.CorporateChef, 'global'],
+      [AppRole.Superadmin, 'global'],
+    ] as const)(
+      'rechecks an imported draft as %s after adding a %s conversion without submitting it',
+      async (role, conversionType) => {
+        const setup = makeService();
+        const rawMaterial = {
+          productCode: 'IT01060',
+          productCodeNormalized: 'it01060',
+          name: 'Sauce',
+          unitOfMeasures: 'GAL',
+        };
+        setup.rawMaterials.findLookupByNormalizedCode.mockResolvedValue(
+          rawMaterial as never,
+        );
+        setup.rawMaterials.findVendorPrices.mockResolvedValue([
+          { vendor: 'Vendor A', unitOfMeasures: 'GAL', price: 100000 },
+        ] as never);
+        setup.recipeModel.findOne.mockReturnValue(
+          mockRecipeQuery({
+            isDraft: true,
+            approvalStatus: 'pending',
+            name: 'Nuoc Cham',
+            category: 'Sauce',
+            portionSize: 10,
+            site: 'SITE-A',
+            importIssues: [
+              'Ingredient 1 (IT01060): Conversion ML To GAL is not configured.',
+            ],
+            ingredients: [
+              {
+                ingredientType: 'IT',
+                productCode: 'IT01060',
+                prodQty: 500,
+                prodUomCode: 'ML',
+              },
+            ],
+          }),
+        );
+        setup.recipeModel.findOneAndUpdate.mockReturnValue(
+          mockRecipeQuery({ _id: 'draft' }),
+        );
+        const actor = {
+          id: 'chef',
+          roles: [role],
+          site: role === AppRole.Superadmin ? 'SITE-B' : 'SITE-A',
+        };
+
+        await setup.service.updateById('draft', { saveAsDraft: true }, actor);
+        const before = getUpdatePayload(setup.recipeModel);
+        expect(before.$set.importIssues).toEqual([
+          'Ingredient 1 (IT01060): Conversion ML To GAL is not configured.',
+        ]);
+        expect(before.$set.ingredients?.[0].srQty).toBeUndefined();
+        expect(before.$unset?.foodCostRecipe).toBe('');
+
+        if (conversionType === 'product') {
+          setup.rawMaterials.findLookupByNormalizedCode.mockResolvedValue({
+            ...rawMaterial,
+            specificConversions: [
+              { prodUomCode: 'ML', srUomCode: 'GAL', conversionFactor: 2000 },
+            ],
+          } as never);
+        } else {
+          setup.unitOfMeasures.findActiveConversion.mockResolvedValue({
+            prodUomCode: 'ML',
+            srUomCode: 'GAL',
+            conversionId: 'ML To GAL',
+            multiplier: 1 / 2000,
+          } as never);
+        }
+
+        setup.recipeModel.findOneAndUpdate.mockClear();
+        await setup.service.updateById('draft', { saveAsDraft: true }, actor);
+        const after = getUpdatePayload(setup.recipeModel);
+        expect(after.$set).toMatchObject({
+          importIssues: [],
+          foodCostRecipe: 25000,
+          ingredients: [
+            expect.objectContaining({
+              prodQty: 500,
+              srQty: 0.25,
+              qty: 0.25,
+              conversionId: 'ML To GAL',
+              conversionMultiplier: 1 / 2000,
+              priceUom: 100000,
+              foodCost: 25000,
+            }),
+          ],
+        });
+        expect(after.$set.isDraft).toBeUndefined();
+        expect(after.$set.approvalStatus).toBeUndefined();
+        expect(after.$set.status).toBeUndefined();
+        expect(after.$set.createdBy).toBeUndefined();
+        expect(after.$set.site).toBeUndefined();
+        expect(setup.rawMaterials.findVendorPrices).toHaveBeenLastCalledWith({
+          productCode: 'IT01060',
+          site: 'SITE-A',
+        });
+        expect(
+          setup.notifications.createHierarchicalNotification,
+        ).not.toHaveBeenCalled();
+        expect(setup.workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+      },
+    );
+
+    describe('bulk draft recheck', () => {
+      const actor = { id: 'chef', roles: [AppRole.Superadmin], site: 'SITE-A' };
+      const makeDraft = (index: number) => ({
+        _id: index.toString(16).padStart(24, '0'),
+        createdBy: `author-${index}`,
+        name: 'Imported recipe',
+        category: 'Main',
+        portionSize: 10,
+        site: 'SITE-A',
+        isDraft: true,
+        approvalStatus: 'pending',
+        importIssues: ['Conversion GR To KG is not configured.'],
+        updatedAt: new Date('2026-10-19T00:00:00Z'),
+        ingredients: [
+          {
+            ingredientType: 'IT',
+            productCode: 'IT001',
+            prodQty: 400,
+            prodUomCode: 'GR',
+          },
+        ],
+      });
+      const mockBatch = (drafts: object[]) => ({
+        sort: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(drafts),
+      });
+      const makeRecheckSetup = (drafts: object[]) => {
+        const setup = makeService();
+        configureMaterials(setup);
+        setup.recipeModel.find.mockReturnValue(mockBatch(drafts));
+        setup.recipeModel.updateOne.mockResolvedValue({ matchedCount: 1 });
+        return setup;
+      };
+
+      it.each([AppRole.Chef, AppRole.CorporateChef])(
+        'rejects bulk rechecks by %s before reading or updating drafts',
+        async (role) => {
+          const setup = makeRecheckSetup([]);
+          await expect(
+            setup.service.recheckDrafts({ ...actor, roles: [role] }),
+          ).rejects.toThrow('Only Superadmin can bulk recheck drafts.');
+          expect(setup.recipeModel.find).not.toHaveBeenCalled();
+          expect(setup.recipeModel.updateOne).not.toHaveBeenCalled();
+        },
+      );
+
+      it('loads all imported drafts with issues regardless of the Superadmin site', async () => {
+        const setup = makeRecheckSetup([]);
+        const result = await setup.service.recheckDrafts({
+          ...actor,
+          sites: ['SITE-A'],
+        });
+        expect(setup.recipeModel.find).toHaveBeenCalledWith({
+          isDraft: true,
+          deletedAt: { $exists: false },
+          'importIssues.0': { $exists: true },
+        });
+        expect(result).toEqual({
+          checkedCount: 0,
+          resolvedCount: 0,
+          remainingCount: 0,
+          skippedCount: 0,
+          nextCursor: null,
+        });
+        expect(setup.recipeModel.updateOne).not.toHaveBeenCalled();
+      });
+
+      it('recalculates drafts from different users and sites with shared conversion lookups and each recipe site price', async () => {
+        const drafts = [
+          makeDraft(1),
+          makeDraft(2),
+          { ...makeDraft(3), site: 'SITE-B' },
+        ];
+        const setup = makeRecheckSetup(drafts);
+        setup.rawMaterials.findVendorPrices.mockResolvedValueOnce([
+          { vendor: 'Vendor A', unitOfMeasures: 'KG', price: 29000 },
+        ] as never);
+        setup.rawMaterials.findVendorPrices.mockResolvedValueOnce([
+          { vendor: 'Vendor B', unitOfMeasures: 'KG', price: 10000 },
+        ] as never);
+        expect(await setup.service.recheckDrafts(actor)).toEqual({
+          checkedCount: 3,
+          resolvedCount: 3,
+          remainingCount: 0,
+          skippedCount: 0,
+          nextCursor: null,
+        });
+        expect(setup.recipeModel.updateOne).toHaveBeenCalledTimes(3);
+        for (const [index, draft] of drafts.entries()) {
+          expect(setup.recipeModel.updateOne).toHaveBeenNthCalledWith(
+            index + 1,
+            {
+              _id: draft._id,
+              updatedAt: draft.updatedAt,
+              isDraft: true,
+              deletedAt: { $exists: false },
+              'importIssues.0': { $exists: true },
+            },
+            {
+              $set: {
+                ingredients: [
+                  expect.objectContaining({ srQty: 0.4, prodQty: 400 }),
+                ],
+                importIssues: [],
+                foodCostRecipe: index === 2 ? 4000 : 11600,
+                updatedBy: 'chef',
+              },
+            },
+          );
+        }
+        expect(
+          setup.rawMaterials.findLookupByNormalizedCode,
+        ).toHaveBeenCalledTimes(1);
+        expect(setup.unitOfMeasures.findActiveConversion).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(setup.rawMaterials.findVendorPrices).toHaveBeenCalledTimes(2);
+        expect(setup.rawMaterials.findVendorPrices).toHaveBeenLastCalledWith({
+          productCode: 'IT001',
+          site: 'SITE-B',
+        });
+        expect(
+          setup.notifications.createHierarchicalNotification,
+        ).not.toHaveBeenCalled();
+        expect(setup.workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
+      });
+
+      it('retains unresolved issues and removes stale total costs', async () => {
+        const setup = makeRecheckSetup([makeDraft(1)]);
+        setup.unitOfMeasures.findActiveConversion.mockResolvedValue(null);
+        expect(await setup.service.recheckDrafts(actor)).toMatchObject({
+          checkedCount: 1,
+          resolvedCount: 0,
+          remainingCount: 1,
+        });
+        const calls = setup.recipeModel.updateOne.mock
+          .calls as unknown as Array<[unknown, RecipeUpdatePayload]>;
+        const update = calls[0][1];
+        expect(update.$set.importIssues).toEqual([
+          'Ingredient 1 (IT001): Conversion GR To KG is not configured.',
+        ]);
+        expect(update.$set.foodCostRecipe).toBeUndefined();
+        expect(update.$unset).toEqual({ foodCostRecipe: '' });
+      });
+
+      it('continues past the first 50 drafts without skipping rows as issues are cleared', async () => {
+        const drafts = Array.from({ length: 52 }, (_, index) =>
+          makeDraft(index + 1),
+        );
+        const setup = makeRecheckSetup([]);
+        const firstBatch = mockBatch(drafts.slice(0, 51));
+        setup.recipeModel.find
+          .mockReturnValueOnce(firstBatch)
+          .mockReturnValueOnce(mockBatch(drafts.slice(50)));
+        const first = await setup.service.recheckDrafts(actor);
+        expect(first).toMatchObject({
+          checkedCount: 50,
+          nextCursor: drafts[49]._id,
+        });
+        expect(firstBatch.sort).toHaveBeenCalledWith({ _id: 1 });
+        expect(firstBatch.limit).toHaveBeenCalledWith(51);
+        const second = await setup.service.recheckDrafts(actor, {
+          afterId: first.nextCursor!,
+        });
+        expect(second).toMatchObject({ checkedCount: 2, nextCursor: null });
+        expect(setup.recipeModel.find).toHaveBeenLastCalledWith(
+          expect.objectContaining({ _id: { $gt: drafts[49]._id } }),
+        );
+        expect(setup.recipeModel.updateOne).toHaveBeenCalledTimes(52);
+      });
+
+      it('reports drafts changed or submitted during checking without counting them as resolved', async () => {
+        const setup = makeRecheckSetup([makeDraft(1)]);
+        setup.recipeModel.updateOne.mockResolvedValue({ matchedCount: 0 });
+        expect(await setup.service.recheckDrafts(actor)).toEqual({
+          checkedCount: 0,
+          resolvedCount: 0,
+          remainingCount: 0,
+          skippedCount: 1,
+          nextCursor: null,
+        });
+      });
+
+      it('rejects missing identity and propagates database failures', async () => {
+        const setup = makeRecheckSetup([makeDraft(1)]);
+        await expect(setup.service.recheckDrafts()).rejects.toThrow(
+          'Recipe author identity is required',
+        );
+        expect(setup.recipeModel.find).not.toHaveBeenCalled();
+        setup.rawMaterials.findVendorPrices.mockRejectedValue(
+          new Error('Database unavailable'),
+        );
+        await expect(setup.service.recheckDrafts(actor)).rejects.toThrow(
+          'Database unavailable',
+        );
+        expect(setup.recipeModel.updateOne).not.toHaveBeenCalled();
+      });
+    });
+
     it('keeps legacy table and recipe-card imports available', async () => {
       const setup = makeService();
       const workbook = new ExcelJS.Workbook();

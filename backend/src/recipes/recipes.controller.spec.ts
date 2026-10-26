@@ -2,6 +2,8 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AppRole } from '../auth/roles.constants';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { RecipesController } from './recipes.controller';
+import { validate } from 'class-validator';
+import { RecheckRecipeDraftsDto } from './dto/recheck-recipe-drafts.dto';
 
 describe('RecipesController corporate chef creation', () => {
   const makeController = () => {
@@ -10,6 +12,7 @@ describe('RecipesController corporate chef creation', () => {
       findAll: jest.fn(),
       findDrafts: jest.fn(),
       findDraftById: jest.fn(),
+      recheckDrafts: jest.fn(),
       listSites: jest.fn(),
       deleteDraft: jest.fn().mockResolvedValue({ id: 'draft-1' }),
       importFromExcel: jest
@@ -62,6 +65,35 @@ describe('RecipesController corporate chef creation', () => {
         AppRole.Superadmin,
       ]);
     }
+  });
+
+  it('restricts bulk draft rechecks to Superadmin and passes the validated cursor', async () => {
+    const { controller, recipes } = makeController();
+    const adminRequest = {
+      user: { ...request.user, sub: 'admin-1', roles: [AppRole.Superadmin] },
+    };
+    const dto = new RecheckRecipeDraftsDto();
+    expect(await validate(dto)).toEqual([]);
+    dto.afterId = 'invalid';
+    expect(await validate(dto)).toHaveLength(1);
+    dto.afterId = '507f1f77bcf86cd799439011';
+    expect(await validate(dto)).toEqual([]);
+    await controller.recheckDrafts(adminRequest as never, dto);
+    expect(recipes.recheckDrafts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: adminRequest.user.sub,
+        roles: [AppRole.Superadmin],
+        site: undefined,
+      }),
+      dto,
+    );
+    const handler = Object.getOwnPropertyDescriptor(
+      RecipesController.prototype,
+      'recheckDrafts',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Superadmin,
+    ]);
   });
 
   it('allows draft deletion for recipe authors without broadening general recipe deletion', async () => {

@@ -28,6 +28,7 @@ import { getUploadDir } from '../common/upload-dir';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { ListRecipesQueryDto } from './dto/list-recipes.query.dto';
 import { ListRecipeDraftsQueryDto } from './dto/list-recipe-drafts.query.dto';
+import { RecheckRecipeDraftsDto } from './dto/recheck-recipe-drafts.dto';
 import { RejectRecipeDto } from './dto/reject-recipe.dto';
 import { ResubmitRecipeDto } from './dto/resubmit-recipe.dto';
 import { SetRecipeActiveDto } from './dto/set-recipe-active.dto';
@@ -93,6 +94,15 @@ export class RecipesController {
   @Roles(AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin)
   getDraft(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.recipes.findDraftById(id, this.buildActor(req));
+  }
+
+  @Post('drafts/recheck')
+  @Roles(AppRole.Superadmin)
+  recheckDrafts(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RecheckRecipeDraftsDto,
+  ) {
+    return this.recipes.recheckDrafts(this.buildActor(req), dto);
   }
 
   @Get('sites')
