@@ -16,8 +16,9 @@ export class MaintenanceGuard implements CanActivate {
     private readonly jwtService: JwtService, // 🌟 Inject JwtService
   ) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isMaintenanceMode = this.configService.get<string>('MAINTENANCE_MODE') === 'true';
+  canActivate(context: ExecutionContext): boolean {
+    const isMaintenanceMode =
+      this.configService.get<string>('MAINTENANCE_MODE') === 'true';
     if (!isMaintenanceMode) {
       return true;
     }
@@ -32,7 +33,7 @@ export class MaintenanceGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    
+
     // 2. EXEMPTION 2: Manually extract the token to find out if this is an Admin
     let user = request.user;
 
@@ -50,19 +51,21 @@ export class MaintenanceGuard implements CanActivate {
     }
 
     // 3. AUTHORIZATION CHECK: Superadmins and Admins bypass the block
-    if (user && (
-      user.roles?.includes('admin') || 
-      user.appRole === 'admin' || 
-      user.roles?.includes('superadmin') || 
-      user.appRole === 'superadmin'
-    )) {
+    if (
+      user &&
+      (user.roles?.includes('admin') ||
+        user.appRole === 'admin' ||
+        user.roles?.includes('superadmin') ||
+        user.appRole === 'superadmin')
+    ) {
       return true;
     }
 
     // 4. Block everyone else
     throw new ServiceUnavailableException({
       statusCode: 503,
-      message: 'The system is currently undergoing scheduled maintenance. Please try again later.',
+      message:
+        'The system is currently undergoing scheduled maintenance. Please try again later.',
       error: 'MaintenanceMode',
     });
   }

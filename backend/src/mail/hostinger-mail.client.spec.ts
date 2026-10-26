@@ -10,12 +10,10 @@ describe('HostingerMailClient', () => {
 
   it('sends email through the configured Hostinger mailbox over HTTPS', async () => {
     const requests: Array<Parameters<typeof fetch>> = [];
-    const fetchMock = jest.fn(
-      (...args: Parameters<typeof fetch>) => {
-        requests.push(args);
-        return Promise.resolve(new Response(null, { status: 204 }));
-      },
-    ) as unknown as typeof fetch;
+    const fetchMock = jest.fn((...args: Parameters<typeof fetch>) => {
+      requests.push(args);
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }) as unknown as typeof fetch;
     global.fetch = fetchMock;
     const values: Record<string, string> = {
       HOSTINGER_MAIL_API_TOKEN: 'hostinger-test-token',
@@ -59,29 +57,27 @@ describe('HostingerMailClient', () => {
 
   it('discovers and caches the mailbox matching EMAIL_FROM', async () => {
     const requests: Array<Parameters<typeof fetch>> = [];
-    const fetchMock = jest.fn(
-      (...args: Parameters<typeof fetch>) => {
-        requests.push(args);
-        if (requests.length === 1) {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                data: {
-                  mailboxes: [
-                    {
-                      resourceId: 'AC1discovered',
-                      address: 'no-reply@example.com',
-                    },
-                  ],
-                },
-              }),
-              { status: 200 },
-            ),
-          );
-        }
-        return Promise.resolve(new Response(null, { status: 204 }));
-      },
-    ) as unknown as typeof fetch;
+    const fetchMock = jest.fn((...args: Parameters<typeof fetch>) => {
+      requests.push(args);
+      if (requests.length === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                mailboxes: [
+                  {
+                    resourceId: 'AC1discovered',
+                    address: 'no-reply@example.com',
+                  },
+                ],
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }) as unknown as typeof fetch;
     global.fetch = fetchMock;
     const config = {
       get: jest.fn().mockReturnValue(undefined),

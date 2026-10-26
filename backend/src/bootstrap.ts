@@ -6,7 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { parseCorsOrigins } from './common/cors.utils';
 
-export async function configureApp(app: INestApplication) {
+export function configureApp(app: INestApplication) {
   const config = app.get(ConfigService);
 
   app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -38,6 +38,6 @@ export async function configureApp(app: INestApplication) {
 
 export async function createNestApp() {
   const app = await NestFactory.create(AppModule);
-  await configureApp(app);
+  configureApp(app);
   return app;
 }

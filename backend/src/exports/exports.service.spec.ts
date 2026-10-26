@@ -372,7 +372,6 @@ describe('Recipe exports', () => {
     });
     await expect(service.recipeDownload('owner', '42')).rejects.toThrow(
       ConflictException,
-      ForbiddenException,
     );
     job.getState.mockResolvedValue('completed');
     await expect(service.recipeDownload('owner', '42')).resolves.toBe(

@@ -5,7 +5,13 @@ export type UnitOfMeasureDocument = HydratedDocument<UnitOfMeasure>;
 
 @Schema({ timestamps: true })
 export class UnitOfMeasure {
-  @Prop({ required: true, trim: true, uppercase: true, unique: true, index: true })
+  @Prop({
+    required: true,
+    trim: true,
+    uppercase: true,
+    unique: true,
+    index: true,
+  })
   code: string;
 
   @Prop({ required: true, trim: true })
@@ -15,8 +21,7 @@ export class UnitOfMeasure {
   isActive: boolean;
 }
 
-export const UnitOfMeasureSchema =
-  SchemaFactory.createForClass(UnitOfMeasure);
+export const UnitOfMeasureSchema = SchemaFactory.createForClass(UnitOfMeasure);
 
 UnitOfMeasureSchema.index({ name: 1 });
 UnitOfMeasureSchema.index({ createdAt: -1 });

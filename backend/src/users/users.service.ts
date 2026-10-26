@@ -485,15 +485,15 @@ export class UsersService {
 
     const missingCodes = siteCodes.filter((code) => !siteByCode.has(code));
     if (missingCodes.length && !createMissingSites) {
-      throw new BadRequestException(`Site not found: ${missingCodes.join(', ')}`);
+      throw new BadRequestException(
+        `Site not found: ${missingCodes.join(', ')}`,
+      );
     }
 
     return {
       siteId: new Types.ObjectId(site.id),
       sites: Array.from(
-        new Set(
-          siteCodes.map((code) => siteByCode.get(code)?.code ?? code),
-        ),
+        new Set(siteCodes.map((code) => siteByCode.get(code)?.code ?? code)),
       ),
     };
   }
@@ -546,9 +546,7 @@ export class UsersService {
 
   private normalizeSites(sites?: string[]) {
     if (!Array.isArray(sites)) return [];
-    return sites
-      .map((site) => site.trim())
-      .filter(Boolean);
+    return sites.map((site) => site.trim()).filter(Boolean);
   }
 
   private normalizeSiteCode(site: string) {

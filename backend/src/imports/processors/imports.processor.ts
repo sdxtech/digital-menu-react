@@ -694,6 +694,10 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       hyperlinks: 'ignore',
       styles: 'ignore',
     });
+    // ExcelJS can encounter worksheet entries before workbook.xml. Its reader
+    // expects sheet metadata to exist even though this import only uses rows.
+    // The parsed workbook metadata replaces this initial value when available.
+    Object.assign(workbook, { model: { sheets: [] } });
 
     let headerMap: RawMaterialHeaderMap | null = null;
 
