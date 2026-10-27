@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatProductionDate } from '../lib/date-format'
 import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
@@ -1030,11 +1031,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     return (
                       <Fragment key={groupKey}>
                         <tr className="border-t border-border">
-                          <td className="px-5 py-4 text-sm text-muted">
+                          <td className="px-5 py-4 text-sm font-bold text-black">
                             {(menuPage - 1) * ITEMS_PER_PAGE + index + 1}
                           </td>
-                          <td className="px-5 py-4">{group.date}</td>
-                          <td className="px-5 py-4 text-xs text-muted">
+                          <td className="px-5 py-4 font-bold text-black">{formatProductionDate(group.date)}</td>
+                          <td className="px-5 py-4 text-xs font-bold text-black">
                             {group.productionCode ?? '-'}
                           </td>
                           <td className="px-5 py-4">

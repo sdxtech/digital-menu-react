@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiFetch } from "../lib/api";
@@ -58,16 +59,6 @@ type Group = {
 
 const getGroupSubmittedAt = (group: Group) =>
   group.items.find((item) => item.submittedAt)?.submittedAt;
-
-const formatCreatedDate = (value?: string) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-};
 
 const formatPrice = (value?: number) =>
   value === undefined || !Number.isFinite(value)
@@ -360,17 +351,17 @@ const AdminSiteMenuProductionPage = () => {
                   return (
                     <Fragment key={key}>
                       <tr className="border-t border-border">
-                        <td className="px-4 py-3 text-muted">
+                        <td className="px-4 py-3 font-bold text-black">
                           {(page - 1) * GROUPS_PER_PAGE + index + 1}
                         </td>
-                        <td className="px-4 py-3 text-muted">
+                        <td className="px-4 py-3 font-bold text-black">
                           {formatCreatedDate(getGroupSubmittedAt(group))}
                         </td>
-                        <td className="px-4 py-3">{group.date}</td>
-                        <td className="px-4 py-3 text-xs text-muted">
+                        <td className="px-4 py-3 font-bold text-black">{formatProductionDate(group.date)}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-black">
                           {group.productionCode ?? "-"}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-bold text-black">
                           {group.items[0]?.clientName ?? "-"}
                         </td>
                         <td className="px-4 py-3">{chef}</td>
