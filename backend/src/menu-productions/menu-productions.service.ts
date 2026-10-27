@@ -157,6 +157,7 @@ type EligibleRecipe = {
   category: string;
   portionSize?: number;
   ingredients?: Array<{
+    ingredientType?: 'IT' | 'NMP';
     productCode?: string;
     name?: string;
     unitOfMeasures?: string;
@@ -164,6 +165,7 @@ type EligibleRecipe = {
     priceUom?: number;
     foodCost?: number;
     priceSourceSite?: string;
+    priceSource?: 'manual' | 'pricelist';
   }>;
 };
 
@@ -404,6 +406,20 @@ export class MenuProductionsService implements OnModuleInit {
         const vendorPrice = Number(selectedVendor?.price);
         const priceUom = Number(ingredient.priceUom);
         const foodCost = Number(ingredient.foodCost);
+        const requiresManualPrice =
+          ingredient.ingredientType !== 'NMP' &&
+          (ingredient.priceSource === 'manual' ||
+            priceUom === 0 ||
+            Boolean(selectedVendor && !Number.isFinite(vendorPrice)));
+        if (
+          requiresManualPrice &&
+          !(Number.isFinite(vendorPrice) && vendorPrice > 0) &&
+          !input.saveAsDraft
+        ) {
+          throw new BadRequestException(
+            `Enter a new price greater than 0 for ingredient ${name || productCode}.`,
+          );
+        }
         if (
           ingredient.priceSourceSite &&
           !Number.isFinite(vendorPrice) &&
@@ -415,7 +431,7 @@ export class MenuProductionsService implements OnModuleInit {
         }
         const unitPrice = Number.isFinite(vendorPrice)
           ? vendorPrice
-          : ingredient.priceSourceSite
+          : ingredient.priceSourceSite || requiresManualPrice
             ? undefined
             : Number.isFinite(priceUom)
               ? priceUom
@@ -688,7 +704,11 @@ export class MenuProductionsService implements OnModuleInit {
       const referenceRecipes = await this.recipeModel
         .find({
           _id: { $in: recipeIds },
-          'ingredients.priceSourceSite': { $exists: true },
+          $or: [
+            { 'ingredients.priceSourceSite': { $exists: true } },
+            { 'ingredients.priceSource': 'manual' },
+            { 'ingredients.priceUom': 0 },
+          ],
         })
         .select({ name: 1, category: 1, portionSize: 1, ingredients: 1 })
         .lean();
@@ -2094,6 +2114,7 @@ export class MenuProductionsService implements OnModuleInit {
           priceUom: Number(ingredient.priceUom),
           foodCost: Number(ingredient.foodCost),
           priceSourceSite: ingredient.priceSourceSite,
+          priceSource: ingredient.priceSource,
         })),
       });
     });

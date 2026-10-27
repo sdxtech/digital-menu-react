@@ -103,6 +103,44 @@ describe('RawMaterialPriceFileParser', () => {
     ).rejects.toThrow('must include both site and vendor headers');
   });
 
+  it('uses zero and NO VENDOR for blank legacy prices and vendor cells', async () => {
+    const filePath = join(directory, 'legacy.csv');
+    await writeFile(
+      filePath,
+      'Product Code,Site,Vendor,Price\nIT001,Site A,,\nIT002,Site A,Vendor A,0\n',
+      'utf8',
+    );
+    await expect(
+      collect(parser.parse(filePath, 'legacy.csv')),
+    ).resolves.toEqual([
+      {
+        productCode: 'IT001',
+        site: 'Site A',
+        vendor: 'NO VENDOR',
+        price: 0,
+        rowNumber: 2,
+      },
+      {
+        productCode: 'IT002',
+        site: 'Site A',
+        vendor: 'Vendor A',
+        price: 0,
+        rowNumber: 3,
+      },
+    ]);
+  });
+
+  it.each(['invalid', '-1'])(
+    'rejects invalid price %s instead of treating it as zero',
+    async (price) => {
+      const filePath = join(directory, 'invalid-price.csv');
+      await writeFile(filePath, `Product Code,Price\nIT001,${price}\n`, 'utf8');
+      await expect(
+        collect(parser.parse(filePath, 'invalid-price.csv')),
+      ).rejects.toThrow('non-negative price');
+    },
+  );
+
   it('parses the optional start date column', async () => {
     const filePath = join(directory, 'prices-with-start-date.csv');
     await writeFile(

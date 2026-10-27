@@ -128,6 +128,126 @@ describe('MenuProductionsService sales input', () => {
     ).toBeUndefined();
   });
 
+  describe('legacy material production prices', () => {
+    const recipe = {
+      id: 'recipe-1',
+      name: 'Legacy recipe',
+      category: 'Main',
+      version: 1,
+      portionSize: 1,
+      ingredients: [
+        {
+          productCode: 'IT001',
+          name: 'Legacy material',
+          unitOfMeasures: 'KG',
+          qty: 2,
+          priceUom: 10000,
+          foodCost: 20000,
+          priceSource: 'manual' as const,
+        },
+      ],
+    };
+    const input = {
+      recipeId: 'recipe-1',
+      portion: 3,
+      cost: 0,
+      productionDate: '2026-10-26',
+    };
+
+    it('requires a new production price despite the saved recipe price', () => {
+      const service = createService({});
+      expect(() =>
+        service['calculateMenuProductionCostSnapshot'](input, recipe),
+      ).toThrow('Enter a new price greater than 0');
+      expect(() =>
+        service['calculateMenuProductionCostSnapshot'](
+          {
+            ...input,
+            ingredientVendors: [
+              { ingredientIndex: 0, vendor: 'NO VENDOR', price: 0 },
+            ],
+          },
+          recipe,
+        ),
+      ).toThrow('Enter a new price greater than 0');
+    });
+
+    it('saves different prices for separate productions without changing the recipe', () => {
+      const service = createService({});
+      for (const price of [11000, 13000]) {
+        const snapshot = service['calculateMenuProductionCostSnapshot'](
+          {
+            ...input,
+            ingredientVendors: [
+              { ingredientIndex: 0, vendor: 'NO VENDOR', price },
+            ],
+          },
+          recipe,
+        );
+        expect(snapshot.estimatedTotalCost).toBe(price * 6);
+        expect(snapshot.ingredientVendors[0]).toMatchObject({
+          price,
+          vendor: 'NO VENDOR',
+        });
+      }
+      expect(recipe.ingredients[0].priceUom).toBe(10000);
+    });
+
+    it('allows an incomplete draft without copying the recipe price and restores its saved price', () => {
+      const service = createService({});
+      const draft = service['calculateMenuProductionCostSnapshot'](
+        { ...input, saveAsDraft: true },
+        recipe,
+      );
+      expect(draft.estimatedTotalCost).toBeUndefined();
+      expect(draft.ingredientVendors[0].price).toBeUndefined();
+      const saved = service['calculateMenuProductionCostSnapshot'](
+        {
+          ...input,
+          saveAsDraft: true,
+          ingredientVendors: [
+            { ingredientIndex: 0, vendor: 'NO VENDOR', price: 11000 },
+          ],
+        },
+        recipe,
+      );
+      const submitted = service['calculateMenuProductionCostSnapshot'](
+        {
+          ...input,
+          ingredientVendors: saved.ingredientVendors,
+        },
+        recipe,
+      );
+      expect(submitted.estimatedTotalCost).toBe(66000);
+    });
+
+    it('does not reuse an old recipe price when the production explicitly needs a manual price', () => {
+      const service = createService({});
+      const oldPricedRecipe = {
+        ...recipe,
+        ingredients: [
+          { ...recipe.ingredients[0], priceSource: 'pricelist' as const },
+        ],
+      };
+      const unpricedInput = {
+        ...input,
+        ingredientVendors: [{ ingredientIndex: 0, vendor: 'NO VENDOR' }],
+      };
+      expect(() =>
+        service['calculateMenuProductionCostSnapshot'](
+          unpricedInput,
+          oldPricedRecipe,
+        ),
+      ).toThrow('Enter a new price greater than 0');
+      expect(
+        service['calculateMenuProductionCostSnapshot'](
+          { ...unpricedInput, saveAsDraft: true },
+          oldPricedRecipe,
+        ).estimatedTotalCost,
+      ).toBeUndefined();
+    });
+  });
+
   it('only updates pending menu productions', async () => {
     const findOneAndUpdate = jest.fn().mockResolvedValue(null);
     const service = createService({ findOneAndUpdate });

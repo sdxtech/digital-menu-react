@@ -218,6 +218,39 @@ describe('RawMaterialsService price updates', () => {
     );
   });
 
+  it('adds NO VENDOR site prices for legacy materials and updates them when a price becomes available', async () => {
+    const { rawMaterialVendorPriceModel, service } = makePriceService();
+    for (const price of [0, 12000]) {
+      await service.bulkUpdatePricesByProductCode([
+        {
+          productCode: 'IT00900_N',
+          site: 'Site A',
+          vendor: 'NO VENDOR',
+          price,
+        },
+      ]);
+      const calls = rawMaterialVendorPriceModel.bulkWrite.mock
+        .calls as unknown as Array<
+        [
+          Array<{
+            updateOne: {
+              filter: Record<string, unknown>;
+              update: { $set: Record<string, unknown> };
+              upsert?: boolean;
+            };
+          }>,
+          { ordered: boolean },
+        ]
+      >;
+      expect(calls.at(-1)?.[0][0].updateOne).toMatchObject({
+        filter: { siteNormalized: 'sitea', vendorNormalized: 'no vendor' },
+        update: { $set: { vendor: 'NO VENDOR', price } },
+        upsert: true,
+      });
+      expect(calls.at(-1)?.[1]).toEqual({ ordered: false });
+    }
+  });
+
   it('preserves legacy master price updates', async () => {
     const { rawMaterialModel, rawMaterialVendorPriceModel, service } =
       makePriceService();
