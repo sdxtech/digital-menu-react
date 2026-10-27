@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -23,6 +24,7 @@ import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto
 import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
+import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { RejectMenuProductionDto } from './dto/reject-menu-production.dto';
@@ -176,6 +178,15 @@ export class MenuProductionsController {
       this.resolveQuerySite(req, query.site),
       this.resolveUnitManagerAssignmentScope(req),
     );
+  }
+
+  @Delete('batch')
+  @Roles(AppRole.Superadmin)
+  deleteBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: DeleteMenuProductionBatchDto,
+  ) {
+    return this.menuProductions.deleteBatch(dto, getUserSiteScope(req.user));
   }
 
   @Patch('fulfill-batch')
