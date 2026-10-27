@@ -1169,7 +1169,7 @@ export class RawMaterialsService {
     const name = row.name.trim();
     const unitOfMeasures = row.unitOfMeasures.trim();
     const site = this.normalizeOptionalText(row.site);
-    const vendor = this.normalizeOptionalText(row.vendor);
+    const vendor = this.normalizeOptionalText(row.vendor) ?? 'NO VENDOR';
 
     if (!productCode || !name || !unitOfMeasures || !site || !vendor) {
       return null;
@@ -1179,7 +1179,7 @@ export class RawMaterialsService {
 
     const currency = this.normalizeOptionalText(row.currency);
     const minimumQuantity = this.normalizeOptionalNumber(row.minimumQuantity);
-    const price = this.normalizeOptionalNumber(row.price);
+    const price = this.normalizeOptionalNumber(row.price) ?? 0;
     const priceQuantity = this.normalizePositiveOptionalNumber(
       row.priceQuantity,
     );

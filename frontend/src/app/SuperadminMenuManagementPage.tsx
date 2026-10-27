@@ -3329,7 +3329,9 @@ const SuperadminMenuManagementPage = () => {
                   <p className="mt-2 text-sm text-muted">
                     Upload a file to add new raw materials. Existing product
                     codes are skipped; use Update Prices for price or vendor
-                    changes.
+                    changes. Blank vendors become NO VENDOR and blank prices
+                    become 0. Materials with a zero pricelist price require a
+                    manual price in each recipe and new menu production.
                   </p>
                 </div>
                 <button
@@ -3415,6 +3417,8 @@ const SuperadminMenuManagementPage = () => {
                     the full pricelist with Site, Vendor, Quantity, UOM, and
                     Price to update or add vendor prices for existing raw
                     materials. Unknown product codes will not be created.
+                    Blank vendor cells become NO VENDOR; blank prices become 0
+                    and require a manual price each time the material is used.
                   </p>
                 </div>
                 <button

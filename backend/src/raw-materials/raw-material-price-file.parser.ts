@@ -158,10 +158,11 @@ export class RawMaterialPriceFileParser {
     const productCode = this.cellToText(value('productCode'));
     const rawPrice = value('price');
     const priceText = this.cellToText(rawPrice);
-    const price = this.parseNumber(rawPrice);
+    const price = priceText ? this.parseNumber(rawPrice) : 0;
     const name = this.cellToText(value('name'));
     const site = this.cellToText(value('site'));
-    const vendor = this.cellToText(value('vendor'));
+    const vendorText = this.cellToText(value('vendor'));
+    const vendor = vendorText || (header.vendorMode ? 'NO VENDOR' : '');
     const currency = this.cellToText(value('currency'));
     const unitOfMeasures = this.cellToText(value('unitOfMeasures'));
     const minimumQuantityText = this.cellToText(value('minimumQuantity'));
@@ -173,7 +174,7 @@ export class RawMaterialPriceFileParser {
       !priceText &&
       !name &&
       !site &&
-      !vendor &&
+      !vendorText &&
       !currency &&
       !unitOfMeasures &&
       !minimumQuantityText &&

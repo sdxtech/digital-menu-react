@@ -999,6 +999,9 @@ const ChefMenuCycle = ({
             normalizeText(item.site) === normalizeText(savedVendor.site),
         )
         if (option) nextSelectedVendors[selectionKey] = option.key
+        if ((!option || getVendorUnitPrice(option) === 0) && savedVendor.price != null) {
+          nextCustomPrices[selectionKey] = String(savedVendor.price)
+        }
       })
     })
 
@@ -1311,13 +1314,14 @@ const ChefMenuCycle = ({
         )
         const requiresManualPrice =
           isNmp ||
-          (showIngredientVendorColumn && vendorDataLoaded && vendorOptions.length === 0)
+          (showIngredientVendorColumn && vendorDataLoaded &&
+            (vendorOptions.length === 0 || getVendorUnitPrice(selectedVendor) === 0))
         const price = requiresManualPrice
           ? getManualUnitPrice(ingredientSelectionKey)
           : getIngredientUnitPrice(ingredient, selectedVendor)
-        if (!options.saveAsDraft && price === undefined) {
+        if (!options.saveAsDraft && (price === undefined || (!isNmp && requiresManualPrice && price <= 0))) {
           setInputError(
-            `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
+            `Enter a price greater than 0 for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
           )
           setInputMessage('')
           return
@@ -1375,7 +1379,9 @@ const ChefMenuCycle = ({
                     site: selectedVendor.site,
                     currency: selectedVendor.currency,
                     minimumQuantity: selectedVendor.minimumQuantity,
-                    price: getVendorUnitPrice(selectedVendor),
+                    price: getVendorUnitPrice(selectedVendor) === 0
+                      ? getManualUnitPrice(vendorSelectionKey)
+                      : getVendorUnitPrice(selectedVendor),
                   }
                 },
               )
@@ -1804,7 +1810,8 @@ const ChefMenuCycle = ({
                     )
                     const requiresManualPrice =
                       ingredient.ingredientType === 'NMP' ||
-                      (hasSiteVendorResult && siteVendorOptions.length === 0)
+                      (hasSiteVendorResult &&
+                        (siteVendorOptions.length === 0 || getVendorUnitPrice(selectedVendorPrice) === 0))
                     const unitPrice =
                       requiresManualPrice
                         ? getManualUnitPrice(vendorSelectionKey)
@@ -2110,7 +2117,8 @@ const ChefMenuCycle = ({
                                           const requiresManualPrice =
                                             isNmp ||
                                             (hasSiteVendorResult &&
-                                              siteVendorOptions.length === 0)
+                                              (siteVendorOptions.length === 0 ||
+                                                getVendorUnitPrice(selectedVendorPrice) === 0))
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty

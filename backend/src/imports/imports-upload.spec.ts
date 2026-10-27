@@ -256,6 +256,77 @@ describe('Raw material uploads without object storage', () => {
     await expect(access(filePath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it.each(['csv', 'xlsx'])(
+    'imports legacy %s materials with blank prices and vendors for their site',
+    async (extension) => {
+      const { processor, rawMaterials } = makeProcessor();
+      const headers = [
+        'Product Code',
+        'Name',
+        'Unit',
+        'Site',
+        'Vendor',
+        'Price',
+      ];
+      const row = ['IT001', 'Legacy material', 'KG', 'Site A', '', ''];
+      if (extension === 'xlsx') {
+        const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+          filename: filePath,
+          useSharedStrings: false,
+        });
+        const sheet = workbook.addWorksheet('Materials');
+        sheet.addRow(headers).commit();
+        sheet.addRow(row).commit();
+        await workbook.commit();
+      } else {
+        await writeFile(filePath, `${headers.join(',')}\n${row.join(',')}\n`);
+      }
+      const result = await processor['handleRawMaterials']({
+        id: 'legacy-job',
+        name: 'import-raw-materials',
+        data: { userId: 'user-1', filePath, fileName: `legacy.${extension}` },
+        attemptsMade: 0,
+        opts: { attempts: 3 },
+      } as LocalImportJob);
+      expect(result).toMatchObject({ successCount: 1, failCount: 0 });
+      const expected = {
+        productCode: 'IT001',
+        name: 'Legacy material',
+        site: 'Site A',
+        vendor: 'NO VENDOR',
+        price: 0,
+        unitOfMeasures: 'KG',
+      };
+      expect(rawMaterials.bulkUpsertByProductCode).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining(expected)]),
+      );
+      expect(rawMaterials.bulkUpsertVendorPrices).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining(expected)]),
+      );
+    },
+  );
+
+  it('rejects invalid imported prices without turning them into unpriced materials', async () => {
+    const { processor, rawMaterials } = makeProcessor();
+    await writeFile(
+      filePath,
+      'Product Code,Name,Unit,Site,Price\nIT001,Legacy,KG,Site A,invalid\n',
+    );
+    const result = await processor['handleRawMaterials']({
+      id: 'invalid-price-job',
+      name: 'import-raw-materials',
+      data: { userId: 'user-1', filePath, fileName: 'legacy.csv' },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    } as LocalImportJob);
+    expect(result).toMatchObject({
+      successCount: 0,
+      failCount: 1,
+      errors: [expect.objectContaining({ reason: 'Price is invalid' })],
+    });
+    expect(rawMaterials.bulkUpsertByProductCode).not.toHaveBeenCalled();
+  });
+
   it('cleans the file when a queued job is cancelled', async () => {
     const job = {
       name: 'import-raw-materials',

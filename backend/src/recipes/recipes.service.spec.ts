@@ -2231,6 +2231,163 @@ describe('RecipesService site visibility', () => {
     expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  describe('legacy material manual prices', () => {
+    const ingredient = {
+      ingredientType: 'IT' as const,
+      productCode: 'IT001',
+      name: 'Legacy material',
+      unitOfMeasures: 'KG',
+      qty: 2,
+      vendor: 'NO VENDOR',
+    };
+    const setup = (price = 0) => {
+      const context = makeService();
+      context.recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ site: 'SITE-A' }),
+      );
+      context.recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe-a' }),
+      );
+      context.rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+        { productCodeNormalized: 'it001', price: 0 },
+      ]);
+      context.rawMaterials.findAvailableNormalizedCodesForSite.mockResolvedValue(
+        ['it001'],
+      );
+      context.rawMaterials.findVendorPrices.mockResolvedValue([
+        { vendor: 'NO VENDOR', unitOfMeasures: 'KG', price },
+      ]);
+      return context;
+    };
+
+    it('saves a manual recipe price without changing the raw material price', async () => {
+      const { service, recipeModel } = setup();
+      await service.updateById('recipe-a', {
+        ingredients: [{ ...ingredient, priceUom: 10000, foodCost: 999 }],
+      });
+      expect(getUpdatedIngredient(recipeModel)).toMatchObject({
+        priceUom: 10000,
+        foodCost: 20000,
+        priceSource: 'manual',
+        vendor: 'NO VENDOR',
+      });
+    });
+
+    it.each([AppRole.Chef, AppRole.CorporateChef])(
+      'accepts a manual price when %s creates a recipe',
+      async (role) => {
+        const { service, recipeModel } = setup();
+        recipeModel.create.mockImplementation((payload: object) =>
+          Promise.resolve({ _id: 'created', ...payload }),
+        );
+        await service.create(
+          {
+            name: 'Legacy recipe',
+            category: 'Main',
+            ingredients: [{ ...ingredient, priceUom: 10000 }],
+          },
+          {
+            id: 'author',
+            site: 'SITE-A',
+            sites: ['SITE-A'],
+            roles: [role],
+          },
+        );
+        expect(recipeModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ingredients: [
+              expect.objectContaining({
+                vendor: 'NO VENDOR',
+                priceUom: 10000,
+                priceSource: 'manual',
+              }),
+            ],
+          }),
+        );
+      },
+    );
+
+    it.each([undefined, 0])(
+      'requires a positive manual price on submit (%s)',
+      async (priceUom) => {
+        const { service, recipeModel } = setup();
+        await expect(
+          service.updateById('recipe-a', {
+            ingredients: [{ ...ingredient, priceUom }],
+          }),
+        ).rejects.toThrow('price greater than 0');
+        expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps an incomplete manual price in a draft and blocks direct draft submission', async () => {
+      const { service, recipeModel } = setup();
+      await service.updateById('recipe-a', {
+        saveAsDraft: true,
+        ingredients: [ingredient],
+      });
+      const savedIngredient = getUpdatedIngredient(recipeModel);
+      expect(savedIngredient).toMatchObject({ priceSource: 'manual' });
+      expect(savedIngredient.priceUom).toBeUndefined();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({
+          name: 'Legacy recipe',
+          category: 'Main',
+          site: 'SITE-A',
+          ingredients: [savedIngredient],
+        }),
+      );
+      await expect(
+        service.submitDraft('recipe-a', {
+          id: 'chef-a',
+          site: 'SITE-A',
+          roles: [AppRole.Chef],
+        }),
+      ).rejects.toThrow('price greater than 0');
+    });
+
+    it('uses the updated pricelist for a new recipe price', async () => {
+      const { service, recipeModel } = setup(12000);
+      await service.updateById('recipe-a', {
+        ingredients: [{ ...ingredient, priceUom: 10000 }],
+      });
+      expect(getUpdatedIngredient(recipeModel)).toMatchObject({
+        priceUom: 12000,
+        foodCost: 24000,
+        priceSource: 'pricelist',
+      });
+    });
+
+    it('preserves the saved manual price when master prices are synchronized', async () => {
+      const { service, recipeModel, rawMaterials } = setup(12000);
+      recipeModel.find.mockReturnValue(
+        mockRecipeQuery([
+          {
+            _id: 'recipe-a',
+            site: 'SITE-A',
+            ingredients: [
+              {
+                ...ingredient,
+                priceSource: 'manual',
+                priceUom: 10000,
+                foodCost: 20000,
+              },
+            ],
+          },
+        ]),
+      );
+      await service.backfillApprovedIngredientCosts();
+      expect(rawMaterials.findVendorPrices).not.toHaveBeenCalled();
+      const calls = recipeModel.updateOne.mock.calls as unknown as Array<
+        [unknown, RecipeUpdatePayload]
+      >;
+      expect(calls[0][1].$set.ingredients?.[0]).toMatchObject({
+        priceSource: 'manual',
+        priceUom: 10000,
+      });
+    });
+  });
+
   it('saves the selected vendor using its site price instead of the master or submitted price', async () => {
     const { rawMaterials, recipeModel, service } = makeService();
     recipeModel.findOne.mockReturnValue(mockRecipeQuery({ site: 'SITE-A' }));
