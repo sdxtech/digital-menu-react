@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
@@ -283,16 +284,6 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => [
     }),
   ),
 ] as SpreadsheetCell[][]
-
-const formatCreatedDate = (value?: string) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
-}
 
 const parseDotDecimal = (value: string) => {
   const trimmed = value.trim()
@@ -1235,10 +1226,10 @@ const StorekeeperPage = () => {
                         className="cursor-pointer border-t border-border"
                         onClick={() => toggleExpanded(groupKey)}
                       >
-                        <td className="px-3 py-1.5 text-sm text-muted">
+                        <td className="px-3 py-1.5 text-sm font-bold text-black">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
-                        <td className="px-3 py-1.5 text-sm text-muted">
+                        <td className="px-3 py-1.5 text-sm font-bold text-black">
                           {formatCreatedDate(
                             group.items.find((item) => item.submittedAt)
                               ?.submittedAt ??
@@ -1246,8 +1237,8 @@ const StorekeeperPage = () => {
                                 ?.approvedAt,
                           )}
                         </td>
-                        <td className="px-3 py-1.5">{group.date}</td>
-                        <td className="px-3 py-1.5 text-xs text-muted">
+                        <td className="px-3 py-1.5 font-bold text-black">{formatProductionDate(group.date)}</td>
+                        <td className="px-3 py-1.5 text-xs font-bold text-black">
                           {group.productionCode ?? '-'}
                         </td>
                         <td className="px-3 py-1.5">
@@ -1280,8 +1271,8 @@ const StorekeeperPage = () => {
                                   <p className="text-xs text-muted">
                                     Request details
                                   </p>
-                                  <p className="mt-2 text-sm text-muted">
-                                    Production date: {group.date}
+                                  <p className="mt-2 text-sm font-bold text-black">
+                                    Production date: {formatProductionDate(group.date)}
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1613,13 +1604,13 @@ const StorekeeperPage = () => {
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production date</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
-                        {cancellationGroup.date}
+                      <p className="mt-2 text-sm font-bold text-black">
+                        {formatProductionDate(cancellationGroup.date)}
                       </p>
                     </div>
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production code</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
+                      <p className="mt-2 text-sm font-bold text-black">
                         {cancellationGroup.productionCode ?? '-'}
                       </p>
                     </div>
@@ -1726,13 +1717,13 @@ const StorekeeperPage = () => {
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-md border border-border bg-white p-4">
                   <p className="text-xs text-muted">Production date</p>
-                  <p className="mt-2 text-sm font-medium text-foreground">
-                    {reconciliationGroup.date}
+                  <p className="mt-2 text-sm font-bold text-black">
+                    {formatProductionDate(reconciliationGroup.date)}
                   </p>
                 </div>
                 <div className="rounded-md border border-border bg-white p-4">
                   <p className="text-xs text-muted">Production code</p>
-                  <p className="mt-2 text-sm font-medium text-foreground">
+                  <p className="mt-2 text-sm font-bold text-black">
                     {reconciliationGroup.productionCode ?? '-'}
                   </p>
                 </div>

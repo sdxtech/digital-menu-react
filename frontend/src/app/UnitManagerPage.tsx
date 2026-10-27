@@ -1,4 +1,6 @@
 import PageHeading from '../components/PageHeading'
+import ProductionInformation from '../components/ProductionInformation'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import TablePagination from '../components/TablePagination'
@@ -14,7 +16,7 @@ import { formatQuantity } from '../lib/quantity'
 import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
-import { getApprovalStatusLabel } from '../lib/status-labels'
+import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { formatUnitLabel } from '../lib/unit-of-measures'
@@ -126,16 +128,6 @@ const getGroupSubmittedAt = (group: StoreRequestGroup) =>
 const getProductionDateTimestamp = (value: string) => {
   const timestamp = new Date(`${value}T00:00:00`).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
-}
-
-const formatCreatedDate = (value?: string) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
 }
 
 const approvalCenterSections: Array<{
@@ -768,8 +760,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                   <p className="mt-1 text-sm text-muted">
                     {menuRejectTarget.menuName}
                   </p>
-                  <p className="mt-1 text-xs text-muted">
-                    {menuRejectTarget.productionDate}
+                  <p className="mt-1 text-xs font-bold text-black">
+                    {formatProductionDate(menuRejectTarget.productionDate)}
                     {menuRejectTarget.productionCode
                       ? ` (${menuRejectTarget.productionCode})`
                       : ''}
@@ -1273,19 +1265,19 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       return (
                         <Fragment key={groupKey}>
                           <tr className="border-t border-border">
-                            <td className="px-4 py-3 text-sm text-muted">
+                            <td className="px-4 py-3 text-sm font-bold text-black">
                               {(menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE +
                                 index +
                                 1}
                             </td>
-                            <td className="px-4 py-3 text-sm text-muted">
+                            <td className="px-4 py-3 text-sm font-bold text-black">
                               {formatCreatedDate(getGroupSubmittedAt(group))}
                             </td>
-                            <td className="px-4 py-3">{group.date}</td>
-                            <td className="px-4 py-3 text-xs text-muted">
+                            <td className="px-4 py-3 font-bold text-black">{formatProductionDate(group.date)}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-black">
                               {group.productionCode ?? '-'}
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 font-bold text-black">
                               {group.items[0]?.clientName ?? '-'}
                             </td>
                             <td className="px-4 py-3">
@@ -1330,29 +1322,23 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                             <tr className="border-t border-border bg-background">
                               <td colSpan={7} className="px-4 py-4">
                                 <div className="space-y-4">
-                                  <section className="border-b border-border pb-4">
-                                    <h3 className="text-sm font-semibold text-foreground">
-                                      Production information
-                                    </h3>
-                                    <dl className="mt-3 space-y-2 text-sm">
-                                      <div className="flex gap-2">
-                                        <dt className="w-16 font-medium text-muted">
-                                          Chef
-                                        </dt>
-                                        <dd className="font-semibold text-foreground">
-                                          : {submittedByLabel}
-                                        </dd>
-                                      </div>
-                                      <div className="flex gap-2">
-                                        <dt className="w-16 font-medium text-muted">
-                                          Admin
-                                        </dt>
-                                        <dd className="font-semibold text-foreground">
-                                          : {salesInputByLabel}
-                                        </dd>
-                                      </div>
-                                    </dl>
-                                  </section>
+                                  <ProductionInformation
+                                    productionCode={group.productionCode}
+                                    createdAt={getGroupSubmittedAt(group)}
+                                    submittedBy={submittedByLabel}
+                                    admin={salesInputByLabel}
+                                    batchStatus={firstMenu?.salesInputBy?.trim()
+                                      ? 'Waiting for Approval' : 'Waiting for Sales Input'}
+                                    productionDate={group.date}
+                                    client={firstMenu?.clientName}
+                                    totalMenu={group.items.length}
+                                    approvalStatus={Array.from(new Set(
+                                      group.items.map((item) => getApprovalStatusLabel(item.approvalStatus)),
+                                    )).join(', ')}
+                                    storeRequestStatus={Array.from(new Set(
+                                      group.items.map((item) => getStoreRequestStatusLabel(item.storeRequestStatus)),
+                                    )).join(', ')}
+                                  />
 
                                   <section>
                                     <h3 className="text-sm font-semibold text-foreground">

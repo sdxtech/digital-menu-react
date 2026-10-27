@@ -1,7 +1,9 @@
 import PageHeading from '../components/PageHeading'
+import ProductionInformation from '../components/ProductionInformation'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { useAuth } from '../lib/auth'
 import {
   calculateFoodCostPercentage,
@@ -108,16 +110,6 @@ const getGroupSubmittedAt = (group: StoreRequestGroup) =>
 const getProductionDateTimestamp = (value: string) => {
   const timestamp = new Date(`${value}T00:00:00`).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
-}
-
-const formatCreatedDate = (value?: string) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
 }
 
 type RecordStatus =
@@ -277,7 +269,7 @@ export const DateRangeFilter = ({
         <span className="text-left">
           <span className="block">{label}</span>
           {from || to ? (
-            <span className="block text-xs">{from || 'Any date'} – {to || 'Any date'}</span>
+            <span className="block text-xs">{from ? formatProductionDate(from) : 'Any date'} – {to ? formatProductionDate(to) : 'Any date'}</span>
           ) : null}
         </span>
         {sortDirection ? (
@@ -984,17 +976,17 @@ const UnitManagerMenuProductionRecordsPage = ({
                           className="cursor-pointer border-t border-border"
                           onClick={() => toggleExpandedGroup(groupKey)}
                         >
-                          <td className="px-5 py-4 text-sm text-muted">
+                          <td className="px-5 py-4 text-sm font-bold text-black">
                             {(page - 1) * RECORD_ITEMS_PER_PAGE + index + 1}
                           </td>
-                          <td className="px-5 py-4 text-sm text-muted">
+                          <td className="px-5 py-4 text-sm font-bold text-black">
                             {formatCreatedDate(getGroupSubmittedAt(group))}
                           </td>
-                      <td className="px-5 py-4">{group.date}</td>
-                      <td className="px-5 py-4 text-xs text-muted">
+                      <td className="px-5 py-4 font-bold text-black">{formatProductionDate(group.date)}</td>
+                      <td className="px-5 py-4 text-xs font-bold text-black">
                         {group.productionCode ?? '-'}
                       </td>
-                      <td className="px-5 py-4">{group.items[0]?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4 font-bold text-black">{group.items[0]?.clientName ?? '-'}</td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -1030,88 +1022,23 @@ const UnitManagerMenuProductionRecordsPage = ({
                           <tr className="border-t border-border bg-background">
                             <td colSpan={6} className="px-5 py-5">
                               <div className="space-y-4">
-                                <section className="border-b border-border pb-4">
-                                  <h3 className="text-sm font-semibold text-foreground">
-                                    Production information
-                                  </h3>
-                                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Batch status
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {getRecordStatusLabel(recordStatus)}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Approval status
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {approvalStatusSummary || '-'}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Store request status
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {storeRequestStatusSummary || '-'}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Total menu
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {items.length}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Submitted by
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {submittedByLabel}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Admin
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {firstMenu?.salesInputBy?.trim() || '-'}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Client
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {firstMenu?.clientName?.trim() || '-'}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Reviewed by
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {reviewedByLabel}
-                                      </dd>
-                                    </div>
-                                    <div className="rounded-md border border-border bg-white px-3 py-2">
-                                      <dt className="text-xs font-medium text-muted">
-                                        Storekeeper
-                                      </dt>
-                                      <dd className="mt-1 font-semibold text-foreground">
-                                        {storekeeperLabel}
-                                      </dd>
-                                    </div>
-                                  </dl>
-                                </section>
+                                <ProductionInformation
+                                  productionCode={group.productionCode}
+                                  createdAt={getGroupSubmittedAt(group)}
+                                  submittedBy={submittedByLabel}
+                                  admin={firstMenu?.salesInputBy}
+                                  reviewedBy={reviewedByLabel}
+                                  storekeeper={storekeeperLabel}
+                                  batchStatus={getRecordStatusLabel(recordStatus)}
+                                  productionDate={group.date}
+                                  client={firstMenu?.clientName}
+                                  totalMenu={items.length}
+                                  approvalStatus={approvalStatusSummary}
+                                  storeRequestStatus={storeRequestStatusSummary}
+                                />
 
-                                <div className="rounded-md border border-border bg-surface p-4">
-                                  <p className="text-xs text-muted">Menu list</p>
+                                <div>
+                                  <p className="text-xs text-black">Menu list</p>
                                   <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-black bg-white">
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
@@ -1346,8 +1273,8 @@ const UnitManagerMenuProductionRecordsPage = ({
                                   </div>
                                 </div>
 
-                                <div className="rounded-md border border-border bg-surface p-4">
-                                  <p className="text-xs text-muted">
+                                <div>
+                                  <p className="text-xs text-black">
                                     {recordStatus === 'pending' ||
                                     recordStatus === 'sales-input'
                                       ? 'Planned ingredient summary'

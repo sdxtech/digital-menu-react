@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { formatQuantity, formatSignedQuantity } from '../lib/quantity'
@@ -690,11 +691,11 @@ const StorekeeperHistoryPage = () => {
                         className="cursor-pointer border-t border-border"
                         onClick={() => toggleExpanded(groupKey)}
                       >
-                        <td className="px-3 py-1.5 text-sm text-muted">
+                        <td className="px-3 py-1.5 text-sm font-bold text-black">
                           {(page - 1) * ITEMS_PER_PAGE + index + 1}
                         </td>
-                        <td className="px-3 py-1.5">{group.date}</td>
-                        <td className="px-3 py-1.5 text-xs text-muted">
+                        <td className="px-3 py-1.5 font-bold text-black">{formatProductionDate(group.date)}</td>
+                        <td className="px-3 py-1.5 text-xs font-bold text-black">
                           {group.productionCode ?? '-'}
                         </td>
                         <td className="px-3 py-1.5 text-sm font-medium">
@@ -738,8 +739,8 @@ const StorekeeperHistoryPage = () => {
                                 <p className="text-xs text-muted">
                                   History details
                                 </p>
-                                <p className="mt-2 text-sm text-muted">
-                                  Production date: {group.date}
+                                <p className="mt-2 text-sm font-bold text-black">
+                                  Production date: {formatProductionDate(group.date)}
                                 </p>
                               </div>
 
