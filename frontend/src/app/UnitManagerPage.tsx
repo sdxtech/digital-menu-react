@@ -1,5 +1,6 @@
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
+import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -1315,6 +1316,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     <span>Export</span>
                                   </span>
                                 </button>
+                                <MenuProductionSalesActions group={group} onSaved={fetchPending} />
                               </div>
                             </td>
                           </tr>

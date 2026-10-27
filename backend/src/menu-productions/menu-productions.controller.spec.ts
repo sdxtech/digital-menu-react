@@ -11,6 +11,8 @@ describe('MenuProductionsController sales input actor', () => {
       updateSalesDetails: jest.fn(),
       buildStoreRequestGroups: jest.fn(),
       deleteBatch: jest.fn(),
+      editSalesBatch: jest.fn(),
+      rejectSalesBatch: jest.fn(),
     };
     return {
       controller: new MenuProductionsController(menuProductions as never),
@@ -70,6 +72,63 @@ describe('MenuProductionsController sales input actor', () => {
         ).length,
       ).toBeGreaterThan(0);
     }
+  });
+
+  it('allows only superadmin to edit sales and limits Reject Sales to superadmin or Unit Manager', async () => {
+    const handler = (name: 'editSales' | 'rejectSales') =>
+      Object.getOwnPropertyDescriptor(MenuProductionsController.prototype, name)
+        ?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler('editSales'))).toEqual([
+      AppRole.Superadmin,
+    ]);
+    expect(Reflect.getMetadata(ROLES_KEY, handler('rejectSales'))).toEqual([
+      AppRole.Superadmin,
+      AppRole.UnitManager,
+    ]);
+    const { controller, menuProductions } = makeController();
+    const manager = {
+      user: {
+        ...request.user,
+        sub: '507f1f77bcf86cd799439011',
+        roles: [AppRole.UnitManager],
+      },
+    };
+    const dto = {
+      menuProductionIds: ['507f1f77bcf86cd799439012'],
+      reason: 'Pax must be 150',
+    };
+    await controller.rejectSales(manager as never, dto);
+    expect(menuProductions.rejectSalesBatch).toHaveBeenCalledWith(
+      dto,
+      'SITE-001',
+      { id: manager.user.sub, name: 'Admin Site One' },
+      manager.user.sub,
+    );
+  });
+
+  it('exposes missing or rejected sales to the superadmin Sales Input inbox without bypassing UM readiness', async () => {
+    const { controller, menuProductions } = makeController();
+    const query = { approvalStatus: 'pending' as const, salesInput: true };
+    await controller.storeRequests(
+      { user: { ...request.user, roles: [AppRole.Superadmin] } } as never,
+      query,
+    );
+    expect(menuProductions.buildStoreRequestGroups).toHaveBeenLastCalledWith(
+      query,
+      undefined,
+      undefined,
+      false,
+    );
+    await controller.storeRequests(
+      { user: { ...request.user, roles: [AppRole.UnitManager] } } as never,
+      query,
+    );
+    expect(menuProductions.buildStoreRequestGroups).toHaveBeenLastCalledWith(
+      query,
+      'SITE-001',
+      request.user.sub,
+      true,
+    );
   });
 
   it('records the admin name when batch sales details are submitted', async () => {
