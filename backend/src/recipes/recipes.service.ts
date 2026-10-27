@@ -290,6 +290,7 @@ export class RecipesService {
     const costFields = await this.buildIngredientCostUpdate(
       ingredients,
       normalizedSite,
+      input.saveAsDraft === true,
     );
     const inputFoodCostRecipe = this.normalizeOptionalNumber(
       input.foodCostRecipe,
@@ -736,12 +737,23 @@ export class RecipesService {
       );
     }
 
+    const hasManualPrices = existing.ingredients.some(
+      (ingredient) => ingredient.priceSource === 'manual',
+    );
+
     if (existing.importIssues !== undefined) {
       const checked = await this.prepareImportedRecipe(existing, existing.site);
       if (checked.importIssues?.length) {
         throw new BadRequestException(checked.importIssues.join(' '));
       }
       existing.ingredients = checked.ingredients ?? [];
+      existing.foodCostRecipe = checked.foodCostRecipe;
+    } else if (hasManualPrices) {
+      const checked = await this.buildIngredientCostUpdate(
+        existing.ingredients,
+        existing.site,
+      );
+      existing.ingredients = checked.ingredients;
       existing.foodCostRecipe = checked.foodCostRecipe;
     }
 
@@ -756,6 +768,7 @@ export class RecipesService {
         {
           $set: {
             isDraft: false,
+            ...(hasManualPrices ? { ingredients: existing.ingredients } : {}),
             ...(existing.importIssues !== undefined
               ? {
                   importIssues: [],
@@ -1201,6 +1214,7 @@ export class RecipesService {
         );
       const ingredients = await Promise.all(
         (recipe.ingredients ?? []).map(async (ingredient) => {
+          if (ingredient.priceSource === 'manual') return ingredient;
           const result = await this.applyIngredientCostFromLookup(
             ingredient,
             rawMaterialByCode,
@@ -1502,6 +1516,7 @@ export class RecipesService {
       const costFields = await this.buildIngredientCostUpdate(
         ingredients,
         recipeSite,
+        input.saveAsDraft === true,
       );
       $set.ingredients = clearEstimates
         ? this.withoutRecipeEstimates(costFields.ingredients)
@@ -1963,13 +1978,23 @@ export class RecipesService {
           );
         } else {
           ingredient.vendor = selected.vendor;
-          ingredient.priceUom = selected.price;
+          const manualPrice = this.normalizeOptionalNumber(original.priceUom);
+          const price =
+            selected.price === 0
+              ? manualPrice && manualPrice > 0
+                ? manualPrice
+                : undefined
+              : selected.price;
+          ingredient.priceSource =
+            selected.price === 0 ? 'manual' : 'pricelist';
+          ingredient.priceUom = price;
+          if (selected.price === 0 && price === undefined) {
+            issues.push(`${label}: enter a price greater than 0 manually.`);
+          }
           ingredient.priceSourceSite = selected.priceSourceSite;
           ingredient.priceSourceSiteName = selected.priceSourceSiteName;
-          if (ingredient.srQty !== undefined) {
-            ingredient.foodCost = this.roundQuantity(
-              ingredient.srQty * selected.price!,
-            );
+          if (ingredient.srQty !== undefined && price !== undefined) {
+            ingredient.foodCost = this.roundQuantity(ingredient.srQty * price);
           }
         }
       }
@@ -2956,6 +2981,7 @@ export class RecipesService {
   private async buildIngredientCostUpdate(
     ingredients: RecipeIngredient[],
     site?: string,
+    allowIncompleteManualPrice = false,
   ) {
     const siteSummary = site
       ? (await this.sites.findSummariesByCodes([site])).get(site)
@@ -2996,6 +3022,16 @@ export class RecipesService {
         if (ingredient.vendor && result.status !== 'matched') {
           throw new BadRequestException(
             `Selected vendor for ${ingredient.name || ingredient.productCode} has no valid price for this site and unit.`,
+          );
+        }
+        if (
+          !allowIncompleteManualPrice &&
+          'ingredient' in result &&
+          result.ingredient.priceSource === 'manual' &&
+          !(result.ingredient.priceUom && result.ingredient.priceUom > 0)
+        ) {
+          throw new BadRequestException(
+            `Enter a price greater than 0 for ${ingredient.name || ingredient.productCode}.`,
           );
         }
         return 'ingredient' in result ? result.ingredient : ingredient;
@@ -3062,18 +3098,25 @@ export class RecipesService {
     }
     if (unitPrice === undefined) return { status: 'missing_price' };
 
+    const priceSource = unitPrice === 0 ? 'manual' : 'pricelist';
+    if (priceSource === 'manual') {
+      const enteredPrice = this.normalizeOptionalNumber(ingredient.priceUom);
+      unitPrice = enteredPrice && enteredPrice > 0 ? enteredPrice : undefined;
+    }
     const qty = Number(ingredient.qty);
-    const foodCost = Number.isFinite(qty)
-      ? this.roundQuantity(qty * unitPrice)
-      : undefined;
+    const foodCost =
+      Number.isFinite(qty) && unitPrice !== undefined
+        ? this.roundQuantity(qty * unitPrice)
+        : undefined;
     const currentPrice = this.normalizeOptionalNumber(ingredient.priceUom);
     const currentFoodCost = this.normalizeOptionalNumber(ingredient.foodCost);
     const nextIngredient: RecipeIngredient = {
       ...ingredient,
+      priceSource,
       priceUom: unitPrice,
       priceSourceSite,
       priceSourceSiteName,
-      ...(foodCost !== undefined ? { foodCost } : {}),
+      foodCost,
     };
 
     return {

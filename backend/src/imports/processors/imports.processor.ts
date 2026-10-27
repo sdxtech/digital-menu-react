@@ -506,12 +506,21 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
           record.baseUnitOfMeasures,
         );
         const conversionFactor = record.conversionFactor;
-        const vendor = record.vendor;
+        const vendor = record.vendor?.trim() || 'NO VENDOR';
         const currency = record.currency;
         const minimumQuantity = record.minimumQuantity;
         const priceQuantity = record.priceQuantity;
-        const price = record.price;
+        const price = record.price ?? 0;
         const extraFields = record.extraFields;
+
+        if (!Number.isFinite(price) || price < 0) {
+          pushError({
+            row: record.rowNumber,
+            name,
+            reason: 'Price is invalid',
+          });
+          continue;
+        }
 
         if (!productCode || !name || !unitOfMeasures) {
           pushError({
@@ -661,7 +670,9 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
       );
       const minimumQuantity = this.parseNumber(minimumQuantityRaw);
       const priceQuantity = this.parseNumber(priceQuantityRaw);
-      const price = this.parseNumber(priceRaw);
+      const price = priceRaw.trim()
+        ? (this.parseNumber(priceRaw) ?? Number.NaN)
+        : 0;
       const conversionFactor = this.parseNumber(conversionFactorRaw);
       const extraFields: Record<string, string> = {};
       for (const [key, value] of Object.entries(normalized)) {
@@ -738,7 +749,9 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
         const priceRaw = this.getCellValue(values, headerMap.price);
         const minimumQuantity = this.parseNumber(minimumQuantityRaw);
         const priceQuantity = this.parseNumber(priceQuantityRaw);
-        const price = this.parseNumber(priceRaw);
+        const price = priceRaw.trim()
+          ? (this.parseNumber(priceRaw) ?? Number.NaN)
+          : 0;
         const conversionFactor = this.parseNumber(conversionFactorRaw);
         const extraFields: Record<string, string> = {};
         for (const [key, index] of Object.entries(headerMap.extraFields)) {

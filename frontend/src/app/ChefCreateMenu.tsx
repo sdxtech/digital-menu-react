@@ -229,7 +229,7 @@ const ChefCreateMenu = ({
   const isCorporateSite = corporateSettings.context?.corporateSite === true
   const isChef = user?.role === 'chef'
   const useVendorPrices = isChef || isCorporateChef || baseRecipe?.importIssues !== undefined
-  const showIngredientCostColumns = isChef || isCorporateChef
+  const showIngredientCostColumns = isChef || isCorporateChef || baseRecipe?.importIssues !== undefined
   const recipeDraftsPath = user?.role === 'superadmin' ? '/superadmin/recipe-drafts' : isCorporateChef
     ? '/corporate-chef/recipe-drafts'
     : '/chef/recipe-drafts'
@@ -386,7 +386,7 @@ const ChefCreateMenu = ({
                   : '',
               srQtyManual: ingredient.srQtyManual ?? false,
               vendor: ingredient.vendor,
-              priceUom: ingredient.priceUom ?? (
+              priceUom: !isEditMode && ingredient.priceSource === 'manual' ? undefined : ingredient.priceUom ?? (
                 ingredient.foodCost !== undefined && ingredient.qty > 0
                   ? ingredient.foodCost / ingredient.qty
                   : undefined
@@ -400,7 +400,7 @@ const ChefCreateMenu = ({
     setResubmitModalOpen(false)
     setSubmitError('')
     setSubmitMessage('')
-  }, [baseRecipe, enableIngredientUomConversion])
+  }, [baseRecipe, enableIngredientUomConversion, isEditMode])
 
   useEffect(() => {
     if (!accessToken) return
@@ -660,6 +660,13 @@ const ChefCreateMenu = ({
       !selected || (option.price ?? -1) > (selected.price ?? -1) ? option : selected,
     undefined)
   }
+  const requiresManualPrice = (row: IngredientRow) =>
+    row.ingredientType === 'NMP' ||
+    (row.ingredientType === 'IT' && getSelectedVendor(row)?.price === 0)
+  const getIngredientPrice = (row: IngredientRow) =>
+    requiresManualPrice(row) ? row.priceUom
+      : useVendorPrices && row.ingredientType === 'IT'
+        ? getSelectedVendor(row)?.price : row.priceUom
   const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
     const prod = normalizeUomCode(prodUomCode)
     const sr = normalizeUomCode(srUomCode)
@@ -789,7 +796,7 @@ const ChefCreateMenu = ({
       productCode: matched.productCode,
       name: matched.name,
       unitOfMeasures: matched.unitOfMeasures,
-      priceUom: matched.price ?? (
+      priceUom: (
         normalizeValue(row.productCode) === normalizeValue(matched.productCode)
           ? row.priceUom
           : undefined
@@ -900,6 +907,7 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'vendor' && value !== row.vendor) next.priceUom = undefined
         if (
           (field === 'ingredientType' || (
             row.ingredientType === 'IT' && (field === 'productCode' || field === 'name')
@@ -1408,9 +1416,17 @@ const ChefCreateMenu = ({
         return
       }
 
-      const nmpPrice = row.ingredientType === 'NMP' ? row.priceUom : undefined
-      if (nmpPrice !== undefined && (!Number.isFinite(nmpPrice) || nmpPrice < 0)) {
+      const manualPrice = requiresManualPrice(row) ? row.priceUom : undefined
+      if (manualPrice !== undefined && (!Number.isFinite(manualPrice) || manualPrice < 0)) {
         setSubmitError(`Price for ${name} must be a number greater than or equal to 0.`)
+        setSubmitMessage('')
+        return
+      }
+      if (
+        row.ingredientType === 'IT' && requiresManualPrice(row) &&
+        !options.saveAsDraft && !(manualPrice !== undefined && manualPrice > 0)
+      ) {
+        setSubmitError(`Enter a price greater than 0 for ${name}.`)
         setSubmitMessage('')
         return
       }
@@ -1454,9 +1470,9 @@ const ChefCreateMenu = ({
           unitOfMeasures,
           qty: srQty,
           ...(vendor ? { vendor } : {}),
-          ...(nmpPrice !== undefined ? {
-            priceUom: nmpPrice,
-            foodCost: roundQuantity(nmpPrice * srQty),
+          ...(manualPrice !== undefined ? {
+            priceUom: manualPrice,
+            foodCost: roundQuantity(manualPrice * srQty),
           } : {}),
           prodQty: qty,
           prodUomCode,
@@ -1478,9 +1494,9 @@ const ChefCreateMenu = ({
           unitOfMeasures,
           qty,
           ...(vendor ? { vendor } : {}),
-          ...(nmpPrice !== undefined ? {
-            priceUom: nmpPrice,
-            foodCost: roundQuantity(nmpPrice * qty),
+          ...(manualPrice !== undefined ? {
+            priceUom: manualPrice,
+            foodCost: roundQuantity(manualPrice * qty),
           } : {}),
         })
       }
@@ -1569,9 +1585,7 @@ const ChefCreateMenu = ({
   }
 
   const ingredientCosts = new Map(ingredientRows.map((row) => {
-    const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
-    const price = useVendorPrices && row.ingredientType === 'IT'
-      ? selectedVendor?.price : row.priceUom
+    const price = getIngredientPrice(row)
     const costQtyRaw = enableIngredientUomConversion
       ? row.srQtyManual
         ? row.srQty
@@ -2057,8 +2071,7 @@ const ChefCreateMenu = ({
                   const vendorState = vendorPrices[vendorKey]
                   const vendorOptions = getVendorOptions(row)
                   const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
-                  const price = useVendorPrices && row.ingredientType === 'IT'
-                    ? selectedVendor?.price : row.priceUom
+                  const price = getIngredientPrice(row)
                   const ingredientCost = ingredientCosts.get(row.id)
                   const srQty = row.srQtyManual ? row.srQty : conversionResult?.srQty ?? row.srQty
                   const matchedMaterial = row.ingredientType === 'IT' ? findRawMaterialForRow(row) : undefined
@@ -2073,8 +2086,9 @@ const ChefCreateMenu = ({
                     unitOfMeasures: isDraftRecipe && !row.unitOfMeasures.trim(),
                     vendor: isDraftRecipe && row.ingredientType === 'IT' && Boolean(vendorState && !vendorState.loading &&
                       (vendorState.error || !selectedVendor || selectedVendor.price === undefined)),
-                    price: isDraftRecipe && row.ingredientType === 'NMP' &&
-                      (row.priceUom === undefined || !Number.isFinite(row.priceUom) || row.priceUom < 0),
+                    price: isDraftRecipe && requiresManualPrice(row) &&
+                      (row.priceUom === undefined || !Number.isFinite(row.priceUom) ||
+                        (row.ingredientType === 'IT' ? row.priceUom <= 0 : row.priceUom < 0)),
                   }
                   return (
                   <tr key={row.id} className="border-t border-border">
@@ -2371,7 +2385,7 @@ const ChefCreateMenu = ({
                     {showIngredientCostColumns ? (
                       <>
                         <td className="whitespace-nowrap px-4 py-3">
-                          {isChef && row.ingredientType === 'NMP' ? (
+                          {requiresManualPrice(row) ? (
                             <input
                               type="number"
                               min={0}
@@ -2385,7 +2399,7 @@ const ChefCreateMenu = ({
                               )}
                               onWheel={(event) => event.currentTarget.blur()}
                               aria-label={`Price for ${row.name || `ingredient ${index + 1}`}`}
-                              placeholder="Price (IDR)"
+                              placeholder="Enter price (IDR)"
                               className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                             />
                           ) : formatPrice(price)}
