@@ -276,6 +276,7 @@ function App() {
             <Route path="menu-management" element={<SuperadminMenuManagementPage />} />
             <Route path="recipe-drafts" element={<ChefRecipeDrafts />} />
             <Route path="menu-create" element={<ChefCreateMenu enableIngredientUomConversion lockSrUomToRawMaterial showImport={false} />} />
+            <Route path="menu-production-drafts" element={<ChefMenuProductionDrafts />} />
             <Route
               path="approval-centers"
               element={<SuperadminApprovalCentersPage />}
