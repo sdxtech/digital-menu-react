@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
 import { formatProductionDate } from '../lib/date-format'
 import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1112,6 +1113,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                   <option value="rejected">Force reject</option>
                                 ) : null}
                               </select>
+                              <MenuProductionSalesActions group={group} onSaved={fetchApprovals} />
                             </div>
                           </td>
                         </tr>

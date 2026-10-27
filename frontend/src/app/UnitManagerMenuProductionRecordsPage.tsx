@@ -1,5 +1,6 @@
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
+import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -72,6 +73,8 @@ type StoreRequestMenu = {
   submittedByName?: string
   reviewedBy?: string
   salesInputBy?: string
+  salesRejectionReason?: string
+  salesRejectedBy?: string
   submittedAt?: string
   approvedAt?: string
   recipeCode?: string
@@ -1058,6 +1061,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                   <span>Export</span>
                                 </span>
                               </button>
+                              <MenuProductionSalesActions group={group} onSaved={fetchRecords} />
                               {canDeleteMpr ? (
                                 <button
                                   type="button"
@@ -1088,13 +1092,18 @@ const UnitManagerMenuProductionRecordsPage = ({
                                   admin={firstMenu?.salesInputBy}
                                   reviewedBy={reviewedByLabel}
                                   storekeeper={storekeeperLabel}
-                                  batchStatus={getRecordStatusLabel(recordStatus)}
+                                  batchStatus={items.some((item) => item.salesRejectionReason) ? 'Returned to Admin Sales' : getRecordStatusLabel(recordStatus)}
                                   productionDate={group.date}
                                   client={firstMenu?.clientName}
                                   totalMenu={items.length}
                                   approvalStatus={approvalStatusSummary}
                                   storeRequestStatus={storeRequestStatusSummary}
                                 />
+                                {items.find((item) => item.salesRejectionReason) ? (
+                                  <p className="rounded-md border border-danger/30 bg-red-50 p-3 text-sm font-semibold text-danger">
+                                    Sales returned by {items.find((item) => item.salesRejectionReason)?.salesRejectedBy ?? '-'}: {items.find((item) => item.salesRejectionReason)?.salesRejectionReason}
+                                  </p>
+                                ) : null}
 
                                 <div>
                                   <p className="text-xs text-black">Menu list</p>

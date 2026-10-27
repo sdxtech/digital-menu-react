@@ -14,6 +14,10 @@ import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto
 import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
+import {
+  EditMenuProductionSalesDto,
+  RejectMenuProductionSalesDto,
+} from './dto/menu-production-sales-action.dto';
 import { UpdateMenuProductionSalesDetailsDto } from './dto/update-menu-production-sales-details.dto';
 import { UpdateMenuProductionBatchSalesDetailsDto } from './dto/update-menu-production-batch-sales-details.dto';
 import {
@@ -101,6 +105,9 @@ type StoreRequestMenu = {
   sellingQuantity?: number;
   estimatedRevenue?: number;
   salesInputBy?: string;
+  salesRejectionReason?: string;
+  salesRejectedBy?: string;
+  salesRejectedAt?: string;
   productionDate: string;
   approvalStatus: ApprovalStatus;
   rejectionReason?: string;
@@ -826,10 +833,15 @@ export class MenuProductionsService implements OnModuleInit {
             unitManagerId,
           ),
         )
-        .select({ sellingPricePerPax: 1, sellingQuantity: 1 })
+        .select({
+          sellingPricePerPax: 1,
+          sellingQuantity: 1,
+          salesRejectionReason: 1,
+        })
         .lean();
       if (
         !salesDetails ||
+        salesDetails.salesRejectionReason?.trim() ||
         !Number.isFinite(Number(salesDetails.sellingPricePerPax)) ||
         !Number.isFinite(Number(salesDetails.sellingQuantity))
       ) {
@@ -1174,6 +1186,205 @@ export class MenuProductionsService implements OnModuleInit {
     return updated;
   }
 
+  private async findSalesActionBatch(
+    ids: string[],
+    site?: string,
+    unitManagerId?: string,
+  ) {
+    const normalizedIds = Array.from(
+      new Set((ids ?? []).map((id) => id.trim())),
+    );
+    if (
+      !normalizedIds.length ||
+      normalizedIds.some((id) => !Types.ObjectId.isValid(id))
+    ) {
+      throw new BadRequestException('Valid menu production ids are required.');
+    }
+    const menus = await this.menuProductionModel
+      .find(
+        this.withUnitManagerFilter(
+          this.withSiteFilter(
+            { _id: { $in: normalizedIds }, isDraft: { $ne: true } },
+            site,
+          ),
+          unitManagerId,
+        ),
+      )
+      .lean();
+    if (menus.length !== normalizedIds.length)
+      throw new NotFoundException(
+        'MPR not found or not assigned to this reviewer.',
+      );
+    const keys = new Set(
+      menus.map((menu) =>
+        this.buildProductionBatchKey({
+          productionDate: menu.productionDate,
+          productionCode: menu.productionCode,
+          site: menu.site,
+          id: String(menu._id),
+        }),
+      ),
+    );
+    if (keys.size !== 1)
+      throw new BadRequestException('Select one complete MPR batch.');
+    const first = menus[0];
+    const batchFilter = {
+      ...(first.productionCode
+        ? { productionCode: first.productionCode }
+        : { _id: first._id }),
+      productionDate: first.productionDate,
+      site: first.site || { $in: [null, ''] },
+      isDraft: { $ne: true },
+    };
+    if (
+      (await this.menuProductionModel.countDocuments(batchFilter)) !==
+      normalizedIds.length
+    ) {
+      throw new ConflictException(
+        'The MPR has changed. Refresh the list before updating sales.',
+      );
+    }
+    return { menus, filter: { ...batchFilter, _id: { $in: normalizedIds } } };
+  }
+
+  async editSalesBatch(
+    input: EditMenuProductionSalesDto,
+    site?: string,
+    actor?: string,
+  ) {
+    const price = input.sellingPricePerPax;
+    const quantity = input.sellingQuantity;
+    if (
+      !Number.isFinite(price) ||
+      price < 0 ||
+      !Number.isFinite(quantity) ||
+      quantity < 0 ||
+      !Number.isFinite(price * quantity) ||
+      !actor?.trim()
+    ) {
+      throw new BadRequestException(
+        'Valid sales values and an editor identity are required.',
+      );
+    }
+    const { menus, filter } = await this.findSalesActionBatch(
+      input.menuProductionIds,
+      site,
+    );
+    const result = await this.menuProductionModel.updateMany(filter, {
+      $set: {
+        sellingPricePerPax: price,
+        sellingQuantity: quantity,
+        estimatedRevenue: this.roundQuantity(price * quantity),
+        salesInputBy: actor.trim(),
+      },
+      $unset: {
+        salesRejectionReason: 1,
+        salesRejectedBy: 1,
+        salesRejectedAt: 1,
+      },
+    });
+    if (result.matchedCount !== menus.length)
+      throw new ConflictException(
+        'The MPR changed while saving sales. Refresh the list.',
+      );
+    return { updatedCount: result.matchedCount };
+  }
+
+  async rejectSalesBatch(
+    input: RejectMenuProductionSalesDto,
+    site: string | undefined,
+    actor: { id: string; name: string },
+    unitManagerId?: string,
+  ) {
+    const reason = input.reason?.trim();
+    if (!reason || reason.length < 3 || reason.length > 1000)
+      throw new BadRequestException(
+        'A sales rejection reason between 3 and 1000 characters is required.',
+      );
+    if (!actor.id?.trim() || !actor.name?.trim())
+      throw new BadRequestException('Reviewer identity is required.');
+    const { menus, filter } = await this.findSalesActionBatch(
+      input.menuProductionIds,
+      site,
+      unitManagerId,
+    );
+    if (
+      menus.some(
+        (menu) =>
+          !['not-requested', 'requested'].includes(menu.storeRequestStatus) ||
+          menu.storeFulfillmentCompletedAt ||
+          menu.storeFulfillmentItems?.length,
+      )
+    ) {
+      throw new BadRequestException(
+        'Completed or cancelled MPRs cannot have sales rejected. Superadmin can use Edit Sales instead.',
+      );
+    }
+    if (menus.some((menu) => menu.approvalStatus === 'rejected'))
+      throw new BadRequestException(
+        'Resolve the rejected menus before returning sales to Admin Site.',
+      );
+    if (
+      menus.some(
+        (menu) =>
+          menu.salesRejectionReason ||
+          menu.sellingPricePerPax == null ||
+          menu.sellingQuantity == null,
+      )
+    ) {
+      throw new BadRequestException(
+        'Sales must be submitted before they can be rejected.',
+      );
+    }
+    const result = await this.menuProductionModel.updateMany(
+      {
+        ...filter,
+        approvalStatus: { $in: ['pending', 'approved'] },
+        storeRequestStatus: { $in: ['not-requested', 'requested'] },
+        storeFulfillmentCompletedAt: null,
+        'storeFulfillmentItems.0': { $exists: false },
+      },
+      {
+        $set: {
+          approvalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+          salesRejectionReason: reason,
+          salesRejectedBy: actor.name,
+          salesRejectedAt: new Date(),
+        },
+        $unset: {
+          sellingPricePerPax: 1,
+          sellingQuantity: 1,
+          estimatedRevenue: 1,
+          salesInputBy: 1,
+          reviewedBy: 1,
+          approvedAt: 1,
+        },
+      },
+    );
+    if (result.matchedCount !== menus.length)
+      throw new ConflictException(
+        'The MPR changed while rejecting sales. Refresh the list.',
+      );
+    const first = menus[0];
+    await this.notificationsService
+      .createHierarchicalNotification(
+        actor.id,
+        'Sales Correction Required',
+        `Sales for ${first.productionCode ?? 'MPR'} were returned by ${actor.name}: ${reason}`,
+        first.site || 'global',
+        'admin-site',
+        'ADMIN_SITE_MENU_PRODUCTION_SALES',
+        { productionCode: first.productionCode, reason },
+      )
+      .catch((error) =>
+        this.logger.error(
+          `Sales rejection notification failed: ${this.errorMessage(error)}`,
+        ),
+      );
+    return { updatedCount: result.matchedCount };
+  }
+
   async updateSalesDetails(
     id: string,
     input: UpdateMenuProductionSalesDetailsDto,
@@ -1267,7 +1478,14 @@ export class MenuProductionsService implements OnModuleInit {
         ),
         salesInputBy: actor,
       },
-      $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
+      $unset: {
+        rejectionReason: 1,
+        reviewedBy: 1,
+        approvedAt: 1,
+        salesRejectionReason: 1,
+        salesRejectedBy: 1,
+        salesRejectedAt: 1,
+      },
     });
     if (!result.matchedCount) {
       throw new NotFoundException(
@@ -1289,6 +1507,11 @@ export class MenuProductionsService implements OnModuleInit {
           sellingPricePerPax * sellingQuantity,
         ),
         salesInputBy: actor,
+      },
+      $unset: {
+        salesRejectionReason: 1,
+        salesRejectedBy: 1,
+        salesRejectedAt: 1,
       },
     });
     const updatedItems = await this.menuProductionModel
@@ -2078,6 +2301,7 @@ export class MenuProductionsService implements OnModuleInit {
     }
     if (approvalReady) {
       andFilters.push({
+        salesRejectionReason: { $exists: false },
         sellingPricePerPax: { $type: 'number', $gte: 0 },
         sellingQuantity: { $type: 'number', $gte: 0 },
       });
@@ -2819,6 +3043,12 @@ export class MenuProductionsService implements OnModuleInit {
           ? Number(menu.sellingQuantity)
           : undefined,
         salesInputBy: String(menu.salesInputBy ?? '').trim() || undefined,
+        salesRejectionReason:
+          String(menu.salesRejectionReason ?? '').trim() || undefined,
+        salesRejectedBy: String(menu.salesRejectedBy ?? '').trim() || undefined,
+        salesRejectedAt: menu.salesRejectedAt
+          ? new Date(String(menu.salesRejectedAt)).toISOString()
+          : undefined,
         estimatedRevenue: Number.isFinite(Number(menu.estimatedRevenue))
           ? Number(menu.estimatedRevenue)
           : undefined,
