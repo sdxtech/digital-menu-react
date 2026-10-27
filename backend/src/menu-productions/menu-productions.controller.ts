@@ -103,11 +103,26 @@ export class MenuProductionsController {
   }
 
   @Get('drafts')
-  @Roles(AppRole.Chef)
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   drafts(@Req() req: AuthenticatedRequest) {
     return this.menuProductions.findDrafts(
       req.user.sub,
       getUserSiteScope(req.user),
+      req.user.roles?.includes(AppRole.Superadmin),
+    );
+  }
+
+  @Delete('drafts/:productionCode')
+  @Roles(AppRole.Chef, AppRole.Superadmin)
+  deleteDraft(
+    @Req() req: AuthenticatedRequest,
+    @Param('productionCode') productionCode: string,
+  ) {
+    return this.menuProductions.deleteDraft(
+      productionCode,
+      req.user.sub,
+      getUserSiteScope(req.user),
+      req.user.roles?.includes(AppRole.Superadmin),
     );
   }
 

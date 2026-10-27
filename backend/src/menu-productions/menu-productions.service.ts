@@ -642,20 +642,56 @@ export class MenuProductionsService implements OnModuleInit {
     return createdDocs;
   }
 
-  async findDrafts(createdBy?: string, site?: string) {
+  async findDrafts(createdBy?: string, site?: string, allChefs = false) {
     const chefId = createdBy?.trim();
-    if (!chefId) {
+    if (!allChefs && !chefId) {
       throw new BadRequestException(
         'Chef identity is required to load menu production drafts.',
       );
     }
 
     const items = await this.menuProductionModel
-      .find(this.withSiteFilter({ createdBy: chefId, isDraft: true }, site))
+      .find(
+        this.withSiteFilter(
+          { isDraft: true, ...(allChefs ? {} : { createdBy: chefId }) },
+          site,
+        ),
+      )
       .sort({ updatedAt: -1, createdAt: -1 })
       .lean();
 
     return { items, total: items.length };
+  }
+
+  async deleteDraft(
+    productionCode: string,
+    createdBy?: string,
+    site?: string,
+    allChefs = false,
+  ) {
+    const normalizedCode = productionCode?.trim();
+    const chefId = createdBy?.trim();
+    if (!normalizedCode || (!allChefs && !chefId)) {
+      throw new BadRequestException('Menu production draft is invalid.');
+    }
+
+    const result = await this.menuProductionModel.deleteMany(
+      this.withSiteFilter(
+        {
+          productionCode: normalizedCode,
+          isDraft: true,
+          ...(allChefs ? {} : { createdBy: chefId }),
+        },
+        site,
+      ),
+    );
+    if (!result.deletedCount) {
+      throw new NotFoundException('Menu production draft not found.');
+    }
+    return {
+      productionCode: normalizedCode,
+      deletedCount: result.deletedCount,
+    };
   }
 
   async replaceDraft(

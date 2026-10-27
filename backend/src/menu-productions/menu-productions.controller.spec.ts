@@ -11,6 +11,8 @@ describe('MenuProductionsController sales input actor', () => {
       updateSalesDetails: jest.fn(),
       buildStoreRequestGroups: jest.fn(),
       deleteBatch: jest.fn(),
+      findDrafts: jest.fn(),
+      deleteDraft: jest.fn(),
       editSalesBatch: jest.fn(),
       rejectSalesBatch: jest.fn(),
     };
@@ -49,6 +51,39 @@ describe('MenuProductionsController sales input actor', () => {
     );
     expect(menuProductions.deleteBatch).toHaveBeenCalledWith(dto, undefined);
   });
+
+  it.each([AppRole.Chef, AppRole.Superadmin])(
+    'scopes draft listing and deletion for %s',
+    async (role) => {
+      const { controller, menuProductions } = makeController();
+      const req = { user: { ...request.user, sub: 'actor-1', roles: [role] } };
+      const allChefs = role === AppRole.Superadmin;
+      const site = allChefs ? undefined : request.user.site;
+      await controller.drafts(req as never);
+      expect(menuProductions.findDrafts).toHaveBeenCalledWith(
+        'actor-1',
+        site,
+        allChefs,
+      );
+      await controller.deleteDraft(req as never, 'MPR0001');
+      expect(menuProductions.deleteDraft).toHaveBeenCalledWith(
+        'MPR0001',
+        'actor-1',
+        site,
+        allChefs,
+      );
+      for (const name of ['drafts', 'deleteDraft']) {
+        const handler = Object.getOwnPropertyDescriptor(
+          MenuProductionsController.prototype,
+          name,
+        )?.value as object;
+        expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+          AppRole.Chef,
+          AppRole.Superadmin,
+        ]);
+      }
+    },
+  );
 
   it('validates deletion ids and the required audit reason', async () => {
     const valid = {
