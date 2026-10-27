@@ -1,6 +1,8 @@
 import { AppRole } from '../auth/roles.constants';
 import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { MenuProductionsController } from './menu-productions.controller';
+import { validate } from 'class-validator';
+import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
 
 describe('MenuProductionsController sales input actor', () => {
   const makeController = () => {
@@ -8,6 +10,7 @@ describe('MenuProductionsController sales input actor', () => {
       updateBatchSalesDetails: jest.fn(),
       updateSalesDetails: jest.fn(),
       buildStoreRequestGroups: jest.fn(),
+      deleteBatch: jest.fn(),
     };
     return {
       controller: new MenuProductionsController(menuProductions as never),
@@ -24,6 +27,50 @@ describe('MenuProductionsController sales input actor', () => {
       site: 'SITE-001',
     },
   };
+
+  it('restricts MPR deletion to superadmin and forwards the exact reviewed selection', async () => {
+    const { controller, menuProductions } = makeController();
+    const dto = {
+      menuProductionIds: ['507f1f77bcf86cd799439011'],
+      reason: 'Duplicate MPR replaced by MPR0002',
+    };
+    const handler = Object.getOwnPropertyDescriptor(
+      MenuProductionsController.prototype,
+      'deleteBatch',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Superadmin,
+    ]);
+    await controller.deleteBatch(
+      { user: { ...request.user, roles: [AppRole.Superadmin] } } as never,
+      dto,
+    );
+    expect(menuProductions.deleteBatch).toHaveBeenCalledWith(dto, undefined);
+  });
+
+  it('validates deletion ids and the required audit reason', async () => {
+    const valid = {
+      menuProductionIds: ['507f1f77bcf86cd799439011'],
+      reason: 'Duplicate MPR',
+    };
+    await expect(
+      validate(Object.assign(new DeleteMenuProductionBatchDto(), valid)),
+    ).resolves.toEqual([]);
+    for (const input of [
+      { ...valid, menuProductionIds: [] },
+      { ...valid, menuProductionIds: ['invalid-id'] },
+      { ...valid, reason: '' },
+      { ...valid, reason: 'x'.repeat(1001) },
+    ]) {
+      expect(
+        (
+          await validate(
+            Object.assign(new DeleteMenuProductionBatchDto(), input),
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
 
   it('records the admin name when batch sales details are submitted', async () => {
     const { controller, menuProductions } = makeController();

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,6 +13,7 @@ import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-p
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
+import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
 import { UpdateMenuProductionSalesDetailsDto } from './dto/update-menu-production-sales-details.dto';
 import { UpdateMenuProductionBatchSalesDetailsDto } from './dto/update-menu-production-batch-sales-details.dto';
 import {
@@ -1743,6 +1745,93 @@ export class MenuProductionsService implements OnModuleInit {
       cancelledCount: normalizedIds.length,
       cancelledBy: actor,
       cancelledAt: cancelledAt.toISOString(),
+      reason,
+    };
+  }
+
+  async deleteBatch(input: DeleteMenuProductionBatchDto, site?: string) {
+    const ids = Array.from(
+      new Set(
+        (input.menuProductionIds ?? []).map((id) => id?.trim()).filter(Boolean),
+      ),
+    );
+    if (
+      !ids.length ||
+      ids.length > 1000 ||
+      ids.some((id) => !Types.ObjectId.isValid(id))
+    ) {
+      throw new BadRequestException('Valid menu production ids are required.');
+    }
+    const reason = input.reason?.trim();
+    if (!reason || reason.length < 3 || reason.length > 1000) {
+      throw new BadRequestException(
+        'A deletion reason between 3 and 1000 characters is required.',
+      );
+    }
+
+    const menus = await this.menuProductionModel
+      .find(this.withSiteFilter({ _id: { $in: ids } }, site))
+      .lean();
+    if (menus.length !== ids.length) {
+      throw new NotFoundException(
+        'One or more menu productions were not found. Refresh the production list.',
+      );
+    }
+    if (menus.some((menu) => menu.isDraft)) {
+      throw new BadRequestException(
+        'Only submitted MPRs can be deleted from production records.',
+      );
+    }
+    const batchKeys = new Set(
+      menus.map((menu) =>
+        this.buildProductionBatchKey({
+          productionDate: menu.productionDate,
+          productionCode: menu.productionCode,
+          site: menu.site,
+          id: String(menu._id),
+        }),
+      ),
+    );
+    if (batchKeys.size !== 1) {
+      throw new BadRequestException(
+        'All deleted menu productions must belong to the same MPR batch.',
+      );
+    }
+
+    const firstMenu = menus[0];
+    const productionCode = this.normalizeOptionalProductionCode(
+      firstMenu.productionCode,
+    );
+    const batchFilter: Record<string, unknown> = {
+      ...(productionCode ? { productionCode } : { _id: firstMenu._id }),
+      productionDate: firstMenu.productionDate,
+      site: firstMenu.site || { $in: [null, ''] },
+      isDraft: { $ne: true },
+    };
+    if (
+      (await this.menuProductionModel.countDocuments(batchFilter)) !==
+      ids.length
+    ) {
+      throw new ConflictException(
+        'This MPR has changed. Refresh the production list before deleting the entire batch.',
+      );
+    }
+
+    const result = await this.menuProductionModel.deleteMany({
+      ...batchFilter,
+      _id: { $in: ids },
+    });
+    if (!result.deletedCount) {
+      throw new NotFoundException(
+        'The MPR was already deleted. Refresh the production list.',
+      );
+    }
+    return {
+      productionCode,
+      productionDate: firstMenu.productionDate,
+      site: firstMenu.site,
+      clientName: firstMenu.clientName,
+      deletedCount: result.deletedCount,
       reason,
     };
   }
