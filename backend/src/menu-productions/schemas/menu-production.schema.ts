@@ -102,6 +102,15 @@ export class MenuProduction {
   @Prop({ type: String, trim: true })
   salesInputBy?: string;
 
+  @Prop({ type: String, trim: true })
+  salesRejectionReason?: string;
+
+  @Prop({ type: String, trim: true })
+  salesRejectedBy?: string;
+
+  @Prop({ type: Date })
+  salesRejectedAt?: Date;
+
   @Prop({
     type: [
       {

@@ -46,6 +46,9 @@ type Menu = {
   sellingQuantity?: number;
   estimatedRevenue?: number;
   salesInputBy?: string;
+  salesRejectionReason?: string;
+  salesRejectedBy?: string;
+  salesRejectedAt?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
   ingredients?: Ingredient[];
 };
@@ -88,6 +91,19 @@ const hasSalesDetails = (item: Menu) =>
 const isSubmittedGroup = (group: Group) =>
   group.items.length > 0 && group.items.every(hasSalesDetails);
 
+const getSalesStatus = (group: Group) => {
+  if (group.items.some((menu) => menu.salesRejectionReason)) {
+    return { label: "Sales Correction Required", className: "bg-red-100 text-red-700" };
+  }
+  if (!isSubmittedGroup(group)) {
+    return { label: "Waiting for Sales Input", className: "bg-slate-100 text-slate-700" };
+  }
+  if (group.items.every((menu) => menu.approvalStatus === "approved")) {
+    return { label: "Sales Approved", className: "bg-emerald-100 text-emerald-800" };
+  }
+  return { label: "Waiting for UM Approval", className: "bg-amber-100 text-amber-800" };
+};
+
 const AdminSiteMenuProductionPage = () => {
   const { accessToken } = useAuth();
   const { updateMenuProductionBatchSalesDetails } = useChefData();
@@ -104,13 +120,13 @@ const AdminSiteMenuProductionPage = () => {
   const fetchGroups = useCallback(async () => {
     if (!accessToken) return;
     const data = await apiFetch<{ items?: Group[] }>(
-      "/menu-productions/store-requests?approvalStatus=pending",
+      "/menu-productions/store-requests?approvalStatus=pending&salesInput=true",
       undefined,
       accessToken,
     );
     setGroups(
       [...(data.items ?? [])]
-        .filter((group) => !isSubmittedGroup(group))
+        .filter((group) => !isSubmittedGroup(group) || group.items.some((menu) => menu.salesRejectionReason))
         .sort((a, b) => a.date.localeCompare(b.date)),
     );
   }, [accessToken]);
@@ -154,6 +170,8 @@ const AdminSiteMenuProductionPage = () => {
     const price = Number(current.price);
     const quantity = Number(current.quantity);
     if (
+      !current.price.trim() ||
+      !current.quantity.trim() ||
       !Number.isFinite(price) ||
       price < 0 ||
       !Number.isFinite(quantity) ||
@@ -307,6 +325,7 @@ const AdminSiteMenuProductionPage = () => {
                 <th className="px-4 py-3">Production date</th>
                 <th className="px-4 py-3">Production code</th>
                 <th className="px-4 py-3">Client name</th>
+                <th className="px-4 py-3">Sales Status</th>
                 <th className="px-4 py-3">Chef</th>
                 <th className="px-4 py-3">Admin</th>
                 <th className="px-4 py-3">Status</th>
@@ -316,7 +335,7 @@ const AdminSiteMenuProductionPage = () => {
             <tbody>
               {visibleGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={10} className="px-4 py-8 text-center text-muted">
                     No production menus pending sales input.
                   </td>
                 </tr>
@@ -324,6 +343,7 @@ const AdminSiteMenuProductionPage = () => {
                 visibleGroups.map((group, index) => {
                   const key = groupKey(group);
                   const expanded = expandedGroups.includes(key);
+                  const salesStatus = getSalesStatus(group);
                   const chef =
                     Array.from(
                       new Set(
@@ -363,6 +383,11 @@ const AdminSiteMenuProductionPage = () => {
                         </td>
                         <td className="px-4 py-3 font-bold text-black">
                           {group.items[0]?.clientName ?? "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${salesStatus.className}`}>
+                            {salesStatus.label}
+                          </span>
                         </td>
                         <td className="px-4 py-3">{chef}</td>
                         <td className="px-4 py-3">
@@ -405,8 +430,15 @@ const AdminSiteMenuProductionPage = () => {
                       </tr>
                       {expanded ? (
                         <tr className="border-t border-border bg-background">
-                          <td colSpan={9} className="max-w-0 px-4 py-4">
+                          <td colSpan={10} className="max-w-0 px-4 py-4">
                             <div className="space-y-4">
+                              {group.items.find((menu) => menu.salesRejectionReason) ? (
+                                <div role="status" className="rounded-md border border-danger/30 bg-red-50 p-4 text-sm text-black">
+                                  <p className="font-bold">Sales returned for correction</p>
+                                  <p className="mt-1 whitespace-pre-wrap">{group.items.find((menu) => menu.salesRejectionReason)?.salesRejectionReason}</p>
+                                  <p className="mt-2 text-xs">Returned by {group.items.find((menu) => menu.salesRejectionReason)?.salesRejectedBy ?? '-'} · {formatCreatedDate(group.items.find((menu) => menu.salesRejectionReason)?.salesRejectedAt)}</p>
+                                </div>
+                              ) : null}
                               <div className="rounded-md border border-border bg-surface p-4">
                                 <p className="text-xs text-muted">Menu list</p>
                                 <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-black bg-white">

@@ -25,6 +25,10 @@ import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-prod
 import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 import { CreateMenuProductionBulkDto } from './dto/create-menu-production-bulk.dto';
 import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
+import {
+  EditMenuProductionSalesDto,
+  RejectMenuProductionSalesDto,
+} from './dto/menu-production-sales-action.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
 import { RejectMenuProductionDto } from './dto/reject-menu-production.dto';
@@ -149,7 +153,8 @@ export class MenuProductionsController {
       this.resolveUnitManagerAssignmentScope(req),
       req.user.roles?.includes(AppRole.UnitManager) ||
         (req.user.roles?.includes(AppRole.Superadmin) &&
-          query.approvalStatus === 'pending'),
+          query.approvalStatus === 'pending' &&
+          !query.salesInput),
     );
   }
 
@@ -270,6 +275,33 @@ export class MenuProductionsController {
       req.user.name || req.user.email,
       this.resolveUnitManagerAssignmentScope(req),
       dto.reason,
+    );
+  }
+
+  @Patch('batch/edit-sales')
+  @Roles(AppRole.Superadmin)
+  editSales(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: EditMenuProductionSalesDto,
+  ) {
+    return this.menuProductions.editSalesBatch(
+      dto,
+      getUserSiteScope(req.user),
+      this.resolveSalesInputActor(req),
+    );
+  }
+
+  @Patch('batch/reject-sales')
+  @Roles(AppRole.Superadmin, AppRole.UnitManager)
+  rejectSales(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RejectMenuProductionSalesDto,
+  ) {
+    return this.menuProductions.rejectSalesBatch(
+      dto,
+      getUserSiteScope(req.user),
+      { id: req.user.sub, name: this.resolveSalesInputActor(req) },
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 

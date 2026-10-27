@@ -358,6 +358,11 @@ describe('MenuProductionsService sales input', () => {
           sellingQuantity: 100,
           salesInputBy: 'Admin Site',
         }),
+        $unset: {
+          salesRejectionReason: 1,
+          salesRejectedBy: 1,
+          salesRejectedAt: 1,
+        },
       },
     );
 
