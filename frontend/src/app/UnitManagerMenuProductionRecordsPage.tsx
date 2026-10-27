@@ -94,6 +94,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  site?: string
   date: string
   productionCode?: string
   items: StoreRequestMenu[]
@@ -102,7 +103,7 @@ type StoreRequestGroup = {
 }
 
 const getGroupKey = (group: StoreRequestGroup) =>
-  `${group.date}__${group.productionCode ?? 'no-code'}`
+  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? 'no-code'}`
 
 const getGroupSubmittedAt = (group: StoreRequestGroup) =>
   group.items.find((item) => item.submittedAt)?.submittedAt
@@ -373,6 +374,7 @@ const UnitManagerMenuProductionRecordsPage = ({
   description?: string
 }) => {
   const { accessToken, user } = useAuth()
+  const canDeleteMpr = user?.role === 'superadmin'
   const siteOptions = useMemo(
     () =>
       Array.from(
@@ -396,6 +398,11 @@ const UnitManagerMenuProductionRecordsPage = ({
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<StoreRequestGroup | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteMessage, setDeleteMessage] = useState('')
 
   const fetchRecords = useCallback(async () => {
     if (!accessToken) return
@@ -436,6 +443,39 @@ const UnitManagerMenuProductionRecordsPage = ({
       setLoading(false)
     }
   }, [accessToken, enableSiteSelection, includePending, selectedSite])
+
+  const handleDeleteMpr = async () => {
+    if (!accessToken || !canDeleteMpr || !deleteTarget || deleting) return
+    const reason = deleteReason.trim()
+    if (reason.length < 3) {
+      setDeleteError('Enter a deletion reason of at least 3 characters.')
+      return
+    }
+    const target = deleteTarget
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const result = await apiFetch<{ deletedCount: number }>(
+        '/menu-productions/batch',
+        {
+          method: 'DELETE',
+          body: JSON.stringify({ menuProductionIds: target.items.map((item) => item.id), reason }),
+        },
+        accessToken,
+      )
+      const deletedIds = new Set(target.items.map((item) => item.id))
+      setRecords((current) => current.filter((group) => !group.items.some((item) => deletedIds.has(item.id))))
+      setExpandedGroups((current) => current.filter((key) => key !== getGroupKey(target)))
+      setDeleteTarget(null)
+      setDeleteReason('')
+      setDeleteMessage(`Deleted ${target.productionCode ?? 'MPR'} (${result.deletedCount} menus).`)
+      await fetchRecords()
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : 'Failed to delete MPR.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     if (!enableSiteSelection) return
@@ -812,6 +852,9 @@ const UnitManagerMenuProductionRecordsPage = ({
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}
+          {deleteMessage ? (
+            <p role="status" className="mt-2 text-sm font-semibold text-success">{deleteMessage}</p>
+          ) : null}
         </div>
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
@@ -1015,6 +1058,22 @@ const UnitManagerMenuProductionRecordsPage = ({
                                   <span>Export</span>
                                 </span>
                               </button>
+                              {canDeleteMpr ? (
+                                <button
+                                  type="button"
+                                  disabled={deleting || loading}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setDeleteTarget(group)
+                                    setDeleteReason('')
+                                    setDeleteError('')
+                                    setDeleteMessage('')
+                                  }}
+                                  className="rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Delete
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -1461,6 +1520,83 @@ const UnitManagerMenuProductionRecordsPage = ({
           </div>
         </div>
       </div>
+      {canDeleteMpr && deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-mpr-title"
+            aria-describedby="delete-mpr-description"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleDeleteMpr()
+            }}
+            className="w-full max-w-xl rounded-md border border-border bg-surface p-6 shadow-xl"
+          >
+            <h3 id="delete-mpr-title" className="text-lg font-bold text-black">Delete MPR</h3>
+            <p id="delete-mpr-description" className="mt-2 text-sm text-muted">
+              Permanently delete this entire MPR, including its menus, approvals,
+              and any completed issuance details. It will be removed from production
+              records, store requests, and reports. This cannot be undone.
+            </p>
+            <dl className="mt-4 grid grid-cols-2 gap-3 rounded-md border border-border bg-white p-4 text-sm">
+              <div>
+                <dt className="text-xs text-muted">Production code</dt>
+                <dd className="mt-1 font-bold text-black">{deleteTarget.productionCode ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Client</dt>
+                <dd className="mt-1 font-bold text-black">{deleteTarget.items[0]?.clientName ?? '-'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Production date</dt>
+                <dd className="mt-1 font-bold text-black">{formatProductionDate(deleteTarget.date)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Total menu</dt>
+                <dd className="mt-1 font-bold text-black">{deleteTarget.items.length}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Site</dt>
+                <dd className="mt-1 font-bold text-black">{deleteTarget.site ?? '-'}</dd>
+              </div>
+            </dl>
+            <label htmlFor="delete-mpr-reason" className="mt-4 block text-sm font-semibold text-black">
+              Deletion reason
+            </label>
+            <textarea
+              id="delete-mpr-reason"
+              value={deleteReason}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              minLength={3}
+              maxLength={1000}
+              required
+              disabled={deleting}
+              rows={3}
+              placeholder="Example: duplicate MPR replaced by MPR0123"
+              className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm text-black"
+            />
+            {deleteError ? <p role="alert" className="mt-2 text-sm text-danger">{deleteError}</p> : null}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={deleting || deleteReason.trim().length < 3}
+                className="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   )
 }
