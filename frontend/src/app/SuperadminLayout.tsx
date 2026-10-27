@@ -66,6 +66,13 @@ const navItems = [
         ),
       },
       {
+        label: 'Production Drafts',
+        to: '/superadmin/menu-production-drafts',
+        icon: (className: string) => (
+          <i className={`bi bi-file-earmark-text ${className}`} aria-hidden="true" />
+        ),
+      },
+      {
         label: 'Create New Recipe',
         to: '/superadmin/menu-management?tab=create-recipe',
         icon: (className: string) => (

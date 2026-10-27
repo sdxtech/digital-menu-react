@@ -264,6 +264,10 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Recipe Drafts',
   },
   {
+    path: '/superadmin/menu-production-drafts',
+    getPageTitle: () => 'Menu Production Drafts',
+  },
+  {
     path: '/superadmin/production-forecast',
     getPageTitle: () => 'Production Forecast',
   },

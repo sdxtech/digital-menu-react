@@ -396,6 +396,58 @@ describe('MenuProductionsService sales input', () => {
     });
   });
 
+  it('lists drafts across chefs for superadmin while preserving site scope', async () => {
+    const lean = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ lean });
+    const find = jest.fn().mockReturnValue({ sort });
+    const service = createService({ find });
+    await service.findDrafts('admin-1', undefined, true);
+    expect(find).toHaveBeenLastCalledWith({ isDraft: true });
+    await service.findDrafts('admin-1', 'SITE-001', true);
+    expect(find).toHaveBeenLastCalledWith({ isDraft: true, site: 'SITE-001' });
+  });
+
+  it('deletes only the selected chef-owned draft batch in its site', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 2 });
+    const service = createService({ deleteMany });
+    await expect(
+      service.deleteDraft(' MPR0001 ', 'chef-1', 'SITE-001'),
+    ).resolves.toEqual({ productionCode: 'MPR0001', deletedCount: 2 });
+    expect(deleteMany).toHaveBeenCalledWith({
+      productionCode: 'MPR0001',
+      createdBy: 'chef-1',
+      site: 'SITE-001',
+      isDraft: true,
+    });
+  });
+
+  it('allows superadmin to delete drafts across chefs without including submitted menus', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
+    const service = createService({ deleteMany });
+    await service.deleteDraft('MPR0001', 'admin-1', undefined, true);
+    expect(deleteMany).toHaveBeenCalledWith({
+      productionCode: 'MPR0001',
+      isDraft: true,
+    });
+  });
+
+  it('rejects missing draft identity or code before deleting', async () => {
+    const deleteMany = jest.fn();
+    const service = createService({ deleteMany });
+    await expect(service.deleteDraft('MPR0001')).rejects.toThrow();
+    await expect(service.deleteDraft(' ', 'chef-1')).rejects.toThrow();
+    await expect(service.findDrafts()).rejects.toThrow();
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing, submitted, or inaccessible draft without deleting it', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 0 });
+    const service = createService({ deleteMany });
+    await expect(
+      service.deleteDraft('MPR0001', 'chef-1', 'SITE-001'),
+    ).rejects.toThrow('Menu production draft not found.');
+  });
+
   it('records the created date when Chef submits a draft batch', async () => {
     const submittedItems = [
       {
