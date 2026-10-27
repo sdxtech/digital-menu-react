@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import {
   Fragment,
   useCallback,
@@ -136,16 +137,6 @@ const getGroupSubmittedAt = (group: StoreRequestGroup) =>
 const getProductionDateTimestamp = (value: string) => {
   const timestamp = new Date(`${value}T00:00:00`).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
-}
-
-const formatCreatedDate = (value?: string) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
 }
 
 type ReconciliationRow = {
@@ -2144,17 +2135,17 @@ const ChefStoreRequest = ({
                       className="border-t border-border cursor-pointer"
                       onClick={() => toggleExpanded(groupKey)}
                     >
-                      <td className="px-5 py-4 text-sm text-muted">
+                      <td className="px-5 py-4 text-sm font-bold text-black">
                         {(page - 1) * ITEMS_PER_PAGE + index + 1}
                       </td>
-                      <td className="px-5 py-4 text-sm text-muted">
+                      <td className="px-5 py-4 text-sm font-bold text-black">
                         {formatCreatedDate(getGroupSubmittedAt(group))}
                       </td>
-                      <td className="px-5 py-4">{date}</td>
-                      <td className="px-5 py-4 text-xs text-muted">
+                      <td className="px-5 py-4 font-bold text-black">{formatProductionDate(date)}</td>
+                      <td className="px-5 py-4 text-xs font-bold text-black">
                         {group.productionCode ?? '-'}
                       </td>
-                      <td className="px-5 py-4">{items[0]?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4 font-bold text-black">{items[0]?.clientName ?? '-'}</td>
                       <td className="px-5 py-4 text-sm text-muted">
                         {reviewedByLabel}
                       </td>
@@ -3429,13 +3420,13 @@ const ChefStoreRequest = ({
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production date</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
-                        {completionGroup.date}
+                      <p className="mt-2 text-sm font-bold text-black">
+                        {formatProductionDate(completionGroup.date)}
                       </p>
                     </div>
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production code</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
+                      <p className="mt-2 text-sm font-bold text-black">
                         {completionGroup.productionCode ?? '-'}
                       </p>
                     </div>
@@ -3754,13 +3745,13 @@ const ChefStoreRequest = ({
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production date</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
-                        {pendingCancellationGroup.date}
+                      <p className="mt-2 text-sm font-bold text-black">
+                        {formatProductionDate(pendingCancellationGroup.date)}
                       </p>
                     </div>
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production code</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
+                      <p className="mt-2 text-sm font-bold text-black">
                         {pendingCancellationGroup.productionCode ?? '-'}
                       </p>
                     </div>
@@ -3834,13 +3825,13 @@ const ChefStoreRequest = ({
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production date</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
-                        {cancellationGroup.date}
+                      <p className="mt-2 text-sm font-bold text-black">
+                        {formatProductionDate(cancellationGroup.date)}
                       </p>
                     </div>
                     <div className="rounded-md border border-border bg-white p-4">
                       <p className="text-xs text-muted">Production code</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">
+                      <p className="mt-2 text-sm font-bold text-black">
                         {cancellationGroup.productionCode ?? '-'}
                       </p>
                     </div>

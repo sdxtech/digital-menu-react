@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
@@ -8,16 +9,6 @@ import type { MenuProduction } from '../lib/chef-data'
 type MenuProductionApi = Omit<MenuProduction, 'id'> & {
   id?: string
   _id?: string
-}
-
-const formatUpdatedAt = (value?: string) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
 }
 
 const ChefMenuProductionDrafts = () => {
@@ -123,15 +114,15 @@ const ChefMenuProductionDrafts = () => {
                   )
                   return (
                     <tr key={productionCode} className="border-t border-border">
-                      <td className="px-5 py-4">{index + 1}</td>
-                      <td className="px-5 py-4 font-medium text-foreground">
+                      <td className="px-5 py-4 font-bold text-black">{index + 1}</td>
+                      <td className="px-5 py-4 font-bold text-black">
                         {productionCode}
                       </td>
-                      <td className="px-5 py-4">{firstMenu?.productionDate ?? '-'}</td>
-                      <td className="px-5 py-4">{firstMenu?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4 font-bold text-black">{formatProductionDate(firstMenu?.productionDate)}</td>
+                      <td className="px-5 py-4 font-bold text-black">{firstMenu?.clientName ?? '-'}</td>
                       <td className="px-5 py-4">{menus.length}</td>
-                      <td className="px-5 py-4 text-muted">
-                        {formatUpdatedAt(lastUpdated)}
+                      <td className="px-5 py-4 font-bold text-black">
+                        {formatCreatedDate(lastUpdated)}
                       </td>
                       <td className="px-5 py-4">
                         <button
