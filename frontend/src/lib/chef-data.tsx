@@ -91,6 +91,8 @@ export type Recipe = {
 }
 
 export type MenuProduction = {
+  createdBy?: string
+  createdByName?: string
   id: string
   productionCode?: string
   recipeId?: string
@@ -430,6 +432,8 @@ const mapRecipe = (item: RecipeApi): Recipe => {
 }
 
 const mapMenuProduction = (item: MenuProductionApi): MenuProduction => ({
+  createdBy: item.createdBy,
+  createdByName: item.createdByName,
   id: pickId(item.id ?? item._id, 'menu-production'),
   productionCode: item.productionCode ?? undefined,
   recipeId: item.recipeId ?? undefined,

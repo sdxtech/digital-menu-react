@@ -12,6 +12,8 @@ describe('MenuProductionsController sales input actor', () => {
       buildStoreRequestGroups: jest.fn(),
       deleteBatch: jest.fn(),
       findDrafts: jest.fn(),
+      replaceDraft: jest.fn(),
+      submitDraftBatch: jest.fn(),
       deleteDraft: jest.fn(),
       editSalesBatch: jest.fn(),
       rejectSalesBatch: jest.fn(),
@@ -72,7 +74,28 @@ describe('MenuProductionsController sales input actor', () => {
         site,
         allChefs,
       );
-      for (const name of ['drafts', 'deleteDraft']) {
+      await controller.replaceDraft(req as never, 'MPR0001', { items: [] });
+      expect(menuProductions.replaceDraft).toHaveBeenCalledWith(
+        'MPR0001',
+        [],
+        'actor-1',
+        site,
+        allChefs ? 'actor-1' : undefined,
+        allChefs,
+      );
+      await controller.submitDraft(req as never, 'MPR0001');
+      expect(menuProductions.submitDraftBatch).toHaveBeenCalledWith(
+        'MPR0001',
+        'actor-1',
+        site,
+        allChefs,
+      );
+      for (const name of [
+        'drafts',
+        'deleteDraft',
+        'replaceDraft',
+        'submitDraft',
+      ]) {
         const handler = Object.getOwnPropertyDescriptor(
           MenuProductionsController.prototype,
           name,

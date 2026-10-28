@@ -221,6 +221,12 @@ const ChefMenuCycle = ({
     } | null
   )?.menuProductionDraft
   const draftProductionCode = draftState?.productionCode?.trim() ?? ''
+  const productionDraftsPath = user?.role === 'superadmin'
+    ? '/superadmin/menu-production-drafts'
+    : '/chef/menu-production-drafts'
+  const productionPath = user?.role === 'superadmin'
+    ? '/superadmin/menu-management?tab=menu-production'
+    : '/chef/menu-cycle'
   const hydratedDraftRef = useRef('')
   const restoredDraftVendorsRef = useRef('')
   const [draftRecipesLoading, setDraftRecipesLoading] = useState(false)
@@ -334,6 +340,9 @@ const ChefMenuCycle = ({
     if (!draftMenus.length) return
 
     hydratedDraftRef.current = draftProductionCode
+    setProductionSite(draftMenus[0]?.site ?? '')
+    setProductionChefId(draftMenus[0]?.createdBy ?? '')
+    setProductionUnitManagerId(draftMenus[0]?.unitManagerId ?? '')
     setProductionDate(draftMenus[0]?.productionDate ?? '')
     setMenuRows(
       draftMenus.map((menu) =>
@@ -717,7 +726,7 @@ const ChefMenuCycle = ({
   }, [accessToken, embedded, user?.site])
 
   useEffect(() => {
-    if (!requireProductionSite) return
+    if (!requireProductionSite || draftProductionCode) return
     setMenuRows([createMenuInputRow()])
     setSelectedRecipesById({})
     setExpandedMenuRows([])
@@ -732,7 +741,7 @@ const ChefMenuCycle = ({
     setVendorPriceLoadingByProductKey({})
     setVendorPriceErrorByProductKey({})
     setSelectedVendorPriceByIngredientKey({})
-  }, [productionSite, requireProductionSite])
+  }, [productionSite, requireProductionSite, draftProductionCode])
 
   const clientSiteCode = requireProductionSite
     ? productionSite
@@ -1432,11 +1441,11 @@ const ChefMenuCycle = ({
       setMenuRows([createMenuInputRow()])
       setInputError('')
       if (options.saveAsDraft) {
-        navigate('/chef/menu-production-drafts', { replace: true })
+        navigate(productionDraftsPath, { replace: true })
         return
       }
       if (draftProductionCode) {
-        navigate('/chef/menu-cycle', { replace: true, state: null })
+        navigate(productionPath, { replace: true, state: null })
       }
       setInputMessage(
         `${payload.length} menus submitted for ${productionDate}. The record is now available in Store Request.`,
@@ -1523,12 +1532,12 @@ const ChefMenuCycle = ({
     <div className="space-y-6">
       <div className="space-y-2">
         <div>
-          {embedded ? (
+          {embedded && !draftProductionCode ? (
             <h2 className="text-lg font-semibold">{title}</h2>
           ) : (
             <PageHeading
               className="text-2xl font-semibold"
-              backTo={draftProductionCode ? '/chef/menu-production-drafts' : undefined}
+              backTo={draftProductionCode ? productionDraftsPath : undefined}
             >
               {title}
             </PageHeading>
@@ -1609,6 +1618,7 @@ const ChefMenuCycle = ({
                 </label>
                 <select
                   value={productionSite}
+                  disabled={Boolean(draftProductionCode)}
                   onChange={(event) => setProductionSite(event.target.value)}
                   className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                 >
@@ -1649,8 +1659,8 @@ const ChefMenuCycle = ({
                   </label>
                   <select
                     value={productionChefId}
+                    disabled={Boolean(draftProductionCode) || !siteDataReady || siteDataLoading}
                     onChange={(event) => setProductionChefId(event.target.value)}
-                    disabled={!siteDataReady || siteDataLoading}
                     className="mt-2 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 py-2 text-xs shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="">Select chef</option>
@@ -2341,7 +2351,7 @@ const ChefMenuCycle = ({
             {draftProductionCode && !embedded ? (
               <ActionButton action="cancel" onClick={handleCancelProductionDraft} size="sm" />
             ) : null}
-            {!embedded ? (
+            {!embedded || draftProductionCode ? (
               <button
                 type="button"
                 onClick={() => handleSubmitToTimeline({ saveAsDraft: true })}
