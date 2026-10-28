@@ -21,12 +21,7 @@ import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/statu
 import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { formatUnitLabel } from '../lib/unit-of-measures'
-import {
-  downloadSpreadsheet,
-  toSpreadsheetDate,
-  toSpreadsheetDecimal,
-  type SpreadsheetCell,
-} from '../lib/spreadsheet-export'
+import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 
 const RECIPE_ITEMS_PER_PAGE = 10
@@ -394,103 +389,6 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     [accessToken, user?.site],
   )
 
-  const handleExportMenuProductionGroup = (group: StoreRequestGroup) => {
-    const rows: SpreadsheetCell[][] = [
-      [
-        'No',
-        'Created Date',
-        'Production Date',
-        'Client Name',
-        'Production Code',
-        'Group By',
-        'Menu Name',
-        'Version',
-        'Recipe Code',
-        'Category',
-        'Portion',
-        'Product Type',
-        'Product Code',
-        'Ingredient Name',
-        'Vendor',
-        'QTY',
-        'Unit',
-      ],
-    ]
-
-    let rowNumber = 1
-    group.items.forEach((menu) => {
-      const ingredients = menu.ingredients ?? []
-      if (ingredients.length === 0) {
-        rows.push([
-          rowNumber,
-          formatCreatedDate(menu.submittedAt),
-          toSpreadsheetDate(group.date),
-          menu.clientName ?? '',
-          group.productionCode ?? '',
-          menu.group ?? '',
-          menu.menuName,
-          formatRecipeVersion(menu.recipeVersion),
-          menu.recipeCode ?? menu.recipeId ?? '',
-          menu.category,
-          menu.portion,
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-        ])
-        rowNumber += 1
-        return
-      }
-
-      ingredients.forEach((ingredient) => {
-        rows.push([
-          rowNumber,
-          formatCreatedDate(menu.submittedAt),
-          toSpreadsheetDate(menu.productionDate ?? group.date),
-          menu.clientName ?? '',
-          menu.productionCode ?? group.productionCode ?? '',
-          menu.group ?? '',
-          menu.menuName,
-          formatRecipeVersion(menu.recipeVersion),
-          menu.recipeCode ?? menu.recipeId ?? '',
-          menu.category,
-          menu.portion,
-          ingredient.ingredientType ?? '',
-          ingredient.productCode,
-          ingredient.name,
-          ingredient.vendor ?? '',
-          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
-          formatUnitLabel(ingredient.unitOfMeasures),
-        ])
-        rowNumber += 1
-      })
-    })
-
-    const summaryRows: SpreadsheetCell[][] = [
-      ['Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
-        group.items[0]?.clientName ?? '',
-        item.ingredientType ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ]
-
-    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
-    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
-      /[\\/:*?"<>|]/g,
-      '-',
-    )
-    downloadSpreadsheet(`menu-production-${safeDate}-${safeProductionCode}.xlsx`, [
-      { name: 'Menu Production', rows },
-      { name: 'Ingredient Summary', rows: summaryRows },
-    ])
-  }
 
   const openRecipeRejectModal = (recipe: Recipe) => {
     setActionError('')
@@ -1304,7 +1202,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    handleExportMenuProductionGroup(group)
+                                    downloadMenuProductionApproval(group)
                                   }
                                   className="whitespace-nowrap rounded-md border border-success bg-white px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm hover:bg-success/10"
                                 >

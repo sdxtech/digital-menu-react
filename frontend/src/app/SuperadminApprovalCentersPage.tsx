@@ -20,6 +20,7 @@ import {
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
+import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type ApprovalSection = 'recipes' | 'menu-productions'
@@ -77,6 +78,11 @@ type Recipe = {
 }
 
 type StoreRequestIngredient = {
+  ingredientType?: 'IT' | 'NMP'
+  vendor?: string
+  vendorSite?: string
+  price?: number
+  ingredientCost?: number
   productCode: string
   name: string
   unitOfMeasures: string
@@ -84,6 +90,13 @@ type StoreRequestIngredient = {
 }
 
 type StoreRequestMenu = {
+  submittedAt?: string
+  recipeVersion?: number
+  group?: string
+  clientName?: string
+  fulfilledBy?: string
+  cancelledBy?: string
+  salesRejectionReason?: string
   id: string
   productionCode?: string
   submittedByName?: string
@@ -1084,6 +1097,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                 className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
                               >
                                 {isExpanded ? 'Hide details' : 'View details'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => downloadMenuProductionApproval(group)}
+                                className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success hover:bg-success/10"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <i className="bi bi-download" aria-hidden="true" />
+                                  Export
+                                </span>
                               </button>
                               <select
                                 value=""
