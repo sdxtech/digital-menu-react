@@ -602,6 +602,8 @@ const UnitManagerMenuProductionRecordsPage = ({
         'QTY Actual',
         'Variance',
         'Unit Of Measures',
+        'Price',
+        'Ingredient Cost',
         'Reviewed By',
         'Approval Status',
         'Store Request Status',
@@ -648,6 +650,8 @@ const UnitManagerMenuProductionRecordsPage = ({
           menu.category,
           menu.recipeCode ?? '',
           menu.portion,
+          '',
+          '',
           '',
           '',
           '',
@@ -706,6 +710,8 @@ const UnitManagerMenuProductionRecordsPage = ({
             ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.varianceQty))
             : '',
           formatUnitLabel(ingredient.unitOfMeasures),
+          toSpreadsheetDecimal(ingredient.price),
+          toSpreadsheetDecimal(ingredient.ingredientCost),
           approvedBy,
           approvalStatus,
           storeRequestStatus,
@@ -718,7 +724,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     })
 
     const summaryRows: SpreadsheetCell[][] = [
-      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit', 'Price', 'Ingredient Cost'],
       ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
         group.items[0]?.clientName ?? '',
         item.productCode,
@@ -726,7 +732,42 @@ const UnitManagerMenuProductionRecordsPage = ({
         item.vendor ?? '',
         toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
+        toSpreadsheetDecimal(item.price),
+        toSpreadsheetDecimal(item.ingredientCost),
       ]),
+    ]
+
+    const firstMenu = group.items[0]
+    const recordStatus = getGroupRecordStatus(group, includePending)
+    const submittedBy = Array.from(new Set(
+      group.items.map((item) => item.submittedByName?.trim()).filter(Boolean),
+    )).join(', ')
+    const approvalStatus = (['pending', 'approved', 'rejected'] as const)
+      .filter((status) => group.items.some((item) => item.approvalStatus === status))
+      .map((status) => status === 'rejected' ? 'Returned to Chef' : getApprovalStatusLabel(status))
+      .join(', ')
+    const storeRequestStatus = (['requested', 'fulfilled', 'cancelled', 'not-requested'] as const)
+      .filter((status) => group.items.some((item) => item.storeRequestStatus === status))
+      .map(getStoreRequestStatusLabel)
+      .join(', ')
+    const informationRows: SpreadsheetCell[][] = [
+      ['Field', 'Value'],
+      ['Production code', group.productionCode || '-'],
+      ['Batch status', group.items.some((item) => item.salesRejectionReason)
+        ? 'Returned to Admin Sales'
+        : recordStatus ? getRecordStatusLabel(recordStatus) : '-'],
+      ['Created date', formatCreatedDate(getGroupSubmittedAt(group))],
+      ['Production date', toSpreadsheetDate(group.date)],
+      ['Submitted by', submittedBy || '-'],
+      ['Client', firstMenu?.clientName || '-'],
+      ['Admin', firstMenu?.salesInputBy?.trim() || '-'],
+      ['Total menu', group.items.length],
+      ['Reviewed by', getReviewedByNames(group).join(', ') || '-'],
+      ['Approval status', approvalStatus || '-'],
+      ['Storekeeper', recordStatus === 'requested' || recordStatus === 'rejected'
+        ? '-'
+        : getHandledByNames(group).join(', ') || '-'],
+      ['Store request status', storeRequestStatus || '-'],
     ]
 
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
@@ -737,7 +778,8 @@ const UnitManagerMenuProductionRecordsPage = ({
     downloadSpreadsheet(
       `menu-production-record-${safeDate}-${safeProductionCode}.xlsx`,
       [
-        { name: 'Menu Production Record', rows },
+        { name: 'Menu Production Information', rows: informationRows },
+        { name: 'Store Request Detail', rows },
         { name: 'Ingredient Summary', rows: summaryRows },
       ],
     )
