@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildProductionBulkSheets } from '../src/lib/production-bulk-export.ts'
+import { buildProductionBulkSheets, filterProductionExportGroups } from '../src/lib/production-bulk-export.ts'
 import type { SpreadsheetSheet } from '../src/lib/spreadsheet-export.ts'
 
 const batch = (code: string, client: string, cost: number): SpreadsheetSheet[] => [
@@ -34,4 +34,20 @@ test('exports every supplied batch across pagination boundaries and keeps empty 
   assert.equal(sheets[1].rows.length, 25)
   assert.equal(sheets[2].rows.at(-1)?.[0], 25)
   assert.deepEqual(buildProductionBulkSheets([]), [])
+})
+
+test('export selection supports inclusive dates, client only, and combined settings independently of table filters', () => {
+  const groups = [
+    { date: '2026-08-13', items: [{ clientName: 'KTB' }] },
+    { date: '2026-08-14', items: [{ clientName: 'Other' }] },
+    { date: '2026-08-15', items: [{ clientName: ' KTB ' }] },
+  ]
+  assert.deepEqual(filterProductionExportGroups(groups, '2026-08-13', '2026-08-14', ''), groups.slice(0, 2))
+  assert.deepEqual(filterProductionExportGroups(groups, '', '', 'ktb'), [groups[0], groups[2]])
+  assert.deepEqual(filterProductionExportGroups(groups, '2026-08-14', '2026-08-15', 'KTB'), [groups[2]])
+  assert.deepEqual(filterProductionExportGroups(groups, '2026-08-15', '2026-08-13', ''), [])
+  assert.deepEqual(filterProductionExportGroups(groups, '', '', ''), groups)
+  assert.deepEqual(filterProductionExportGroups(groups, '', '2026-08-13', ''), [groups[0]])
+  assert.deepEqual(filterProductionExportGroups(groups, '2026-08-15', '', ''), [groups[2]])
+  assert.deepEqual(filterProductionExportGroups(groups, '', '', 'Missing'), [])
 })

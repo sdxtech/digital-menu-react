@@ -1001,8 +1001,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
           </div>
         </section>
       ) : (
-        <section className="rounded-md border border-border bg-surface shadow-sm">
-          <div className="flex flex-wrap items-center gap-3 border-b border-border p-5">
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="superadmin-production-client" className="sr-only">Client Name</label>
             <select
               id="superadmin-production-client"
@@ -1029,12 +1029,13 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-medium"
             >Reset filters</button>
             <ProductionBulkExportButton
-              count={filteredMenuGroups.length}
-              disabled={loading || Boolean(error) || !hasApprovalScope || invalidProductionRange}
+              groups={menuGroups}
+              disabled={loading || Boolean(error) || !hasApprovalScope}
               filename="menu-production-approvals-bulk.xlsx"
-              buildBatches={() => filteredMenuGroups.map(buildMenuProductionApprovalSheets)}
+              buildBatch={buildMenuProductionApprovalSheets}
             />
           </div>
+          <div className="rounded-md border border-border bg-surface shadow-sm">
           <TablePagination
             page={menuPage}
             totalPages={menuTotalPages}
@@ -1334,6 +1335,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         </section>
       )}
