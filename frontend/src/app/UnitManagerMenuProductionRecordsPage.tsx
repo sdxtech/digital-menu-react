@@ -1,3 +1,4 @@
+import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
 import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
@@ -28,6 +29,7 @@ import {
   toSpreadsheetDate,
   toSpreadsheetDecimal,
   type SpreadsheetCell,
+  type SpreadsheetSheet,
 } from '../lib/spreadsheet-export'
 
 const RECORD_ITEMS_PER_PAGE = 10
@@ -582,7 +584,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     )
   }
 
-  const handleExportRecordGroup = (group: StoreRequestGroup) => {
+  const buildRecordSheets = (group: StoreRequestGroup): SpreadsheetSheet[] => {
     const rows: SpreadsheetCell[][] = [
       [
         'No',
@@ -772,18 +774,19 @@ const UnitManagerMenuProductionRecordsPage = ({
       ...buildMenuProductionFinancialRows(group.items),
     ]
 
+    return [
+      { name: 'Menu Production Information', rows: informationRows },
+      { name: 'Store Request Detail', rows },
+      { name: 'Ingredient Summary', rows: summaryRows },
+    ]
+  }
+
+  const handleExportRecordGroup = (group: StoreRequestGroup) => {
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
-    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
-      /[\\/:*?"<>|]/g,
-      '-',
-    )
-    downloadSpreadsheet(
+    const safeProductionCode = (group.productionCode ?? 'no-code').replace(/[\\/:*?"<>|]/g, '-')
+    return downloadSpreadsheet(
       `menu-production-record-${safeDate}-${safeProductionCode}.xlsx`,
-      [
-        { name: 'Menu Production Information', rows: informationRows },
-        { name: 'Store Request Detail', rows },
-        { name: 'Ingredient Summary', rows: summaryRows },
-      ],
+      buildRecordSheets(group),
     )
   }
 
@@ -895,6 +898,12 @@ const UnitManagerMenuProductionRecordsPage = ({
             >
               Reset filters
             </button>
+            <ProductionBulkExportButton
+              count={filteredRecords.length}
+              disabled={loading || Boolean(error) || invalidProductionRange || invalidCreatedRange}
+              filename="menu-production-records-bulk.xlsx"
+              buildBatches={() => filteredRecords.map(buildRecordSheets)}
+            />
           </div>
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>

@@ -1,3 +1,5 @@
+import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
+import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import PageHeading from '../components/PageHeading'
 import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
 import { formatProductionDate } from '../lib/date-format'
@@ -20,7 +22,7 @@ import {
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
-import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
+import { buildMenuProductionApprovalSheets, downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 
 type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type ApprovalSection = 'recipes' | 'menu-productions'
@@ -245,6 +247,26 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   const [recipeTotal, setRecipeTotal] = useState(0)
   const approvalRequestId = useRef(0)
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
+  const [productionDateFrom, setProductionDateFrom] = useState('')
+  const [productionDateTo, setProductionDateTo] = useState('')
+  const [productionDateSort, setProductionDateSort] = useState<'asc' | 'desc'>('desc')
+  const [clientName, setClientName] = useState('')
+  const invalidProductionRange = Boolean(productionDateFrom && productionDateTo && productionDateFrom > productionDateTo)
+  const clientOptions = useMemo(() => Array.from(new Set(menuGroups.flatMap((group) =>
+    group.items.map((item) => item.clientName?.trim()).filter((name): name is string => Boolean(name)),
+  ))).sort((a, b) => a.localeCompare(b)), [menuGroups])
+  const filteredMenuGroups = useMemo(() => menuGroups.filter((group) =>
+    !invalidProductionRange &&
+    (!productionDateFrom || group.date >= productionDateFrom) &&
+    (!productionDateTo || group.date <= productionDateTo) &&
+    (!clientName || group.items.some((item) => item.clientName?.trim().toLowerCase() === clientName.toLowerCase())),
+  ).sort((a, b) => (productionDateSort === 'asc' ? 1 : -1) * a.date.localeCompare(b.date)),
+  [menuGroups, invalidProductionRange, productionDateFrom, productionDateTo, clientName, productionDateSort])
+
+  useEffect(() => {
+    setMenuPage(1)
+  }, [productionDateFrom, productionDateTo, clientName, productionDateSort])
+
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [recipePage, setRecipePage] = useState(1)
@@ -439,8 +461,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   }, [selectedSite, selectedCorporateSites, approvalFilter])
 
   const recipeTotalPages = Math.max(1, Math.ceil(recipeTotal / ITEMS_PER_PAGE))
-  const menuTotalPages = Math.max(1, Math.ceil(menuGroups.length / ITEMS_PER_PAGE))
-  const paginatedMenuGroups = menuGroups.slice(
+  const menuTotalPages = Math.max(1, Math.ceil(filteredMenuGroups.length / ITEMS_PER_PAGE))
+  const paginatedMenuGroups = filteredMenuGroups.slice(
     (menuPage - 1) * ITEMS_PER_PAGE,
     menuPage * ITEMS_PER_PAGE,
   )
@@ -980,12 +1002,45 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
         </section>
       ) : (
         <section className="rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center gap-3 border-b border-border p-5">
+            <label htmlFor="superadmin-production-client" className="sr-only">Client Name</label>
+            <select
+              id="superadmin-production-client"
+              value={clientName}
+              onChange={(event) => setClientName(event.target.value)}
+              disabled={loading}
+              className="h-10 rounded-lg border border-border bg-white px-3 text-sm"
+            >
+              <option value="">All clients</option>
+              {clientOptions.map((client) => <option key={client} value={client}>{client}</option>)}
+            </select>
+            <DateRangeFilter
+              id="superadmin-production-date"
+              label="Production Date"
+              from={productionDateFrom}
+              to={productionDateTo}
+              sortDirection={productionDateSort}
+              onSort={setProductionDateSort}
+              onApply={(from, to) => { setProductionDateFrom(from); setProductionDateTo(to) }}
+            />
+            <button
+              type="button"
+              onClick={() => { setProductionDateFrom(''); setProductionDateTo(''); setClientName(''); setProductionDateSort('desc') }}
+              className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-medium"
+            >Reset filters</button>
+            <ProductionBulkExportButton
+              count={filteredMenuGroups.length}
+              disabled={loading || Boolean(error) || !hasApprovalScope || invalidProductionRange}
+              filename="menu-production-approvals-bulk.xlsx"
+              buildBatches={() => filteredMenuGroups.map(buildMenuProductionApprovalSheets)}
+            />
+          </div>
           <TablePagination
             page={menuPage}
             totalPages={menuTotalPages}
             loading={loading}
             onPageChange={setMenuPage}
-            summary={`Showing ${paginatedMenuGroups.length} of ${menuGroups.length} production batches`}
+            summary={`Showing ${paginatedMenuGroups.length} of ${filteredMenuGroups.length} production batches`}
             className="border-b border-border bg-white px-5 py-4"
           />
           <div className="max-w-full overflow-x-auto">
@@ -1011,7 +1066,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                       Loading approval data...
                     </td>
                   </tr>
-                ) : menuGroups.length === 0 ? (
+                ) : filteredMenuGroups.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={8} className="px-5 py-10 text-center text-muted">
                       {selectedSite
