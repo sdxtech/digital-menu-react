@@ -1,7 +1,9 @@
 import {
   IsBoolean,
   IsIn,
-  IsNumber,
+  IsInt,
+  IsISO8601,
+  Max,
   IsOptional,
   IsString,
   Min,
@@ -50,13 +52,34 @@ export class ListMenuProductionsQueryDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
   page?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(100)
   limit?: number;
+
+  @IsOptional()
+  @IsIn(['sales', 'records', 'records-all', 'approval'])
+  view?: 'sales' | 'records' | 'records-all' | 'approval';
+
+  @IsOptional()
+  @IsString()
+  clientName?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  createdBefore?: string;
+
+  @IsOptional()
+  @IsIn(['production-asc', 'production-desc', 'created-asc', 'created-desc'])
+  dateSort?: string;
 }
