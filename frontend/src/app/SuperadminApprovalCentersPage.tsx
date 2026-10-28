@@ -90,6 +90,10 @@ type StoreRequestIngredient = {
 }
 
 type StoreRequestMenu = {
+  estimatedCost?: number
+  sellingPricePerPax?: number
+  sellingQuantity?: number
+  estimatedRevenue?: number
   submittedAt?: string
   recipeVersion?: number
   group?: string
