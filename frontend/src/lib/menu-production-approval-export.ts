@@ -71,7 +71,7 @@ export const buildMenuProductionFinancialRows = (
     : firstMenu?.estimatedRevenue
 
   return [
-    ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost)],
+    ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost, 'integer')],
     ['Total Pax Calculation', toSpreadsheetDecimal(sellingQuantity)],
     ['Food Cost Percentage', formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)],
     ['Selling Price', toSpreadsheetDecimal(sellingPrice)],

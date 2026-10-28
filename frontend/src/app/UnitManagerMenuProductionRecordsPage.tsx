@@ -899,10 +899,10 @@ const UnitManagerMenuProductionRecordsPage = ({
               Reset filters
             </button>
             <ProductionBulkExportButton
-              count={filteredRecords.length}
-              disabled={loading || Boolean(error) || invalidProductionRange || invalidCreatedRange}
+              groups={records}
+              disabled={loading || Boolean(error)}
               filename="menu-production-records-bulk.xlsx"
-              buildBatches={() => filteredRecords.map(buildRecordSheets)}
+              buildBatch={buildRecordSheets}
             />
           </div>
           {error ? (
