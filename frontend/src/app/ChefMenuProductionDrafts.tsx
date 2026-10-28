@@ -1,6 +1,7 @@
+import TablePagination from '../components/TablePagination'
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -16,35 +17,46 @@ const ChefMenuProductionDrafts = () => {
   const { accessToken, user } = useAuth()
   const isSuperadmin = user?.role === 'superadmin'
   const columnCount = isSuperadmin ? 9 : 7
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [items, setItems] = useState<MenuProductionApi[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const draftRequestId = useRef(0)
   const [deletingCode, setDeletingCode] = useState<string | null>(null)
 
-  const fetchDrafts = useCallback(async () => {
+  const fetchDrafts = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++draftRequestId.current
     if (!accessToken) return
     setLoading(true)
     setError('')
     try {
-      const data = await apiFetch<{ items?: MenuProductionApi[] }>(
-        '/menu-productions/drafts',
-        undefined,
+      const data = await apiFetch<{ items?: MenuProductionApi[]; total: number }>(
+        `/menu-productions/drafts?page=${page}&limit=10`,
+        { signal },
         accessToken,
       )
+      if (requestId !== draftRequestId.current || signal?.aborted) return
       setItems(data.items ?? [])
+      setTotal(data.total)
+      setPage((current) => Math.min(current, Math.max(1, Math.ceil(data.total / 10))))
     } catch (reason) {
+      if (requestId !== draftRequestId.current || signal?.aborted) return
+      setItems([])
       setError(
         reason instanceof Error
           ? reason.message
           : 'Failed to load menu production drafts.',
       )
     } finally {
-      setLoading(false)
+      if (requestId === draftRequestId.current && !signal?.aborted) setLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, page])
 
   useEffect(() => {
-    fetchDrafts().catch(() => null)
+    const controller = new AbortController()
+    fetchDrafts(controller.signal).catch(() => null)
+    return () => controller.abort()
   }, [fetchDrafts])
 
   const groups = useMemo(() => {
@@ -101,6 +113,8 @@ const ChefMenuProductionDrafts = () => {
       </div>
 
       <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+        <TablePagination page={page} totalPages={Math.max(1, Math.ceil(total / 10))} onPageChange={setPage} loading={loading}
+          summary={`Showing ${groups.length} of ${total} production drafts`} className="border-b border-border px-5 py-4" />
         {error ? <p className="p-5 text-sm text-danger">{error}</p> : null}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -142,7 +156,7 @@ const ChefMenuProductionDrafts = () => {
                   )
                   return (
                     <tr key={productionCode} className="border-t border-border">
-                      <td className="px-5 py-4 font-bold text-black">{index + 1}</td>
+                      <td className="px-5 py-4 font-bold text-black">{(page - 1) * 10 + index + 1}</td>
                       <td className="px-5 py-4 font-bold text-black">
                         {productionCode}
                       </td>

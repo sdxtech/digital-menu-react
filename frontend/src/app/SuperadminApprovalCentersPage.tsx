@@ -1,3 +1,4 @@
+import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import PageHeading from '../components/PageHeading'
@@ -246,15 +247,15 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [recipeTotal, setRecipeTotal] = useState(0)
   const approvalRequestId = useRef(0)
+  const [menuTotal, setMenuTotal] = useState(0)
+  const [menuClients, setMenuClients] = useState<string[]>([])
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
   const [productionDateFrom, setProductionDateFrom] = useState('')
   const [productionDateTo, setProductionDateTo] = useState('')
   const [productionDateSort, setProductionDateSort] = useState<'asc' | 'desc'>('desc')
   const [clientName, setClientName] = useState('')
   const invalidProductionRange = Boolean(productionDateFrom && productionDateTo && productionDateFrom > productionDateTo)
-  const clientOptions = useMemo(() => Array.from(new Set(menuGroups.flatMap((group) =>
-    group.items.map((item) => item.clientName?.trim()).filter((name): name is string => Boolean(name)),
-  ))).sort((a, b) => a.localeCompare(b)), [menuGroups])
+  const clientOptions = menuClients
   const filteredMenuGroups = useMemo(() => menuGroups.filter((group) =>
     !invalidProductionRange &&
     (!productionDateFrom || group.date >= productionDateFrom) &&
@@ -346,7 +347,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     }
   }, [accessToken, corporateOnly, corporateSettings.context, isCorporateSite])
 
-  const fetchApprovals = useCallback(async () => {
+  const fetchApprovals = useCallback(async (signal?: AbortSignal) => {
     const requestId = ++approvalRequestId.current
     if (!accessToken) {
       setError('Please log in first to load approval data.')
@@ -356,6 +357,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       setRecipes([])
       setRecipeTotal(0)
       setMenuGroups([])
+      setMenuTotal(0)
+      setMenuClients([])
       setLoading(false)
       setError(corporateSettings.error)
       return
@@ -364,6 +367,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       setRecipes([])
       setRecipeTotal(0)
       setMenuGroups([])
+      setMenuTotal(0)
+      setMenuClients([])
       setLoading(false)
       setError('')
       return
@@ -383,39 +388,45 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       recipeParams.set('limit', String(ITEMS_PER_PAGE))
       if (approvalFilter) recipeParams.set('approvalStatus', approvalFilter)
 
-      const menuParams = new URLSearchParams()
+      const menuParams = new URLSearchParams({ view: 'approval', page: String(menuPage), limit: String(ITEMS_PER_PAGE) })
+      applyProductionTableFilters(menuParams, { productionDateFrom, productionDateTo, clientName, dateSort: `production-${productionDateSort}` })
       menuParams.set('site', selectedSite)
       if (approvalFilter) menuParams.set('approvalStatus', approvalFilter)
 
-      const recipesData = await apiFetch<{ items?: Recipe[]; total: number }>(
+      const recipesData = activeSection === 'recipes' ? await apiFetch<{ items?: Recipe[]; total: number }>(
         `/recipes?${recipeParams.toString()}`,
-        undefined,
+        { signal },
         accessToken,
-      )
-      const menusData = corporateOnly
-        ? { items: [] as StoreRequestGroup[] }
-        : await apiFetch<{ items?: StoreRequestGroup[] }>(
+      ) : { items: [], total: 0 }
+      const menusData = corporateOnly || activeSection !== 'menu-productions'
+        ? { items: [] as StoreRequestGroup[], total: 0, clients: [] as string[] }
+        : await apiFetch<{ items?: StoreRequestGroup[]; total: number; clients: string[] }>(
             `/menu-productions/store-requests?${menuParams.toString()}`,
-            undefined,
+            { signal },
             accessToken,
           )
 
-      if (requestId !== approvalRequestId.current) return
+      if (requestId !== approvalRequestId.current || signal?.aborted) return
 
-      const total = recipesData.total ?? 0
-      const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))
-      setRecipeTotal(total)
-      setRecipePage((current) => Math.min(current, totalPages))
-      setRecipes(recipesData.items ?? [])
-      setMenuGroups(
-        [...(menusData.items ?? [])].sort((a, b) => {
-          const byDate = b.date.localeCompare(a.date)
-          if (byDate !== 0) return byDate
-          return (b.productionCode ?? '').localeCompare(a.productionCode ?? '')
-        }),
-      )
+      if (activeSection === 'recipes') {
+        const total = recipesData.total ?? 0
+        const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))
+        setRecipeTotal(total)
+        setRecipePage((current) => Math.min(current, totalPages))
+        setRecipes(recipesData.items ?? [])
+      } else {
+        setMenuGroups(
+          [...(menusData.items ?? [])].sort((a, b) => {
+            const byDate = b.date.localeCompare(a.date)
+            if (byDate !== 0) return byDate
+            return (b.productionCode ?? '').localeCompare(a.productionCode ?? '')
+          }),
+        )
+        setMenuTotal(menusData.total)
+        setMenuClients(menusData.clients)
+      }
     } catch (caught) {
-      if (requestId !== approvalRequestId.current) return
+      if (requestId !== approvalRequestId.current || signal?.aborted) return
       const nextError =
         caught instanceof Error ? caught.message : 'Failed to load approval data.'
       setRecipes([])
@@ -423,17 +434,19 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       setMenuGroups([])
       setError(nextError)
     } finally {
-      if (requestId === approvalRequestId.current) setLoading(false)
+      if (requestId === approvalRequestId.current && !signal?.aborted) setLoading(false)
     }
-  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite, hasApprovalScope, corporateSettings.loading, corporateSettings.error, corporateSiteCodes, selectedCorporateSites, isCorporateSite])
+  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite, hasApprovalScope, corporateSettings.loading, corporateSettings.error, corporateSiteCodes, selectedCorporateSites, isCorporateSite, activeSection, menuPage, productionDateFrom, productionDateTo, clientName, productionDateSort])
 
   useEffect(() => {
     fetchSites().catch(() => null)
   }, [fetchSites])
 
   useEffect(() => {
-    fetchApprovals().catch(() => null)
+    const controller = new AbortController()
+    fetchApprovals(controller.signal).catch(() => null)
     return () => {
+      controller.abort()
       approvalRequestId.current += 1
     }
   }, [fetchApprovals])
@@ -461,11 +474,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   }, [selectedSite, selectedCorporateSites, approvalFilter])
 
   const recipeTotalPages = Math.max(1, Math.ceil(recipeTotal / ITEMS_PER_PAGE))
-  const menuTotalPages = Math.max(1, Math.ceil(filteredMenuGroups.length / ITEMS_PER_PAGE))
-  const paginatedMenuGroups = filteredMenuGroups.slice(
-    (menuPage - 1) * ITEMS_PER_PAGE,
-    menuPage * ITEMS_PER_PAGE,
-  )
+  const menuTotalPages = Math.max(1, Math.ceil(menuTotal / ITEMS_PER_PAGE))
+  const paginatedMenuGroups = filteredMenuGroups
+  useEffect(() => {
+    setMenuPage((current) => Math.min(current, Math.max(1, Math.ceil(menuTotal / ITEMS_PER_PAGE))))
+  }, [menuTotal])
 
   const toggleRecipe = (recipeKey: string) => {
     setExpandedRecipes((prev) =>
@@ -1030,6 +1043,12 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             >Reset filters</button>
             <ProductionBulkExportButton
               groups={menuGroups}
+              loadGroups={async () => {
+                const params = new URLSearchParams({ site: selectedSite, view: 'approval' })
+                if (approvalFilter) params.set('approvalStatus', approvalFilter)
+                const data = await apiFetch<{ items: StoreRequestGroup[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
+                return data.items
+              }}
               disabled={loading || Boolean(error) || !hasApprovalScope}
               filename="menu-production-approvals-bulk.xlsx"
               buildBatch={buildMenuProductionApprovalSheets}
@@ -1041,7 +1060,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             totalPages={menuTotalPages}
             loading={loading}
             onPageChange={setMenuPage}
-            summary={`Showing ${paginatedMenuGroups.length} of ${filteredMenuGroups.length} production batches`}
+            summary={`Showing ${paginatedMenuGroups.length} of ${menuTotal} production batches`}
             className="border-b border-border bg-white px-5 py-4"
           />
           <div className="max-w-full overflow-x-auto">

@@ -1,6 +1,6 @@
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -113,39 +113,42 @@ const AdminSiteMenuProductionPage = () => {
     Record<string, { price: string; quantity: string }>
   >({});
   const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const salesRequestId = useRef(0);
   const [savingId, setSavingId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const fetchGroups = useCallback(async () => {
+  const fetchGroups = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++salesRequestId.current
     if (!accessToken) return;
-    const data = await apiFetch<{ items?: Group[] }>(
-      "/menu-productions/store-requests?approvalStatus=pending&salesInput=true",
-      undefined,
-      accessToken,
-    );
-    setGroups(
-      [...(data.items ?? [])]
-        .filter((group) => !isSubmittedGroup(group) || group.items.some((menu) => menu.salesRejectionReason))
-        .sort((a, b) => a.date.localeCompare(b.date)),
-    );
-  }, [accessToken]);
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiFetch<{ items?: Group[]; total: number }>(
+        `/menu-productions/store-requests?approvalStatus=pending&salesInput=true&view=sales&page=${page}&limit=${GROUPS_PER_PAGE}&dateSort=production-asc`,
+        { signal }, accessToken,
+      );
+      if (requestId !== salesRequestId.current || signal?.aborted) return
+      setGroups(data.items ?? []);
+      setTotal(data.total);
+      setPage((current) => Math.min(current, Math.max(1, Math.ceil(data.total / GROUPS_PER_PAGE))));
+    } catch (reason) {
+      if (requestId !== salesRequestId.current || signal?.aborted) return;
+      setGroups([]);
+      setError(reason instanceof Error ? reason.message : 'Failed to load menu productions.');
+    } finally { if (requestId === salesRequestId.current && !signal?.aborted) setLoading(false); }
+  }, [accessToken, page]);
 
   useEffect(() => {
-    fetchGroups().catch((reason) =>
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Failed to load menu productions.",
-      ),
-    );
+    const controller = new AbortController();
+    void fetchGroups(controller.signal);
+    return () => controller.abort();
   }, [fetchGroups]);
 
-  const visibleGroups = useMemo(
-    () => groups.slice((page - 1) * GROUPS_PER_PAGE, page * GROUPS_PER_PAGE),
-    [groups, page],
-  );
-  const totalPages = Math.max(1, Math.ceil(groups.length / GROUPS_PER_PAGE));
+  const visibleGroups = groups;
+  const totalPages = Math.max(1, Math.ceil(total / GROUPS_PER_PAGE));
   const groupKey = (group: Group) =>
     `${group.date}__${group.productionCode ?? "no-code"}`;
   const batchValues = (group: Group) => {
@@ -193,9 +196,7 @@ const AdminSiteMenuProductionPage = () => {
       setMessage(
         `${group.productionCode ?? "Production batch"} submitted to Unit Manager.`,
       );
-      setGroups((previous) =>
-        previous.filter((item) => groupKey(item) !== groupKey(group)),
-      );
+      await fetchGroups();
       setValues((previous) => {
         const next = { ...previous };
         delete next[groupKey(group)];
@@ -313,7 +314,8 @@ const AdminSiteMenuProductionPage = () => {
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
-          summary={`Showing ${visibleGroups.length} of ${groups.length} production batches`}
+          loading={loading}
+          summary={`Showing ${visibleGroups.length} of ${total} production batches`}
           className="mt-4"
         />
         <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
@@ -333,7 +335,9 @@ const AdminSiteMenuProductionPage = () => {
               </tr>
             </thead>
             <tbody>
-              {visibleGroups.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted">Loading production batches...</td></tr>
+              ) : visibleGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={10} className="px-4 py-8 text-center text-muted">
                     No production menus pending sales input.

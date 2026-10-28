@@ -1,3 +1,5 @@
+import { usesProductionTableQuery } from './production-table-query'
+import { useLocation } from 'react-router-dom'
 import {
   createContext,
   useCallback,
@@ -516,7 +518,9 @@ const upsertById = <T extends { id: string }>(items: T[], next: T) => {
 }
 
 export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
+  const { pathname } = useLocation()
   const { accessToken, user } = useAuth()
+  const deferBootstrap = !user?.role || !pathname.startsWith(`/${user.role}`) || usesProductionTableQuery(pathname)
   const [state, setState] = useState<ChefDataState>(initialState)
   const [rawMaterialsMeta, setRawMaterialsMeta] = useState<RawMaterialsMeta>({
     page: 1,
@@ -616,9 +620,10 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
       setState((prev) => ({ ...prev, recipes: [], menuProductions: [] }))
       return
     }
+    if (deferBootstrap) return
     fetchRecipes().catch(() => null)
     fetchMenuProductions().catch(() => null)
-  }, [accessToken, fetchMenuProductions, fetchRecipes, user?.role])
+  }, [accessToken, fetchMenuProductions, fetchRecipes, user?.role, deferBootstrap])
 
   const createRecipe = async (input: CreateRecipeInput) => {
     if (!accessToken) {
