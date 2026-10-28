@@ -1,3 +1,4 @@
+import { useDashboardAccess } from '../lib/dashboard-access'
 import {
   useEffect,
   useState,
@@ -59,6 +60,7 @@ const RoleLayout = ({
   showSite = true,
 }: RoleLayoutProps) => {
   const { user, logout, accessToken } = useAuth()
+  const dashboardAccess = useDashboardAccess()
   const navigate = useNavigate()
   const location = useLocation()
   
@@ -650,6 +652,9 @@ const RoleLayout = ({
 
             <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
               {navItems.map(renderPanelLink)}
+              {dashboardAccess.data?.dashboard && !user?.roles?.includes('superadmin') && user?.role !== 'superadmin' && !navItems.some((item) => item.to === '/dashboard')
+                ? renderPanelLink({ label: 'Dashboard', to: '/dashboard', icon: (className) => <i className={`bi bi-graph-up-arrow ${className}`} aria-hidden="true" /> })
+                : null}
             </nav>
           </aside>
 

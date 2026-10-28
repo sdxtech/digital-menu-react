@@ -2404,14 +2404,18 @@ export class MenuProductionsService implements OnModuleInit {
   async buildAnalyticsProductionGroups(
     startDate: string,
     endDate: string,
-    site?: string,
+    site?: string | string[],
     clientId?: string,
   ) {
+    if (Array.isArray(site) && site.length === 0)
+      return [] as StoreRequestGroup[];
     const items = await this.menuProductionModel
       .find({
         isDraft: { $ne: true },
         productionDate: { $gte: startDate, $lte: endDate },
-        ...this.buildSiteFilter(site),
+        ...(Array.isArray(site)
+          ? { $or: site.map((code) => this.buildSiteFilter(code)) }
+          : this.buildSiteFilter(site)),
         ...(clientId?.trim() ? { clientId: clientId.trim() } : {}),
       })
       .sort({ productionDate: 1, createdAt: -1 })
@@ -2419,7 +2423,7 @@ export class MenuProductionsService implements OnModuleInit {
     if (!items.length) return [] as StoreRequestGroup[];
     return this.buildGroupedStoreRequestsFromMenus(
       items,
-      this.normalizeSite(site),
+      typeof site === 'string' ? this.normalizeSite(site) : undefined,
     );
   }
 

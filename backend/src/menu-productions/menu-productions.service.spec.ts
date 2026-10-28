@@ -54,6 +54,33 @@ describe('MenuProductionsService sales input', () => {
     });
   });
 
+  it('restricts dashboard analytics to the union of explicitly allowed sites', async () => {
+    const find = jest.fn().mockReturnValue({
+      sort: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+    });
+    const service = createService({ find });
+    await service.buildAnalyticsProductionGroups('2026-10-01', '2026-10-28', [
+      'A',
+      'B',
+    ]);
+    expect(find).toHaveBeenCalledWith({
+      isDraft: { $ne: true },
+      productionDate: { $gte: '2026-10-01', $lte: '2026-10-28' },
+      $or: [{ site: 'A' }, { site: 'B' }],
+    });
+    find.mockClear();
+    expect(
+      await service.buildAnalyticsProductionGroups(
+        '2026-10-01',
+        '2026-10-28',
+        [],
+      ),
+    ).toEqual([]);
+    expect(find).not.toHaveBeenCalled();
+  });
+
   it('uses a local price instead of a corporate reference price for production', () => {
     const service = createService({});
     const snapshot = service['calculateMenuProductionCostSnapshot'](

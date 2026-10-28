@@ -11,6 +11,13 @@ import { Site, SiteSchema } from '../sites/schemas/site.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
+import { Client, ClientSchema } from '../clients/schemas/client.schema';
+import {
+  DashboardAccess,
+  DashboardAccessSchema,
+} from './schemas/dashboard-access.schema';
+import { DashboardAccessController } from './dashboard-access.controller';
+import { DashboardAccessService } from './dashboard-access.service';
 
 @Module({
   imports: [
@@ -21,9 +28,11 @@ import { DashboardService } from './dashboard.service';
       { name: User.name, schema: UserSchema },
       { name: Site.name, schema: SiteSchema },
       { name: Recipe.name, schema: RecipeSchema },
+      { name: Client.name, schema: ClientSchema },
+      { name: DashboardAccess.name, schema: DashboardAccessSchema },
     ]),
   ],
-  controllers: [DashboardController],
-  providers: [DashboardService],
+  controllers: [DashboardController, DashboardAccessController],
+  providers: [DashboardService, DashboardAccessService],
 })
 export class DashboardModule {}
