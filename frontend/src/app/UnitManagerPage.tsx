@@ -984,7 +984,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             </div>
           </div>
         ) : (
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+          <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Menu Production Approval</h2>
@@ -1049,18 +1049,18 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 Reset filters
               </button>
               <ProductionBulkExportButton
-                count={filteredMenuProductionGroups.length}
-                disabled={loadingApprovals || Boolean(actionError) || invalidProductionRange || invalidCreatedRange}
+                groups={menuProductionGroups}
+                disabled={loadingApprovals || Boolean(actionError)}
                 filename="menu-production-approvals-bulk.xlsx"
-                buildBatches={() => filteredMenuProductionGroups.map(buildMenuProductionApprovalSheets)}
+                buildBatch={buildMenuProductionApprovalSheets}
               />
             </div>
+            <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
             <TablePagination
               page={menuGroupPage}
               totalPages={menuGroupTotalPages}
               onPageChange={setMenuGroupPage}
               summary={`Showing ${paginatedMenuGroups.length} of ${filteredMenuProductionGroups.length} production batches`}
-              className="mt-4"
             />
             <div className="mt-4 overflow-hidden rounded-md border border-border">
               <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
@@ -1757,6 +1757,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                   )}
                 </tbody>
               </table>
+            </div>
             </div>
           </div>
         )}
