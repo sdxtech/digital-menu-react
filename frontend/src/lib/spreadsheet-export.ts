@@ -135,14 +135,10 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
       })
     })
 
-    const columnCount = Math.max(0, ...sheet.rows.map((row) => row.length))
+    const columnCount = sheet.rows.reduce((maximum, row) => Math.max(maximum, row.length), 0)
     for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
-      const maximumLength = Math.max(
-        0,
-        ...sheet.rows.map((row) =>
-          getCellDisplayLength(row[columnIndex - 1]),
-        ),
-      )
+      const maximumLength = sheet.rows.reduce((maximum, row) =>
+        Math.max(maximum, getCellDisplayLength(row[columnIndex - 1])), 0)
       worksheet.getColumn(columnIndex).width = Math.min(
         36,
         Math.max(10, maximumLength + 2),
