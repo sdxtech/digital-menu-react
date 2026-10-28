@@ -15,7 +15,7 @@ const ChefMenuProductionDrafts = () => {
   const navigate = useNavigate()
   const { accessToken, user } = useAuth()
   const isSuperadmin = user?.role === 'superadmin'
-  const columnCount = isSuperadmin ? 8 : 7
+  const columnCount = isSuperadmin ? 9 : 7
   const [items, setItems] = useState<MenuProductionApi[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -111,6 +111,7 @@ const ChefMenuProductionDrafts = () => {
                 <th className="px-5 py-3">PRODUCTION DATE</th>
                 <th className="px-5 py-3">CLIENT</th>
                 {isSuperadmin ? <th className="px-5 py-3">SITE</th> : null}
+                {isSuperadmin ? <th className="px-5 py-3">OWNER</th> : null}
                 <th className="px-5 py-3">MENUS</th>
                 <th className="px-5 py-3">LAST UPDATED</th>
                 <th className="px-5 py-3">ACTION</th>
@@ -148,28 +149,27 @@ const ChefMenuProductionDrafts = () => {
                       <td className="px-5 py-4 font-bold text-black">{formatProductionDate(firstMenu?.productionDate)}</td>
                       <td className="px-5 py-4 font-bold text-black">{firstMenu?.clientName ?? '-'}</td>
                       {isSuperadmin ? <td className="px-5 py-4 font-bold text-black">{firstMenu?.site ?? '-'}</td> : null}
+                      {isSuperadmin ? <td className="px-5 py-4 font-bold text-black">{firstMenu?.createdByName || firstMenu?.createdBy || '-'}</td> : null}
                       <td className="px-5 py-4">{menus.length}</td>
                       <td className="px-5 py-4 font-bold text-black">
                         {formatCreatedDate(lastUpdated)}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
-                          {!isSuperadmin ? (
-                            <button
-                              type="button"
-                              disabled={deletingCode !== null}
-                              onClick={() =>
-                                navigate('/chef/menu-cycle', {
-                                  state: {
-                                    menuProductionDraft: { productionCode, menus },
-                                  },
-                                })
-                              }
-                              className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
-                            >
-                              Continue
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            disabled={deletingCode !== null}
+                            onClick={() =>
+                              navigate(isSuperadmin ? '/superadmin/menu-management?tab=menu-production' : '/chef/menu-cycle', {
+                                state: {
+                                  menuProductionDraft: { productionCode, menus },
+                                },
+                              })
+                            }
+                            className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
+                          >
+                            Continue
+                          </button>
                           <button
                             type="button"
                             disabled={deletingCode !== null}
