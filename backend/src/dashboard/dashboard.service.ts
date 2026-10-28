@@ -63,7 +63,10 @@ export class DashboardService {
     private readonly menuProductions: MenuProductionsService,
   ) {}
 
-  async getSuperadminAnalytics(query: AnalyticsQueryDto) {
+  async getSuperadminAnalytics(
+    query: AnalyticsQueryDto,
+    allowedSites?: string[],
+  ) {
     const parseDate = (value: string) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         throw new BadRequestException('Dates must use YYYY-MM-DD.');
@@ -92,11 +95,11 @@ export class DashboardService {
       this.menuProductions.buildAnalyticsProductionGroups(
         query.startDate,
         query.endDate,
-        query.site?.trim(),
+        query.site?.trim() || allowedSites,
         query.clientId?.trim(),
       ),
       this.siteModel
-        .find()
+        .find(allowedSites ? { code: { $in: allowedSites } } : {})
         .select({ code: 1, name: 1 })
         .sort({ code: 1 })
         .lean(),
