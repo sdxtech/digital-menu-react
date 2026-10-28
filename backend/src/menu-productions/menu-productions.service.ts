@@ -1,4 +1,8 @@
 import {
+  productionBatchPagePipeline,
+  type ProductionBatchPage,
+} from './production-batch-page';
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -642,7 +646,12 @@ export class MenuProductionsService implements OnModuleInit {
     return createdDocs;
   }
 
-  async findDrafts(createdBy?: string, site?: string, allChefs = false) {
+  async findDrafts(
+    createdBy?: string,
+    site?: string,
+    allChefs = false,
+    query: ListMenuProductionsQueryDto = {},
+  ) {
     const chefId = createdBy?.trim();
     if (!allChefs && !chefId) {
       throw new BadRequestException(
@@ -650,15 +659,28 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    const items = await this.menuProductionModel
-      .find(
-        this.withSiteFilter(
-          { isDraft: true, ...(allChefs ? {} : { createdBy: chefId }) },
-          site,
-        ),
-      )
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .lean();
+    const filter = this.withSiteFilter(
+      { isDraft: true, ...(allChefs ? {} : { createdBy: chefId }) },
+      site,
+    );
+    const paginated = Boolean(query.page || query.limit);
+    const batchPage = paginated
+      ? (
+          await this.menuProductionModel.aggregate<ProductionBatchPage>(
+            productionBatchPagePipeline(filter, query, true),
+          )
+        )[0]
+      : undefined;
+    const ids = batchPage?.items.flatMap((batch) => batch.ids) ?? [];
+    const items =
+      paginated && !ids.length
+        ? []
+        : await this.menuProductionModel
+            .find(
+              paginated ? { $and: [filter, { _id: { $in: ids } }] } : filter,
+            )
+            .sort({ updatedAt: -1, createdAt: -1 })
+            .lean();
 
     const ownerIds = [
       ...new Set(
@@ -673,7 +695,7 @@ export class MenuProductionsService implements OnModuleInit {
         ...item,
         createdByName: ownerNames.get(item.createdBy ?? '') ?? '',
       })),
-      total: items.length,
+      total: batchPage?.total[0]?.count ?? (paginated ? 0 : items.length),
     };
   }
 
@@ -2334,7 +2356,8 @@ export class MenuProductionsService implements OnModuleInit {
     unitManagerId?: string,
     approvalReady = false,
   ) {
-    await this.backfillMissingMenuProductionCodes();
+    if (!query.page && !query.limit && !query.view)
+      await this.backfillMissingMenuProductionCodes();
     const requestedSite = this.normalizeSite(site);
 
     const filter: Record<string, unknown> = { isDraft: { $ne: true } };
@@ -2374,6 +2397,45 @@ export class MenuProductionsService implements OnModuleInit {
     const productionDateFilter = this.buildProductionDateFilter(query);
     if (productionDateFilter) {
       filter.productionDate = productionDateFilter;
+    }
+
+    if (query.page || query.limit || query.view) {
+      const result = (
+        await this.menuProductionModel.aggregate<ProductionBatchPage>(
+          productionBatchPagePipeline(filter, query),
+        )
+      )[0];
+      const ids = result?.items.flatMap((batch) => batch.ids) ?? [];
+      const menus = ids.length
+        ? await this.menuProductionModel
+            .find({ $and: [filter, { _id: { $in: ids } }] })
+            .sort({ productionDate: 1, createdAt: -1 })
+            .lean()
+        : [];
+      const groups = await this.buildGroupedStoreRequestsFromMenus(
+        menus,
+        requestedSite,
+      );
+      const order = new Map(
+        result?.items.map((batch, index) => [
+          `${batch._id.site}__${batch._id.date}__${batch._id.code}`,
+          index,
+        ]),
+      );
+      groups.sort(
+        (a, b) =>
+          (order.get(
+            `${a.site ?? ''}__${a.date}__${a.productionCode ?? a.items[0]?.id}`,
+          ) ?? 0) -
+          (order.get(
+            `${b.site ?? ''}__${b.date}__${b.productionCode ?? b.items[0]?.id}`,
+          ) ?? 0),
+      );
+      return {
+        items: groups,
+        total: result?.total[0]?.count ?? 0,
+        clients: result?.clients.map((item) => item._id) ?? [],
+      };
     }
 
     const items = await this.menuProductionModel
@@ -2788,8 +2850,36 @@ export class MenuProductionsService implements OnModuleInit {
         ? await this.users.findNamesByIds(creatorIds)
         : new Map<string, string>();
 
-    // Recipes are shared across sites, so use the full recipe list.
-    const recipes = await this.recipeModel.find({}).lean();
+    // Load only recipes used by these batches; legacy menus can still fall back to name.
+    const recipeIds = [
+      ...new Set(
+        items
+          .map((item) => String(item.recipeId ?? '').trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+    const recipes = await this.recipeModel
+      .find({ _id: { $in: recipeIds } })
+      .lean();
+    const foundIds = new Set(recipes.map((recipe) => String(recipe._id)));
+    const fallbackNames = [
+      ...new Set(
+        items
+          .filter((item) => !foundIds.has(String(item.recipeId ?? '').trim()))
+          .map((item) => String(item.menuName ?? '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (fallbackNames.length) {
+      const fallbackRecipes = await this.recipeModel
+        .find({
+          $or: fallbackNames.map((name) => ({
+            name: new RegExp(`^\\s*${this.escapeRegExp(name)}\\s*$`, 'i'),
+          })),
+        })
+        .lean();
+      recipes.push(...fallbackRecipes);
+    }
     const recipeById = new Map<string, RecipeDocument>();
     const recipeByName = new Map<string, RecipeDocument>();
     recipes.forEach((recipe) => {

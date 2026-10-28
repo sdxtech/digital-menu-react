@@ -1,3 +1,4 @@
+import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
@@ -181,6 +182,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   const [recipeTotal, setRecipeTotal] = useState(0)
   const [loadingApprovals, setLoadingApprovals] = useState(false)
   const approvalRequestId = useRef(0)
+  const [menuProductionTotal, setMenuProductionTotal] = useState(0)
+  const [menuProductionClients, setMenuProductionClients] = useState<string[]>([])
   const [menuProductionGroups, setMenuProductionGroups] = useState<
     StoreRequestGroup[]
   >([])
@@ -210,7 +213,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   )
 
   // FRONTEND VIEW: pending approvals are fetched from backend.
-  const fetchPending = useCallback(async () => {
+  const fetchPending = useCallback(async (signal?: AbortSignal) => {
     const requestId = ++approvalRequestId.current
     if (!accessToken) return
     if (corporateOnly && (corporateSettings.loading || corporateSettings.error)) return
@@ -222,46 +225,56 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
         limit: String(RECIPE_ITEMS_PER_PAGE),
       })
       if (corporateOnly && selectedSite) recipeParams.set('site', selectedSite)
-      const recipesData = await apiFetch<{ items: Recipe[]; total: number }>(
+      const menuParams = new URLSearchParams({ approvalStatus: 'pending', view: 'approval', page: String(menuGroupPage), limit: String(MENU_GROUP_ITEMS_PER_PAGE) })
+      applyProductionTableFilters(menuParams, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
+      const recipesData = activeSection === 'recipes' ? await apiFetch<{ items: Recipe[]; total: number }>(
         `/recipes?${recipeParams.toString()}`,
-        undefined,
+        { signal },
         accessToken,
-      )
-      const menusData = corporateOnly
-        ? { items: [] as StoreRequestGroup[] }
-        : await apiFetch<{ items: StoreRequestGroup[] }>(
-            '/menu-productions/store-requests?approvalStatus=pending',
-            undefined,
+      ) : { items: [], total: 0 }
+      const menusData = corporateOnly || activeSection !== 'menu-productions'
+        ? { items: [] as StoreRequestGroup[], total: 0, clients: [] as string[] }
+        : await apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(
+            `/menu-productions/store-requests?${menuParams}`,
+            { signal },
             accessToken,
           )
-      if (requestId !== approvalRequestId.current) return
+      if (requestId !== approvalRequestId.current || signal?.aborted) return
 
-      const total = recipesData.total ?? 0
-      const totalPages = Math.max(1, Math.ceil(total / RECIPE_ITEMS_PER_PAGE))
-      setRecipeTotal(total)
-      setRecipePage((current) => Math.min(current, totalPages))
-      setPendingRecipes(recipesData.items ?? [])
-      const sortedGroups = [...(menusData.items ?? [])].sort((a, b) =>
-        a.date.localeCompare(b.date),
-      )
-      setMenuProductionGroups(sortedGroups)
+      if (activeSection === 'recipes') {
+        const total = recipesData.total ?? 0
+        const totalPages = Math.max(1, Math.ceil(total / RECIPE_ITEMS_PER_PAGE))
+        setRecipeTotal(total)
+        setRecipePage((current) => Math.min(current, totalPages))
+        setPendingRecipes(recipesData.items ?? [])
+      } else {
+        const sortedGroups = [...(menusData.items ?? [])].sort((a, b) =>
+          a.date.localeCompare(b.date),
+        )
+        setMenuProductionGroups(sortedGroups)
+        setMenuProductionTotal(menusData.total)
+        setMenuProductionClients(menusData.clients)
+      }
     } catch (error) {
-      if (requestId !== approvalRequestId.current) return
+      if (requestId !== approvalRequestId.current || signal?.aborted) return
       const message =
         error instanceof Error ? error.message : 'Failed to load approvals.'
       setPendingRecipes([])
       setRecipeTotal(0)
+      setMenuProductionGroups([])
       setActionError(message)
     } finally {
-      if (requestId === approvalRequestId.current) setLoadingApprovals(false)
+      if (requestId === approvalRequestId.current && !signal?.aborted) setLoadingApprovals(false)
     }
-  }, [accessToken, corporateOnly, recipePage, selectedSite, corporateSettings.loading, corporateSettings.error])
+  }, [accessToken, corporateOnly, recipePage, selectedSite, corporateSettings.loading, corporateSettings.error, activeSection, menuGroupPage, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
     setActionError('')
     setActionMessage('')
-    fetchPending().catch(() => null)
+    const controller = new AbortController()
+    fetchPending(controller.signal).catch(() => null)
     return () => {
+      controller.abort()
       approvalRequestId.current += 1
     }
   }, [fetchPending])
@@ -289,20 +302,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
     createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
   )
 
-  const clientOptions = useMemo(() => {
-    const clients = new Map<string, string>()
-    menuProductionGroups.forEach((group) => {
-      group.items.forEach((item) => {
-        const name = item.clientName?.trim()
-        if (name && !clients.has(name.toLowerCase())) {
-          clients.set(name.toLowerCase(), name)
-        }
-      })
-    })
-    return Array.from(clients.values()).sort((a, b) =>
-      a.localeCompare(b, 'id', { sensitivity: 'base' }),
-    )
-  }, [menuProductionGroups])
+  const clientOptions = menuProductionClients
 
   const filteredMenuProductionGroups = useMemo(() => {
     if (invalidProductionRange || invalidCreatedRange) return []
@@ -342,10 +342,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   useEffect(() => {
     const nextTotalPages = Math.max(
       1,
-      Math.ceil(filteredMenuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+      Math.ceil(menuProductionTotal / MENU_GROUP_ITEMS_PER_PAGE),
     )
     setMenuGroupPage((prev) => Math.min(prev, nextTotalPages))
-  }, [filteredMenuProductionGroups.length])
+  }, [menuProductionTotal])
 
   const getGroupKey = (group: StoreRequestGroup) =>
     `${group.date}__${group.productionCode ?? 'no-code'}`
@@ -521,12 +521,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
 
   const menuGroupTotalPages = Math.max(
     1,
-    Math.ceil(filteredMenuProductionGroups.length / MENU_GROUP_ITEMS_PER_PAGE),
+    Math.ceil(menuProductionTotal / MENU_GROUP_ITEMS_PER_PAGE),
   )
-  const paginatedMenuGroups = filteredMenuProductionGroups.slice(
-    (menuGroupPage - 1) * MENU_GROUP_ITEMS_PER_PAGE,
-    menuGroupPage * MENU_GROUP_ITEMS_PER_PAGE,
-  )
+  const paginatedMenuGroups = filteredMenuProductionGroups
 
   return (
     <div className="w-full py-2">
@@ -1050,6 +1047,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               </button>
               <ProductionBulkExportButton
                 groups={menuProductionGroups}
+                loadGroups={async () => {
+                  const data = await apiFetch<{ items: StoreRequestGroup[] }>('/menu-productions/store-requests?approvalStatus=pending&view=approval', undefined, accessToken ?? undefined)
+                  return data.items
+                }}
                 disabled={loadingApprovals || Boolean(actionError)}
                 filename="menu-production-approvals-bulk.xlsx"
                 buildBatch={buildMenuProductionApprovalSheets}
@@ -1060,7 +1061,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               page={menuGroupPage}
               totalPages={menuGroupTotalPages}
               onPageChange={setMenuGroupPage}
-              summary={`Showing ${paginatedMenuGroups.length} of ${filteredMenuProductionGroups.length} production batches`}
+              summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionTotal} production batches`}
             />
             <div className="mt-4 overflow-hidden rounded-md border border-border">
               <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">

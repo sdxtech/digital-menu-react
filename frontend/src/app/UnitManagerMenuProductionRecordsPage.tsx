@@ -1,3 +1,4 @@
+import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
@@ -399,21 +400,28 @@ const UnitManagerMenuProductionRecordsPage = ({
   const [createdDateTo, setCreatedDateTo] = useState('')
   const [clientName, setClientName] = useState('')
   const [dateSort, setDateSort] = useState('production-desc')
+  const [recordTotal, setRecordTotal] = useState(0)
+  const [recordClients, setRecordClients] = useState<string[]>([])
   const [records, setRecords] = useState<StoreRequestGroup[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const recordsRequestId = useRef(0)
   const [deleteTarget, setDeleteTarget] = useState<StoreRequestGroup | null>(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteError, setDeleteError] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteMessage, setDeleteMessage] = useState('')
 
-  const fetchRecords = useCallback(async () => {
+  const fetchRecords = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++recordsRequestId.current
     if (!accessToken) return
     if (enableSiteSelection && !selectedSite) {
       setRecords([])
+      setRecordTotal(0)
+      setRecordClients([])
+      setLoading(false)
       return
     }
 
@@ -421,15 +429,17 @@ const UnitManagerMenuProductionRecordsPage = ({
     setError('')
 
     try {
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ page: String(page), limit: String(RECORD_ITEMS_PER_PAGE), view: includePending ? 'records-all' : 'records' })
+      applyProductionTableFilters(params, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
       if (enableSiteSelection) params.set('site', selectedSite)
       const query = params.toString()
-      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+      const data = await apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(
         `/menu-productions/store-requests${query ? `?${query}` : ''}`,
-        undefined,
+        { signal },
         accessToken,
       )
 
+      if (requestId !== recordsRequestId.current || signal?.aborted) return
       const handledGroups = [...(data.items ?? [])]
         .filter((group) => getGroupRecordStatus(group, includePending) !== null)
         .sort(
@@ -439,16 +449,20 @@ const UnitManagerMenuProductionRecordsPage = ({
         )
 
       setRecords(handledGroups)
+      setRecordTotal(data.total)
+      setRecordClients(data.clients)
     } catch (fetchError) {
+      if (requestId !== recordsRequestId.current || signal?.aborted) return
+      setRecords([])
       const message =
         fetchError instanceof Error
           ? fetchError.message
           : 'Failed to load production records.'
       setError(message)
     } finally {
-      setLoading(false)
+      if (requestId === recordsRequestId.current && !signal?.aborted) setLoading(false)
     }
-  }, [accessToken, enableSiteSelection, includePending, selectedSite])
+  }, [accessToken, enableSiteSelection, includePending, selectedSite, page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   const handleDeleteMpr = async () => {
     if (!accessToken || !canDeleteMpr || !deleteTarget || deleting) return
@@ -498,7 +512,9 @@ const UnitManagerMenuProductionRecordsPage = ({
   }, [selectedSite, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
-    fetchRecords().catch(() => null)
+    const controller = new AbortController()
+    fetchRecords(controller.signal).catch(() => null)
+    return () => controller.abort()
   }, [fetchRecords])
 
   const invalidProductionRange = Boolean(
@@ -508,20 +524,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
   )
 
-  const clientOptions = useMemo(() => {
-    const clients = new Map<string, string>()
-    records.forEach((group) => {
-      group.items.forEach((item) => {
-        const name = item.clientName?.trim()
-        if (name && !clients.has(name.toLowerCase())) {
-          clients.set(name.toLowerCase(), name)
-        }
-      })
-    })
-    return Array.from(clients.values()).sort((a, b) =>
-      a.localeCompare(b, 'id', { sensitivity: 'base' }),
-    )
-  }, [records])
+  const clientOptions = recordClients
 
   const filteredRecords = useMemo(() => {
     if (invalidProductionRange || invalidCreatedRange) return []
@@ -561,20 +564,13 @@ const UnitManagerMenuProductionRecordsPage = ({
   }, [records, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(filteredRecords.length / RECORD_ITEMS_PER_PAGE))
+    const totalPages = Math.max(1, Math.ceil(recordTotal / RECORD_ITEMS_PER_PAGE))
     setPage((prev) => Math.min(prev, totalPages))
-  }, [filteredRecords.length])
+  }, [recordTotal])
 
-  const paginatedRecords = useMemo(
-    () =>
-      filteredRecords.slice(
-        (page - 1) * RECORD_ITEMS_PER_PAGE,
-        page * RECORD_ITEMS_PER_PAGE,
-      ),
-    [page, filteredRecords],
-  )
+  const paginatedRecords = filteredRecords
 
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / RECORD_ITEMS_PER_PAGE))
+  const totalPages = Math.max(1, Math.ceil(recordTotal / RECORD_ITEMS_PER_PAGE))
 
   const toggleExpandedGroup = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -900,6 +896,12 @@ const UnitManagerMenuProductionRecordsPage = ({
             </button>
             <ProductionBulkExportButton
               groups={records}
+              loadGroups={async () => {
+                const params = new URLSearchParams({ view: includePending ? 'records-all' : 'records' })
+                if (enableSiteSelection) params.set('site', selectedSite)
+                const data = await apiFetch<{ items: StoreRequestGroup[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
+                return data.items
+              }}
               disabled={loading || Boolean(error)}
               filename="menu-production-records-bulk.xlsx"
               buildBatch={buildRecordSheets}
@@ -919,7 +921,7 @@ const UnitManagerMenuProductionRecordsPage = ({
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
-            summary={`Showing ${paginatedRecords.length} of ${filteredRecords.length} tracked production batches`}
+            summary={`Showing ${paginatedRecords.length} of ${recordTotal} tracked production batches`}
           />
           <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
             <table className="dm-table min-w-full bg-white text-sm">

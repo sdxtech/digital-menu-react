@@ -104,11 +104,15 @@ export class MenuProductionsController {
 
   @Get('drafts')
   @Roles(AppRole.Chef, AppRole.Superadmin)
-  drafts(@Req() req: AuthenticatedRequest) {
+  drafts(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListMenuProductionsQueryDto = {},
+  ) {
     return this.menuProductions.findDrafts(
       req.user.sub,
       getUserSiteScope(req.user),
       req.user.roles?.includes(AppRole.Superadmin),
+      ...(query.page || query.limit ? [query] : []),
     );
   }
 
