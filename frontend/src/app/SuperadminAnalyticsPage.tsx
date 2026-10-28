@@ -326,7 +326,7 @@ const TrendChart = ({
               strokeWidth={2.5}
               dot={{ r: 2 }}
               activeDot={{ r: 5 }}
-              connectNulls={false}
+              connectNulls
               isAnimationActive={false}
             />
           ))}
@@ -573,6 +573,10 @@ const SuperadminAnalyticsPage = () => {
           </p>
         ) : null}
       </form>
+
+      <p className="text-sm italic text-muted">
+        Dashboard data is based on Menu Productions approved by the Unit Manager.
+      </p>
 
       {error ? (
         <p
