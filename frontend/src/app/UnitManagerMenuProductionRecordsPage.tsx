@@ -1,6 +1,7 @@
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
 import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
+import { buildMenuProductionFinancialRows } from '../lib/menu-production-approval-export'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import { apiFetch } from '../lib/api'
@@ -711,7 +712,7 @@ const UnitManagerMenuProductionRecordsPage = ({
             : '',
           formatUnitLabel(ingredient.unitOfMeasures),
           toSpreadsheetDecimal(ingredient.price),
-          toSpreadsheetDecimal(ingredient.ingredientCost),
+          Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
           approvedBy,
           approvalStatus,
           storeRequestStatus,
@@ -733,7 +734,7 @@ const UnitManagerMenuProductionRecordsPage = ({
         toSpreadsheetDecimal(formatQuantity(item.qty)),
         formatUnitLabel(item.unitOfMeasures),
         toSpreadsheetDecimal(item.price),
-        toSpreadsheetDecimal(item.ingredientCost),
+        Number.isFinite(item.ingredientCost) ? item.ingredientCost : '',
       ]),
     ]
 
@@ -768,6 +769,7 @@ const UnitManagerMenuProductionRecordsPage = ({
         ? '-'
         : getHandledByNames(group).join(', ') || '-'],
       ['Store request status', storeRequestStatus || '-'],
+      ...buildMenuProductionFinancialRows(group.items),
     ]
 
     const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')

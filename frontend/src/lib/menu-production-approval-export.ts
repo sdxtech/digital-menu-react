@@ -1,4 +1,5 @@
 import { formatCreatedDate } from './date-format'
+import { formatFoodCostPercentage } from './food-cost'
 import { formatQuantity } from './quantity'
 import { formatRecipeVersion } from './recipe-version'
 import {
@@ -15,6 +16,10 @@ import {
 } from './spreadsheet-export'
 
 type MenuProductionApprovalExportMenu = {
+  estimatedCost?: number
+  sellingPricePerPax?: number
+  sellingQuantity?: number
+  estimatedRevenue?: number
   productionCode?: string
   submittedByName?: string
   submittedAt?: string
@@ -42,6 +47,35 @@ type MenuProductionApprovalExportGroup = {
   productionCode?: string
   items: MenuProductionApprovalExportMenu[]
   summary: StoreRequestSummaryIngredient[]
+}
+
+export const buildMenuProductionFinancialRows = (
+  items: Array<{
+    estimatedCost?: number
+    sellingPricePerPax?: number
+    sellingQuantity?: number
+    estimatedRevenue?: number
+  }>,
+): SpreadsheetCell[][] => {
+  const totalEstimatedCost = items.reduce(
+    (total, item) => total + (Number.isFinite(Number(item.estimatedCost))
+      ? Number(item.estimatedCost) : 0),
+    0,
+  )
+  const firstMenu = items[0]
+  const sellingPrice = Number(firstMenu?.sellingPricePerPax)
+  const sellingQuantity = Number(firstMenu?.sellingQuantity)
+  const estimatedRevenue = Number.isFinite(sellingPrice) && Number.isFinite(sellingQuantity)
+    ? sellingPrice * sellingQuantity
+    : firstMenu?.estimatedRevenue
+
+  return [
+    ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost)],
+    ['Total Pax Calculation', toSpreadsheetDecimal(sellingQuantity)],
+    ['Food Cost Percentage', formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)],
+    ['Selling Price', toSpreadsheetDecimal(sellingPrice)],
+    ['Estimated Revenue', toSpreadsheetDecimal(estimatedRevenue)],
+  ]
 }
 
 const getGroupSubmittedAt = (group: MenuProductionApprovalExportGroup) =>
@@ -130,7 +164,7 @@ export const downloadMenuProductionApproval = (group: MenuProductionApprovalExpo
         toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
         formatUnitLabel(ingredient.unitOfMeasures),
         toSpreadsheetDecimal(ingredient.price),
-        toSpreadsheetDecimal(ingredient.ingredientCost),
+        Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
       ])
       rowNumber += 1
     })
@@ -147,7 +181,7 @@ export const downloadMenuProductionApproval = (group: MenuProductionApprovalExpo
       toSpreadsheetDecimal(formatQuantity(item.qty)),
       formatUnitLabel(item.unitOfMeasures),
       toSpreadsheetDecimal(item.price),
-      toSpreadsheetDecimal(item.ingredientCost),
+      Number.isFinite(item.ingredientCost) ? item.ingredientCost : '',
     ]),
   ]
 
@@ -177,6 +211,7 @@ export const downloadMenuProductionApproval = (group: MenuProductionApprovalExpo
     ['Store request status', Array.from(new Set(
       group.items.map((item) => getStoreRequestStatusLabel(item.storeRequestStatus)),
     )).join(', ') || '-'],
+    ...buildMenuProductionFinancialRows(group.items),
   ]
 
   const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
