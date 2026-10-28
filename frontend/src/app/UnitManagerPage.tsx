@@ -1,3 +1,4 @@
+import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
 import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
@@ -21,7 +22,7 @@ import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/statu
 import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
 import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { formatUnitLabel } from '../lib/unit-of-measures'
-import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
+import { buildMenuProductionApprovalSheets, downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 
 const RECIPE_ITEMS_PER_PAGE = 10
@@ -1047,6 +1048,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               >
                 Reset filters
               </button>
+              <ProductionBulkExportButton
+                count={filteredMenuProductionGroups.length}
+                disabled={loadingApprovals || Boolean(actionError) || invalidProductionRange || invalidCreatedRange}
+                filename="menu-production-approvals-bulk.xlsx"
+                buildBatches={() => filteredMenuProductionGroups.map(buildMenuProductionApprovalSheets)}
+              />
             </div>
             <TablePagination
               page={menuGroupPage}

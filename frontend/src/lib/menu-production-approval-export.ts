@@ -13,6 +13,7 @@ import {
   toSpreadsheetDate,
   toSpreadsheetDecimal,
   type SpreadsheetCell,
+  type SpreadsheetSheet,
 } from './spreadsheet-export'
 
 type MenuProductionApprovalExportMenu = {
@@ -90,7 +91,7 @@ const getBatchStatus = (items: MenuProductionApprovalExportMenu[]) => {
   return items[0]?.salesInputBy?.trim() ? 'Waiting for Approval' : 'Waiting for Sales Input'
 }
 
-export const downloadMenuProductionApproval = (group: MenuProductionApprovalExportGroup) => {
+export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalExportGroup): SpreadsheetSheet[] => {
   const rows: SpreadsheetCell[][] = [
     [
       'No',
@@ -214,15 +215,19 @@ export const downloadMenuProductionApproval = (group: MenuProductionApprovalExpo
     ...buildMenuProductionFinancialRows(group.items),
   ]
 
+  return [
+    { name: 'Menu Production Information', rows: informationRows },
+    { name: 'Store Request Detail', rows },
+    { name: 'Ingredient Summary', rows: summaryRows },
+  ]
+}
+
+export const downloadMenuProductionApproval = (group: MenuProductionApprovalExportGroup) => {
   const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
   const safeProductionCode = (group.productionCode ?? 'no-code').replace(
     /[\\/:*?"<>|]/g,
     '-',
   )
-  downloadSpreadsheet(`menu-production-${safeDate}-${safeProductionCode}.xlsx`, [
-    { name: 'Menu Production Information', rows: informationRows },
-    { name: 'Store Request Detail', rows },
-    { name: 'Ingredient Summary', rows: summaryRows },
-  ])
+  return downloadSpreadsheet(`menu-production-${safeDate}-${safeProductionCode}.xlsx`, buildMenuProductionApprovalSheets(group))
 }
 
