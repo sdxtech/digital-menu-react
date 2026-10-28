@@ -448,51 +448,146 @@ describe('MenuProductionsService sales input', () => {
     ).rejects.toThrow('Menu production draft not found.');
   });
 
-  it('records the created date when Chef submits a draft batch', async () => {
-    const submittedItems = [
-      {
-        _id: 'menu-1',
-        productionCode: 'MPR0038',
-        menuName: 'Soup',
-        productionDate: '2026-08-28',
-        site: 'SITE-001',
-        createdBy: 'chef-1',
-      },
-    ];
-    const lean = jest.fn().mockResolvedValue(submittedItems);
-    const updateMany = jest.fn().mockResolvedValue({ matchedCount: 1 });
-    const notifications = {
-      createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
-    };
-    const workflowMail = {
-      notifyMenuProductionsSubmitted: jest.fn().mockResolvedValue(undefined),
+  it('includes owner names in the draft list using one lookup', async () => {
+    const items = [{ createdBy: 'chef-1' }, { createdBy: 'chef-1' }];
+    const users = {
+      findNamesByIds: jest
+        .fn()
+        .mockResolvedValue(new Map([['chef-1', 'Chef One']])),
     };
     const service = new MenuProductionsService(
-      { updateMany, find: jest.fn().mockReturnValue({ lean }) } as never,
+      {
+        find: jest.fn().mockReturnValue({
+          sort: jest
+            .fn()
+            .mockReturnValue({ lean: jest.fn().mockResolvedValue(items) }),
+        }),
+      } as never,
       {} as never,
       {} as never,
+      users as never,
       {} as never,
-      notifications as never,
-      workflowMail as never,
+      {} as never,
     );
-
-    await service.submitDraftBatch('MPR0038', 'chef-1', 'SITE-001');
-
-    expect(updateMany).toHaveBeenCalledWith(
-      {
-        productionCode: 'MPR0038',
-        createdBy: 'chef-1',
-        isDraft: true,
-        site: 'SITE-001',
-      },
-      {
-        $set: {
-          isDraft: false,
-          submittedAt: expect.any(Date) as Date,
-        },
-      },
+    const result = await service.findDrafts('admin-1', undefined, true);
+    expect(users.findNamesByIds).toHaveBeenCalledWith(['chef-1']);
+    expect(result.items).toEqual(
+      items.map((item) => ({ ...item, createdByName: 'Chef One' })),
     );
   });
+
+  it.each([false, true])(
+    'preserves draft owner and site when replacing it (superadmin: %s)',
+    async (allChefs) => {
+      const draft = { createdBy: 'chef-1', site: 'SITE-001' };
+      const findOne = jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue(draft) });
+      const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
+      const service = createService({ findOne, deleteMany });
+      const createMany = jest
+        .spyOn(service, 'createMany')
+        .mockResolvedValue([]);
+      const input = {
+        recipeId: 'recipe-1',
+        portion: 1,
+        cost: 0,
+        productionDate: '2026-10-27',
+        chefId: 'other-chef',
+        site: 'OTHER-SITE',
+      };
+      await service.replaceDraft(
+        'MPR0001',
+        [input],
+        allChefs ? 'admin-1' : 'chef-1',
+        allChefs ? undefined : 'SITE-001',
+        'admin-1',
+        allChefs,
+      );
+      expect(findOne).toHaveBeenCalledWith({
+        productionCode: 'MPR0001',
+        isDraft: true,
+        ...(allChefs ? {} : { createdBy: 'chef-1', site: 'SITE-001' }),
+      });
+      expect(createMany).toHaveBeenCalledWith(
+        [{ ...input, saveAsDraft: true }],
+        'chef-1',
+        'SITE-001',
+        'admin-1',
+      );
+      expect(deleteMany).toHaveBeenCalledWith({
+        productionCode: 'MPR0001',
+        isDraft: true,
+        ...(allChefs ? {} : { createdBy: 'chef-1', site: 'SITE-001' }),
+      });
+    },
+  );
+
+  it('keeps inaccessible drafts intact when replacement fails', async () => {
+    const findOne = jest
+      .fn()
+      .mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    const deleteMany = jest.fn();
+    const service = createService({ findOne, deleteMany });
+    await expect(
+      service.replaceDraft('MPR0001', [], 'other-chef', 'SITE-001'),
+    ).rejects.toThrow('Menu production draft not found.');
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'records the created date when submitting a draft (superadmin: %s)',
+    async (allChefs) => {
+      const submittedItems = [
+        {
+          _id: 'menu-1',
+          productionCode: 'MPR0038',
+          menuName: 'Soup',
+          productionDate: '2026-08-28',
+          site: 'SITE-001',
+          createdBy: 'chef-1',
+        },
+      ];
+      const lean = jest.fn().mockResolvedValue(submittedItems);
+      const updateMany = jest.fn().mockResolvedValue({ matchedCount: 1 });
+      const notifications = {
+        createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
+      };
+      const workflowMail = {
+        notifyMenuProductionsSubmitted: jest.fn().mockResolvedValue(undefined),
+      };
+      const service = new MenuProductionsService(
+        { updateMany, find: jest.fn().mockReturnValue({ lean }) } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        notifications as never,
+        workflowMail as never,
+      );
+
+      await service.submitDraftBatch(
+        'MPR0038',
+        allChefs ? 'admin-1' : 'chef-1',
+        'SITE-001',
+        allChefs,
+      );
+
+      expect(updateMany).toHaveBeenCalledWith(
+        {
+          productionCode: 'MPR0038',
+          ...(allChefs ? {} : { createdBy: 'chef-1' }),
+          isDraft: true,
+          site: 'SITE-001',
+        },
+        {
+          $set: {
+            isDraft: false,
+            submittedAt: expect.any(Date) as Date,
+          },
+        },
+      );
+    },
+  );
 
   it('does not submit an incomplete production draft using corporate reference prices', async () => {
     const draft = {

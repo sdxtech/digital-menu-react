@@ -127,7 +127,7 @@ export class MenuProductionsController {
   }
 
   @Put('drafts/:productionCode')
-  @Roles(AppRole.Chef)
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   replaceDraft(
     @Req() req: AuthenticatedRequest,
     @Param('productionCode') productionCode: string,
@@ -139,11 +139,12 @@ export class MenuProductionsController {
       req.user.sub,
       getUserSiteScope(req.user),
       this.resolveAssistedBy(req),
+      req.user.roles?.includes(AppRole.Superadmin),
     );
   }
 
   @Patch('drafts/:productionCode/submit')
-  @Roles(AppRole.Chef)
+  @Roles(AppRole.Chef, AppRole.Superadmin)
   submitDraft(
     @Req() req: AuthenticatedRequest,
     @Param('productionCode') productionCode: string,
@@ -152,6 +153,7 @@ export class MenuProductionsController {
       productionCode,
       req.user.sub,
       getUserSiteScope(req.user),
+      req.user.roles?.includes(AppRole.Superadmin),
     );
   }
 

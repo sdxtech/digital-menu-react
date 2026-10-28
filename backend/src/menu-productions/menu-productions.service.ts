@@ -660,7 +660,21 @@ export class MenuProductionsService implements OnModuleInit {
       .sort({ updatedAt: -1, createdAt: -1 })
       .lean();
 
-    return { items, total: items.length };
+    const ownerIds = [
+      ...new Set(
+        items.flatMap((item) => (item.createdBy ? [item.createdBy] : [])),
+      ),
+    ];
+    const ownerNames = ownerIds.length
+      ? await this.users.findNamesByIds(ownerIds)
+      : new Map<string, string>();
+    return {
+      items: items.map((item) => ({
+        ...item,
+        createdByName: ownerNames.get(item.createdBy ?? '') ?? '',
+      })),
+      total: items.length,
+    };
   }
 
   async deleteDraft(
@@ -700,26 +714,37 @@ export class MenuProductionsService implements OnModuleInit {
     createdBy?: string,
     site?: string,
     assistedBy?: string,
+    allChefs = false,
   ) {
     const normalizedCode = productionCode?.trim();
     const chefId = createdBy?.trim();
-    if (!normalizedCode || !chefId) {
+    if (!normalizedCode || (!allChefs && !chefId)) {
       throw new BadRequestException('Menu production draft is invalid.');
     }
 
     const draftFilter = this.withSiteFilter(
-      { productionCode: normalizedCode, createdBy: chefId, isDraft: true },
+      {
+        productionCode: normalizedCode,
+        isDraft: true,
+        ...(allChefs ? {} : { createdBy: chefId }),
+      },
       site,
     );
-    const existingDraft = await this.menuProductionModel.exists(draftFilter);
+    const existingDraft = await this.menuProductionModel
+      .findOne(draftFilter)
+      .lean();
     if (!existingDraft) {
       throw new NotFoundException('Menu production draft not found.');
     }
 
+    if (!existingDraft.createdBy || !inputs.length) {
+      throw new BadRequestException('Menu production draft is invalid.');
+    }
+
     const created = await this.createMany(
       inputs.map((input) => ({ ...input, saveAsDraft: true })),
-      chefId,
-      site,
+      existingDraft.createdBy,
+      existingDraft.site,
       assistedBy,
     );
     await this.menuProductionModel.deleteMany(draftFilter);
@@ -730,15 +755,20 @@ export class MenuProductionsService implements OnModuleInit {
     productionCode: string,
     createdBy?: string,
     site?: string,
+    allChefs = false,
   ) {
     const normalizedCode = productionCode?.trim();
     const chefId = createdBy?.trim();
-    if (!normalizedCode || !chefId) {
+    if (!normalizedCode || (!allChefs && !chefId)) {
       throw new BadRequestException('Menu production draft is invalid.');
     }
 
     const draftFilter = this.withSiteFilter(
-      { productionCode: normalizedCode, createdBy: chefId, isDraft: true },
+      {
+        productionCode: normalizedCode,
+        isDraft: true,
+        ...(allChefs ? {} : { createdBy: chefId }),
+      },
       site,
     );
     const drafts = await this.menuProductionModel.find(draftFilter).lean();
@@ -782,12 +812,7 @@ export class MenuProductionsService implements OnModuleInit {
     }
 
     const submitted = await this.menuProductionModel
-      .find(
-        this.withSiteFilter(
-          { productionCode: normalizedCode, createdBy: chefId, isDraft: false },
-          site,
-        ),
-      )
+      .find(this.withSiteFilter({ ...draftFilter, isDraft: false }, site))
       .lean();
     if (submitted.length > 0) {
       this.dispatchMenuProductionSubmissionNotifications(submitted);
