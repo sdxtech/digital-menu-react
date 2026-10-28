@@ -28,6 +28,10 @@ const getMenuCreatePageTitle = (state: unknown) => {
 
 const titleMatchers: TitleMatcher[] = [
   {
+    path: '/dashboard',
+    getPageTitle: () => 'Dashboard',
+  },
+  {
     path: '/login',
     getPageTitle: () => 'Login',
   },
@@ -234,6 +238,10 @@ const titleMatchers: TitleMatcher[] = [
   {
     path: '/superadmin/analytics',
     getPageTitle: () => 'Dashboard',
+  },
+  {
+    path: '/superadmin/dashboard-access',
+    getPageTitle: () => 'Dashboard Access',
   },
   {
     path: '/superadmin/users',
