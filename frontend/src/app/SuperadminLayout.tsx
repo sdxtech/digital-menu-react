@@ -17,6 +17,11 @@ const navItems = [
     ),
   },
   {
+    label: 'Dashboard Access',
+    to: '/superadmin/dashboard-access',
+    icon: (className: string) => <i className={`bi bi-shield-lock ${className}`} aria-hidden="true" />,
+  },
+  {
     label: 'User Management',
     to: '/superadmin/users',
     icon: (className: string) => (

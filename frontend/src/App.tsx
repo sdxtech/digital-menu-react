@@ -1,3 +1,5 @@
+import DashboardWorkspaceLayout from './app/DashboardWorkspaceLayout'
+import SuperadminDashboardAccessPage from './app/SuperadminDashboardAccessPage'
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { rolePathFor, type Role, useAuth } from './lib/auth'
@@ -116,6 +118,9 @@ function App() {
       
       {/* AUTHENTICATED CONTAINER BOUNDARY */}
       <Route element={<RequireAuth />}>
+        <Route path="/dashboard" element={<DashboardWorkspaceLayout />}>
+          <Route index element={<SuperadminAnalyticsPage />} />
+        </Route>
 
         {/* CHEF SPACE SUB-ROUTES MAP */}
         <Route element={<RequireRole role="chef" />}>
@@ -264,6 +269,7 @@ function App() {
           <Route path="/superadmin" element={<SuperadminLayout />}>
             <Route index element={<SuperadminDashboardPage />} />
             <Route path="analytics" element={<SuperadminAnalyticsPage />} />
+            <Route path="dashboard-access" element={<SuperadminDashboardAccessPage />} />
             <Route path="profile" element={<ProfileView />} />
             
             {/* ➕ Added security tracking sub-path route */}

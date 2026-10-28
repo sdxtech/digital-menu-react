@@ -1,3 +1,4 @@
+import type { DashboardAccess, DashboardComponent } from '../lib/dashboard-access'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -33,6 +34,7 @@ type Trend = Values & {
   paxByClient: ClientPax[]
 }
 type AnalyticsData = {
+  access: DashboardAccess
   summary: Values & { approvedBatches: number; incompleteBatches: number }
   workflow: {
     totalBatches: number
@@ -105,7 +107,7 @@ const metrics: Array<{
   { key: 'pax', label: 'Pax Calculation', color: '#7c3aed' },
   {
     key: 'estimatedCost',
-    label: 'Estimated Cost',
+    label: 'Estimated Food Cost',
     color: '#ea580c',
   },
   {
@@ -337,49 +339,27 @@ const TrendChart = ({
 }
 
 const SuperadminAnalyticsPage = () => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [filters, setFilters] = useState<Filters>(initialFilters)
   const [applied, setApplied] = useState<Filters>(filters)
   const [filterError, setFilterError] = useState('')
   const clientsQuery = useQuery({
-    queryKey: ['analytics', 'clients', filters.site],
+    queryKey: ['analytics', 'clients', user?.id ?? user?.email, filters.site],
     enabled: Boolean(accessToken),
     queryFn: async ({ signal }) => {
-      type ClientResponse = {
-        items: Array<{ clientId: string; name: string }>
-        totalPages?: number
-      }
-      if (filters.site) {
-        const response = await apiFetch<ClientResponse>(
-          `/clients/by-site/${encodeURIComponent(filters.site)}`,
-          { signal },
-          accessToken ?? undefined,
-        )
-        return { site: filters.site, items: response.items }
-      }
-      const first = await apiFetch<ClientResponse>(
-        '/superadmin/clients?limit=100&page=1',
-        { signal },
-        accessToken ?? undefined,
+      const response = await apiFetch<{ items: Array<{ clientId: string; name: string }> }>(
+        `/dashboard/clients${filters.site ? `?site=${encodeURIComponent(filters.site)}` : ''}`,
+        { signal }, accessToken ?? undefined,
       )
-      const items = [...first.items]
-      for (let page = 2; page <= (first.totalPages ?? 1); page++) {
-        const response = await apiFetch<ClientResponse>(
-          `/superadmin/clients?limit=100&page=${page}`,
-          { signal },
-          accessToken ?? undefined,
-        )
-        items.push(...response.items)
-      }
-      return { site: filters.site, items }
+      return { site: filters.site, items: response.items }
     },
   })
   const analyticsQuery = useQuery({
-    queryKey: ['analytics', 'superadmin', applied],
+    queryKey: ['analytics', user?.id ?? user?.email, applied],
     enabled: Boolean(accessToken),
     queryFn: ({ signal }) =>
       apiFetch<AnalyticsData>(
-        `/dashboard/superadmin/analytics?${new URLSearchParams({ ...applied })}`,
+        `/dashboard/analytics?${new URLSearchParams({ ...applied })}`,
         { signal },
         accessToken ?? undefined,
       ),
@@ -412,7 +392,7 @@ const SuperadminAnalyticsPage = () => {
     'mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm'
   const workflowCards = data
     ? [
-        {
+        ...(data.access.components.approvalStatus ? [{
           title: 'Production Approval Status',
           icon: 'bi-clipboard-check',
           values: [
@@ -421,8 +401,8 @@ const SuperadminAnalyticsPage = () => {
             ['Approved', data.workflow.approval.approved, 'bg-green-100 text-green-800'],
             ['Rejected', data.workflow.approval.returned, 'bg-red-100 text-red-800'],
           ] as const,
-        },
-        {
+        }] : []),
+        ...(data.access.components.storeRequestStatus ? [{
           title: 'Store Request Status',
           icon: 'bi-box-seam',
           values: [
@@ -430,7 +410,7 @@ const SuperadminAnalyticsPage = () => {
             ['Completed', data.workflow.storeRequest.fulfilled, 'bg-green-100 text-green-800'],
             ['Cancelled', data.workflow.storeRequest.cancelled, 'bg-red-100 text-red-800'],
           ] as const,
-        },
+        }] : []),
       ]
     : []
 
@@ -501,7 +481,7 @@ const SuperadminAnalyticsPage = () => {
               }}
               className={inputClass}
             >
-              <option value="">All sites</option>
+              <option value="">All allowed sites</option>
               {data?.sites.map((site) => (
                 <option key={site.code} value={site.code}>
                   {site.code} · {site.name}
@@ -590,7 +570,9 @@ const SuperadminAnalyticsPage = () => {
       {!loading && !error && data ? (
         <>
           <div className="flex gap-4 overflow-x-auto pb-1">
-            {metrics.map((metric) => (
+            {metrics.filter((metric) => data.access.components[({
+              foodCostPercentage: 'foodCostCard', pax: 'paxCard', estimatedCost: 'costCard', estimatedRevenue: 'revenueCard',
+            } as const)[metric.key]]).map((metric) => (
               <div
                 key={metric.key}
                 className="min-w-[210px] flex-1 rounded-md border border-border bg-surface p-2 shadow-sm"
@@ -655,7 +637,7 @@ const SuperadminAnalyticsPage = () => {
             </div>
           </section>
 
-          <section className="space-y-3">
+          {(data.access.components.foodCostChart || data.access.components.paxChart || data.access.components.financialChart) ? <section className="space-y-3">
             <div>
               <h2 className="text-lg font-semibold">
                 {applied.interval === 'daily'
@@ -674,16 +656,17 @@ const SuperadminAnalyticsPage = () => {
                       metric.key === 'foodCostPercentage' ||
                       metric.key === 'pax',
                   )
-                  .map((metric) => ({ label: metric.label, series: [metric] })),
+                  .map((metric) => ({ label: metric.label, series: [metric], component: (metric.key === 'pax' ? 'paxChart' : 'foodCostChart') as DashboardComponent })),
                 {
-                  label: 'Estimated Cost & Revenue',
+                  label: 'Estimated Food Cost & Revenue',
+                  component: 'financialChart' as DashboardComponent,
                   series: metrics.filter(
                     (metric) =>
                       metric.key === 'estimatedCost' ||
                       metric.key === 'estimatedRevenue',
                   ),
                 },
-              ].map((chart) => (
+              ].filter((chart) => data.access.components[chart.component]).map((chart) => (
                 <div
                   key={chart.label}
                   className={`min-w-0 rounded-md border border-border bg-surface p-4 shadow-sm ${chart.series.length > 1 ? 'lg:col-span-2' : ''}`}
@@ -698,7 +681,10 @@ const SuperadminAnalyticsPage = () => {
                 </div>
               ))}
             </div>
-          </section>
+          </section> : null}
+          {!Object.values(data.access.components).some(Boolean) ? (
+            <p className="rounded-md border border-border bg-surface p-4 text-sm text-muted">No dashboard components have been enabled for your account. Contact your Superadmin.</p>
+          ) : null}
         </>
       ) : null}
     </div>
