@@ -25,6 +25,19 @@ logs/
 Thumbs.db
 .vscode/
 
+# Local AI tools and workspace configuration
+/.claude/
+/.codegraph/
+/.codex/
+/.cursor/
+/.gemini/
+/.github/
+/.presentation-workspace/
+/.mcp.json
+/CLAUDE.md
+/GEMINI.md
+/AGENTS.md
+
 # Docker
 **/data/
 
