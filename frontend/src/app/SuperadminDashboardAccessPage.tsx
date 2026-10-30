@@ -202,7 +202,6 @@ export default function SuperadminDashboardAccessPage() {
     <div>
       <PageHeading className="text-2xl font-semibold">Dashboard Access</PageHeading>
     </div>
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-black">Changes apply after saving. Users without a dashboard grant remain blocked. Superadmin access is always unrestricted.</div>
     <div className="space-y-5 rounded-xl border border-border bg-surface p-5 shadow-sm">
       <div className="grid grid-cols-1 gap-3 border-b border-black pb-5 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div>
