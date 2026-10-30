@@ -32,14 +32,37 @@
 }
 
 .dm-role-sidebar {
-  height: calc((100vh / var(--dm-ui-scale)) - 56px);
+  height: calc(100vh / var(--dm-ui-scale));
 }
 
-@media (min-width: 768px) {
-  .dm-role-sidebar {
-    height: auto;
-    min-height: calc((100vh / var(--dm-ui-scale)) - 56px);
-  }
+.dm-role-submenu {
+  position: relative;
+}
+
+.dm-role-submenu::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 1rem;
+  left: 0;
+  width: 1px;
+  background: var(--dm-border);
+  pointer-events: none;
+}
+
+.dm-role-submenu > div {
+  position: relative;
+}
+
+.dm-role-submenu > div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -0.75rem;
+  width: 0.75rem;
+  height: 1rem;
+  border-bottom: 1px solid var(--dm-border);
+  pointer-events: none;
 }
 
 body {

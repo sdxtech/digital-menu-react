@@ -349,14 +349,13 @@ const RoleLayout = ({
     const childActive = Boolean(item.children?.some((child) => isItemActive(child)))
     const pathActive = location.pathname === target.pathname
     const expanded = hasChildren && expandedMenus.includes(item.to)
-    const parentActive = active || childActive || pathActive
-    const highlightActive = active || (level === 0 && childActive)
+    const selected = active || (level === 0 && (childActive || pathActive))
     const showChildren = sidebarOpen && expanded
 
     const itemBadgeCount = getComponentBadgeCount(item)
 
     return (
-      <div key={item.to} className="space-y-1">
+      <div key={item.to}>
         <NavLink
           to={item.to}
           end={item.end}
@@ -367,17 +366,15 @@ const RoleLayout = ({
           }}
           className={() =>
             [
-              'group flex min-h-8 items-center gap-2 rounded-md text-xs font-medium transition relative',
+              'group relative flex items-center gap-2.5 rounded-md text-xs font-medium transition',
               sidebarOpen
                 ? level > 0
-                  ? 'min-h-7 px-2 py-1.5 text-[11px]'
-                  : 'px-2 py-1.5'
-                : 'mx-auto h-9 w-9 justify-center px-0 py-0',
-              highlightActive
+                  ? 'min-h-8 px-2.5 py-1.5 text-[11px]'
+                  : 'min-h-9 px-2.5 py-2'
+                : 'mx-auto h-9 w-9 justify-center',
+              selected
                 ? 'bg-primary text-white shadow-sm'
-                : level === 0 && parentActive
-                  ? 'bg-primary-soft text-primary'
-                  : 'text-foreground hover:bg-primary-soft hover:text-primary',
+                : 'text-foreground hover:bg-background hover:text-primary',
             ].join(' ')
           }
         >
@@ -389,36 +386,28 @@ const RoleLayout = ({
 
           {sidebarOpen ? (
             <>
-              <span className="min-w-0 flex-1 whitespace-nowrap pr-4 truncate">
+              <span className="min-w-0 flex-1 truncate whitespace-nowrap">
                 {item.label}
               </span>
 
               {itemBadgeCount > 0 && (
-                <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none shrink-0 mr-2 ${
-                  active ? 'bg-white text-primary' : 'bg-amber-400 text-primary-dark'
-                }`}>
+                <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md px-1.5 text-[10px] font-semibold ${selected ? 'bg-white text-primary' : 'bg-primary-soft text-primary'}`}>
                   {itemBadgeCount}
                 </span>
               )}
 
-              <i
-                className={`bi ${
-                  hasChildren
-                    ? expanded
-                      ? 'bi-chevron-down'
-                      : 'bi-chevron-up'
-                    : active
-                      ? 'bi-chevron-right'
-                      : 'bi-chevron-up'
-                } text-[10px] leading-none text-current transition`}
-                aria-hidden="true"
-              />
+              {hasChildren ? (
+                <i
+                  className={`bi ${expanded ? 'bi-chevron-down' : 'bi-chevron-right'} text-[10px] leading-none text-current transition`}
+                  aria-hidden="true"
+                />
+              ) : null}
             </>
           ) : null}
         </NavLink>
 
         {showChildren ? (
-          <div className="ml-4 space-y-1 border-l border-border pl-2">
+          <div className="dm-role-submenu ml-5 space-y-0.5 pl-3">
             {item.children?.map((child) => renderPanelLink(child, level + 1))}
           </div>
         ) : null}
@@ -430,35 +419,17 @@ const RoleLayout = ({
     <AppShell>
       <div className="min-h-screen">
         {/* NAVBAR */}
-        <header className="sticky top-0 z-30 w-full bg-primary text-white shadow-lg">
-          <div className="flex w-full items-center justify-between gap-3 px-3 py-2 sm:px-4">
-            
-            {/* LEFT SIDE: BRAND LOGO & LOCATION */}
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-white/30">
-                <img
-                  src="/SPICES ICON 1.jpeg"
-                  alt="SPICES logo"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="min-w-0">
-                <p className="flex items-center gap-1.5 font-semibold text-sm tracking-wide text-white">
-                  <i className="bi bi-geo-alt-fill text-amber-300 text-xs" />
-                  {siteLabel}
-                </p>
-              </div>
-            </div>
-
+        <header className={`sticky top-0 z-30 ml-14 bg-primary text-white shadow-lg transition-[margin] ${sidebarOpen ? 'md:ml-56' : 'md:ml-14'}`}>
+          <div className="flex h-14 w-full items-center justify-end px-3 sm:px-4">
             {/* RIGHT SIDE: NOTIFICATION BELL & PROFILE AREA */}
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               
               <div className="relative" ref={notificationDropdownRef}>
                 <button
                   type="button"
                   onPointerDown={handleNotificationBellPointerDown}
                   onKeyDown={handleNotificationBellKeyDown}
-                  className="relative flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  className="relative flex h-9 w-9 items-center justify-center rounded-md border border-white/20 bg-white/5 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
                   aria-label="Notifications"
                   aria-expanded={notificationDropdownOpen}
                   aria-haspopup="menu"
@@ -546,15 +517,15 @@ const RoleLayout = ({
                 <button
                   type="button"
                   onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-                  className="flex items-center gap-3 rounded-md border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  className="flex h-9 max-w-[7rem] items-center gap-2 rounded-md border border-white/20 bg-white/5 px-2.5 text-xs font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40 sm:max-w-[12rem]"
                 >
-                  <div className="flex items-center gap-2">
-                    <i className="bi bi-person-circle text-base text-white/80" />
-                    <span className="font-semibold leading-none">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <i className="bi bi-person-circle shrink-0 text-base text-white/80" />
+                    <span className="truncate font-semibold leading-none">
                       {displayName}
                     </span>
                   </div>
-                  <i className={`bi bi-chevron-down text-[10px] text-white/60 transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
+                  <i className={`bi bi-chevron-down shrink-0 text-[10px] text-white/60 transition-transform ${profileDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {profileDropdownOpen && (
@@ -617,35 +588,38 @@ const RoleLayout = ({
         </header>
 
         {/* WORKSPACE SIDEBAR & CONTENTS */}
-        <div className="relative flex w-full items-stretch">
           <aside
-            className={`dm-role-sidebar fixed left-0 top-14 z-20 flex shrink-0 flex-col border-r border-border bg-surface shadow-sm transition-all md:static ${
-              sidebarOpen ? 'w-max min-w-40 max-w-64' : 'w-12'
+            className={`dm-role-sidebar fixed left-0 top-0 z-40 flex flex-col border-r border-border bg-surface shadow-sm transition-[width] ${
+              sidebarOpen ? 'w-56' : 'w-14'
             }`}
           >
-            <div className="flex h-[52px] items-center border-b border-border p-2">
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-2">
               {sidebarOpen ? (
-                <div className="flex h-9 w-full items-center gap-2 px-2 py-1.5">
-                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-primary">
-                    Navigation Menu
+                <>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border">
+                    <img src="/SPICES ICON 1.jpeg" alt="SPICES logo" className="h-full w-full object-contain" />
+                  </div>
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold text-primary" title={siteLabel}>
+                    <i className="bi bi-geo-alt-fill shrink-0" aria-hidden="true" />
+                    <span className="truncate">{siteLabel}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => setSidebarOpen(false)}
-                    className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-soft text-primary transition hover:bg-primary hover:text-white"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary transition hover:bg-primary hover:text-white"
                     aria-label="Collapse menu"
                   >
                     <i className="bi bi-chevron-left text-xs leading-none" aria-hidden="true" />
                   </button>
-                </div>
+                </>
               ) : (
                 <button
                   type="button"
                   onClick={() => setSidebarOpen(true)}
-                  className="mx-auto flex h-8 w-8 items-center justify-center rounded-md bg-primary-soft text-primary shadow-sm transition hover:bg-primary hover:text-white"
+                  className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-border transition hover:ring-primary"
                   aria-label="Expand menu"
                 >
-                  <i className="bi bi-list text-base leading-none" aria-hidden="true" />
+                  <img src="/SPICES ICON 1.jpeg" alt="" className="h-full w-full object-contain" />
                 </button>
               )}
             </div>
@@ -658,14 +632,9 @@ const RoleLayout = ({
             </nav>
           </aside>
 
-          <main
-            className={`min-w-0 w-full flex-1 pt-4 transition-[padding] md:px-4 ${
-              sidebarOpen ? 'px-3' : 'pl-[3.75rem] pr-3'
-            }`}
-          >
+          <main className={`ml-14 min-w-0 px-3 pt-4 transition-[margin] md:px-4 ${sidebarOpen ? 'md:ml-56' : 'md:ml-14'}`}>
             <Outlet />
           </main>
-        </div>
       </div>
     </AppShell>
   )
