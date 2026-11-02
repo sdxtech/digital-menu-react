@@ -1043,11 +1043,14 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             >Reset filters</button>
             <ProductionBulkExportButton
               groups={menuGroups}
-              loadGroups={async () => {
+              loadGroups={async ({ from, to, client, summaryOnly }) => {
                 const params = new URLSearchParams({ site: selectedSite, view: 'approval' })
+                if (from) params.set('startDate', from)
+                if (to) params.set('endDate', to)
+                if (client) params.set('clientName', client)
+                if (summaryOnly) params.set('summaryOnly', 'true')
                 if (approvalFilter) params.set('approvalStatus', approvalFilter)
-                const data = await apiFetch<{ items: StoreRequestGroup[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
-                return data.items
+                return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
               }}
               disabled={loading || Boolean(error) || !hasApprovalScope}
               filename="menu-production-approvals-bulk.xlsx"

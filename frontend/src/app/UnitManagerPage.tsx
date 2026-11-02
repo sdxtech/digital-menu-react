@@ -1047,9 +1047,13 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
               </button>
               <ProductionBulkExportButton
                 groups={menuProductionGroups}
-                loadGroups={async () => {
-                  const data = await apiFetch<{ items: StoreRequestGroup[] }>('/menu-productions/store-requests?approvalStatus=pending&view=approval', undefined, accessToken ?? undefined)
-                  return data.items
+                loadGroups={async ({ from, to, client, summaryOnly }) => {
+                  const params = new URLSearchParams({ approvalStatus: 'pending', view: 'approval' })
+                  if (from) params.set('startDate', from)
+                  if (to) params.set('endDate', to)
+                  if (client) params.set('clientName', client)
+                  if (summaryOnly) params.set('summaryOnly', 'true')
+                  return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
                 }}
                 disabled={loadingApprovals || Boolean(actionError)}
                 filename="menu-production-approvals-bulk.xlsx"

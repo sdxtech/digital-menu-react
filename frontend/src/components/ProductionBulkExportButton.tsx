@@ -11,7 +11,7 @@ type Props<T extends ProductionExportGroup> = {
   disabled: boolean
   filename: string
   buildBatch: (group: T) => SpreadsheetSheet[]
-  loadGroups?: () => Promise<T[]>
+  loadGroups?: (filters: { from: string; to: string; client: string; summaryOnly: boolean }) => Promise<{ items: T[]; total?: number; clients?: string[] }>
 }
 
 export default function ProductionBulkExportButton<T extends ProductionExportGroup>({ groups, disabled, filename, buildBatch, loadGroups }: Props<T>) {
@@ -22,24 +22,32 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
   const [client, setClient] = useState('')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
-  const [exportGroups, setExportGroups] = useState<T[]>([])
   const [loadingGroups, setLoadingGroups] = useState(false)
+  const [remoteClients, setRemoteClients] = useState<string[]>([])
+  const [remoteTotal, setRemoteTotal] = useState(0)
   const invalidRange = Boolean(from && to && from > to)
-  const availableGroups = loadGroups ? exportGroups : groups
+  const availableGroups = groups
   const selectedGroups = filterProductionExportGroups(availableGroups, from, to, client)
   const clients = new Map<string, string>()
   availableGroups.forEach((group) => group.items.forEach((item) => {
     const name = item.clientName?.trim()
     if (name && !clients.has(name.toLowerCase())) clients.set(name.toLowerCase(), name)
   }))
-  const clientOptions = Array.from(clients.values()).sort((a, b) => a.localeCompare(b))
+  const clientOptions = loadGroups ? remoteClients : Array.from(clients.values()).sort((a, b) => a.localeCompare(b))
 
   const handleExport = async () => {
-    if (disabled || loadingGroups || invalidRange || !selectedGroups.length || exporting) return
+    if (disabled || loadingGroups || invalidRange || (!loadGroups && !selectedGroups.length) || exporting) return
     setExporting(true)
     setError('')
     try {
-      await downloadSpreadsheet(filename, buildProductionBulkSheets(selectedGroups.map(buildBatch)))
+      const batches = loadGroups
+        ? (await loadGroups({ from, to, client, summaryOnly: false })).items
+        : selectedGroups
+      if (!batches.length) {
+        setError('No production batches match the export settings.')
+        return
+      }
+      await downloadSpreadsheet(filename, buildProductionBulkSheets(batches.map(buildBatch)))
       dialogRef.current?.close()
     } catch {
       setError('Failed to export production batches. Try a smaller date range or select a client.')
@@ -60,8 +68,13 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
           dialogRef.current?.showModal()
           if (loadGroups) {
             setLoadingGroups(true)
-            setExportGroups([])
-            try { setExportGroups(await loadGroups()) }
+            setRemoteClients([])
+            setRemoteTotal(0)
+            try {
+              const options = await loadGroups({ from: '', to: '', client: '', summaryOnly: true })
+              setRemoteClients(options.clients ?? [])
+              setRemoteTotal(options.total ?? 0)
+            }
             catch { setError('Failed to load production batches for export. Close this window and try again.') }
             finally { setLoadingGroups(false) }
           }
@@ -108,13 +121,15 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
           </fieldset>
           {invalidRange ? <p role="alert" className="mt-3 text-sm text-red-600">Start date must be on or before end date.</p> : null}
           <p role="status" className="mt-4 text-sm text-muted">
-            {loadingGroups ? 'Loading production batches for export...' : `${selectedGroups.length} production batches match the export settings.`}
+            {loadingGroups ? 'Loading export options...' : loadGroups
+              ? `${remoteTotal} production batches available. Selected filters will be applied when exporting.`
+              : `${selectedGroups.length} production batches match the export settings.`}
           </p>
           {error ? <p role="alert" className="mt-3 text-sm text-red-600">{error}</p> : null}
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" onClick={() => dialogRef.current?.close()} disabled={exporting}
               className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={disabled || loadingGroups || invalidRange || !selectedGroups.length || exporting}
+            <button type="submit" disabled={disabled || loadingGroups || invalidRange || (loadGroups ? !remoteTotal : !selectedGroups.length) || exporting}
               className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
               {exporting ? 'Exporting...' : 'Export Excel'}
             </button>
