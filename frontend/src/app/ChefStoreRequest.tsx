@@ -652,7 +652,7 @@ const ChefStoreRequest = ({
           replacementCustomPrices[ingredientIndex],
         )
         const unitPrice =
-          ingredient.ingredientType === 'NMP'
+          (ingredient.ingredientType === 'NMP' || !(Number(getReplacementVendorUnitPrice(selectedVendor)) > 0))
             ? Number.isFinite(customPrice)
               ? customPrice
               : undefined
@@ -712,10 +712,9 @@ const ChefStoreRequest = ({
           (option) =>
             option.key === replacementSelectedVendors[ingredientIndex],
         )
-        const price =
-          getReplacementVendorUnitPrice(selectedVendor) ??
-          getReplacementIngredientFallbackPrice(ingredient)
-        return Boolean(selectedVendor?.vendor.trim()) && price !== undefined
+        const price = getReplacementVendorUnitPrice(selectedVendor)
+        if (price !== undefined && price > 0) return true
+        return Number(replacementCustomPrices[ingredientIndex]) > 0
       },
     )
   }, [
@@ -957,7 +956,7 @@ const ChefStoreRequest = ({
     }
 
     setReplacementVendorLoading(true)
-    const site = getSiteDisplayName(group.site)
+    const site = group.site || user?.site || ''
     const requestsByProductCode = new Map<
       string,
       Promise<RawMaterialVendorPriceApi[]>
@@ -967,7 +966,7 @@ const ChefStoreRequest = ({
       const existingRequest = requestsByProductCode.get(normalizedProductCode)
       if (existingRequest) return existingRequest
 
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ ownSiteOnly: 'true' })
       if (site) params.set('site', site)
       const query = params.toString()
       const request = apiFetch<RawMaterialVendorPriceApi[]>(
@@ -1004,7 +1003,7 @@ const ChefStoreRequest = ({
               const vendorSite = item.site?.trim() ?? ''
               const vendor = item.vendor?.trim() ?? ''
               const unitOfMeasures = item.unitOfMeasures?.trim() ?? ''
-              if (!productCode || !vendorSite || !vendor || !unitOfMeasures) {
+              if (!productCode || !vendorSite || !unitOfMeasures || unitOfMeasures.toUpperCase() !== ingredient.unitOfMeasures?.trim().toUpperCase()) {
                 return
               }
               const minimumQuantity = Number.isFinite(
@@ -1382,25 +1381,13 @@ const ChefStoreRequest = ({
       }
 
       const options = replacementVendorOptions[ingredientIndex] ?? []
-      if (options.length === 0) {
-        setChangeMenuError(
-          `No vendor is available for ${ingredientLabel} at this site.`,
-        )
-        return
-      }
       const selectedKey = replacementSelectedVendors[ingredientIndex]
-      const selectedVendor = options.find(
-        (option) => option.key === selectedKey,
-      )
-      if (!selectedVendor) {
-        setChangeMenuError(`Select a vendor for ${ingredientLabel}.`)
-        return
-      }
-      const price =
-        getReplacementVendorUnitPrice(selectedVendor) ??
-        getReplacementIngredientFallbackPrice(ingredient)
-      if (price === undefined) {
-        setChangeMenuError(`Price is required for ${ingredientLabel}.`)
+      const selectedVendor = options.find((option) => option.key === selectedKey)
+      const localPrice = getReplacementVendorUnitPrice(selectedVendor)
+      const price = localPrice !== undefined && localPrice > 0
+        ? localPrice : Number(replacementCustomPrices[ingredientIndex])
+      if (!Number.isFinite(price) || price <= 0) {
+        setChangeMenuError(`Enter a price greater than 0 for ${ingredientLabel}.`)
         return
       }
       ingredientVendors.push({
@@ -1408,10 +1395,10 @@ const ChefStoreRequest = ({
         productCode: ingredient.productCode,
         name: ingredient.name,
         unitOfMeasures: ingredient.unitOfMeasures,
-        vendor: selectedVendor.vendor,
-        site: selectedVendor.site,
-        currency: selectedVendor.currency,
-        minimumQuantity: selectedVendor.minimumQuantity,
+        vendor: selectedVendor?.vendor,
+        site: selectedVendor?.site,
+        currency: selectedVendor?.currency,
+        minimumQuantity: selectedVendor?.minimumQuantity,
         price,
       })
     }
@@ -2804,7 +2791,8 @@ const ChefStoreRequest = ({
                                               ingredientIndex
                                             ],
                                           )
-                                          const unitPrice = isNmp
+                                          const requiresManualPrice = isNmp || !(Number(getReplacementVendorUnitPrice(selectedVendor)) > 0)
+                                          const unitPrice = requiresManualPrice
                                             ? Number.isFinite(customPrice)
                                               ? customPrice
                                               : undefined
@@ -2892,7 +2880,7 @@ const ChefStoreRequest = ({
                                                         0 ? (
                                                         <option value="">
                                                           {vendorError ||
-                                                            'No vendor for this site'}
+                                                            'No vendor'}
                                                         </option>
                                                       ) : null}
                                                       {options.map((option) => (
@@ -2913,7 +2901,7 @@ const ChefStoreRequest = ({
                                                 )}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {isNmp ? (
+                                                {requiresManualPrice ? (
                                                   <input
                                                     type="number"
                                                     min="0"
@@ -2921,7 +2909,7 @@ const ChefStoreRequest = ({
                                                     value={
                                                       replacementCustomPrices[
                                                         ingredientIndex
-                                                      ] ?? ''
+                                                      ] ?? 0
                                                     }
                                                     onChange={(event) => {
                                                       setReplacementCustomPrices(

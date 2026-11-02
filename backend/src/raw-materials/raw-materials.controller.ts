@@ -114,6 +114,7 @@ export class RawMaterialsController {
       limit: query.limit ?? 20,
       search: query.search,
       site,
+      ...(query.catalog === 'true' ? { catalog: true } : {}),
     });
   }
 
@@ -136,12 +137,14 @@ export class RawMaterialsController {
     @Param('productCode') productCode: string,
     @Query('site') site?: string,
     @Query('vendor') vendor?: string,
+    @Query('ownSiteOnly') ownSiteOnly?: string,
   ) {
     const resolvedSite = this.resolveRawMaterialSite(req, site);
     return this.rawMaterials.findVendorPrices({
       productCode,
       site: resolvedSite,
       vendor,
+      ...(ownSiteOnly === 'true' ? { ownSiteOnly: true } : {}),
     });
   }
 

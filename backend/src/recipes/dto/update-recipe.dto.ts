@@ -15,6 +15,10 @@ import { RecipeIngredientDto } from './create-recipe.dto';
 
 export class UpdateRecipeDto {
   @IsOptional()
+  @IsString()
+  site?: string;
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   targetFoodCostPercentage?: number | null;

@@ -59,6 +59,7 @@ describe('Production table pagination', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
     return { model, recipes, service };
   };
@@ -206,6 +207,76 @@ describe('Production table pagination', () => {
     expect(model.find).toHaveBeenCalledWith({
       isDraft: { $ne: true },
       $and: [{ site: 'SITE-A' }],
+    });
+  });
+
+  it('keeps production ingredients, quantities and costs from their snapshot after the recipe changes', async () => {
+    const { model, recipes, service } = setup();
+    model.find.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            ...menus[0],
+            portion: 10,
+            estimatedTotalCost: 100,
+            recipeSnapshot: {
+              portionSize: 1,
+              ingredients: [
+                {
+                  productCode: 'IT001',
+                  name: 'Original',
+                  unitOfMeasures: 'KG',
+                  qty: 2,
+                  priceUom: 5,
+                },
+              ],
+            },
+            ingredientVendors: [
+              {
+                ingredientIndex: 0,
+                productCode: 'IT001',
+                name: 'Original',
+                unitOfMeasures: 'KG',
+                price: 5,
+                ingredientCost: 100,
+              },
+            ],
+          },
+        ]),
+      }),
+    });
+    recipes.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: recipeId,
+          portionSize: 50,
+          ingredients: [
+            {
+              productCode: 'IT001',
+              name: 'Changed',
+              unitOfMeasures: 'BOX',
+              qty: 99,
+              priceUom: 99999,
+            },
+          ],
+        },
+      ]),
+    });
+    const result = await service.buildStoreRequestGroups(
+      { page: 1, limit: 10, view: 'records' },
+      'SITE-A',
+    );
+    expect(result.items[0].items[0]).toMatchObject({
+      estimatedCost: 100,
+      ingredients: [
+        {
+          name: 'Original',
+          unitOfMeasures: 'KG',
+          qty: 20,
+          price: 5,
+          ingredientCost: 100,
+        },
+      ],
     });
   });
 

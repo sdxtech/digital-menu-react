@@ -221,6 +221,7 @@ const ChefMenuCycle = ({
     } | null
   )?.menuProductionDraft
   const draftProductionCode = draftState?.productionCode?.trim() ?? ''
+  const [draftCostsSynced, setDraftCostsSynced] = useState(false)
   const productionDraftsPath = user?.role === 'superadmin'
     ? '/superadmin/menu-production-drafts'
     : '/chef/menu-production-drafts'
@@ -317,8 +318,8 @@ const ChefMenuCycle = ({
   }, [accessToken])
   const chefProductionSite = useMemo(() => {
     if (requireProductionSite) return ''
-    return user?.siteName?.trim() || user?.site?.trim() || ''
-  }, [requireProductionSite, user?.site, user?.siteName])
+    return user?.site?.trim() || ''
+  }, [requireProductionSite, user?.site])
   const getVendorPricesProductKey = useCallback(
     (productCode?: string) =>
       `${productionSite || chefProductionSite || 'all'}::${normalizeText(
@@ -390,7 +391,7 @@ const ChefMenuCycle = ({
       const site = item.site?.trim() ?? ''
       const vendor = item.vendor?.trim() ?? ''
       const unitOfMeasures = item.unitOfMeasures?.trim() ?? ''
-      if (!productCode || !site || !vendor || !unitOfMeasures) return null
+      if (!productCode || !site || !unitOfMeasures) return null
 
       const minimumQuantity = Number.isFinite(Number(item.minimumQuantity))
         ? Number(item.minimumQuantity)
@@ -431,7 +432,7 @@ const ChefMenuCycle = ({
   )
 
   const formatVendorPriceLabel = (option: RawMaterialVendorPriceOption) => {
-    return option.vendor
+    return !option.vendor || option.vendor.toUpperCase() === 'NO VENDOR' ? 'No vendor' : option.vendor
   }
 
   const sortVendorPriceOptions = useCallback(
@@ -889,7 +890,7 @@ const ChefMenuCycle = ({
       }))
 
       const fetchVendorPrices = async (site?: string) => {
-        const params = new URLSearchParams()
+        const params = new URLSearchParams({ ownSiteOnly: 'true' })
         if (site?.trim()) params.set('site', site.trim())
         const query = params.toString()
         return apiFetch<RawMaterialVendorPriceApi[]>(
@@ -904,7 +905,7 @@ const ChefMenuCycle = ({
       ;(async () => {
         try {
           const vendorPriceSite =
-            selectedProductionSiteName || productionSite || chefProductionSite
+            productionSite || chefProductionSite
           const items = vendorPriceSite
             ? await fetchVendorPrices(vendorPriceSite)
             : await fetchVendorPrices()
@@ -1008,7 +1009,7 @@ const ChefMenuCycle = ({
             normalizeText(item.site) === normalizeText(savedVendor.site),
         )
         if (option) nextSelectedVendors[selectionKey] = option.key
-        if ((!option || getVendorUnitPrice(option) === 0) && savedVendor.price != null) {
+        if (savedVendor.price != null) {
           nextCustomPrices[selectionKey] = String(savedVendor.price)
         }
       })
@@ -1287,7 +1288,7 @@ const ChefMenuCycle = ({
           ingredient.productCode,
         )
         const productKey = getVendorPricesProductKey(ingredient.productCode)
-        const vendorOptions = vendorPricesByProductKey[productKey] ?? []
+        const vendorOptions = (vendorPricesByProductKey[productKey] ?? []).filter((option) => normalizeText(option.unitOfMeasures) === normalizeText(ingredient.unitOfMeasures))
         const vendorDataLoaded = Object.prototype.hasOwnProperty.call(
           vendorPricesByProductKey,
           productKey,
@@ -1322,9 +1323,9 @@ const ChefMenuCycle = ({
           (option) => option.key === selectedVendorKey,
         )
         const requiresManualPrice =
-          isNmp ||
+          isNmp || (Boolean(draftProductionCode) && !draftCostsSynced) ||
           (showIngredientVendorColumn && vendorDataLoaded &&
-            (vendorOptions.length === 0 || getVendorUnitPrice(selectedVendor) === 0))
+            (vendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendor)) > 0)))
         const price = requiresManualPrice
           ? getManualUnitPrice(ingredientSelectionKey)
           : getIngredientUnitPrice(ingredient, selectedVendor)
@@ -1360,7 +1361,7 @@ const ChefMenuCycle = ({
                   const productKey = getVendorPricesProductKey(
                     ingredient.productCode,
                   )
-                  const vendorOptions = vendorPricesByProductKey[productKey] ?? []
+                  const vendorOptions = (vendorPricesByProductKey[productKey] ?? []).filter((option) => normalizeText(option.unitOfMeasures) === normalizeText(ingredient.unitOfMeasures))
                   if (vendorOptions.length === 0) {
                     return {
                       ingredientIndex,
@@ -1388,7 +1389,7 @@ const ChefMenuCycle = ({
                     site: selectedVendor.site,
                     currency: selectedVendor.currency,
                     minimumQuantity: selectedVendor.minimumQuantity,
-                    price: getVendorUnitPrice(selectedVendor) === 0
+                    price: (Boolean(draftProductionCode) && !draftCostsSynced) || !(Number(getVendorUnitPrice(selectedVendor)) > 0)
                       ? getManualUnitPrice(vendorSelectionKey)
                       : getVendorUnitPrice(selectedVendor),
                   }
@@ -1795,8 +1796,7 @@ const ChefMenuCycle = ({
                       ingredientIndex,
                       ingredient.productCode,
                     )
-                    const siteVendorOptions =
-                      vendorPricesByProductKey[productKey] ?? []
+                    const siteVendorOptions = (vendorPricesByProductKey[productKey] ?? []).filter((option) => normalizeText(option.unitOfMeasures) === normalizeText(ingredient.unitOfMeasures))
                     const hasSiteVendorResult =
                       Object.prototype.hasOwnProperty.call(
                         vendorPricesByProductKey,
@@ -1819,9 +1819,9 @@ const ChefMenuCycle = ({
                       (option) => option.key === selectedVendorKey,
                     )
                     const requiresManualPrice =
-                      ingredient.ingredientType === 'NMP' ||
+                      ingredient.ingredientType === 'NMP' || (Boolean(draftProductionCode) && !draftCostsSynced) ||
                       (hasSiteVendorResult &&
-                        (siteVendorOptions.length === 0 || getVendorUnitPrice(selectedVendorPrice) === 0))
+                        (siteVendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
                     const unitPrice =
                       requiresManualPrice
                         ? getManualUnitPrice(vendorSelectionKey)
@@ -2089,10 +2089,7 @@ const ChefMenuCycle = ({
                                             getVendorPricesProductKey(
                                               ingredient.productCode,
                                             )
-                                          const siteVendorOptions =
-                                            vendorPricesByProductKey[
-                                              productKey
-                                            ] ?? []
+                                          const siteVendorOptions = (vendorPricesByProductKey[productKey] ?? []).filter((option) => normalizeText(option.unitOfMeasures) === normalizeText(ingredient.unitOfMeasures))
                                           const vendorLoading =
                                             vendorPriceLoadingByProductKey[
                                               productKey
@@ -2125,10 +2122,10 @@ const ChefMenuCycle = ({
                                             )
                                           const isNmp = ingredient.ingredientType === 'NMP'
                                           const requiresManualPrice =
-                                            isNmp ||
+                                            isNmp || (Boolean(draftProductionCode) && !draftCostsSynced) ||
                                             (hasSiteVendorResult &&
                                               (siteVendorOptions.length === 0 ||
-                                                getVendorUnitPrice(selectedVendorPrice) === 0))
+                                                !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
                                           const scaledQty =
                                             portionForPreview === null
                                               ? ingredient.qty
@@ -2208,7 +2205,7 @@ const ChefMenuCycle = ({
                                                       0 ? (
                                                       <option value="">
                                                         {vendorError ||
-                                                          'No vendor for this site'}
+                                                          'No vendor'}
                                                       </option>
                                                     ) : null}
                                                     {siteVendorOptions.map(
@@ -2239,7 +2236,7 @@ const ChefMenuCycle = ({
                                                           customPriceByIngredientKey[
                                                             vendorSelectionKey
                                                           ] ??
-                                                          ''
+                                                          0
                                                         }
                                                         onChange={(event) =>
                                                           setCustomPriceByIngredientKey(
@@ -2348,6 +2345,20 @@ const ChefMenuCycle = ({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {showIngredientVendorColumn ? (
+              <button type="button"
+                disabled={Object.values(vendorPriceLoadingByProductKey).some(Boolean)}
+                onClick={() => {
+                  setDraftCostsSynced(true)
+                  setVendorPricesByProductKey({})
+                  setVendorPriceLoadingByProductKey({})
+                  setVendorPriceErrorByProductKey({})
+                  setInputMessage('Refreshing prices for this production site. Manual prices are kept when no site price is available. Save the draft to keep the updated costs.')
+                }}
+                className="rounded-md border border-primary bg-white px-4 py-2 text-xs font-semibold text-primary disabled:opacity-60">
+                Sync Cost
+              </button>
+            ) : null}
             {draftProductionCode && !embedded ? (
               <ActionButton action="cancel" onClick={handleCancelProductionDraft} size="sm" />
             ) : null}

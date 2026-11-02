@@ -84,6 +84,30 @@ describe('RawMaterialsController site scope', () => {
     });
   });
 
+  it('allows shared catalogue searches while keeping price requests at the authenticated site', async () => {
+    const { controller, rawMaterials } = makeController();
+    await controller.list(
+      { catalog: 'true', site: 'OTHER-SITE' },
+      chefRequest as never,
+    );
+    expect(rawMaterials.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ catalog: true, site: 'SITE-001' }),
+    );
+    await controller.listVendorPrices(
+      chefRequest as never,
+      'IT002_N',
+      'OTHER-SITE',
+      undefined,
+      'true',
+    );
+    expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+      productCode: 'IT002_N',
+      site: 'SITE-001',
+      vendor: undefined,
+      ownSiteOnly: true,
+    });
+  });
+
   it('forces vendor prices to the authenticated user site', async () => {
     const { controller, rawMaterials } = makeController();
 

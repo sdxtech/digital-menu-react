@@ -42,6 +42,7 @@ export type RawMaterialVendorPriceUpsertInput = RawMaterialUpsertInput & {
 };
 
 type ListRawMaterialsQuery = {
+  catalog?: boolean;
   page: number;
   limit: number;
   search?: string;
@@ -49,6 +50,7 @@ type ListRawMaterialsQuery = {
 };
 
 type ListRawMaterialVendorPricesQuery = {
+  ownSiteOnly?: boolean;
   productCode: string;
   site?: string;
   vendor?: string;
@@ -321,10 +323,11 @@ export class RawMaterialsService {
   async findAll(query: ListRawMaterialsQuery) {
     const filter: Record<string, unknown> = {};
     const hasSiteScope = Boolean(query.site?.trim());
-    const siteNormalizedValues = hasSiteScope
-      ? await this.resolveSiteNormalizedValues(query.site)
-      : [];
-    if (hasSiteScope) filter.productCode = /^IT/i;
+    const siteNormalizedValues =
+      hasSiteScope && !query.catalog
+        ? await this.resolveSiteNormalizedValues(query.site)
+        : [];
+    if (hasSiteScope || query.catalog) filter.productCode = /^IT/i;
     if (query.search?.trim()) {
       const text = query.search.trim();
       filter.$or = [
@@ -332,7 +335,7 @@ export class RawMaterialsService {
         { productCode: new RegExp(this.escapeRegExp(text), 'i') },
       ];
     }
-    if (hasSiteScope) {
+    if (hasSiteScope && !query.catalog) {
       const siteMaterials = siteNormalizedValues.length
         ? await this.rawMaterialVendorPriceModel.distinct(
             'productCodeNormalized',
@@ -357,7 +360,18 @@ export class RawMaterialsService {
     ]);
 
     return {
-      items,
+      items: query.catalog
+        ? items.map((item) => ({
+            _id: item._id,
+            productCode: item.productCode,
+            name: item.name,
+            unitOfMeasures: item.unitOfMeasures,
+            baseUnitOfMeasures: item.baseUnitOfMeasures,
+            conversionFactor: item.conversionFactor,
+            specificConversions: item.specificConversions,
+            price: 0,
+          }))
+        : items,
       total,
       page: query.page,
       limit: query.limit,
@@ -398,7 +412,11 @@ export class RawMaterialsService {
 
     const filter: Record<string, unknown> = { productCodeNormalized };
     const sourceSites = query.site?.trim()
-      ? await this.sites.findMaterialSourceSites(query.site)
+      ? query.ownSiteOnly
+        ? Array.from(
+            (await this.sites.findSummariesByCodes([query.site])).values(),
+          )
+        : await this.sites.findMaterialSourceSites(query.site)
       : [];
     const sourceKeys = sourceSites.map((site) => ({
       site,
@@ -410,7 +428,9 @@ export class RawMaterialsService {
         sourceSites[0].code.toLowerCase() !== query.site?.trim().toLowerCase());
     const siteNormalizedValues = sourceKeys.length
       ? sourceKeys.flatMap(({ keys }) => keys)
-      : await this.resolveSiteNormalizedValues(query.site);
+      : query.ownSiteOnly
+        ? this.siteNormalizedKeys(query.site ?? '', '')
+        : await this.resolveSiteNormalizedValues(query.site);
     const vendorNormalized = this.normalizeOptionalText(
       query.vendor,
     )?.toLowerCase();
@@ -705,7 +725,9 @@ export class RawMaterialsService {
         (rowCountByCode.get(normalizedCode) ?? 0) + 1,
       );
       const site = this.normalizeOptionalText(input.site);
-      const vendor = this.normalizeOptionalText(input.vendor);
+      const vendor =
+        this.normalizeOptionalText(input.vendor) ??
+        (site ? 'NO VENDOR' : undefined);
 
       if (site && vendor) {
         vendorPriceRequestedCount += 1;
