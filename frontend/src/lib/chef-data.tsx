@@ -189,6 +189,7 @@ type CreateRecipeInput = {
 
 type UpdateRecipeInput = {
   site?: string;
+  priceSourceSite?: string
   cookingMethod?: string[]
   targetFoodCostPercentage?: number | null
   saveAsDraft?: boolean

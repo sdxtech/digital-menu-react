@@ -229,6 +229,7 @@ const ChefCreateMenu = ({
   const isCorporateSite = corporateSettings.context?.corporateSite === true
   const isChef = user?.role === 'chef'
   const isSuperadmin = user?.role === 'superadmin'
+  const canChoosePriceSite = isSuperadmin && isEditMode && !isDraftRecipe
   const useVendorPrices = isChef || isCorporateChef || isSuperadmin
   const showIngredientCostColumns = useVendorPrices
   const recipeDraftsPath = user?.role === 'superadmin' ? '/superadmin/recipe-drafts' : isCorporateChef
@@ -267,7 +268,10 @@ const ChefCreateMenu = ({
   const selectedSite = isCorporateSite
     ? isEditMode ? baseRecipe?.site ?? corporateSettings.context?.site ?? '' : corporateSettings.context?.site ?? ''
     : chosenSite
-  const rawMaterialSite = isCorporateChef || isSuperadmin ? selectedSite : user?.site
+  const [priceSourceSite, setPriceSourceSite] = useState(
+    baseRecipe?.ingredients?.find((ingredient) => ingredient.priceSourceSite)?.priceSourceSite ?? baseRecipe?.site ?? '',
+  )
+  const rawMaterialSite = canChoosePriceSite ? priceSourceSite : isCorporateChef || isSuperadmin ? selectedSite : user?.site
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -350,6 +354,8 @@ const ChefCreateMenu = ({
     if (!baseRecipe || baseRecipeRef.current === baseRecipe) return
     baseRecipeRef.current = baseRecipe
     setCurrentApprovalStatus(baseRecipe.approvalStatus)
+    setSelectedSite(baseRecipe.site ?? '')
+    setPriceSourceSite(baseRecipe.ingredients?.find((ingredient) => ingredient.priceSourceSite)?.priceSourceSite ?? baseRecipe.site ?? '')
 
     const portionSize =
       Number.isFinite(baseRecipe.portionSize) && (baseRecipe.portionSize ?? 0) > 0
@@ -580,7 +586,7 @@ const ChefCreateMenu = ({
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
-    if ((isCorporateChef || isSuperadmin) && !selectedSite) {
+    if ((isCorporateChef || isSuperadmin) && !rawMaterialSite) {
       setRawMaterialOptions([])
       setRawMaterialsLoading(false)
       setRawMaterialsError('Select a site first.')
@@ -621,7 +627,8 @@ const ChefCreateMenu = ({
       const key = getVendorProductKey(rawMaterialSite, productCode)
       if (vendorPrices[key]) return
       setVendorPrices((current) => ({ ...current, [key]: { loading: true, options: [] } }))
-      const params = new URLSearchParams({ ownSiteOnly: 'true' })
+      const params = new URLSearchParams()
+      if (!isCorporateChef) params.set('ownSiteOnly', 'true')
       if (rawMaterialSite) params.set('site', rawMaterialSite)
       apiFetch<VendorPriceOption[]>(
         `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices?${params.toString()}`,
@@ -648,7 +655,7 @@ const ChefCreateMenu = ({
         } }))
       })
     })
-  }, [accessToken, useVendorPrices, rawMaterialSite, vendorPrices, vendorProductCodes])
+  }, [accessToken, isCorporateChef, useVendorPrices, rawMaterialSite, vendorPrices, vendorProductCodes])
 
   useEffect(() => {
     const nextTotalPages = Math.max(
@@ -842,7 +849,7 @@ const ChefCreateMenu = ({
 
   useEffect(() => {
     if (!enableIngredientUomConversion || !accessToken) return
-    if ((isCorporateChef || isSuperadmin) && !selectedSite) return
+    if ((isCorporateChef || isSuperadmin) && !rawMaterialSite) return
 
     let cancelled = false
     const productCodes: string[] = JSON.parse(recipeRawMaterialCodes)
@@ -1300,8 +1307,8 @@ const ChefCreateMenu = ({
       return
     }
 
-    if ((isCorporateChef || isSuperadmin) && !selectedSite) {
-      setSubmitError('Select a site before creating the recipe.')
+    if ((isCorporateChef || isSuperadmin) && !rawMaterialSite) {
+      setSubmitError(canChoosePriceSite ? 'Select a price source site before saving the recipe.' : 'Select a site before creating the recipe.')
       setSubmitMessage('')
       return
     }
@@ -1518,7 +1525,7 @@ const ChefCreateMenu = ({
 
     try {
       const basePayload = {
-        ...(isCorporateChef || isSuperadmin ? { site: selectedSite } : {}),
+        ...(canChoosePriceSite ? { priceSourceSite } : isSuperadmin || (isCorporateChef && !isEditMode) ? { site: selectedSite } : {}),
         targetFoodCostPercentage,
         name: nextName,
         category: nextCategory,
@@ -1538,7 +1545,7 @@ const ChefCreateMenu = ({
         if (isDraftRecipe && !options.saveAsDraft) {
           await submitRecipeDraft(editingRecipeId)
           onSaved?.()
-          navigate(recipeDataPath, { replace: true })
+          navigate(recipeDraftsPath, { replace: true })
           return
         }
         if (options.resubmit) {
@@ -1827,7 +1834,11 @@ const ChefCreateMenu = ({
               <label className="text-sm font-medium text-foreground">
                 Site <span className="text-danger">*</span>
               </label>
-              {isCorporateSite ? (
+              {canChoosePriceSite ? (
+                <div className="mt-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm">
+                  {assignedSiteOptions.find((site) => site.code === baseRecipe?.site)?.name ?? baseRecipe?.site ?? 'All sites'}
+                </div>
+              ) : isCorporateSite ? (
                 <div className="mt-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm">
                   {isEditMode ? assignedSiteOptions.find((site) => site.code === selectedSite)?.name ?? selectedSite : corporateSettings.context?.siteName ?? selectedSite}
                 </div>
@@ -1845,8 +1856,34 @@ const ChefCreateMenu = ({
                 ))}
               </select>}
               <p className="mt-2 text-xs text-muted">
-                Products are shared across sites. Prices use the recipe site; enter a manual price when no site price is available.
+                {canChoosePriceSite ? 'The recipe keeps its original site. Choose the site used for vendor prices below.' : isCorporateChef ? 'Vendors and prices follow the Material & Price Source configured for the recipe site. Enter a manual price when no configured price is available.' : 'Products are shared across sites. Prices use the recipe site; enter a manual price when no site price is available.'}
               </p>
+              {canChoosePriceSite ? (
+                <div className="mt-4">
+                  <label htmlFor="recipe-price-source-site" className="text-sm font-medium text-foreground">
+                    Price source site <span className="text-danger">*</span>
+                  </label>
+                  <select
+                    id="recipe-price-source-site"
+                    value={priceSourceSite}
+                    onChange={(event) => {
+                      setPriceSourceSite(event.target.value)
+                      setIngredientRows((rows) => rows.map((row) => row.ingredientType === 'IT'
+                        ? { ...row, vendor: undefined, priceUom: undefined } : row))
+                      rawMaterialCacheRef.current.clear()
+                      setRawMaterialOptions([])
+                      setActiveIngredientDropdownId(null)
+                      setSubmitError('')
+                      setSubmitMessage('')
+                    }}
+                    className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  >
+                    <option value="">Select price source site</option>
+                    {assignedSiteOptions.map((site) => <option key={site.code} value={site.code}>{site.code} - {site.name}</option>)}
+                  </select>
+                  <p className="mt-2 text-xs text-muted">Vendors and prices use this site's price list. Select a vendor for each ingredient, or enter a manual price when no site price is available.</p>
+                </div>
+              ) : null}
               {siteOptionsError ? <p role="alert" className="mt-2 text-xs text-danger">{siteOptionsError}</p> : null}
               {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading site settings...</p> : null}
               {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}

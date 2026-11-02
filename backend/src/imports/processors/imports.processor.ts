@@ -699,21 +699,16 @@ export class ImportsProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private async *rawMaterialRowsFromExcel(stream: Readable) {
-    const workbook = new ExcelJS.stream.xlsx.WorkbookReader(stream, {
-      worksheets: 'emit',
-      sharedStrings: 'cache',
-      hyperlinks: 'ignore',
-      styles: 'ignore',
-    });
-    // ExcelJS can encounter worksheet entries before workbook.xml. Its reader
-    // expects sheet metadata to exist even though this import only uses rows.
-    // The parsed workbook metadata replaces this initial value when available.
-    Object.assign(workbook, { model: { sheets: [] } });
+    const workbook = new ExcelJS.Workbook();
+    // Resolve the XLSX shared-string table before interpreting headers or cells.
+    await workbook.xlsx.read(stream);
 
     let headerMap: RawMaterialHeaderMap | null = null;
 
-    for await (const worksheet of workbook) {
-      for await (const row of worksheet) {
+    for (const worksheet of workbook.worksheets) {
+      for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const row = worksheet.getRow(rowNumber);
+        if (!row.hasValues) continue;
         const values = Array.isArray(row.values) ? row.values : [];
 
         if (!headerMap) {

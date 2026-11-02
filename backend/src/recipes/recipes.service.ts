@@ -291,6 +291,7 @@ export class RecipesService {
       ingredients,
       normalizedSite,
       input.saveAsDraft === true,
+      !this.isCorporateChefActor(actor) || this.isSuperadminActor(actor),
     );
     const inputFoodCostRecipe = this.normalizeOptionalNumber(
       input.foodCostRecipe,
@@ -549,8 +550,17 @@ export class RecipesService {
       },
       isSuperadmin ? undefined : this.getActorSiteScope(actor),
     );
+    const search = query.search?.trim();
+    const searchPattern = search
+      ? new RegExp(this.escapeRegExp(search), 'i')
+      : undefined;
     const filter = {
       ...baseFilter,
+      ...(searchPattern
+        ? {
+            $or: [{ recipeCode: searchPattern }, { name: searchPattern }],
+          }
+        : {}),
       ...(query.category?.trim() ? { category: query.category.trim() } : {}),
       ...(query.issueStatus
         ? { 'importIssues.0': { $exists: query.issueStatus === 'issues' } }
@@ -739,7 +749,12 @@ export class RecipesService {
     );
 
     if (existing.importIssues !== undefined) {
-      const checked = await this.prepareImportedRecipe(existing, existing.site);
+      const checked = await this.prepareImportedRecipe(
+        existing,
+        existing.site,
+        undefined,
+        !this.isCorporateChefActor(actor) || isSuperadmin,
+      );
       if (checked.importIssues?.length) {
         throw new BadRequestException(checked.importIssues.join(' '));
       }
@@ -749,6 +764,8 @@ export class RecipesService {
       const checked = await this.buildIngredientCostUpdate(
         existing.ingredients,
         existing.site,
+        false,
+        !this.isCorporateChefActor(actor) || isSuperadmin,
       );
       existing.ingredients = checked.ingredients;
       existing.foodCostRecipe = checked.foodCostRecipe;
@@ -1386,6 +1403,22 @@ export class RecipesService {
 
   async updateById(id: string, input: UpdateRecipeDto, actor?: RecipeActor) {
     const isSuperadmin = this.isSuperadminActor(actor);
+    let priceSourceSite: string | undefined;
+    if (input.priceSourceSite !== undefined) {
+      if (!isSuperadmin) {
+        throw new ForbiddenException(
+          'Only Superadmins can select a price source site.',
+        );
+      }
+      const requestedSite = input.priceSourceSite.trim();
+      const sites = await this.sites.findSummariesByCodes([requestedSite]);
+      priceSourceSite = Array.from(sites.keys()).find(
+        (code) => code.toLowerCase() === requestedSite.toLowerCase(),
+      );
+      if (!priceSourceSite) {
+        throw new BadRequestException('Select a valid price source site.');
+      }
+    }
     const targetRecipe = await this.recipeModel
       .findOne(
         this.withSiteFilter(
@@ -1406,6 +1439,9 @@ export class RecipesService {
       })
       .lean();
     if (!targetRecipe) throw new NotFoundException('Recipe not found');
+    if (priceSourceSite && targetRecipe.isDraft) {
+      throw new BadRequestException('Draft prices must use the recipe site.');
+    }
     const importedDraft =
       targetRecipe.isDraft && targetRecipe.importIssues !== undefined;
     if (importedDraft && input.saveAsDraft !== true) {
@@ -1421,7 +1457,7 @@ export class RecipesService {
       );
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, unknown> = {};
-    if (isSuperadmin && !targetRecipe.site && actor?.site)
+    if (isSuperadmin && !priceSourceSite && !targetRecipe.site && actor?.site)
       $set.site = actor.site;
     if (input.targetFoodCostPercentage === null) {
       $unset.targetFoodCostPercentage = '';
@@ -1505,6 +1541,8 @@ export class RecipesService {
           ingredients: input.ingredients ?? targetRecipe.ingredients,
         },
         targetRecipe.site,
+        undefined,
+        !isCorporateChefActor,
       );
       $set.ingredients = checked.ingredients;
       $set.importIssues = checked.importIssues;
@@ -1520,8 +1558,9 @@ export class RecipesService {
       );
       const costFields = await this.buildIngredientCostUpdate(
         ingredients,
-        recipeSite,
+        priceSourceSite ?? recipeSite,
         input.saveAsDraft === true,
+        !isCorporateChefActor,
       );
       $set.ingredients = clearEstimates
         ? this.withoutRecipeEstimates(costFields.ingredients)
@@ -1585,7 +1624,12 @@ export class RecipesService {
             ...(isCorporateChefActor
               ? preserveDraft
                 ? { isDraft: true, createdBy: actor?.id }
-                : { approvalStatus: 'pending' }
+                : {
+                    approvalStatus:
+                      targetRecipe.approvalStatus === 'approved'
+                        ? 'approved'
+                        : 'pending',
+                  }
               : {}),
             ...(!isSuperadmin && actor?.roles?.includes(AppRole.Chef)
               ? {
@@ -1845,6 +1889,7 @@ export class RecipesService {
     record: ImportRecipeRecord,
     site?: string,
     context?: ImportLookupContext,
+    ownSiteOnly = true,
   ): Promise<ImportRecipeRecord> {
     context ??= {
       rawMaterials: new Map(),
@@ -1955,7 +2000,7 @@ export class RecipesService {
           prices = this.rawMaterials.findVendorPrices({
             productCode: rawMaterial.productCode,
             site,
-            ownSiteOnly: true,
+            ownSiteOnly,
           });
           context.vendorPrices.set(key, prices);
         }
@@ -2996,6 +3041,7 @@ export class RecipesService {
     ingredients: RecipeIngredient[],
     site?: string,
     allowIncompleteManualPrice = false,
+    ownSiteOnly = true,
   ) {
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(
@@ -3017,6 +3063,7 @@ export class RecipesService {
           rawMaterialByCode,
           site,
           vendorPrices,
+          ownSiteOnly,
         );
         if (
           ingredient.ingredientType === 'IT' &&
@@ -3057,6 +3104,7 @@ export class RecipesService {
       string,
       ReturnType<RawMaterialsService['findVendorPrices']>
     >(),
+    ownSiteOnly = true,
   ): Promise<
     | {
         status: 'matched';
@@ -3090,13 +3138,14 @@ export class RecipesService {
         request = this.rawMaterials.findVendorPrices({
           productCode,
           site,
-          ownSiteOnly: true,
+          ownSiteOnly,
         });
         vendorPrices.set(key, request);
       }
       const options = (await request).filter(
         (option) =>
-          (!option.priceSourceSite ||
+          (!ownSiteOnly ||
+            !option.priceSourceSite ||
             option.priceSourceSite.toLowerCase() === site.toLowerCase()) &&
           this.normalizeUomCode(option.unitOfMeasures) ===
             this.normalizeUomCode(ingredient.unitOfMeasures),
