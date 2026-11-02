@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom'
 import ActionButton from '../components/ActionButton'
 import { apiFetch } from '../lib/api'
+import { applyProductionTableFilters } from '../lib/production-table-query'
 import { useAuth } from '../lib/auth'
 import { useChefData, type Recipe } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
@@ -235,8 +236,9 @@ const getStoreRequestGroupKey = (group: {
   site?: string
   date: string
   productionCode?: string
+  items?: { id: string }[]
 }) =>
-  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? 'no-code'}`
+  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? group.items?.[0]?.id ?? 'no-code'}`
 
 const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
   const groupedByBatch = new Map<
@@ -488,6 +490,8 @@ const ChefStoreRequest = ({
   const [errorMessage, setErrorMessage] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
+  const requestsRequestId = useRef(0)
+  const [requestTotal, setRequestTotal] = useState(0)
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -1214,13 +1218,25 @@ const ChefStoreRequest = ({
   }
 
   // FRONTEND VIEW: backend returns grouped store requests with multiplied ingredients.
-  const fetchStoreRequests = useCallback(async () => {
+  const requestQuery = useMemo(() => {
+    if (!requireSiteSelection || !selectedSite) return ''
+    const params = new URLSearchParams({
+      site: selectedSite, view: 'requests',
+      page: String(page), limit: String(ITEMS_PER_PAGE),
+    })
+    applyProductionTableFilters(params, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
+    return params.toString()
+  }, [requireSiteSelection, selectedSite, page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+
+  const fetchStoreRequests = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++requestsRequestId.current
     if (!accessToken) {
       setErrorMessage('Please log in first to load store requests.')
       return
     }
     if (requireSiteSelection && !selectedSite) {
       setGroups([])
+      setRequestTotal(0)
       setLoading(false)
       setErrorMessage('')
       return
@@ -1229,29 +1245,28 @@ const ChefStoreRequest = ({
     setLoading(true)
     setErrorMessage('')
     try {
-      const params = new URLSearchParams()
-      if (requireSiteSelection && selectedSite) {
-        params.set('site', selectedSite)
-      }
-      const query = params.toString()
-      const data = await apiFetch<{ items: StoreRequestGroup[] }>(
+      const query = requestQuery
+      const data = await apiFetch<{ items: StoreRequestGroup[]; total?: number }>(
         query
           ? `/menu-productions/store-requests?${query}`
           : '/menu-productions/store-requests',
-        undefined,
+        { signal },
         accessToken,
       )
 
-      const merged = mergeStoreRequestGroups(data.items ?? [])
+      if (signal?.aborted || requestId !== requestsRequestId.current) return
+      setRequestTotal(data.total ?? 0)
+      const merged = requireSiteSelection ? (data.items ?? []) : mergeStoreRequestGroups(data.items ?? [])
       setGroups(merged)
     } catch (error) {
+      if (signal?.aborted || requestId !== requestsRequestId.current) return
       const message =
         error instanceof Error ? error.message : 'Failed to refresh data.'
       setErrorMessage(message)
     } finally {
-      setLoading(false)
+      if (!signal?.aborted && requestId === requestsRequestId.current) setLoading(false)
     }
-  }, [accessToken, requireSiteSelection, selectedSite])
+  }, [accessToken, requireSiteSelection, selectedSite, requestQuery])
 
   const openChangeMenu = (
     group: StoreRequestGroup,
@@ -1788,7 +1803,8 @@ const ChefStoreRequest = ({
   }
 
   useEffect(() => {
-    fetchStoreRequests().catch(() => null)
+    const controller = new AbortController()
+    void fetchStoreRequests(controller.signal)
 
     if (accessToken && user?.site) {
       apiFetch(
@@ -1809,6 +1825,7 @@ const ChefStoreRequest = ({
         )
     }
 
+    return () => controller.abort()
   }, [fetchStoreRequests, accessToken, user?.site])
 
   useEffect(() => {
@@ -1896,13 +1913,13 @@ const ChefStoreRequest = ({
   useEffect(() => {
     const nextTotalPages = Math.max(
       1,
-      Math.ceil(filteredGroups.length / ITEMS_PER_PAGE),
+      Math.ceil((requireSiteSelection ? requestTotal : filteredGroups.length) / ITEMS_PER_PAGE),
     )
     setPage((prev) => Math.min(prev, nextTotalPages))
-  }, [filteredGroups.length])
+  }, [filteredGroups.length, requireSiteSelection, requestTotal])
 
-  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / ITEMS_PER_PAGE))
-  const paginatedGroups = filteredGroups.slice(
+  const totalPages = Math.max(1, Math.ceil((requireSiteSelection ? requestTotal : filteredGroups.length) / ITEMS_PER_PAGE))
+  const paginatedGroups = requireSiteSelection ? filteredGroups : filteredGroups.slice(
     (page - 1) * ITEMS_PER_PAGE,
     page * ITEMS_PER_PAGE,
   )
@@ -1926,34 +1943,30 @@ const ChefStoreRequest = ({
             </button>
           ) : null}
         </div>
-        {requireSiteSelection ? (
-          <div className="max-w-xs">
-            <label className="text-xs font-medium text-muted">
-              Store request site
-            </label>
-            <select
-              value={selectedSite}
-              onChange={(event) => setSelectedSite(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">Select site</option>
-              {siteOptions
-                .filter((site) => site.code.trim())
-                .map((site) => (
-                  <option key={site.code} value={site.code}>
-                    {site.name ? `${site.name} (${site.code})` : site.code}
-                  </option>
-                ))}
-            </select>
-            {!selectedSite ? (
-              <p className="mt-2 text-xs text-muted">
-                Select a site to load store request batches.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        {!requireSiteSelection ? (
-          <div className="flex flex-wrap items-center gap-3 pt-2">
+        <div className="flex flex-wrap items-end gap-3 pt-2">
+          {requireSiteSelection ? (
+            <div className="w-full min-w-0 sm:w-72">
+              <label htmlFor="store-request-site" className="block text-xs font-medium text-muted">
+                Store request site
+              </label>
+              <select
+                id="store-request-site"
+                value={selectedSite}
+                onChange={(event) => setSelectedSite(event.target.value)}
+                className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">Select site</option>
+                {siteOptions
+                  .filter((site) => site.code.trim())
+                  .map((site) => (
+                    <option key={site.code} value={site.code}>
+                      {site.name ? `${site.name} (${site.code})` : site.code}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : null}
+          {!requireSiteSelection ? (
             <div className="w-full sm:w-60">
               <label htmlFor="chef-store-request-client" className="sr-only">Client Name</label>
               <select
@@ -1971,45 +1984,50 @@ const ChefStoreRequest = ({
                 ))}
               </select>
             </div>
-            <DateRangeFilter
-              id="chef-store-request-production"
-              label="Production Date"
-              from={productionDateFrom}
-              to={productionDateTo}
-              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
-              onApply={(from, to) => {
-                setProductionDateFrom(from)
-                setProductionDateTo(to)
-              }}
-              onSort={(direction) => setDateSort(`production-${direction}`)}
-            />
-            <DateRangeFilter
-              id="chef-store-request-created"
-              label="Created Date"
-              from={createdDateFrom}
-              to={createdDateTo}
-              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
-              onApply={(from, to) => {
-                setCreatedDateFrom(from)
-                setCreatedDateTo(to)
-              }}
-              onSort={(direction) => setDateSort(`created-${direction}`)}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setProductionDateFrom('')
-                setProductionDateTo('')
-                setCreatedDateFrom('')
-                setCreatedDateTo('')
-                setClientName('')
-                setDateSort('production-desc')
-              }}
-              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
-            >
-              Reset filters
-            </button>
-          </div>
+          ) : null}
+          <DateRangeFilter
+            id="chef-store-request-production"
+            label="Production Date"
+            from={productionDateFrom}
+            to={productionDateTo}
+            sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+            onApply={(from, to) => {
+              setProductionDateFrom(from)
+              setProductionDateTo(to)
+            }}
+            onSort={(direction) => setDateSort(`production-${direction}`)}
+          />
+          <DateRangeFilter
+            id="chef-store-request-created"
+            label="Created Date"
+            from={createdDateFrom}
+            to={createdDateTo}
+            sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+            onApply={(from, to) => {
+              setCreatedDateFrom(from)
+              setCreatedDateTo(to)
+            }}
+            onSort={(direction) => setDateSort(`created-${direction}`)}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setProductionDateFrom('')
+              setProductionDateTo('')
+              setCreatedDateFrom('')
+              setCreatedDateTo('')
+              setClientName('')
+              setDateSort('production-desc')
+            }}
+            className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+          >
+            Reset filters
+          </button>
+        </div>
+        {requireSiteSelection && !selectedSite ? (
+          <p className="text-xs text-muted">
+            Select a site to load store request batches.
+          </p>
         ) : null}
         {errorMessage ? (
           <p className="text-xs font-medium text-red-600">{errorMessage}</p>
@@ -2022,7 +2040,7 @@ const ChefStoreRequest = ({
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {filteredGroups.length} production batches
+            Showing {paginatedGroups.length} of {requireSiteSelection ? requestTotal : filteredGroups.length} production batches
           </span>
           <div className="flex items-center gap-2">
             <button

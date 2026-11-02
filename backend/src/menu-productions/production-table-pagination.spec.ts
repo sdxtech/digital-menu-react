@@ -155,6 +155,60 @@ describe('Production table pagination', () => {
     expect(JSON.stringify(scopedFilter)).toContain('507f1f77bcf86cd799439011');
   });
 
+  it('prepares export options without loading menus, users, or recipes', async () => {
+    const { model, recipes, service } = setup();
+    const result = await service.buildStoreRequestGroups(
+      { view: 'records-all', summaryOnly: true },
+      'SITE-A',
+    );
+    expect(result).toEqual({ items: [], total: 5000, clients: ['KTB'] });
+    expect(model.find).not.toHaveBeenCalled();
+    expect(recipes.find).not.toHaveBeenCalled();
+    const pipeline = model.aggregate.mock.calls[0][0];
+    const grouping = pipeline.find((stage) => '$group' in stage);
+    expect(grouping).not.toHaveProperty('$group.ids');
+    expect(grouping).not.toHaveProperty('$group.salesComplete');
+  });
+
+  it('loads completed and cancelled history together within the requested site', async () => {
+    const { model, service } = setup();
+    await service.buildStoreRequestGroups(
+      { view: 'history', page: 1, limit: 10, approvalStatus: 'approved' },
+      'SITE-A',
+    );
+    expect(model.aggregate.mock.calls[0][0][0]).toEqual({
+      $match: {
+        isDraft: { $ne: true },
+        $and: [{ site: 'SITE-A' }],
+        storeRequestStatus: { $in: ['fulfilled', 'cancelled'] },
+      },
+    });
+    expect(model.find).toHaveBeenCalledTimes(1);
+  });
+
+  it('paginates store requests without applying progress-only status selection', () => {
+    const pipeline = productionBatchPagePipeline(
+      {},
+      { view: 'requests', page: 2, limit: 10 },
+    );
+    const facet = pipeline.find(
+      (stage): stage is PipelineStage.Facet => '$facet' in stage,
+    );
+    expect(facet?.$facet.items).toContainEqual({ $skip: 10 });
+    expect(pipeline.filter((stage) => '$match' in stage)).toHaveLength(1);
+  });
+
+  it('keeps legacy reads free of production-code backfill queries', async () => {
+    const { model, service } = setup();
+    const result = await service.buildStoreRequestGroups({}, 'SITE-A');
+    expect(result.items).toHaveLength(1);
+    expect(model.find).toHaveBeenCalledTimes(1);
+    expect(model.find).toHaveBeenCalledWith({
+      isDraft: { $ne: true },
+      $and: [{ site: 'SITE-A' }],
+    });
+  });
+
   it('paginates chef drafts without dropping other menus in the selected batch', async () => {
     const { model, service } = setup();
     const result = await service.findDrafts('chef-id', 'SITE-A', false, {

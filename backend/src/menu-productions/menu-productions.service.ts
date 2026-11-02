@@ -2356,8 +2356,6 @@ export class MenuProductionsService implements OnModuleInit {
     unitManagerId?: string,
     approvalReady = false,
   ) {
-    if (!query.page && !query.limit && !query.view)
-      await this.backfillMissingMenuProductionCodes();
     const requestedSite = this.normalizeSite(site);
 
     const filter: Record<string, unknown> = { isDraft: { $ne: true } };
@@ -2394,17 +2392,26 @@ export class MenuProductionsService implements OnModuleInit {
     const requestedApprovalStatus = query.approvalStatus;
     if (query.storeRequestStatus)
       filter.storeRequestStatus = query.storeRequestStatus;
+    if (query.view === 'history')
+      filter.storeRequestStatus = { $in: ['fulfilled', 'cancelled'] };
     const productionDateFilter = this.buildProductionDateFilter(query);
     if (productionDateFilter) {
       filter.productionDate = productionDateFilter;
     }
 
-    if (query.page || query.limit || query.view) {
+    if (query.page || query.limit || query.view || query.summaryOnly) {
       const result = (
         await this.menuProductionModel.aggregate<ProductionBatchPage>(
           productionBatchPagePipeline(filter, query),
         )
       )[0];
+      if (query.summaryOnly) {
+        return {
+          items: [] as StoreRequestGroup[],
+          total: result?.total[0]?.count ?? 0,
+          clients: result?.clients.map((item) => item._id) ?? [],
+        };
+      }
       const ids = result?.items.flatMap((batch) => batch.ids) ?? [];
       const menus = ids.length
         ? await this.menuProductionModel
@@ -2845,11 +2852,6 @@ export class MenuProductionsService implements OnModuleInit {
           .filter((value): value is string => Boolean(value)),
       ),
     );
-    const creatorNameById =
-      creatorIds.length > 0
-        ? await this.users.findNamesByIds(creatorIds)
-        : new Map<string, string>();
-
     // Load only recipes used by these batches; legacy menus can still fall back to name.
     const recipeIds = [
       ...new Set(
@@ -2858,9 +2860,12 @@ export class MenuProductionsService implements OnModuleInit {
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
     ];
-    const recipes = await this.recipeModel
-      .find({ _id: { $in: recipeIds } })
-      .lean();
+    const [creatorNameById, recipes] = await Promise.all([
+      creatorIds.length > 0
+        ? this.users.findNamesByIds(creatorIds)
+        : Promise.resolve(new Map<string, string>()),
+      this.recipeModel.find({ _id: { $in: recipeIds } }).lean(),
+    ]);
     const foundIds = new Set(recipes.map((recipe) => String(recipe._id)));
     const fallbackNames = [
       ...new Set(
