@@ -40,6 +40,7 @@ describe('Corporate reference material prices', () => {
         sites as never,
       ),
       vendorModel,
+      sites,
     };
   };
 
@@ -60,6 +61,32 @@ describe('Corporate reference material prices', () => {
         priceSourceSiteName: 'Jakarta A',
       }),
     ]);
+  });
+
+  it('uses local prices when the configured source is the site itself', async () => {
+    const { service, vendorModel, sites } = makeService([
+      price('CORP', 'Local Vendor', 'KG', 30),
+    ]);
+    sites.findMaterialSourceSites.mockResolvedValue([
+      { code: 'CORP', name: 'Corporate Kitchen' },
+    ]);
+    await expect(
+      service.findVendorPrices({
+        productCode: 'IT001',
+        site: 'CORP',
+        ownSiteOnly: false,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ vendor: 'Local Vendor', price: 30 }),
+    ]);
+    expect(sites.findMaterialSourceSites).toHaveBeenCalledWith('CORP');
+    const calls = vendorModel.find.mock.calls as unknown as Array<
+      [{ productCodeNormalized: string; siteNormalized: { $in: string[] } }]
+    >;
+    expect(calls[0][0].productCodeNormalized).toBe('it001');
+    expect(calls[0][0].siteNormalized.$in).toContain('corp');
+    expect(calls[0][0].siteNormalized.$in).not.toContain('a');
+    expect(calls[0][0].siteNormalized.$in).not.toContain('b');
   });
 
   it('falls back for each unit when the primary price is missing or invalid', async () => {

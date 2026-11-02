@@ -140,48 +140,52 @@ describe('AuditInterceptor', () => {
     );
   });
 
-  it('stores an uploaded file and records its hash and storage key', async () => {
-    const path = join(tmpdir(), `audit-upload-${Date.now()}.csv`);
-    await writeFile(path, 'code,name\n1,Test');
-    const audit = { record: jest.fn().mockResolvedValue(undefined) };
-    const interceptor = new AuditInterceptor(audit as never, files as never);
+  it.each(['code,name\n1,Test', 'code,name\n1,Crème brûlée'])(
+    'stores upload %s with its byte length, hash and storage key',
+    async (content) => {
+      const path = join(tmpdir(), `audit-upload-${Date.now()}.csv`);
+      await writeFile(path, content);
+      const audit = { record: jest.fn().mockResolvedValue(undefined) };
+      const interceptor = new AuditInterceptor(audit as never, files as never);
 
-    await firstValueFrom(
-      interceptor.intercept(
-        makeContext(
-          {},
-          {
-            path,
-            originalname: 'import.csv',
-            mimetype: 'text/csv',
-            size: 16,
-            fieldname: 'file',
-          },
-        ) as never,
-        { handle: () => of({ imported: 1 }) },
-      ),
-    );
+      await firstValueFrom(
+        interceptor.intercept(
+          makeContext(
+            {},
+            {
+              path,
+              originalname: 'import.csv',
+              mimetype: 'text/csv',
+              size: 16,
+              fieldname: 'file',
+            },
+          ) as never,
+          { handle: () => of({ imported: 1 }) },
+        ),
+      );
 
-    expect(files.uploadObject).toHaveBeenCalledWith(
-      expect.stringMatching(/^audit-uploads\//),
-      expect.anything(),
-      'text/csv',
-    );
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        details: expect.objectContaining({
-          files: [
-            expect.objectContaining({
-              originalName: 'import.csv',
-              contentStored: true,
-              sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-            }),
-          ],
+      expect(files.uploadObject).toHaveBeenCalledWith(
+        expect.stringMatching(/^audit-uploads\//),
+        expect.anything(),
+        'text/csv',
+        Buffer.byteLength(content),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: expect.objectContaining({
+            files: [
+              expect.objectContaining({
+                originalName: 'import.csv',
+                contentStored: true,
+                sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+              }),
+            ],
+          }),
         }),
-      }),
-    );
-    await expect(access(path)).rejects.toBeDefined();
-  });
+      );
+      await expect(access(path)).rejects.toBeDefined();
+    },
+  );
 
   it('cleans temporary imports and preserves the response when audit upload fails', async () => {
     const path = join(tmpdir(), `audit-failed-upload-${Date.now()}.csv`);

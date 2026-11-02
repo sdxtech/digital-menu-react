@@ -19,6 +19,11 @@ export class UpdateRecipeDto {
   site?: string;
 
   @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  priceSourceSite?: string;
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   targetFoodCostPercentage?: number | null;

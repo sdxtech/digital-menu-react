@@ -20,6 +20,10 @@ export class ListRecipeDraftsQueryDto {
   category?: string;
 
   @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
   @IsIn(['issues', 'no-issues'])
   issueStatus?: 'issues' | 'no-issues';
 }

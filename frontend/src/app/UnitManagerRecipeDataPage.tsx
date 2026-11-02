@@ -12,18 +12,11 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
+import { useCorporateSite } from '../lib/corporate-site'
+import type { RecipeIngredient } from '../lib/chef-data'
 
 const ITEMS_PER_PAGE = 10
-
-type RecipeIngredient = {
-  priceUom?: number
-  foodCost?: number
-  ingredientType?: 'IT' | 'NMP'
-  productCode: string
-  name: string
-  unitOfMeasures: string
-  qty: number
-}
 
 type Recipe = {
   cookingMethod?: string[]
@@ -51,6 +44,8 @@ type Recipe = {
   portionSize: number
   status: 'draft' | 'active'
   isActive?: boolean
+  isDraft?: boolean
+  importIssues?: string[]
   approvalStatus: 'pending' | 'approved' | 'rejected'
   approvalHistory?: Array<{
     rejectionReason: string
@@ -90,6 +85,25 @@ const UnitManagerRecipeDataPage = ({
   description?: string
 }) => {
   const { accessToken, user } = useAuth()
+  const isCorporateChef = user?.role === 'corporate-chef'
+  const corporateSettings = useCorporateSite(isCorporateChef)
+  const [editingRecipe, setEditingRecipe] = useState<BaseRecipe | null>(null)
+  const [message, setMessage] = useState('')
+  const canEditRecipe = (recipe: Recipe) => {
+    if (!isCorporateChef || corporateSettings.loading || corporateSettings.error || !recipe.site || recipe.approvalStatus === 'rejected') return false
+    const context = corporateSettings.context
+    const allowedSites = context?.corporateSite
+      ? [context.site, ...(context.approvalSiteOptions ?? []).map((site) => site.code)]
+      : [context?.site, ...(context?.sites ?? [])]
+    return Boolean(recipe.id ?? recipe._id)
+      && allowedSites.some((site) => site?.toLowerCase() === recipe.site?.toLowerCase())
+      && (!recipe.isDraft || recipe.createdBy === user?.id)
+  }
+  const openEditRecipe = (recipe: Recipe) => {
+    if (!canEditRecipe(recipe)) return
+    setMessage('')
+    setEditingRecipe({ ...recipe, id: recipe.id ?? recipe._id })
+  }
   const { sites: recipeSites, error: siteError } = useRecipeSiteOptions(accessToken)
   const [siteFilter, setSiteFilter] = useState('')
   const siteOptions = useMemo(
@@ -403,6 +417,16 @@ const UnitManagerRecipeDataPage = ({
                             >
                               {isSelected ? 'Hide details' : 'View details'}
                             </button>
+                            {canEditRecipe(recipe) ? (
+                              <button
+                                type="button"
+                                onClick={() => openEditRecipe(recipe)}
+                                className="rounded-md border border-primary px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft"
+                                aria-label={`Edit recipe ${recipe.name}`}
+                              >
+                                Edit recipe
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -414,6 +438,29 @@ const UnitManagerRecipeDataPage = ({
           </div>
         </div>
       </div>
+
+      {message ? <p role="status" className="text-sm text-primary">{message}</p> : null}
+      {isCorporateChef && corporateSettings.error ? <p role="alert" className="text-sm text-danger">{corporateSettings.error}</p> : null}
+      {editingRecipe ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4">
+          <div className="mx-auto my-6 w-full max-w-6xl rounded-md border border-border bg-surface p-4 shadow-xl sm:p-6" role="dialog" aria-modal="true" aria-label={`Edit recipe ${editingRecipe.name}`}>
+            <ChefCreateMenu
+              embedded
+              baseRecipe={editingRecipe}
+              enableIngredientUomConversion
+              lockSrUomToRawMaterial
+              showImport={false}
+              onClose={() => setEditingRecipe(null)}
+              onSaved={() => {
+                setEditingRecipe(null)
+                setMessage('Recipe updated successfully.')
+                void fetchRecipes()
+                void fetchCategories()
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {selectedRecipe ? (
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">

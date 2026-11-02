@@ -53,6 +53,8 @@ const ChefRecipeDrafts = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [categories, setCategories] = useState<string[]>([])
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   const [issueFilter, setIssueFilter] = useState<IssueFilter>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -74,6 +76,7 @@ const ChefRecipeDrafts = () => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(DRAFTS_PER_PAGE) })
       if (categoryFilter) params.set('category', categoryFilter)
+      if (search) params.set('search', search)
       if (issueFilter) params.set('issueStatus', issueFilter)
       const data = await apiFetch<DraftPage>(
         `/recipes/drafts?${params.toString()}`,
@@ -91,7 +94,7 @@ const ChefRecipeDrafts = () => {
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [accessToken, page, categoryFilter, issueFilter])
+  }, [accessToken, page, categoryFilter, issueFilter, search])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -233,6 +236,34 @@ const ChefRecipeDrafts = () => {
 
       <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+          <form
+            role="search"
+            className="flex w-full gap-2 sm:w-auto"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (draftActionPending) return
+              setSearch(searchInput.trim())
+              setPage(1)
+            }}
+          >
+            <label htmlFor="recipe-drafts-search" className="sr-only">Search recipe drafts</label>
+            <input
+              id="recipe-drafts-search"
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search recipe code or name"
+              disabled={draftActionPending}
+              className={`${filterClassName} min-w-0 sm:w-64`}
+            />
+            <button
+              type="submit"
+              disabled={draftActionPending}
+              className="h-10 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+            >
+              Search
+            </button>
+          </form>
           <div className="w-full text-sm sm:w-[calc(8ch+3rem)]">
             <label htmlFor="recipe-drafts-category" className="sr-only">Category</label>
             <select
@@ -273,6 +304,8 @@ const ChefRecipeDrafts = () => {
             disabled={draftActionPending}
             onClick={() => {
               setCategoryFilter('')
+              setSearchInput('')
+              setSearch('')
               setIssueFilter('')
               setPage(1)
             }}

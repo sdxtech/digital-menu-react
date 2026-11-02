@@ -2217,6 +2217,7 @@ const SuperadminMenuManagementPage = () => {
       recipeCode: recipe.recipeCode,
       version: recipe.version,
       name: recipe.name,
+      site: recipe.site,
       category: recipe.category,
       description: recipe.description ?? '',
       cookingMethod: recipe.cookingMethod ?? [],

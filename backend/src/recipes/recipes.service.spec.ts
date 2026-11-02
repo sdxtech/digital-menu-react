@@ -576,7 +576,7 @@ describe('RecipesService site visibility', () => {
         expect(after.$set.createdBy).toBeUndefined();
         expect(after.$set.site).toBeUndefined();
         expect(setup.rawMaterials.findVendorPrices).toHaveBeenLastCalledWith({
-          ownSiteOnly: true,
+          ownSiteOnly: role !== AppRole.CorporateChef,
           productCode: 'IT01060',
           site: 'SITE-A',
         });
@@ -836,6 +836,60 @@ describe('RecipesService site visibility', () => {
   });
 
   describe('recipe draft visibility', () => {
+    it.each([AppRole.Chef, AppRole.CorporateChef, AppRole.Superadmin])(
+      'searches draft codes and names literally for %s while preserving filters and pagination',
+      async (role) => {
+        const { service, recipeModel } = makeService();
+        recipeModel.aggregate.mockReturnValue({
+          exec: jest.fn().mockResolvedValue([]),
+        });
+        recipeModel.distinct.mockResolvedValue(['Main']);
+        const authorScope =
+          role === AppRole.Superadmin
+            ? {}
+            : {
+                createdBy: 'author',
+                site:
+                  role === AppRole.CorporateChef
+                    ? { $in: ['SITE-A'] }
+                    : 'SITE-A',
+              };
+
+        await service.findDrafts(
+          { id: 'author', roles: [role], site: 'SITE-A' },
+          {
+            search: '  Soup (A)+  ',
+            category: 'Main',
+            issueStatus: 'no-issues',
+            page: 2,
+            limit: 20,
+          },
+        );
+
+        const filtered = {
+          ...authorScope,
+          isDraft: true,
+          deletedAt: { $exists: false },
+          category: 'Main',
+          'importIssues.0': { $exists: false },
+          $or: [{ recipeCode: /Soup \(A\)\+/i }, { name: /Soup \(A\)\+/i }],
+        };
+        expect(recipeModel.aggregate).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { $match: filtered },
+            { $skip: 20 },
+            { $limit: 20 },
+          ]),
+        );
+        expect(recipeModel.countDocuments).toHaveBeenCalledWith(filtered);
+        expect(recipeModel.distinct).toHaveBeenCalledWith('category', {
+          ...authorScope,
+          isDraft: true,
+          deletedAt: { $exists: false },
+        });
+      },
+    );
+
     it('allows superadmins to list drafts from every author and site', async () => {
       const { service, recipeModel } = makeService();
       const drafts = [
@@ -2091,52 +2145,128 @@ describe('RecipesService site visibility', () => {
     );
   });
 
-  it('automatically approves a pending recipe edited by a corporate chef', async () => {
+  it.each(['pending', 'approved'] as const)(
+    'updates an existing %s recipe in place for a corporate chef',
+    async (approvalStatus) => {
+      const { recipeModel, service } = makeService();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({
+          approvalStatus,
+          site: 'SITE-002',
+          status: approvalStatus === 'approved' ? 'active' : 'draft',
+          recipeCode: 'RCP0001',
+          version: 2,
+        }),
+      );
+      const lean = jest.fn().mockResolvedValue({
+        _id: 'recipe-a',
+        approvalStatus: 'approved',
+        status: 'active',
+      });
+      recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+
+      await service.updateById(
+        'recipe-a',
+        { name: 'Updated Recipe' },
+        {
+          id: 'corporate-chef-a',
+          name: 'Corporate Chef A',
+          email: 'corporate@example.com',
+          roles: [AppRole.CorporateChef],
+          site: 'SITE-001',
+          sites: ['SITE-001', 'SITE-002'],
+        },
+      );
+
+      expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
+        {
+          _id: 'recipe-a',
+          approvalStatus,
+          site: { $in: ['SITE-001', 'SITE-002'] },
+        },
+        expect.any(Object),
+        { new: true },
+      );
+      expect(getUpdatePayload(recipeModel).$unset).toMatchObject({
+        foodCostRecipe: '',
+        'ingredients.$[].foodCost': '',
+      });
+      expect(getUpdatePayload(recipeModel).$set).toEqual(
+        expect.objectContaining({
+          name: 'Updated Recipe',
+          approvalStatus: 'approved',
+          status: 'active',
+          reviewedBy: 'corporate-chef-a',
+          reviewedByName: 'Corporate Chef A',
+          reviewedByEmail: 'corporate@example.com',
+          reviewedAt: expect.any(Date),
+        }),
+      );
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty(
+        'recipeCode',
+      );
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty('version');
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty(
+        'createdBy',
+      );
+      expect(recipeModel.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows corporate-site chefs to edit approved recipes in their operational approval sites', async () => {
     const { recipeModel, service } = makeService();
-    const lean = jest.fn().mockResolvedValue({
-      _id: 'recipe-a',
-      approvalStatus: 'approved',
-      status: 'active',
-    });
-    recipeModel.findOneAndUpdate.mockReturnValue({ lean });
+    recipeModel.findOne.mockReturnValue(
+      mockRecipeQuery({ site: 'SITE-B', approvalStatus: 'approved' }),
+    );
+    recipeModel.findOneAndUpdate.mockReturnValue(
+      mockRecipeQuery({ _id: 'recipe-a' }),
+    );
 
     await service.updateById(
       'recipe-a',
       { name: 'Updated Recipe' },
       {
-        id: 'corporate-chef-a',
-        name: 'Corporate Chef A',
-        email: 'corporate@example.com',
+        id: 'corporate-chef',
         roles: [AppRole.CorporateChef],
-        site: 'SITE-001',
-        sites: ['SITE-001', 'SITE-002'],
+        site: 'CORP',
+        corporateSite: true,
+        approvalSites: ['SITE-B'],
       },
     );
 
     expect(recipeModel.findOneAndUpdate).toHaveBeenCalledWith(
       {
         _id: 'recipe-a',
-        approvalStatus: 'pending',
-        site: { $in: ['SITE-001', 'SITE-002'] },
+        approvalStatus: 'approved',
+        site: { $in: ['CORP', 'SITE-B'] },
       },
       expect.any(Object),
       { new: true },
     );
-    expect(getUpdatePayload(recipeModel).$unset).toMatchObject({
-      foodCostRecipe: '',
-      'ingredients.$[].foodCost': '',
+  });
+
+  it('keeps approved recipe edits within the Corporate Chef site scope', async () => {
+    const { recipeModel, service } = makeService();
+    recipeModel.findOne.mockReturnValue(mockRecipeQuery(null));
+
+    await expect(
+      service.updateById(
+        'foreign-recipe',
+        { name: 'Changed' },
+        {
+          id: 'corporate-chef',
+          roles: [AppRole.CorporateChef],
+          site: 'SITE-A',
+          sites: ['SITE-A', 'SITE-B'],
+        },
+      ),
+    ).rejects.toThrow('Recipe not found');
+
+    expect(recipeModel.findOne).toHaveBeenCalledWith({
+      _id: 'foreign-recipe',
+      site: { $in: ['SITE-A', 'SITE-B'] },
     });
-    expect(getUpdatePayload(recipeModel).$set).toEqual(
-      expect.objectContaining({
-        name: 'Updated Recipe',
-        approvalStatus: 'approved',
-        status: 'active',
-        reviewedBy: 'corporate-chef-a',
-        reviewedByName: 'Corporate Chef A',
-        reviewedByEmail: 'corporate@example.com',
-        reviewedAt: expect.any(Date),
-      }),
-    );
+    expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('keeps a corporate chef draft private while it is being edited', async () => {
@@ -2253,6 +2383,131 @@ describe('RecipesService site visibility', () => {
       );
       return context;
     };
+
+    it.each([false, true])(
+      'uses configured reference prices when a Corporate Chef creates a recipe (draft=%s)',
+      async (saveAsDraft) => {
+        const { service, recipeModel, rawMaterials } = setup();
+        rawMaterials.findVendorPrices.mockResolvedValue([
+          {
+            vendor: 'Reference Vendor',
+            unitOfMeasures: 'KG',
+            price: 12000,
+            priceSourceSite: 'MICHELIN',
+          },
+        ]);
+        await service.create(
+          {
+            name: 'Corporate recipe',
+            category: 'Main',
+            saveAsDraft,
+            ingredients: [
+              { ...ingredient, vendor: 'Reference Vendor', priceUom: 99999 },
+            ],
+          },
+          { id: 'corporate', site: 'CORP', roles: [AppRole.CorporateChef] },
+        );
+        expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+          productCode: 'IT002_N',
+          site: 'CORP',
+          ownSiteOnly: false,
+        });
+        expect(recipeModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            site: 'CORP',
+            isDraft: saveAsDraft,
+            ingredients: [
+              expect.objectContaining({
+                vendor: 'Reference Vendor',
+                priceUom: 12000,
+                priceSource: 'pricelist',
+                priceSourceSite: 'MICHELIN',
+              }),
+            ],
+          }),
+        );
+      },
+    );
+
+    it.each(['pending', 'approved'] as const)(
+      'keeps Corporate Chef edits on configured prices for %s recipes',
+      async (approvalStatus) => {
+        const { service, recipeModel, rawMaterials } = setup();
+        recipeModel.findOne.mockReturnValue(
+          mockRecipeQuery({ site: 'CORP', approvalStatus }),
+        );
+        recipeModel.findOneAndUpdate.mockReturnValue(
+          mockRecipeQuery({ _id: 'recipe-a' }),
+        );
+        rawMaterials.findVendorPrices.mockResolvedValue([
+          {
+            vendor: 'Reference Vendor',
+            unitOfMeasures: 'KG',
+            price: 12000,
+            priceSourceSite: 'MICHELIN',
+          },
+        ]);
+        await service.updateById(
+          'recipe-a',
+          { ingredients: [{ ...ingredient, vendor: 'Reference Vendor' }] },
+          {
+            id: 'corporate',
+            site: 'CORP',
+            roles: [AppRole.CorporateChef],
+          },
+        );
+        expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+          productCode: 'IT002_N',
+          site: 'CORP',
+          ownSiteOnly: false,
+        });
+        expect(getUpdatedIngredient(recipeModel)).toMatchObject({
+          vendor: 'Reference Vendor',
+          priceUom: 12000,
+          priceSourceSite: 'MICHELIN',
+        });
+      },
+    );
+
+    it('revalidates a Corporate Chef manual draft against configured prices on submit', async () => {
+      const { service, recipeModel, rawMaterials } = setup();
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({
+          site: 'CORP',
+          name: 'Draft',
+          category: 'Main',
+          ingredients: [
+            { ...ingredient, priceSource: 'manual', priceUom: 100 },
+          ],
+        }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe-a' }),
+      );
+      rawMaterials.findVendorPrices.mockResolvedValue([
+        {
+          vendor: 'Reference Vendor',
+          unitOfMeasures: 'KG',
+          price: 12000,
+          priceSourceSite: 'MICHELIN',
+        },
+      ]);
+      await service.submitDraft('recipe-a', {
+        id: 'corporate',
+        site: 'CORP',
+        roles: [AppRole.CorporateChef],
+      });
+      expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+        productCode: 'IT002_N',
+        site: 'CORP',
+        ownSiteOnly: false,
+      });
+      expect(getUpdatedIngredient(recipeModel)).toMatchObject({
+        priceUom: 12000,
+        priceSourceSite: 'MICHELIN',
+        vendor: 'Reference Vendor',
+      });
+    });
 
     it('submits a master product without a local vendor using the entered price', async () => {
       const { service, recipeModel, rawMaterials } = setup();
@@ -2551,6 +2806,97 @@ describe('RecipesService site visibility', () => {
         foodCost: 20,
       }),
     );
+  });
+
+  it.each(['SITE-A', undefined])(
+    'lets a Superadmin use a chosen price site while preserving recipe site %s',
+    async (recipeSite) => {
+      const { rawMaterials, recipeModel, service, sites } = makeService();
+      sites.findSummariesByCodes.mockResolvedValue(new Map([['SITE-B', {}]]));
+      recipeModel.findOne.mockReturnValue(
+        mockRecipeQuery({ site: recipeSite, approvalStatus: 'approved' }),
+      );
+      recipeModel.findOneAndUpdate.mockReturnValue(
+        mockRecipeQuery({ _id: 'recipe-a' }),
+      );
+      rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+        { productCodeNormalized: 'rm-001', price: 999 },
+      ]);
+      rawMaterials.findVendorPrices.mockResolvedValue([
+        {
+          vendor: 'Vendor B',
+          unitOfMeasures: 'KG',
+          price: 20,
+          priceSourceSite: 'SITE-B',
+        },
+        {
+          vendor: 'Vendor C',
+          unitOfMeasures: 'KG',
+          price: 30,
+          priceSourceSite: 'SITE-B',
+        },
+      ]);
+
+      await service.updateById(
+        'recipe-a',
+        {
+          priceSourceSite: ' site-b ',
+          ingredients: [
+            {
+              ingredientType: 'IT',
+              productCode: 'RM-001',
+              name: 'Chicken',
+              unitOfMeasures: 'KG',
+              qty: 2,
+              vendor: 'Vendor B',
+            },
+          ],
+        },
+        { id: 'admin', site: 'SITE-C', roles: [AppRole.Superadmin] },
+      );
+
+      expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+        productCode: 'RM-001',
+        site: 'SITE-B',
+        ownSiteOnly: true,
+      });
+      expect(getUpdatedIngredient(recipeModel)).toMatchObject({
+        vendor: 'Vendor B',
+        priceUom: 20,
+        priceSourceSite: 'SITE-B',
+        priceSource: 'pricelist',
+      });
+      expect(getUpdatedIngredient(recipeModel)).not.toHaveProperty('foodCost');
+      expect(getUpdatePayload(recipeModel).$set).not.toHaveProperty('site');
+    },
+  );
+
+  it.each([AppRole.Chef, AppRole.CorporateChef])(
+    'rejects a price site override by %s',
+    async (role) => {
+      const { service, recipeModel, rawMaterials } = makeService();
+      await expect(
+        service.updateById(
+          'recipe-a',
+          { priceSourceSite: 'SITE-B' },
+          { roles: [role] },
+        ),
+      ).rejects.toThrow('Only Superadmins');
+      expect(rawMaterials.findVendorPrices).not.toHaveBeenCalled();
+      expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an unknown price source site before updating the recipe', async () => {
+    const { service, recipeModel } = makeService();
+    await expect(
+      service.updateById(
+        'recipe-a',
+        { priceSourceSite: 'UNKNOWN' },
+        { roles: [AppRole.Superadmin] },
+      ),
+    ).rejects.toThrow('Select a valid price source site');
+    expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('uses a manual own-site price when only another site has a reference price', async () => {

@@ -11,16 +11,50 @@ const { getRawMaterialImportResult } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 )
 
-test('a completed import with only duplicates stops loading and shows the failed row count', () => {
+test('an import with only duplicates explains why this attempt added no rows', () => {
   assert.deepEqual(getRawMaterialImportResult({
     jobId: '18',
     status: 'completed',
-    result: { status: 'completed', successCount: 0, failCount: 2166, errors: [] },
+    result: { status: 'completed', successCount: 0, failCount: 36910, errors: [
+      { row: 2, reason: 'Product code already exists. Use Update Prices instead.' },
+      { row: 3, reason: 'Product code already exists. Use Update Prices instead.' },
+    ] },
   }), {
-    status: 'success',
-    title: 'Raw material import completed',
-    message: 'Raw material import finished. Success: 0, failed: 2166.',
+    status: 'error',
+    title: 'No raw materials imported',
+    message: 'This import attempt: 0 imported, 36910 rejected. Reported issues: Product code already exists. Use Update Prices instead.',
   })
+})
+
+test('a partially successful attempt retains the imported count and shows rejection reasons', () => {
+  assert.deepEqual(getRawMaterialImportResult({
+    jobId: 'first', status: 'completed',
+    result: { status: 'completed', successCount: 27674, failCount: 9236, errors: [
+      { row: 2, reason: 'Product code already exists. Use Update Prices instead.' },
+    ] },
+  }), {
+    status: 'success', title: 'Raw material import partially completed',
+    message: 'This import attempt: 27674 imported, 9236 rejected. Reported issues: Product code already exists. Use Update Prices instead.',
+  })
+})
+
+test('an entirely successful attempt reports its imported count', () => {
+  assert.deepEqual(getRawMaterialImportResult({
+    jobId: 'success', status: 'completed',
+    result: { status: 'completed', successCount: 20, failCount: 0, errors: [] },
+  }), {
+    status: 'success', title: 'Raw material import completed',
+    message: 'This import attempt: 20 imported, 0 rejected.',
+  })
+})
+
+test('an all-rejected attempt without stored reasons does not invent a cause', () => {
+  const result = getRawMaterialImportResult({
+    jobId: 'rejected', status: 'completed',
+    result: { status: 'completed', successCount: 0, failCount: 10, errors: [] },
+  })
+  assert.equal(result.status, 'error')
+  assert.equal(result.message, 'This import attempt: 0 imported, 10 rejected.')
 })
 
 test('an older completed job still stops loading when its summary was not stored', () => {
