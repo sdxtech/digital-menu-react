@@ -40,55 +40,58 @@ describe('RawMaterialPriceFileParser', () => {
     ]);
   });
 
-  it('parses the full pricelist headers and preserves the price quantity', async () => {
-    const filePath = join(directory, 'pricelist.xlsx');
-    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
-      filename: filePath,
-      useSharedStrings: false,
-    });
-    const sheet = workbook.addWorksheet('Sheet1');
-    sheet
-      .addRow([
-        'Product Code',
-        'Name',
-        'Site',
-        'Vendor',
-        'Currency',
-        'Quantity',
-        'Unit of Measure',
-        'Price',
-      ])
-      .commit();
-    sheet
-      .addRow([
-        'IT00786_N',
-        'Leaves _ KEMANGI LOCAL 1KG (KG)',
-        'PT Donggi Senoro LNG',
-        'CV FITRA MANDIRI',
-        'IDR',
-        0.1,
-        'KG (KG)',
-        7000,
-      ])
-      .commit();
-    await workbook.commit();
+  it.each([true, false])(
+    'parses full XLSX pricelists and preserves the price quantity (shared strings: %s)',
+    async (useSharedStrings) => {
+      const filePath = join(directory, 'pricelist.xlsx');
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+        filename: filePath,
+        useSharedStrings,
+      });
+      const sheet = workbook.addWorksheet('Sheet1');
+      sheet
+        .addRow([
+          'Product Code',
+          'Name',
+          'Site',
+          'Vendor',
+          'Currency',
+          'Quantity',
+          'Unit of Measure',
+          'Price',
+        ])
+        .commit();
+      sheet
+        .addRow([
+          'IT00786_N',
+          'Leaves _ KEMANGI LOCAL 1KG (KG)',
+          'PT Donggi Senoro LNG',
+          'CV FITRA MANDIRI',
+          'IDR',
+          0.1,
+          'KG (KG)',
+          7000,
+        ])
+        .commit();
+      await workbook.commit();
 
-    await expect(
-      collect(parser.parse(filePath, 'pricelist.xlsx')),
-    ).resolves.toEqual([
-      {
-        productCode: 'IT00786_N',
-        name: 'Leaves _ KEMANGI LOCAL 1KG (KG)',
-        site: 'PT Donggi Senoro LNG',
-        vendor: 'CV FITRA MANDIRI',
-        currency: 'IDR',
-        priceQuantity: 0.1,
-        unitOfMeasures: 'KG (KG)',
-        price: 7000,
-        rowNumber: 2,
-      },
-    ]);
-  });
+      await expect(
+        collect(parser.parse(filePath, 'pricelist.xlsx')),
+      ).resolves.toEqual([
+        {
+          productCode: 'IT00786_N',
+          name: 'Leaves _ KEMANGI LOCAL 1KG (KG)',
+          site: 'PT Donggi Senoro LNG',
+          vendor: 'CV FITRA MANDIRI',
+          currency: 'IDR',
+          priceQuantity: 0.1,
+          unitOfMeasures: 'KG (KG)',
+          price: 7000,
+          rowNumber: 2,
+        },
+      ]);
+    },
+  );
 
   it('requires site and vendor headers together', async () => {
     const filePath = join(directory, 'invalid.csv');

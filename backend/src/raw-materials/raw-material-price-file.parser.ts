@@ -87,19 +87,18 @@ export class RawMaterialPriceFileParser {
   private async *parseWorkbook(
     filePath: string,
   ): AsyncGenerator<RawMaterialPriceUpdateInput> {
-    const reader = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
-      worksheets: 'emit',
-      sharedStrings: 'cache',
-      hyperlinks: 'ignore',
-      styles: 'ignore',
-    });
+    const workbook = new ExcelJS.Workbook();
+    // Resolve the XLSX shared-string table before interpreting headers or cells.
+    await workbook.xlsx.readFile(filePath);
     let worksheetFound = false;
 
-    for await (const worksheet of reader) {
+    for (const worksheet of workbook.worksheets) {
       worksheetFound = true;
       let header: PriceHeaderMap | undefined;
 
-      for await (const row of worksheet) {
+      for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const row = worksheet.getRow(rowNumber);
+        if (!row.hasValues) continue;
         const values = Array.isArray(row.values)
           ? (row.values as unknown[]).slice(1)
           : [];

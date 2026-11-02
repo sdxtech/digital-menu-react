@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { defer, firstValueFrom } from 'rxjs';
 import type { Job } from 'bullmq';
 import ExcelJS from 'exceljs';
+import { Readable } from 'node:stream';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { ImportsController } from './imports.controller';
 import { ImportsService } from './imports.service';
@@ -56,6 +57,79 @@ describe('Raw material uploads without object storage', () => {
     );
     return { processor, rawMaterials, notifications, files };
   };
+
+  it.each([true, false])(
+    'resolves XLSX text consistently across stream chunks (shared strings: %s)',
+    async (useSharedStrings) => {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Materials');
+      sheet.addRow(['Product Code', 'Name', 'Unit', 'Site', 'Vendor', 'Price']);
+      sheet.addRow([
+        'IT001',
+        'Crème brûlée',
+        'KG',
+        'MICHELIN',
+        'Vendor A',
+        15000,
+      ]);
+      sheet.addRow(['IT002', 'Salt', 'KG', 'SO Kitchen', 'Vendor B', 0]);
+      workbook.addWorksheet('Ignored').addRow(['Invalid second sheet']);
+      const content = Buffer.from(
+        await workbook.xlsx.writeBuffer({ useSharedStrings }),
+      );
+      const { processor } = makeProcessor();
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const chunks: Buffer[] = [];
+        for (let offset = 0; offset < content.length; offset += 127) {
+          chunks.push(content.subarray(offset, offset + 127));
+        }
+        const rows: unknown[] = [];
+        for await (const row of processor['rawMaterialRowsFromExcel'](
+          Readable.from(chunks),
+        ))
+          rows.push(row);
+        expect(rows).toMatchObject([
+          {
+            rowNumber: 2,
+            productCode: 'IT001',
+            name: 'Crème brûlée',
+            unitOfMeasures: 'KG',
+            site: 'MICHELIN',
+            vendor: 'Vendor A',
+            price: 15000,
+          },
+          {
+            rowNumber: 3,
+            productCode: 'IT002',
+            name: 'Salt',
+            unitOfMeasures: 'KG',
+            site: 'SO Kitchen',
+            vendor: 'Vendor B',
+            price: 0,
+          },
+        ]);
+      }
+    },
+  );
+
+  it('rejects XLSX files missing required headers before saving any materials', async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Invalid').addRow(['Name', 'Price']);
+    await workbook.xlsx.writeFile(filePath);
+    const { processor, rawMaterials } = makeProcessor();
+    await expect(
+      processor['handleRawMaterials']({
+        id: 'invalid-header',
+        data: { userId: 'user-1', filePath, fileName: 'invalid.xlsx' },
+        attemptsMade: 0,
+        opts: { attempts: 1 },
+      } as LocalImportJob),
+    ).rejects.toThrow(
+      'Header must include product code, name, and unit of measures',
+    );
+    expect(rawMaterials.bulkUpsertByProductCode).not.toHaveBeenCalled();
+    expect(rawMaterials.bulkUpsertVendorPrices).not.toHaveBeenCalled();
+  });
 
   it.each(['csv', 'xlsx'])(
     'imports %s data and prices after audit storage fails and deletes the original upload',
