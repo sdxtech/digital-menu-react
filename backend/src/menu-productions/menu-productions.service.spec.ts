@@ -10,6 +10,7 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
   it('reads analytics batches by date and site without backfilling or including drafts', async () => {
@@ -359,6 +360,7 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
       notifications as never,
       workflowMail as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await service.updateBatchSalesDetails(
@@ -495,6 +497,7 @@ describe('MenuProductionsService sales input', () => {
       users as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
     const result = await service.findDrafts('admin-1', undefined, true);
     expect(users.findNamesByIds).toHaveBeenCalledWith(['chef-1']);
@@ -590,6 +593,7 @@ describe('MenuProductionsService sales input', () => {
         {} as never,
         notifications as never,
         workflowMail as never,
+        { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
       );
 
       await service.submitDraftBatch(
@@ -660,6 +664,7 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
     await expect(
       service.submitDraftBatch('MPR001', 'chef-1', 'LOCAL'),
@@ -712,6 +717,7 @@ describe('MenuProductionsService batch approval flow', () => {
         {} as never,
         notifications as never,
         workflowMail as never,
+        { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
       ),
     };
   };
@@ -956,6 +962,17 @@ describe('MenuProductionsService rejected menu replacement', () => {
       {} as never,
       notifications as never,
       workflowMail as never,
+      {
+        findVendorPrices: jest.fn().mockResolvedValue([
+          {
+            productCode: 'IT0001',
+            vendor: 'Vendor A',
+            unitOfMeasures: 'KG',
+            site: 'S001',
+            price: 60000,
+          },
+        ]),
+      } as never,
     );
 
     const result = await service.changeRejectedMenu(
@@ -1125,6 +1142,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
       {} as never,
       notifications as never,
       workflowMail as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await service.changeRejectedMenu(
@@ -1185,6 +1203,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await service.changeRejectedMenu(
@@ -1247,6 +1266,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await service.changeRejectedMenu(
@@ -1283,6 +1303,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
       {} as never,
       {} as never,
       {} as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await expect(

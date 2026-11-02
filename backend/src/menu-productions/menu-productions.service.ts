@@ -13,6 +13,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { Model, Types } from 'mongoose';
+import { RawMaterialsService } from '../raw-materials/raw-materials.service';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
@@ -201,6 +202,7 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly users: UsersService,
     private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
     private readonly workflowMail: WorkflowMailService,
+    private readonly rawMaterials: RawMaterialsService,
   ) {}
 
   private errorMessage(error: unknown) {
@@ -382,6 +384,95 @@ export class MenuProductionsService implements OnModuleInit {
     };
   }
 
+  private async resolveProductionPrices(
+    input: CreateMenuProductionDto,
+    recipe: EligibleRecipe,
+    site: string,
+    requests = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >(),
+  ): Promise<CreateMenuProductionDto> {
+    const submitted = this.normalizeIngredientVendors(input.ingredientVendors);
+    const ingredientVendors = await Promise.all(
+      (recipe.ingredients ?? []).map(async (ingredient, ingredientIndex) => {
+        const productCode = ingredient.productCode?.trim() ?? '';
+        const name = ingredient.name?.trim() ?? '';
+        const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
+        const entered = this.findIngredientVendor(
+          submitted,
+          ingredientIndex,
+          productCode,
+          name,
+          unitOfMeasures,
+        );
+        if (ingredient.ingredientType === 'NMP')
+          return {
+            ...entered,
+            ingredientIndex,
+            productCode,
+            name,
+            unitOfMeasures,
+            price: entered?.price ?? ingredient.priceUom,
+          };
+        const key = JSON.stringify([site, productCode.toLowerCase()]);
+        let request = requests.get(key);
+        if (!request) {
+          request = this.rawMaterials.findVendorPrices({
+            productCode,
+            site,
+            ownSiteOnly: true,
+          });
+          requests.set(key, request);
+        }
+        const options = (await request).filter(
+          (option) =>
+            option.unitOfMeasures?.trim().toUpperCase() ===
+            unitOfMeasures.toUpperCase(),
+        );
+        const selected =
+          options.find(
+            (option) =>
+              entered?.vendor &&
+              option.vendor?.trim().toLowerCase() ===
+                entered.vendor.trim().toLowerCase(),
+          ) ??
+          options.reduce<(typeof options)[number] | undefined>(
+            (best, option) =>
+              !best || (option.price ?? -1) > (best.price ?? -1)
+                ? option
+                : best,
+            undefined,
+          );
+        const localPrice = selected?.price;
+        const price =
+          localPrice != null && Number.isFinite(localPrice) && localPrice > 0
+            ? localPrice
+            : entered?.price;
+        if (
+          !input.saveAsDraft &&
+          !(price != null && Number.isFinite(price) && price > 0)
+        ) {
+          throw new BadRequestException(
+            `Enter a price greater than 0 for ingredient ${name || productCode}.`,
+          );
+        }
+        return {
+          ingredientIndex,
+          productCode,
+          name,
+          unitOfMeasures,
+          vendor: selected?.vendor || undefined,
+          site: selected ? site : undefined,
+          currency: selected?.currency,
+          minimumQuantity: selected?.minimumQuantity,
+          price: price ?? 0,
+        };
+      }),
+    );
+    return { ...input, ingredientVendors };
+  }
+
   private calculateMenuProductionCostSnapshot(
     input: CreateMenuProductionDto,
     recipe: EligibleRecipe,
@@ -453,6 +544,19 @@ export class MenuProductionsService implements OnModuleInit {
                   baseQty > 0
                 ? foodCost / baseQty
                 : undefined;
+        if (
+          ingredient.ingredientType !== 'NMP' &&
+          !input.saveAsDraft &&
+          !(
+            unitPrice !== undefined &&
+            Number.isFinite(unitPrice) &&
+            unitPrice > 0
+          )
+        ) {
+          throw new BadRequestException(
+            `Enter a price greater than 0 for ingredient ${name || productCode}.`,
+          );
+        }
         const ingredientCost =
           unitPrice !== undefined
             ? this.roundQuantity(qty * unitPrice)
@@ -520,7 +624,7 @@ export class MenuProductionsService implements OnModuleInit {
     );
     const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
     const costSnapshot = this.calculateMenuProductionCostSnapshot(
-      input,
+      await this.resolveProductionPrices(input, recipe, normalizedSite),
       recipe,
     );
     const isDraft = input.saveAsDraft === true;
@@ -539,6 +643,10 @@ export class MenuProductionsService implements OnModuleInit {
       estimatedTotalCost: costSnapshot.estimatedTotalCost,
       estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
       ingredientVendors: costSnapshot.ingredientVendors,
+      recipeSnapshot: {
+        portionSize: recipe.portionSize,
+        ingredients: recipe.ingredients ?? [],
+      },
       productionDate: input.productionDate,
       approvalStatus: 'pending',
       isDraft,
@@ -591,48 +699,63 @@ export class MenuProductionsService implements OnModuleInit {
     const productionCodeByDate = new Map(
       uniqueDates.map((date, index) => [date, productionCodes[index]]),
     );
-    const payload = normalizedInputs.map((input) => {
-      const recipe = recipeById.get(input.recipeId);
-      if (!recipe) {
-        throw new BadRequestException(
-          `Only approved recipes can be used for menu production. Not eligible recipe id: ${input.recipeId}.`,
+    const priceRequests = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >();
+    const payload = await Promise.all(
+      normalizedInputs.map(async (input) => {
+        const recipe = recipeById.get(input.recipeId);
+        if (!recipe) {
+          throw new BadRequestException(
+            `Only approved recipes can be used for menu production. Not eligible recipe id: ${input.recipeId}.`,
+          );
+        }
+        const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
+        const costSnapshot = this.calculateMenuProductionCostSnapshot(
+          await this.resolveProductionPrices(
+            input,
+            recipe,
+            normalizedSite,
+            priceRequests,
+          ),
+          recipe,
         );
-      }
-      const menuSnapshot = this.resolveMenuSnapshot(input, recipe);
-      const costSnapshot = this.calculateMenuProductionCostSnapshot(
-        input,
-        recipe,
-      );
 
-      return {
-        productionCode: productionCodeByDate.get(input.productionDate),
-        recipeId: recipe.id,
-        recipeCode: recipe.recipeCode,
-        recipeVersion: recipe.version,
-        menuName: menuSnapshot.menuName,
-        category: menuSnapshot.category,
-        group: input.group?.trim() || undefined,
-        clientId: input.clientId?.trim(),
-        clientName: input.clientName?.trim(),
-        portion: input.portion,
-        cost: costSnapshot.estimatedTotalCost ?? input.cost,
-        estimatedTotalCost: costSnapshot.estimatedTotalCost,
-        estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
-        ingredientVendors: costSnapshot.ingredientVendors,
-        productionDate: input.productionDate,
-        approvalStatus: 'pending',
-        isDraft: saveAsDraft,
-        ...(submittedAt ? { submittedAt } : {}),
-        storeRequestStatus: 'not-requested',
-        createdBy,
-        unitManagerId: this.normalizeOptionalUserId(
-          input.unitManagerId,
-          'Unit manager id',
-        ),
-        assistedBy,
-        site: normalizedSite,
-      };
-    });
+        return {
+          productionCode: productionCodeByDate.get(input.productionDate),
+          recipeId: recipe.id,
+          recipeCode: recipe.recipeCode,
+          recipeVersion: recipe.version,
+          menuName: menuSnapshot.menuName,
+          category: menuSnapshot.category,
+          group: input.group?.trim() || undefined,
+          clientId: input.clientId?.trim(),
+          clientName: input.clientName?.trim(),
+          portion: input.portion,
+          cost: costSnapshot.estimatedTotalCost ?? input.cost,
+          estimatedTotalCost: costSnapshot.estimatedTotalCost,
+          estimatedCostPerPax: costSnapshot.estimatedCostPerPax,
+          ingredientVendors: costSnapshot.ingredientVendors,
+          recipeSnapshot: {
+            portionSize: recipe.portionSize,
+            ingredients: recipe.ingredients ?? [],
+          },
+          productionDate: input.productionDate,
+          approvalStatus: 'pending',
+          isDraft: saveAsDraft,
+          ...(submittedAt ? { submittedAt } : {}),
+          storeRequestStatus: 'not-requested',
+          createdBy,
+          unitManagerId: this.normalizeOptionalUserId(
+            input.unitManagerId,
+            'Unit manager id',
+          ),
+          assistedBy,
+          site: normalizedSite,
+        };
+      }),
+    );
 
     // 🚀 Write the records to the database first
     const createdDocs = await this.menuProductionModel.insertMany(payload, {
@@ -799,14 +922,7 @@ export class MenuProductionsService implements OnModuleInit {
     );
     if (recipeIds.length) {
       const referenceRecipes = await this.recipeModel
-        .find({
-          _id: { $in: recipeIds },
-          $or: [
-            { 'ingredients.priceSourceSite': { $exists: true } },
-            { 'ingredients.priceSource': 'manual' },
-            { 'ingredients.priceUom': 0 },
-          ],
-        })
+        .find({ _id: { $in: recipeIds } })
         .select({ name: 1, category: 1, portionSize: 1, ingredients: 1 })
         .lean();
       for (const draft of drafts) {
@@ -822,7 +938,12 @@ export class MenuProductionsService implements OnModuleInit {
             productionDate: draft.productionDate,
             ingredientVendors: draft.ingredientVendors,
           },
-          { ...recipe, id: String(recipe._id), version: recipe.version ?? 1 },
+          {
+            ...recipe,
+            ...draft.recipeSnapshot,
+            id: String(recipe._id),
+            version: recipe.version ?? 1,
+          },
         );
       }
     }
@@ -1126,32 +1247,6 @@ export class MenuProductionsService implements OnModuleInit {
         throw new BadRequestException('Replacement menu is not eligible.');
       }
       const ingredientVendors = input.ingredientVendors ?? [];
-      const selectedVendors =
-        this.normalizeIngredientVendors(ingredientVendors);
-      for (const [ingredientIndex, ingredient] of (
-        recipe.ingredients ?? []
-      ).entries()) {
-        const selectedVendor = this.findIngredientVendor(
-          selectedVendors,
-          ingredientIndex,
-          ingredient.productCode?.trim() ?? '',
-          ingredient.name?.trim() ?? '',
-          ingredient.unitOfMeasures?.trim() ?? '',
-        );
-        if (!selectedVendor?.vendor?.trim()) {
-          throw new BadRequestException(
-            `Vendor is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
-          );
-        }
-        if (
-          !Number.isFinite(Number(selectedVendor.price)) ||
-          Number(selectedVendor.price) < 0
-        ) {
-          throw new BadRequestException(
-            `Price is required for ingredient ${ingredient.name || ingredient.productCode || ingredientIndex + 1}.`,
-          );
-        }
-      }
       const replacementInput: CreateMenuProductionDto = {
         recipeId: normalizedRecipeId,
         portion,
@@ -1160,7 +1255,11 @@ export class MenuProductionsService implements OnModuleInit {
         productionDate: existing.productionDate,
       };
       costSnapshot = this.calculateMenuProductionCostSnapshot(
-        replacementInput,
+        await this.resolveProductionPrices(
+          replacementInput,
+          recipe,
+          this.requireSite(existing.site),
+        ),
         recipe,
       );
     }
@@ -1175,6 +1274,11 @@ export class MenuProductionsService implements OnModuleInit {
       updatedValues.estimatedTotalCost = costSnapshot.estimatedTotalCost;
       updatedValues.estimatedCostPerPax = costSnapshot.estimatedCostPerPax;
       updatedValues.ingredientVendors = costSnapshot.ingredientVendors;
+      if (recipe)
+        updatedValues.recipeSnapshot = {
+          portionSize: recipe.portionSize,
+          ingredients: recipe.ingredients ?? [],
+        };
     }
     if (changesPortion && !changesMenu) {
       const existingPortion = Number(existing.portion);
@@ -2551,15 +2655,15 @@ export class MenuProductionsService implements OnModuleInit {
         version: this.normalizeRecipeVersion(recipe.version),
         name: recipe.name?.trim() ?? '',
         category: recipe.category?.trim() ?? '',
-        portionSize: Number(recipe.portionSize),
+        portionSize: Number(recipe.portionSize) || 1,
         ingredients: (recipe.ingredients ?? []).map((ingredient) => ({
           ingredientType: ingredient.ingredientType,
           productCode: ingredient.productCode?.trim() ?? '',
           name: ingredient.name?.trim() ?? '',
           unitOfMeasures: ingredient.unitOfMeasures?.trim() ?? '',
           qty: Number(ingredient.qty),
-          priceUom: Number(ingredient.priceUom),
-          foodCost: Number(ingredient.foodCost),
+          priceUom: ingredient.priceUom,
+          foodCost: ingredient.foodCost,
           priceSourceSite: ingredient.priceSourceSite,
           priceSource: ingredient.priceSource,
         })),
@@ -2939,9 +3043,12 @@ export class MenuProductionsService implements OnModuleInit {
       const menuRecipeId = this.normalizeOptionalRecipeId(
         String(menu.recipeId ?? ''),
       );
-      const recipe =
+      const liveRecipe =
         (menuRecipeId ? recipeById.get(menuRecipeId) : undefined) ??
         recipeByName.get(this.normalizeName(String(menu.menuName ?? '')));
+      const recipe = menu.recipeSnapshot
+        ? { ...liveRecipe, ...menu.recipeSnapshot }
+        : liveRecipe;
       let ingredients: StoreRequestIngredient[] = [];
       let missingRecipe = false;
       let portionSize = 1;

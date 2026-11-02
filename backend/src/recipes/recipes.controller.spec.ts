@@ -36,6 +36,25 @@ describe('RecipesController corporate chef creation', () => {
     },
   };
 
+  it('uses the chosen site for superadmin recipe creation', async () => {
+    const { controller, recipes } = makeController();
+    await controller.create(
+      {
+        user: { ...request.user, roles: [AppRole.Superadmin], site: undefined },
+      } as never,
+      {
+        site: 'SOKIT',
+        name: 'Shared recipe',
+        category: 'Main',
+        ingredients: [],
+      },
+    );
+    expect(recipes.create).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'SOKIT' }),
+      expect.objectContaining({ site: 'SOKIT' }),
+    );
+  });
+
   it('passes pagination and actor scope to draft list and detail endpoints', async () => {
     const { controller, recipes } = makeController();
     const query = { page: 2, limit: 20, issueStatus: 'issues' as const };

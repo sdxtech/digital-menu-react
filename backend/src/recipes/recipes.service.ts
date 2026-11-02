@@ -409,18 +409,15 @@ export class RecipesService {
 
     const availableCodes = new Set(
       (
-        await this.rawMaterials.findAvailableNormalizedCodesForSite(
-          itProductCodes,
-          site,
-        )
-      ).map((code) => String(code).trim().toLowerCase()),
+        await this.rawMaterials.findLookupsByNormalizedCodes(itProductCodes)
+      ).map((material) => material.productCodeNormalized),
     );
     const unavailableCodes = itProductCodes.filter(
       (code) => !availableCodes.has(code.toLowerCase()),
     );
     if (unavailableCodes.length) {
       throw new BadRequestException(
-        `Raw material ${unavailableCodes.join(', ')} is not available for site ${site}.`,
+        `Raw material ${unavailableCodes.join(', ')} is not available in the master product catalogue.`,
       );
     }
   }
@@ -1179,10 +1176,10 @@ export class RecipesService {
     const recipes = await this.recipeModel
       .find({
         deletedAt: { $exists: false },
-        approvalStatus: 'approved',
+        $or: [{ approvalStatus: 'approved' }, { isDraft: true }],
         'ingredients.0': { $exists: true },
       })
-      .select({ ingredients: 1, foodCostRecipe: 1, site: 1 })
+      .select({ ingredients: 1, foodCostRecipe: 1, site: 1, isDraft: 1 })
       .lean();
 
     const productCodes = recipes.flatMap((recipe) =>
@@ -1208,13 +1205,13 @@ export class RecipesService {
 
     for (const recipe of recipes) {
       let changed =
-        recipe.foodCostRecipe !== undefined ||
-        (recipe.ingredients ?? []).some(
-          (ingredient) => ingredient.foodCost !== undefined,
-        );
+        !recipe.isDraft &&
+        (recipe.foodCostRecipe !== undefined ||
+          (recipe.ingredients ?? []).some(
+            (ingredient) => ingredient.foodCost !== undefined,
+          ));
       const ingredients = await Promise.all(
         (recipe.ingredients ?? []).map(async (ingredient) => {
-          if (ingredient.priceSource === 'manual') return ingredient;
           const result = await this.applyIngredientCostFromLookup(
             ingredient,
             rawMaterialByCode,
@@ -1231,7 +1228,8 @@ export class RecipesService {
           }
           if (
             ingredient.priceUom !== result.ingredient.priceUom ||
-            ingredient.foodCost !== undefined
+            (!recipe.isDraft && ingredient.foodCost !== undefined) ||
+            result.changed
           ) {
             changed = true;
             updatedIngredients += 1;
@@ -1244,10 +1242,15 @@ export class RecipesService {
 
       const updatePayload: Record<string, unknown> = {
         $set: {
-          ingredients: this.withoutRecipeEstimates(ingredients),
+          ingredients: recipe.isDraft
+            ? ingredients
+            : this.withoutRecipeEstimates(ingredients),
+          ...(recipe.isDraft
+            ? { foodCostRecipe: this.calculateFoodCostRecipe(ingredients) }
+            : {}),
           ...updatedFields,
         },
-        $unset: { foodCostRecipe: '' },
+        ...(!recipe.isDraft ? { $unset: { foodCostRecipe: '' } } : {}),
       };
 
       await this.recipeModel.updateOne({ _id: recipe._id }, updatePayload);
@@ -1418,6 +1421,8 @@ export class RecipesService {
       );
     const $set: Record<string, unknown> = {};
     const $unset: Record<string, unknown> = {};
+    if (isSuperadmin && !targetRecipe.site && actor?.site)
+      $set.site = actor.site;
     if (input.targetFoodCostPercentage === null) {
       $unset.targetFoodCostPercentage = '';
     } else if (input.targetFoodCostPercentage !== undefined) {
@@ -1950,6 +1955,7 @@ export class RecipesService {
           prices = this.rawMaterials.findVendorPrices({
             productCode: rawMaterial.productCode,
             site,
+            ownSiteOnly: true,
           });
           context.vendorPrices.set(key, prices);
         }
@@ -1973,9 +1979,17 @@ export class RecipesService {
               undefined,
             );
         if (!selected) {
-          issues.push(
-            `${label}: no valid vendor price for this site and SR UOM.`,
-          );
+          const manualPrice = this.normalizeOptionalNumber(original.priceUom);
+          ingredient.vendor = undefined;
+          ingredient.priceSource = 'manual';
+          ingredient.priceUom =
+            manualPrice && manualPrice > 0 ? manualPrice : 0;
+          if (!(ingredient.priceUom > 0))
+            issues.push(`${label}: enter a price greater than 0 manually.`);
+          if (ingredient.srQty !== undefined)
+            ingredient.foodCost = this.roundQuantity(
+              ingredient.srQty * ingredient.priceUom,
+            );
         } else {
           ingredient.vendor = selected.vendor;
           const manualPrice = this.normalizeOptionalNumber(original.priceUom);
@@ -2983,12 +2997,6 @@ export class RecipesService {
     site?: string,
     allowIncompleteManualPrice = false,
   ) {
-    const siteSummary = site
-      ? (await this.sites.findSummariesByCodes([site])).get(site)
-      : undefined;
-    const usesReferences = siteSummary?.materialSource === 'reference';
-    if (usesReferences)
-      await this.validateSiteScopedIngredients(ingredients, site);
     const rawMaterialLookups =
       await this.rawMaterials.findLookupsByNormalizedCodes(
         ingredients
@@ -3004,24 +3012,18 @@ export class RecipesService {
     >();
     const nextIngredients = await Promise.all(
       ingredients.map(async (ingredient) => {
-        if (
-          usesReferences &&
-          ingredient.ingredientType === 'IT' &&
-          !ingredient.vendor?.trim()
-        ) {
-          throw new BadRequestException(
-            `Select a reference vendor with a valid price for ${ingredient.name || ingredient.productCode}.`,
-          );
-        }
         const result = await this.applyIngredientCostFromLookup(
           ingredient,
           rawMaterialByCode,
           site,
           vendorPrices,
         );
-        if (ingredient.vendor && result.status !== 'matched') {
+        if (
+          ingredient.ingredientType === 'IT' &&
+          result.status === 'missing_raw_material'
+        ) {
           throw new BadRequestException(
-            `Selected vendor for ${ingredient.name || ingredient.productCode} has no valid price for this site and unit.`,
+            `Product ${ingredient.name || ingredient.productCode} is not in the master product catalogue.`,
           );
         }
         if (
@@ -3064,44 +3066,63 @@ export class RecipesService {
     | { status: 'missing_raw_material' }
     | { status: 'missing_price' }
   > {
+    if (ingredient.ingredientType === 'NMP')
+      return { status: 'matched', changed: false, ingredient };
     const productCode = ingredient.productCode?.trim() ?? '';
     if (!productCode) return { status: 'missing_raw_material' };
 
     const rawMaterial = rawMaterialByCode.get(productCode.toLowerCase());
     if (!rawMaterial) return { status: 'missing_raw_material' };
 
-    let unitPrice = this.normalizeOptionalNumber(rawMaterial.price);
+    let unitPrice = site
+      ? undefined
+      : this.normalizeOptionalNumber(rawMaterial.price);
+    let selectedVendor: string | undefined;
     let priceSourceSite: string | undefined;
     let priceSourceSiteName: string | undefined;
-    if (ingredient.vendor) {
-      if (!site?.trim()) return { status: 'missing_price' };
+    if (site?.trim()) {
       const key = JSON.stringify([
         site.trim().toLowerCase(),
         productCode.toLowerCase(),
       ]);
       let request = vendorPrices.get(key);
       if (!request) {
-        request = this.rawMaterials.findVendorPrices({ productCode, site });
+        request = this.rawMaterials.findVendorPrices({
+          productCode,
+          site,
+          ownSiteOnly: true,
+        });
         vendorPrices.set(key, request);
       }
-      const options = await request;
-      const selected = options.find(
+      const options = (await request).filter(
         (option) =>
-          option.vendor?.trim().toLowerCase() ===
-            ingredient.vendor?.trim().toLowerCase() &&
+          (!option.priceSourceSite ||
+            option.priceSourceSite.toLowerCase() === site.toLowerCase()) &&
           this.normalizeUomCode(option.unitOfMeasures) ===
             this.normalizeUomCode(ingredient.unitOfMeasures),
       );
+      const selected =
+        options.find(
+          (option) =>
+            ingredient.vendor &&
+            option.vendor?.trim().toLowerCase() ===
+              ingredient.vendor.trim().toLowerCase(),
+        ) ??
+        options.reduce<(typeof options)[number] | undefined>(
+          (best, option) =>
+            !best || (option.price ?? -1) > (best.price ?? -1) ? option : best,
+          undefined,
+        );
       unitPrice = this.normalizeOptionalNumber(selected?.price);
+      selectedVendor = selected?.vendor || undefined;
       priceSourceSite = selected?.priceSourceSite;
       priceSourceSiteName = selected?.priceSourceSiteName;
     }
-    if (unitPrice === undefined) return { status: 'missing_price' };
-
-    const priceSource = unitPrice === 0 ? 'manual' : 'pricelist';
+    const priceSource =
+      unitPrice !== undefined && unitPrice > 0 ? 'pricelist' : 'manual';
     if (priceSource === 'manual') {
       const enteredPrice = this.normalizeOptionalNumber(ingredient.priceUom);
-      unitPrice = enteredPrice && enteredPrice > 0 ? enteredPrice : undefined;
+      unitPrice = enteredPrice && enteredPrice > 0 ? enteredPrice : 0;
     }
     const qty = Number(ingredient.qty);
     const foodCost =
@@ -3112,6 +3133,7 @@ export class RecipesService {
     const currentFoodCost = this.normalizeOptionalNumber(ingredient.foodCost);
     const nextIngredient: RecipeIngredient = {
       ...ingredient,
+      ...(site ? { vendor: selectedVendor } : {}),
       priceSource,
       priceUom: unitPrice,
       priceSourceSite,
@@ -3121,7 +3143,11 @@ export class RecipesService {
 
     return {
       status: 'matched',
-      changed: currentPrice !== unitPrice || currentFoodCost !== foodCost,
+      changed:
+        currentPrice !== unitPrice ||
+        currentFoodCost !== foodCost ||
+        ingredient.priceSource !== priceSource ||
+        ingredient.vendor !== nextIngredient.vendor,
       ingredient: nextIngredient,
     };
   }

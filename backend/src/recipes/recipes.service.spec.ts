@@ -309,7 +309,9 @@ describe('RecipesService site visibility', () => {
       expect(recipe.ingredients).toHaveLength(3);
       expect(recipe.foodCostRecipe).toBeUndefined();
       expect(recipe.importIssues?.join(' ')).toMatch(/Conversion/);
-      expect(recipe.importIssues?.join(' ')).toMatch(/no valid vendor price/);
+      expect(recipe.importIssues?.join(' ')).toMatch(
+        /enter a price greater than 0 manually/,
+      );
       expect(recipe.importIssues?.join(' ')).toMatch(/product code not found/);
       expect(recipe.importIssues?.join(' ')).toMatch(/positive Prod Qty/);
       expect(recipe.ingredients?.[0].srQty).toBeUndefined();
@@ -327,7 +329,7 @@ describe('RecipesService site visibility', () => {
         'SITE-A',
       );
       expect(parsed.records[0].ingredients?.[0].srQty).toBe(0.4);
-      expect(parsed.records[0].ingredients?.[0].priceUom).toBeUndefined();
+      expect(parsed.records[0].ingredients?.[0].priceUom).toBe(0);
       expect(parsed.records[0].foodCostRecipe).toBeUndefined();
     });
 
@@ -368,14 +370,14 @@ describe('RecipesService site visibility', () => {
               prodQty: 400,
               prodUomCode: 'GRAM',
               srQty: 0.4,
-              priceUom: 29000,
+              priceUom: 0,
             },
           ],
         }),
       });
       await expect(
         setup.service.submitDraft('draft', { id: 'chef' }),
-      ).rejects.toThrow('no valid vendor price');
+      ).rejects.toThrow('enter a price greater than 0 manually');
       expect(setup.recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
       expect(
         setup.notifications.createHierarchicalNotification,
@@ -574,6 +576,7 @@ describe('RecipesService site visibility', () => {
         expect(after.$set.createdBy).toBeUndefined();
         expect(after.$set.site).toBeUndefined();
         expect(setup.rawMaterials.findVendorPrices).toHaveBeenLastCalledWith({
+          ownSiteOnly: true,
           productCode: 'IT01060',
           site: 'SITE-A',
         });
@@ -703,6 +706,7 @@ describe('RecipesService site visibility', () => {
         );
         expect(setup.rawMaterials.findVendorPrices).toHaveBeenCalledTimes(2);
         expect(setup.rawMaterials.findVendorPrices).toHaveBeenLastCalledWith({
+          ownSiteOnly: true,
           productCode: 'IT001',
           site: 'SITE-B',
         });
@@ -1742,7 +1746,7 @@ describe('RecipesService site visibility', () => {
     expect(workflowMail.notifyRecipeSubmitted).not.toHaveBeenCalled();
   });
 
-  it('rejects IT raw material outside the selected site scope', async () => {
+  it('rejects IT products missing from the master catalogue', async () => {
     const { rawMaterials, recipeModel, service } = makeService();
     rawMaterials.findAvailableNormalizedCodesForSite.mockResolvedValue([]);
 
@@ -1769,7 +1773,7 @@ describe('RecipesService site visibility', () => {
         },
       ),
     ).rejects.toThrow(
-      'Raw material IT99999 is not available for site SITE-002.',
+      'Raw material IT99999 is not available in the master product catalogue.',
     );
     expect(recipeModel.create).not.toHaveBeenCalled();
   });
@@ -2231,6 +2235,120 @@ describe('RecipesService site visibility', () => {
     expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  describe('cross-site recipe pricing', () => {
+    const ingredient = {
+      ingredientType: 'IT' as const,
+      productCode: 'IT002_N',
+      name: 'Shared product',
+      unitOfMeasures: 'KG',
+      qty: 2,
+    };
+    const setup = () => {
+      const context = makeService();
+      context.rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+        { productCodeNormalized: 'it002_n', price: 90000 },
+      ]);
+      context.recipeModel.create.mockImplementation((payload: object) =>
+        Promise.resolve({ _id: 'new-recipe', ...payload }),
+      );
+      return context;
+    };
+
+    it('submits a master product without a local vendor using the entered price', async () => {
+      const { service, recipeModel, rawMaterials } = setup();
+      await service.create(
+        {
+          name: 'Cross-site recipe',
+          category: 'Main',
+          ingredients: [{ ...ingredient, priceUom: 15000 }],
+        },
+        { id: 'chef', site: 'SITE-A', roles: [AppRole.Chef] },
+      );
+      expect(recipeModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ingredients: [
+            expect.objectContaining({
+              priceUom: 15000,
+              foodCost: 30000,
+              priceSource: 'manual',
+              vendor: undefined,
+            }),
+          ],
+        }),
+      );
+      expect(
+        rawMaterials.findAvailableNormalizedCodesForSite,
+      ).not.toHaveBeenCalled();
+      expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+        productCode: 'IT002_N',
+        site: 'SITE-A',
+        ownSiteOnly: true,
+      });
+    });
+
+    it.each([undefined, 0])(
+      'does not fall back to a foreign master price when the entered price is %s',
+      async (priceUom) => {
+        const { service, recipeModel } = setup();
+        await expect(
+          service.create(
+            {
+              name: 'Cross-site recipe',
+              category: 'Main',
+              ingredients: [{ ...ingredient, priceUom }],
+            },
+            { id: 'chef', site: 'SITE-A', roles: [AppRole.Chef] },
+          ),
+        ).rejects.toThrow('Enter a price greater than 0');
+        expect(recipeModel.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      'Sync Cost replaces manual prices only when an own-site price exists (draft=%s)',
+      async (isDraft) => {
+        const { service, recipeModel, rawMaterials } = setup();
+        const saved = {
+          _id: 'saved',
+          site: 'SITE-A',
+          isDraft,
+          ingredients: [
+            {
+              ...ingredient,
+              priceUom: 15000,
+              foodCost: 30000,
+              priceSource: 'manual',
+            },
+          ],
+        };
+        recipeModel.find.mockReturnValue(mockRecipeQuery([saved]));
+        await service.backfillApprovedIngredientCosts();
+        if (isDraft) expect(recipeModel.updateOne).not.toHaveBeenCalled();
+        else {
+          const calls = recipeModel.updateOne.mock.calls as unknown as Array<
+            [unknown, RecipeUpdatePayload]
+          >;
+          expect(calls.at(-1)?.[1].$set.ingredients?.[0]).toMatchObject({
+            priceUom: 15000,
+            priceSource: 'manual',
+          });
+        }
+        rawMaterials.findVendorPrices.mockResolvedValue([
+          { vendor: '', unitOfMeasures: 'KG', price: 20000 },
+        ]);
+        await service.backfillApprovedIngredientCosts();
+        const calls = recipeModel.updateOne.mock.calls as unknown as Array<
+          [unknown, RecipeUpdatePayload]
+        >;
+        expect(calls.at(-1)?.[1].$set.ingredients?.[0]).toMatchObject({
+          priceUom: 20000,
+          priceSource: 'pricelist',
+        });
+        if (isDraft) expect(calls.at(-1)?.[1].$set.foodCostRecipe).toBe(40000);
+      },
+    );
+  });
+
   describe('legacy material manual prices', () => {
     const ingredient = {
       ingredientType: 'IT' as const,
@@ -2328,7 +2446,7 @@ describe('RecipesService site visibility', () => {
       });
       const savedIngredient = getUpdatedIngredient(recipeModel);
       expect(savedIngredient).toMatchObject({ priceSource: 'manual' });
-      expect(savedIngredient.priceUom).toBeUndefined();
+      expect(savedIngredient.priceUom).toBe(0);
       recipeModel.findOne.mockReturnValue(
         mockRecipeQuery({
           name: 'Legacy recipe',
@@ -2359,7 +2477,7 @@ describe('RecipesService site visibility', () => {
     });
 
     it('preserves the saved manual price when master prices are synchronized', async () => {
-      const { service, recipeModel, rawMaterials } = setup(12000);
+      const { service, recipeModel, rawMaterials } = setup(0);
       recipeModel.find.mockReturnValue(
         mockRecipeQuery([
           {
@@ -2377,7 +2495,11 @@ describe('RecipesService site visibility', () => {
         ]),
       );
       await service.backfillApprovedIngredientCosts();
-      expect(rawMaterials.findVendorPrices).not.toHaveBeenCalled();
+      expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+        productCode: 'IT001',
+        site: 'SITE-A',
+        ownSiteOnly: true,
+      });
       const calls = recipeModel.updateOne.mock.calls as unknown as Array<
         [unknown, RecipeUpdatePayload]
       >;
@@ -2418,6 +2540,7 @@ describe('RecipesService site visibility', () => {
     });
 
     expect(rawMaterials.findVendorPrices).toHaveBeenCalledWith({
+      ownSiteOnly: true,
       productCode: 'RM-001',
       site: 'SITE-A',
     });
@@ -2430,7 +2553,7 @@ describe('RecipesService site visibility', () => {
     );
   });
 
-  it('persists the reference source and validates ingredients at the corporate owner site', async () => {
+  it('uses a manual own-site price when only another site has a reference price', async () => {
     const { rawMaterials, recipeModel, service, sites } = makeService();
     sites.findSummariesByCodes.mockResolvedValue(
       new Map([['CORP', { materialSource: 'reference' }]]),
@@ -2467,15 +2590,16 @@ describe('RecipesService site visibility', () => {
         },
       ],
     });
-    expect(
-      rawMaterials.findAvailableNormalizedCodesForSite,
-    ).toHaveBeenCalledWith(['IT001'], 'CORP');
+    expect(rawMaterials.findLookupsByNormalizedCodes).toHaveBeenCalledWith([
+      'IT001',
+    ]);
     expect(getUpdatedIngredient(recipeModel)).toEqual(
       expect.objectContaining({
-        priceUom: 10,
-        foodCost: 20,
-        priceSourceSite: 'SITE-B',
-        priceSourceSiteName: 'Jakarta B',
+        priceUom: 999,
+        foodCost: 1998,
+        priceSource: 'manual',
+        vendor: undefined,
+        priceSourceSite: undefined,
       }),
     );
   });
@@ -2504,12 +2628,11 @@ describe('RecipesService site visibility', () => {
           },
         ],
       }),
-    ).rejects.toThrow('Select a reference vendor');
+    ).rejects.toThrow('Enter a price greater than 0');
     expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it.each([
-    { vendor: 'Another vendor', unitOfMeasures: 'KG', price: 10 },
     { vendor: 'Vendor A', unitOfMeasures: 'BOX', price: 10 },
     { vendor: 'Vendor A', unitOfMeasures: 'KG', price: undefined },
   ])(
@@ -2535,7 +2658,7 @@ describe('RecipesService site visibility', () => {
             },
           ],
         }),
-      ).rejects.toThrow('has no valid price for this site and unit');
+      ).rejects.toThrow('Enter a price greater than 0');
       expect(recipeModel.findOneAndUpdate).not.toHaveBeenCalled();
     },
   );

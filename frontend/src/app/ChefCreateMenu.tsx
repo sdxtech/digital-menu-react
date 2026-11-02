@@ -228,15 +228,26 @@ const ChefCreateMenu = ({
   const corporateSettings = useCorporateSite(isCorporateChef)
   const isCorporateSite = corporateSettings.context?.corporateSite === true
   const isChef = user?.role === 'chef'
-  const useVendorPrices = isChef || isCorporateChef || baseRecipe?.importIssues !== undefined
-  const showIngredientCostColumns = isChef || isCorporateChef || baseRecipe?.importIssues !== undefined
+  const isSuperadmin = user?.role === 'superadmin'
+  const useVendorPrices = isChef || isCorporateChef || isSuperadmin
+  const showIngredientCostColumns = useVendorPrices
   const recipeDraftsPath = user?.role === 'superadmin' ? '/superadmin/recipe-drafts' : isCorporateChef
     ? '/corporate-chef/recipe-drafts'
     : '/chef/recipe-drafts'
   const recipeDataPath = user?.role === 'superadmin' ? '/superadmin/menu-management' : isCorporateChef
     ? '/corporate-chef/recipe-data'
     : '/chef/menu-bank'
-  const assignedSiteOptions = Array.from(
+  const [superadminSites, setSuperadminSites] = useState<Array<{ code: string; name: string }>>([])
+  const [siteOptionsError, setSiteOptionsError] = useState('')
+  useEffect(() => {
+    if (!isSuperadmin || !accessToken) return
+    let active = true
+    apiFetch<{ items: Array<{ code: string; name: string }> }>('/superadmin/sites?limit=200', undefined, accessToken)
+      .then((data) => { if (active) { setSuperadminSites(data.items); setSiteOptionsError('') } })
+      .catch((error: unknown) => { if (active) setSiteOptionsError(error instanceof Error ? error.message : 'Failed to load sites.') })
+    return () => { active = false }
+  }, [isSuperadmin, accessToken])
+  const assignedSiteOptions = isSuperadmin ? superadminSites : Array.from(
     new Map(
       [...(user?.site ? [user.site] : []), ...(user?.sites ?? [])].map(
         (code) => [
@@ -252,13 +263,11 @@ const ChefCreateMenu = ({
       ),
     ).values(),
   )
-  const [chosenSite, setSelectedSite] = useState(baseRecipe?.site ?? '')
+  const [chosenSite, setSelectedSite] = useState(baseRecipe?.site ?? (isChef ? user?.site : '') ?? '')
   const selectedSite = isCorporateSite
     ? isEditMode ? baseRecipe?.site ?? corporateSettings.context?.site ?? '' : corporateSettings.context?.site ?? ''
     : chosenSite
-  const rawMaterialSite = isCorporateChef
-    ? selectedSite
-    : user?.role === 'superadmin' ? baseRecipe?.site : user?.site
+  const rawMaterialSite = isCorporateChef || isSuperadmin ? selectedSite : user?.site
   const [currentApprovalStatus, setCurrentApprovalStatus] = useState(
     baseRecipe?.approvalStatus,
   )
@@ -386,7 +395,7 @@ const ChefCreateMenu = ({
                   : '',
               srQtyManual: ingredient.srQtyManual ?? false,
               vendor: ingredient.vendor,
-              priceUom: !isEditMode && ingredient.priceSource === 'manual' ? undefined : ingredient.priceUom ?? (
+              priceUom: !isEditMode && ingredient.ingredientType !== 'NMP' ? undefined : ingredient.priceUom ?? (
                 ingredient.foodCost !== undefined && ingredient.qty > 0
                   ? ingredient.foodCost / ingredient.qty
                   : undefined
@@ -571,7 +580,7 @@ const ChefCreateMenu = ({
 
   useEffect(() => {
     const requestId = ++searchRequestRef.current
-    if (isCorporateChef && !selectedSite) {
+    if ((isCorporateChef || isSuperadmin) && !selectedSite) {
       setRawMaterialOptions([])
       setRawMaterialsLoading(false)
       setRawMaterialsError('Select a site first.')
@@ -599,6 +608,7 @@ const ChefCreateMenu = ({
   }, [
     cacheRawMaterials,
     isCorporateChef,
+    isSuperadmin,
     rawMaterialSite,
     searchRawMaterials,
     selectedSite,
@@ -611,7 +621,7 @@ const ChefCreateMenu = ({
       const key = getVendorProductKey(rawMaterialSite, productCode)
       if (vendorPrices[key]) return
       setVendorPrices((current) => ({ ...current, [key]: { loading: true, options: [] } }))
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ ownSiteOnly: 'true' })
       if (rawMaterialSite) params.set('site', rawMaterialSite)
       apiFetch<VendorPriceOption[]>(
         `/raw-materials/${encodeURIComponent(productCode)}/vendor-prices?${params.toString()}`,
@@ -619,9 +629,9 @@ const ChefCreateMenu = ({
         accessToken,
       ).then((items) => {
         if (!isMountedRef.current) return
-        const options = items.filter((item) => item.vendor?.trim() && item.unitOfMeasures?.trim())
+        const options = items.filter((item) => item.unitOfMeasures?.trim())
           .map((item) => ({
-            vendor: item.vendor.trim(),
+            vendor: item.vendor?.trim() ?? '',
             unitOfMeasures: item.unitOfMeasures.trim(),
             price: item.price != null && Number.isFinite(Number(item.price)) && Number(item.price) >= 0
               ? Number(item.price) : undefined,
@@ -655,16 +665,19 @@ const ChefCreateMenu = ({
       .filter((option) => normalizeUomCode(option.unitOfMeasures) === normalizeUomCode(row.unitOfMeasures))
   const getSelectedVendor = (row: IngredientRow) => {
     const options = getVendorOptions(row)
-    if (row.vendor) return options.find((option) => normalizeValue(option.vendor) === normalizeValue(row.vendor ?? ''))
+    if (row.vendor) {
+      const selected = options.find((option) => normalizeValue(option.vendor) === normalizeValue(row.vendor ?? ''))
+      if (selected) return selected
+    }
     return options.reduce<VendorPriceOption | undefined>((selected, option) =>
       !selected || (option.price ?? -1) > (selected.price ?? -1) ? option : selected,
     undefined)
   }
   const requiresManualPrice = (row: IngredientRow) =>
     row.ingredientType === 'NMP' ||
-    (row.ingredientType === 'IT' && getSelectedVendor(row)?.price === 0)
+    (row.ingredientType === 'IT' && !(Number(getSelectedVendor(row)?.price) > 0))
   const getIngredientPrice = (row: IngredientRow) =>
-    requiresManualPrice(row) ? row.priceUom
+    requiresManualPrice(row) ? row.priceUom ?? 0
       : useVendorPrices && row.ingredientType === 'IT'
         ? getSelectedVendor(row)?.price : row.priceUom
   const findUnitConversion = (prodUomCode: string, srUomCode: string) => {
@@ -829,7 +842,7 @@ const ChefCreateMenu = ({
 
   useEffect(() => {
     if (!enableIngredientUomConversion || !accessToken) return
-    if (isCorporateChef && !selectedSite) return
+    if ((isCorporateChef || isSuperadmin) && !selectedSite) return
 
     let cancelled = false
     const productCodes: string[] = JSON.parse(recipeRawMaterialCodes)
@@ -855,6 +868,7 @@ const ChefCreateMenu = ({
     accessToken,
     enableIngredientUomConversion,
     isCorporateChef,
+    isSuperadmin,
     rawMaterialSite,
     recipeRawMaterialCodes,
     resolveRawMaterialByProductCode,
@@ -1286,7 +1300,7 @@ const ChefCreateMenu = ({
       return
     }
 
-    if (isCorporateChef && !selectedSite) {
+    if ((isCorporateChef || isSuperadmin) && !selectedSite) {
       setSubmitError('Select a site before creating the recipe.')
       setSubmitMessage('')
       return
@@ -1432,11 +1446,11 @@ const ChefCreateMenu = ({
       }
 
       const selectedVendor = useVendorPrices && row.ingredientType === 'IT' ? getSelectedVendor(row) : undefined
-      const vendor = row.ingredientType === 'IT' ? selectedVendor?.vendor ?? row.vendor : undefined
+      const vendor = row.ingredientType === 'IT' ? selectedVendor?.vendor || undefined : undefined
       if (useVendorPrices && row.ingredientType === 'IT') {
         const vendorState = vendorPrices[getVendorProductKey(rawMaterialSite, row.productCode)]
-        if (!vendorState || vendorState.loading || vendorState.error || !selectedVendor || selectedVendor.price === undefined) {
-          setSubmitError(`Load and select an available vendor for ${name} before saving.`)
+        if (!vendorState || vendorState.loading || vendorState.error) {
+          setSubmitError(`Load site prices for ${name} before saving.`)
           setSubmitMessage('')
           return
         }
@@ -1504,6 +1518,7 @@ const ChefCreateMenu = ({
 
     try {
       const basePayload = {
+        ...(isCorporateChef || isSuperadmin ? { site: selectedSite } : {}),
         targetFoodCostPercentage,
         name: nextName,
         category: nextCategory,
@@ -1541,7 +1556,7 @@ const ChefCreateMenu = ({
       } else {
         const createdRecipe = await createRecipe({
           ...basePayload,
-          ...(isCorporateChef ? { site: selectedSite } : {}),
+          ...(isCorporateChef || isSuperadmin ? { site: selectedSite } : {}),
           ...(isCreateFromRecipe && baseRecipe?.sourceRecipeId
             ? { baseRecipeId: baseRecipe.sourceRecipeId }
             : {}),
@@ -1807,7 +1822,7 @@ const ChefCreateMenu = ({
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
         <h3 className="font-semibold">Recipe details</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {isCorporateChef ? (
+          {isCorporateChef || isSuperadmin ? (
             <div className="sm:col-span-2">
               <label className="text-sm font-medium text-foreground">
                 Site <span className="text-danger">*</span>
@@ -1819,7 +1834,7 @@ const ChefCreateMenu = ({
               ) : <select
                 value={selectedSite}
                 onChange={(event) => handleSiteChange(event.target.value)}
-                disabled={isEditMode || corporateSettings.loading || Boolean(corporateSettings.error)}
+                disabled={Boolean(isEditMode && baseRecipe?.site) || corporateSettings.loading || Boolean(corporateSettings.error)}
                 className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:bg-slate-200 disabled:text-muted"
               >
                 <option value="">Select site</option>
@@ -1830,17 +1845,14 @@ const ChefCreateMenu = ({
                 ))}
               </select>}
               <p className="mt-2 text-xs text-muted">
-                {isCorporateSite
-                  ? isEditMode && selectedSite !== corporateSettings.context?.site
-                    ? 'Ingredients and prices use the operational site of this recipe.'
-                    : `Material & price references: ${corporateSettings.context?.materialReferenceSites?.map((site) => site.name).join(' → ') || 'No references configured'}`
-                  : 'IT raw materials are limited to the selected site. Changing the site clears previously selected IT ingredients.'}
+                Products are shared across sites. Prices use the recipe site; enter a manual price when no site price is available.
               </p>
+              {siteOptionsError ? <p role="alert" className="mt-2 text-xs text-danger">{siteOptionsError}</p> : null}
               {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading site settings...</p> : null}
               {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}
               {assignedSiteOptions.length === 0 ? (
                 <p className="mt-2 text-xs text-red-600">
-                  No site is assigned to this Corporate Chef account.
+                  No site is available for this account.
                 </p>
               ) : null}
             </div>
@@ -1995,9 +2007,14 @@ const ChefCreateMenu = ({
         </div>
 
         <div className="mt-6">
-          <h3 className="font-semibold text-foreground">
-            Ingredients
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold text-foreground">Ingredients</h3>
+            <button type="button" disabled={!rawMaterialSite || Object.values(vendorPrices).some((state) => state.loading)}
+              onClick={() => setVendorPrices({})}
+              className="rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary disabled:opacity-60">
+              Sync Cost
+            </button>
+          </div>
           <p className="mt-1 text-xs text-muted">
             Add ingredients
           </p>
@@ -2085,7 +2102,7 @@ const ChefCreateMenu = ({
                     srQty: isDraftRecipe && !isPositiveNumber(srQty),
                     unitOfMeasures: isDraftRecipe && !row.unitOfMeasures.trim(),
                     vendor: isDraftRecipe && row.ingredientType === 'IT' && Boolean(vendorState && !vendorState.loading &&
-                      (vendorState.error || !selectedVendor || selectedVendor.price === undefined)),
+                      (vendorState.error)),
                     price: isDraftRecipe && requiresManualPrice(row) &&
                       (row.priceUom === undefined || !Number.isFinite(row.priceUom) ||
                         (row.ingredientType === 'IT' ? row.priceUom <= 0 : row.priceUom < 0)),
@@ -2356,7 +2373,7 @@ const ChefCreateMenu = ({
                         ) : row.ingredientType === 'IT' ? (
                           <>
                             <select
-                              value={selectedVendor?.vendor ?? row.vendor ?? ''}
+                              value={selectedVendor?.vendor ?? ''}
                               onChange={(event) => updateIngredientRow(row.id, 'vendor', event.target.value)}
                               disabled={!vendorState || vendorState.loading}
                               aria-label={`Vendor for ${row.name || `ingredient ${index + 1}`}`}
@@ -2365,9 +2382,8 @@ const ChefCreateMenu = ({
                               className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20 disabled:cursor-not-allowed disabled:opacity-60 ${vendorOptions.length > 1 ? 'border-amber-400 bg-amber-100' : 'border-border bg-white'}`}
                             >
                               {!vendorState || vendorState.loading ? <option value="">Loading vendors...</option>
-                                : vendorOptions.length === 0 ? <option value="">{vendorState.error || 'No vendor for this site'}</option> : null}
-                              {row.vendor && !selectedVendor ? <option value={row.vendor}>{row.vendor} (unavailable)</option> : null}
-                              {vendorOptions.map((option) => <option key={option.vendor} value={option.vendor}>{option.vendor}</option>)}
+                                : vendorOptions.length === 0 ? <option value="">{vendorState.error || 'No vendor'}</option> : null}
+                              {vendorOptions.map((option) => <option key={option.vendor} value={option.vendor}>{!option.vendor || option.vendor.toUpperCase() === 'NO VENDOR' ? 'No vendor' : option.vendor}</option>)}
                             </select>
                             {selectedVendor?.priceSourceSite ? (
                               <p className="mt-1 text-xs text-muted">Price source: {selectedVendor.priceSourceSiteName ?? selectedVendor.priceSourceSite}</p>
@@ -2390,7 +2406,7 @@ const ChefCreateMenu = ({
                               type="number"
                               min={0}
                               step="any"
-                              value={row.priceUom ?? ''}
+                              value={row.priceUom ?? 0}
                               aria-invalid={invalid.price}
                               onChange={(event) => updateIngredientRow(
                                 row.id,
