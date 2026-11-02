@@ -20,6 +20,7 @@ export function productionBatchPagePipeline(
     $trim: { input: { $ifNull: [`$${field}`, ''] } },
   });
   const code = trim('productionCode');
+  const recordsView = query.view === 'records' || query.view === 'records-all';
   const matches: Record<string, unknown>[] = [];
   if (query.approvalStatus)
     matches.push({ approvalStatuses: query.approvalStatus });
@@ -72,74 +73,98 @@ export function productionBatchPagePipeline(
           date: trim('productionDate'),
           code: { $cond: [{ $ne: [code, ''] }, code, { $toString: '$_id' }] },
         },
-        ids: { $push: '$_id' },
+        ...(query.summaryOnly ? {} : { ids: { $push: '$_id' } }),
         createdAt: { $max: { $ifNull: ['$submittedAt', '$createdAt'] } },
-        updatedAt: { $max: '$updatedAt' },
+        ...(drafts ? { updatedAt: { $max: '$updatedAt' } } : {}),
         clients: { $addToSet: trim('clientName') },
-        normalizedClients: { $addToSet: { $toLower: trim('clientName') } },
-        approvalStatuses: {
-          $addToSet: { $ifNull: ['$approvalStatus', 'pending'] },
-        },
-        storeStatuses: {
-          $addToSet: { $ifNull: ['$storeRequestStatus', 'not-requested'] },
-        },
-        approvedRequested: {
-          $max: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ['$approvalStatus', 'approved'] },
-                  { $eq: ['$storeRequestStatus', 'requested'] },
-                ],
+        ...(query.clientName?.trim()
+          ? {
+              normalizedClients: {
+                $addToSet: { $toLower: trim('clientName') },
               },
-              1,
-              0,
-            ],
-          },
-        },
-        returnedSales: {
-          $max: { $cond: [{ $ne: [trim('salesRejectionReason'), ''] }, 1, 0] },
-        },
-        salesComplete: {
-          $min: {
-            $cond: [
-              {
-                $and: [
-                  {
-                    $or: [
-                      { $isNumber: '$sellingPricePerPax' },
-                      { $eq: [{ $type: '$sellingPricePerPax' }, 'null'] },
-                    ],
-                  },
-                  {
-                    $or: [
-                      { $isNumber: '$sellingQuantity' },
-                      { $eq: [{ $type: '$sellingQuantity' }, 'null'] },
-                    ],
-                  },
-                ],
+            }
+          : {}),
+        ...(query.approvalStatus || recordsView
+          ? {
+              approvalStatuses: {
+                $addToSet: { $ifNull: ['$approvalStatus', 'pending'] },
               },
-              1,
-              0,
-            ],
-          },
-        },
+            }
+          : {}),
+        ...(recordsView
+          ? {
+              storeStatuses: {
+                $addToSet: {
+                  $ifNull: ['$storeRequestStatus', 'not-requested'],
+                },
+              },
+              approvedRequested: {
+                $max: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$approvalStatus', 'approved'] },
+                        { $eq: ['$storeRequestStatus', 'requested'] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
+        ...(query.view === 'sales'
+          ? {
+              returnedSales: {
+                $max: {
+                  $cond: [{ $ne: [trim('salesRejectionReason'), ''] }, 1, 0],
+                },
+              },
+              salesComplete: {
+                $min: {
+                  $cond: [
+                    {
+                      $and: [
+                        {
+                          $or: [
+                            { $isNumber: '$sellingPricePerPax' },
+                            { $eq: [{ $type: '$sellingPricePerPax' }, 'null'] },
+                          ],
+                        },
+                        {
+                          $or: [
+                            { $isNumber: '$sellingQuantity' },
+                            { $eq: [{ $type: '$sellingQuantity' }, 'null'] },
+                          ],
+                        },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
       },
     },
     ...(matches.length ? [{ $match: { $and: matches } } as PipelineStage] : []),
     {
       $facet: {
-        items: [
-          { $match: selection },
-          { $sort: sort },
-          ...(query.page || query.limit
-            ? [
-                { $skip: ((query.page ?? 1) - 1) * (query.limit ?? 10) },
-                { $limit: query.limit ?? 10 },
-              ]
-            : []),
-          { $project: { ids: 1 } },
-        ],
+        items: query.summaryOnly
+          ? [{ $limit: 1 }, { $project: { _id: 1 } }]
+          : [
+              { $match: selection },
+              { $sort: sort },
+              ...(query.page || query.limit
+                ? [
+                    { $skip: ((query.page ?? 1) - 1) * (query.limit ?? 10) },
+                    { $limit: query.limit ?? 10 },
+                  ]
+                : []),
+              { $project: { ids: 1 } },
+            ],
         total: [{ $match: selection }, { $count: 'count' }],
         clients: [
           { $unwind: '$clients' },

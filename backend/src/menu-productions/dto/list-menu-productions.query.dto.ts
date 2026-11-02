@@ -64,8 +64,21 @@ export class ListMenuProductionsQueryDto {
   limit?: number;
 
   @IsOptional()
-  @IsIn(['sales', 'records', 'records-all', 'approval'])
-  view?: 'sales' | 'records' | 'records-all' | 'approval';
+  @IsIn(['sales', 'records', 'records-all', 'approval', 'history', 'requests'])
+  view?:
+    | 'sales'
+    | 'records'
+    | 'records-all'
+    | 'approval'
+    | 'history'
+    | 'requests';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  summaryOnly?: boolean;
 
   @IsOptional()
   @IsString()

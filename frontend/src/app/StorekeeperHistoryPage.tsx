@@ -1,7 +1,8 @@
 import PageHeading from '../components/PageHeading'
 import { formatProductionDate } from '../lib/date-format'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { applyProductionTableFilters } from '../lib/production-table-query'
 import { formatQuantity, formatSignedQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { getStoreRequestStatusLabel } from '../lib/status-labels'
@@ -72,6 +73,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  site?: string
   date: string
   productionCode?: string
   items: StoreRequestMenu[]
@@ -82,16 +84,8 @@ type StoreRequestGroup = {
 
 const ITEMS_PER_PAGE = 10
 
-const getHistoryGroupKey = (group: { date: string; productionCode?: string }) =>
-  `${group.date}__${group.productionCode ?? 'no-code'}`
-
-const getGroupSubmittedAt = (group: StoreRequestGroup) =>
-  group.items.find((item) => item.submittedAt)?.submittedAt
-
-const getProductionDateTimestamp = (value: string) => {
-  const timestamp = new Date(`${value}T00:00:00`).getTime()
-  return Number.isNaN(timestamp) ? 0 : timestamp
-}
+const getHistoryGroupKey = (group: StoreRequestGroup) =>
+  `${group.site ?? ''}__${group.date}__${group.productionCode ?? group.items[0]?.id ?? 'no-code'}`
 
 const buildHistoryIngredientKey = (
   productCode: string,
@@ -112,6 +106,9 @@ const buildHistoryIngredientKey = (
 
 const StorekeeperHistoryPage = () => {
   const { accessToken } = useAuth()
+  const requestIdRef = useRef(0)
+  const [total, setTotal] = useState(0)
+  const [clientOptions, setClientOptions] = useState<string[]>([])
   const [loadError, setLoadError] = useState('')
   const [groups, setGroups] = useState<StoreRequestGroup[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -124,7 +121,8 @@ const StorekeeperHistoryPage = () => {
   const [clientName, setClientName] = useState('')
   const [dateSort, setDateSort] = useState('production-desc')
 
-  const fetchHistory = useCallback(async () => {
+  const fetchHistory = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++requestIdRef.current
     if (!accessToken) {
       setLoadError('Please log in first to load history.')
       return
@@ -133,36 +131,33 @@ const StorekeeperHistoryPage = () => {
     setLoading(true)
     setLoadError('')
     try {
-      const [fulfilledData, cancelledData] = await Promise.all([
-        apiFetch<{ items: StoreRequestGroup[] }>(
-          '/menu-productions/store-requests?storeRequestStatus=fulfilled&approvalStatus=approved',
-          undefined,
-          accessToken,
-        ),
-        apiFetch<{ items: StoreRequestGroup[] }>(
-          '/menu-productions/store-requests?storeRequestStatus=cancelled&approvalStatus=approved',
-          undefined,
-          accessToken,
-        ),
-      ])
-      const sorted = [
-        ...(fulfilledData.items ?? []),
-        ...(cancelledData.items ?? []),
-      ].sort((a, b) =>
-        b.date.localeCompare(a.date),
+      const params = new URLSearchParams({
+        view: 'history', approvalStatus: 'approved',
+        page: String(page), limit: String(ITEMS_PER_PAGE),
+      })
+      applyProductionTableFilters(params, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
+      const data = await apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(
+        `/menu-productions/store-requests?${params}`, { signal }, accessToken,
       )
-      setGroups(sorted)
+      if (signal?.aborted || requestId !== requestIdRef.current) return
+      setGroups(data.items)
+      setTotal(data.total)
+      setClientOptions(data.clients)
     } catch (error) {
+      if (signal?.aborted || requestId !== requestIdRef.current) return
+      setGroups([])
       const message =
         error instanceof Error ? error.message : 'Failed to load data.'
       setLoadError(message)
     } finally {
-      setLoading(false)
+      if (!signal?.aborted && requestId === requestIdRef.current) setLoading(false)
     }
-  }, [accessToken])
+  }, [accessToken, page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
-    fetchHistory().catch(() => null)
+    const controller = new AbortController()
+    void fetchHistory(controller.signal)
+    return () => controller.abort()
   }, [fetchHistory])
 
   useEffect(() => {
@@ -177,63 +172,11 @@ const StorekeeperHistoryPage = () => {
     createdDateFrom && createdDateTo && createdDateFrom > createdDateTo,
   )
 
-  const clientOptions = useMemo(() => {
-    const clients = new Map<string, string>()
-    groups.forEach((group) => {
-      group.items.forEach((item) => {
-        const name = item.clientName?.trim()
-        if (name && !clients.has(name.toLowerCase())) {
-          clients.set(name.toLowerCase(), name)
-        }
-      })
-    })
-    return Array.from(clients.values()).sort((a, b) =>
-      a.localeCompare(b, 'id', { sensitivity: 'base' }),
-    )
-  }, [groups])
-
-  const filteredGroups = useMemo(() => {
-    if (invalidProductionRange || invalidCreatedRange) return []
-    const normalizedClient = clientName.trim().toLowerCase()
-    const filtered = groups.filter((group) => {
-      if (productionDateFrom && group.date < productionDateFrom) return false
-      if (productionDateTo && group.date > productionDateTo) return false
-      if (createdDateFrom || createdDateTo) {
-        const submittedAt = getGroupSubmittedAt(group)
-        if (!submittedAt) return false
-        const createdDate = new Date(submittedAt)
-        if (Number.isNaN(createdDate.getTime())) return false
-        const date = `${createdDate.getFullYear()}-${String(createdDate.getMonth() + 1).padStart(2, '0')}-${String(createdDate.getDate()).padStart(2, '0')}`
-        if (createdDateFrom && date < createdDateFrom) return false
-        if (createdDateTo && date > createdDateTo) return false
-      }
-      return !normalizedClient || group.items.some(
-        (item) => item.clientName?.trim().toLowerCase() === normalizedClient,
-      )
-    })
-
-    const sortByCreated = dateSort.startsWith('created-')
-    const direction = dateSort.endsWith('-asc') ? 1 : -1
-    return filtered.sort((a, b) => {
-      const aDate = sortByCreated
-        ? new Date(getGroupSubmittedAt(a) ?? '').getTime()
-        : getProductionDateTimestamp(a.date)
-      const bDate = sortByCreated
-        ? new Date(getGroupSubmittedAt(b) ?? '').getTime()
-        : getProductionDateTimestamp(b.date)
-      if (Number.isNaN(aDate)) return Number.isNaN(bDate) ? 0 : 1
-      if (Number.isNaN(bDate)) return -1
-      return (aDate - bDate) * direction
-    })
-  }, [groups, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+  const filteredGroups = invalidProductionRange || invalidCreatedRange ? [] : groups
 
   useEffect(() => {
-    const nextTotalPages = Math.max(
-      1,
-      Math.ceil(filteredGroups.length / ITEMS_PER_PAGE),
-    )
-    setPage((prev) => Math.min(prev, nextTotalPages))
-  }, [filteredGroups.length])
+    setPage((prev) => Math.min(prev, Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))))
+  }, [total])
 
   const toggleExpanded = (groupKey: string) => {
     setExpandedGroups((prev) =>
@@ -537,11 +480,8 @@ const StorekeeperHistoryPage = () => {
     )
   }
 
-  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / ITEMS_PER_PAGE))
-  const paginatedGroups = filteredGroups.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE,
-  )
+  const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))
+  const paginatedGroups = filteredGroups
 
   return (
     <div className="space-y-6">
@@ -616,7 +556,7 @@ const StorekeeperHistoryPage = () => {
       <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
-            Showing {paginatedGroups.length} of {filteredGroups.length} production batches
+            Showing {paginatedGroups.length} of {total} production batches
           </span>
           <div className="flex items-center gap-2">
             <button

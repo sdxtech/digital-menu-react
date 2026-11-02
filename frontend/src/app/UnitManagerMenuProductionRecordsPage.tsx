@@ -110,7 +110,7 @@ type StoreRequestGroup = {
 }
 
 const getGroupKey = (group: StoreRequestGroup) =>
-  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? 'no-code'}`
+  `${group.site ?? 'no-site'}__${group.date}__${group.productionCode ?? group.items[0]?.id ?? 'no-code'}`
 
 const getGroupSubmittedAt = (group: StoreRequestGroup) =>
   group.items.find((item) => item.submittedAt)?.submittedAt
@@ -896,11 +896,14 @@ const UnitManagerMenuProductionRecordsPage = ({
             </button>
             <ProductionBulkExportButton
               groups={records}
-              loadGroups={async () => {
+              loadGroups={async ({ from, to, client, summaryOnly }) => {
                 const params = new URLSearchParams({ view: includePending ? 'records-all' : 'records' })
+                if (from) params.set('startDate', from)
+                if (to) params.set('endDate', to)
+                if (client) params.set('clientName', client)
+                if (summaryOnly) params.set('summaryOnly', 'true')
                 if (enableSiteSelection) params.set('site', selectedSite)
-                const data = await apiFetch<{ items: StoreRequestGroup[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
-                return data.items
+                return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
               }}
               disabled={loading || Boolean(error)}
               filename="menu-production-records-bulk.xlsx"

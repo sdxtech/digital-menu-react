@@ -1,4 +1,5 @@
 import PageHeading from '../components/PageHeading'
+import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -110,7 +111,6 @@ type ReconciliationRow = {
 
 const ITEMS_PER_PAGE = 10
 
-type DateFilterKind = 'created' | 'production'
 type DateSortOrder = 'none' | 'desc' | 'asc'
 
 const matchesDateRange = (
@@ -378,8 +378,6 @@ const StorekeeperPage = () => {
   })
   const [bulkExportError, setBulkExportError] = useState('')
   const [bulkExporting, setBulkExporting] = useState(false)
-  const [activeDateFilter, setActiveDateFilter] =
-    useState<DateFilterKind | null>(null)
   const [createdFilterStartDate, setCreatedFilterStartDate] = useState('')
   const [createdFilterEndDate, setCreatedFilterEndDate] = useState('')
   const [productionFilterStartDate, setProductionFilterStartDate] = useState('')
@@ -387,7 +385,7 @@ const StorekeeperPage = () => {
   const [createdSortOrder, setCreatedSortOrder] =
     useState<DateSortOrder>('none')
   const [productionSortOrder, setProductionSortOrder] =
-    useState<DateSortOrder>('none')
+    useState<DateSortOrder>('desc')
 
   // FRONTEND VIEW: backend returns grouped requests with ingredient summary.
   const fetchStoreRequests = useCallback(async () => {
@@ -1002,153 +1000,56 @@ const StorekeeperPage = () => {
         <p className="text-sm text-muted">
           This data is auto-added after Unit Manager approval.
         </p>
-        <div className="relative">
-          <div className="flex flex-wrap items-center gap-2 pt-2">
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <DateRangeFilter
+            id="storekeeper-store-request-production"
+            label="Production Date"
+            from={productionFilterStartDate}
+            to={productionFilterEndDate}
+            sortDirection={productionSortOrder === 'none' ? undefined : productionSortOrder}
+            onApply={(from, to) => {
+              setProductionFilterStartDate(from)
+              setProductionFilterEndDate(to)
+              setPage(1)
+            }}
+            onSort={(direction) => {
+              setProductionSortOrder(direction)
+              setCreatedSortOrder('none')
+              setPage(1)
+            }}
+          />
+          <DateRangeFilter
+            id="storekeeper-store-request-created"
+            label="Created Date"
+            from={createdFilterStartDate}
+            to={createdFilterEndDate}
+            sortDirection={createdSortOrder === 'none' ? undefined : createdSortOrder}
+            onApply={(from, to) => {
+              setCreatedFilterStartDate(from)
+              setCreatedFilterEndDate(to)
+              setPage(1)
+            }}
+            onSort={(direction) => {
+              setCreatedSortOrder(direction)
+              setProductionSortOrder('none')
+              setPage(1)
+            }}
+          />
           <button
             type="button"
-            onClick={() => setActiveDateFilter((prev) => (prev === 'created' ? null : 'created'))}
-            className={`rounded-md border px-3 py-2 text-xs font-semibold shadow-sm ${
-              activeDateFilter === 'created'
-                ? 'border-accent-blue bg-accent-blue text-white'
-                : 'border-border bg-white text-primary hover:bg-background'
-            }`}
+            onClick={() => {
+              setProductionFilterStartDate('')
+              setProductionFilterEndDate('')
+              setCreatedFilterStartDate('')
+              setCreatedFilterEndDate('')
+              setProductionSortOrder('desc')
+              setCreatedSortOrder('none')
+              setPage(1)
+            }}
+            className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
           >
-            <i className="bi bi-funnel mr-2" aria-hidden="true" />
-            Created Date
+            Reset filters
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveDateFilter((prev) => (prev === 'production' ? null : 'production'))}
-            className={`rounded-md border px-3 py-2 text-xs font-semibold shadow-sm ${
-              activeDateFilter === 'production'
-                ? 'border-accent-blue bg-accent-blue text-white'
-                : 'border-border bg-white text-primary hover:bg-background'
-            }`}
-          >
-            <i className="bi bi-funnel mr-2" aria-hidden="true" />
-            Production Date
-          </button>
-          </div>
-          {activeDateFilter ? (
-            <div
-              className="absolute left-0 top-full z-[110] mt-2 w-full max-w-2xl rounded-md border border-border bg-white p-4 shadow-[0_12px_36px_rgba(15,23,42,0.18)]"
-              role="dialog"
-              aria-label={`${activeDateFilter === 'created' ? 'Created' : 'Production'} date filter`}
-            >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor={`${activeDateFilter}-filter-start-date`}
-                  className="text-xs font-medium text-foreground"
-                >
-                  Start date
-                </label>
-                <input
-                  id={`${activeDateFilter}-filter-start-date`}
-                  type="date"
-                  value={
-                    activeDateFilter === 'created'
-                      ? createdFilterStartDate
-                      : productionFilterStartDate
-                  }
-                  max={
-                    activeDateFilter === 'created'
-                      ? createdFilterEndDate || undefined
-                      : productionFilterEndDate || undefined
-                  }
-                  onChange={(event) => {
-                    if (activeDateFilter === 'created') {
-                      setCreatedFilterStartDate(event.target.value)
-                    } else {
-                      setProductionFilterStartDate(event.target.value)
-                    }
-                    setPage(1)
-                  }}
-                  className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor={`${activeDateFilter}-filter-end-date`}
-                  className="text-xs font-medium text-foreground"
-                >
-                  End date
-                </label>
-                <input
-                  id={`${activeDateFilter}-filter-end-date`}
-                  type="date"
-                  value={
-                    activeDateFilter === 'created'
-                      ? createdFilterEndDate
-                      : productionFilterEndDate
-                  }
-                  min={
-                    activeDateFilter === 'created'
-                      ? createdFilterStartDate || undefined
-                      : productionFilterStartDate || undefined
-                  }
-                  onChange={(event) => {
-                    if (activeDateFilter === 'created') {
-                      setCreatedFilterEndDate(event.target.value)
-                    } else {
-                      setProductionFilterEndDate(event.target.value)
-                    }
-                    setPage(1)
-                  }}
-                  className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                />
-              </div>
-            </div>
-            <div className="mt-4 max-w-sm">
-              <label
-                htmlFor={`${activeDateFilter}-sort-order`}
-                className="text-xs font-medium text-foreground"
-              >
-                Sort by
-              </label>
-              <select
-                id={`${activeDateFilter}-sort-order`}
-                value={
-                  activeDateFilter === 'created'
-                    ? createdSortOrder
-                    : productionSortOrder
-                }
-                onChange={(event) => {
-                  const value = event.target.value as DateSortOrder
-                  if (activeDateFilter === 'created') {
-                    setCreatedSortOrder(value)
-                    setProductionSortOrder('none')
-                  } else {
-                    setProductionSortOrder(value)
-                    setCreatedSortOrder('none')
-                  }
-                  setPage(1)
-                }}
-                className="mt-2 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-              >
-                <option value="none">No sorting</option>
-                <option value="desc">Newest to oldest</option>
-                <option value="asc">Oldest to newest</option>
-              </select>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (activeDateFilter === 'created') {
-                  setCreatedFilterStartDate('')
-                  setCreatedFilterEndDate('')
-                } else {
-                  setProductionFilterStartDate('')
-                  setProductionFilterEndDate('')
-                }
-                setPage(1)
-              }}
-              className="mt-3 rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-            >
-              Clear filter
-            </button>
-            </div>
-          ) : null}
         </div>
         {loadError ? (
           <p className="text-xs font-medium text-red-600">{loadError}</p>
