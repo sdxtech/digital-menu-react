@@ -192,6 +192,7 @@ export class AuditInterceptor implements NestInterceptor {
             typeof file.mimetype === 'string'
               ? file.mimetype
               : 'application/octet-stream',
+            content.byteLength,
           );
           return {
             ...metadata,

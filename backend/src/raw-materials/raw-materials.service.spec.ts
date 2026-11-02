@@ -359,6 +359,62 @@ describe('RawMaterialsService price updates', () => {
     });
   });
 
+  it.each(['MICHELIN', 'MULTI STRADA ARAH SARANA'])(
+    'keeps SO Kitchen prices intact when importing the same product and vendor for %s',
+    async (targetSite) => {
+      const fields = {
+        productCodeNormalized: 'it00900_n',
+        vendorNormalized: 'shared vendor',
+        currencyNormalized: 'idr',
+        unitOfMeasuresNormalized: 'kg (kg)',
+      };
+      const { rawMaterialModel, rawMaterialVendorPriceModel, service } =
+        makePriceService([
+          {
+            ...fields,
+            _id: 'sokitchen-price',
+            siteNormalized: 'sokitchen',
+            price: 50000,
+          },
+          {
+            ...fields,
+            _id: 'target-price',
+            siteNormalized: targetSite.toLowerCase().replace(/[^a-z0-9]/g, ''),
+            price: 40000,
+          },
+        ]);
+      await service.bulkUpdatePricesByProductCode([
+        {
+          productCode: 'IT00900_N',
+          site: targetSite,
+          vendor: 'Shared Vendor',
+          currency: 'IDR',
+          unitOfMeasures: 'KG (KG)',
+          price: 42500,
+        },
+      ]);
+      expect(rawMaterialModel.bulkWrite).not.toHaveBeenCalled();
+      const calls = rawMaterialVendorPriceModel.bulkWrite.mock
+        .calls as unknown as Array<
+        [
+          Array<{
+            updateOne: {
+              filter: { _id: string };
+              update: { $set: Record<string, unknown> };
+            };
+          }>,
+        ]
+      >;
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toHaveLength(1);
+      expect(calls[0][0][0].updateOne.filter).toEqual({ _id: 'target-price' });
+      expect(calls[0][0][0].updateOne.update.$set).toMatchObject({
+        site: targetSite,
+        price: 42500,
+      });
+    },
+  );
+
   it('chooses the closest non-future start date before comparing price', async () => {
     const formatDate = (offset: number) => {
       const date = new Date();
