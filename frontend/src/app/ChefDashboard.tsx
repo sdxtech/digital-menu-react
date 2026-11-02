@@ -45,122 +45,155 @@ const ChefDashboard = () => {
 
   const summary = data?.summary
   const formatDelta = (value?: number) => {
-    if (value === undefined || Number.isNaN(value)) return '0% vs yesterday'
+    if (value === undefined || Number.isNaN(value)) return '0%'
     const sign = value > 0 ? '+' : ''
-    return `${sign}${value}% vs yesterday`
+    return `${sign}${value}%`
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <div>
-          <PageHeading className="text-2xl font-semibold" showBack={false}>Quick View</PageHeading>
-          {error ? (
-            <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
-          ) : null}
-        </div>
+  const metrics = [
+    {
+      label: 'Menus scheduled today',
+      value: summary?.menusToday ?? 0,
+      detailValue: formatDelta(summary?.menusTodayDelta),
+      detailLabel: 'vs yesterday',
+      detailIcon: (summary?.menusTodayDelta ?? 0) > 0
+        ? 'bi-arrow-up'
+        : (summary?.menusTodayDelta ?? 0) < 0 ? 'bi-arrow-down' : 'bi-dash',
+      detailTone: (summary?.menusTodayDelta ?? 0) > 0
+        ? 'text-success'
+        : (summary?.menusTodayDelta ?? 0) < 0 ? 'text-danger' : 'text-muted',
+      accent: 'bg-accent-blue',
+    },
+    {
+      label: 'Menus approved today',
+      value: summary?.approvedToday ?? 0,
+      detailValue: summary?.pendingToday ?? 0,
+      detailLabel: 'Menus submitted',
+      detailIcon: 'bi-dash',
+      detailTone: 'text-muted',
+      accent: 'bg-accent-indigo',
+    },
+    {
+      label: 'Store requests pending',
+      value: summary?.storeRequestedToday ?? 0,
+      detailValue: summary?.storeFulfilledToday ?? 0,
+      detailLabel: 'Menus fulfilled',
+      detailIcon: 'bi-dash',
+      detailTone: 'text-muted',
+      accent: 'bg-accent-cyan',
+    },
+  ]
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-foreground">
-              Menus scheduled today
-            </p>
-            <p className="mt-3 text-3xl font-semibold">
-              {summary?.menusToday ?? 0}
-            </p>
-            <p className="mt-2 text-xs text-foreground">
-              {formatDelta(summary?.menusTodayDelta)}
-            </p>
-          </div>
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-foreground">
-              Menus approved today
-            </p>
-            <p className="mt-3 text-3xl font-semibold">
-              {summary?.approvedToday ?? 0}
-            </p>
-            <p className="mt-2 text-xs text-foreground">
-              Submitted {summary?.pendingToday ?? 0} menus
-            </p>
-          </div>
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <p className="text-xs text-foreground">
-              Store requests pending
-            </p>
-            <p className="mt-3 text-3xl font-semibold text-foreground">
-              {summary?.storeRequestedToday ?? 0}
-            </p>
-            <p className="mt-2 text-xs text-foreground">
-              Fulfilled {summary?.storeFulfilledToday ?? 0} menus
-            </p>
-          </div>
-        </div>
+  return (
+    <div className="min-w-0 space-y-4">
+      <div className="space-y-1">
+        <PageHeading className="text-2xl font-semibold" showBack={false}>Quick View</PageHeading>
+        <p className="text-sm text-muted">Today's menus, approvals, and store requests.</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-12">
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-7">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-foreground">
+      {error ? (
+        <p role="alert" className="rounded-lg border border-danger bg-surface px-4 py-3 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
+      <section aria-label="Today's key metrics" className="grid overflow-hidden rounded-lg border border-border bg-surface shadow-sm md:grid-cols-3">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="flex min-w-0 flex-col border-b border-border last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+            <div className="flex-1 space-y-2 p-2">
+              <p className="flex items-start gap-2 text-sm font-medium text-foreground">
+                <span aria-hidden="true" className={`mt-0.5 h-4 w-0.5 shrink-0 rounded-full ${metric.accent}`} />
+                {metric.label}
+              </p>
+              <div className="break-words text-[40px] font-semibold leading-tight tabular-nums text-foreground">
+                {metric.value}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border p-2 text-xs leading-5">
+              <span className={`inline-flex shrink-0 items-center gap-2 font-normal tabular-nums ${metric.detailTone}`}>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-background">
+                  <i aria-hidden="true" className={`bi ${metric.detailIcon}`} />
+                </span>
+                {metric.detailValue}
+              </span>
+              <span className="min-w-0 break-words text-right font-normal text-foreground">{metric.detailLabel}</span>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <section aria-labelledby="chef-priority-heading" className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+          <div className="flex min-h-8 items-center justify-between gap-3 border-b border-border p-2 sm:px-4">
+            <div className="min-w-0">
+              <h2 id="chef-priority-heading" className="text-sm font-semibold text-foreground">
                 Priority
-              </h3>
-              <p className="mt-1 text-xs text-muted">
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted">
                 Menus that must be ready
               </p>
             </div>
-            <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-medium text-primary">
+            <span className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium tabular-nums text-muted">
               {data?.priority.length ?? 0} items
             </span>
           </div>
-          <div className="mt-6 space-y-4">
+          <div className="flex flex-1 flex-col p-4 sm:p-5">
             {(data?.priority ?? []).length === 0 ? (
-              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
+              <div className="flex min-h-48 flex-1 items-center justify-center rounded-md bg-background p-5 text-center text-sm leading-6 text-muted">
                 No menus scheduled for today yet.
               </div>
             ) : (
-              (data?.priority ?? []).map((item) => (
-                <div
-                  key={`${item.name}-${item.value}`}
-                  className="flex items-center justify-between rounded-md border border-border bg-background px-4 py-3 text-sm"
-                >
-                  <div>
-                    <p className="font-medium text-foreground">{item.name}</p>
-                    <p className="text-xs text-muted">{item.status}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-primary">
-                    {item.value}
-                  </span>
-                </div>
-              ))
+              <ul className="divide-y divide-border">
+                {(data?.priority ?? []).map((item) => (
+                  <li
+                    key={`${item.name}-${item.value}`}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1 basis-40">
+                      <p className="break-words text-sm font-medium leading-6 text-foreground">{item.name}</p>
+                      <p className="mt-1 break-words text-xs leading-5 text-muted">{item.status}</p>
+                    </div>
+                    <span className="max-w-full break-words rounded-md bg-primary-soft px-2 py-1 text-xs font-medium leading-5 tabular-nums text-primary">
+                      {item.value}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-5">
-          <h3 className="font-semibold text-foreground">
-            Production progress
-          </h3>
-          <p className="mt-1 text-xs text-muted">
-            Today's status
-          </p>
-          <div className="mt-6 space-y-4">
+        <section aria-labelledby="chef-progress-heading" className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+          <div className="flex min-h-8 items-center border-b border-border p-2 sm:px-4">
+            <div className="min-w-0">
+              <h2 id="chef-progress-heading" className="text-sm font-semibold text-foreground">
+                Production progress
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Today's status
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-1 flex-col p-4 sm:p-5">
             {(data?.progress ?? []).length === 0 ? (
-              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted">
+              <div className="flex min-h-48 flex-1 items-center justify-center rounded-md bg-background p-5 text-center text-sm leading-6 text-muted">
                 No progress data yet.
               </div>
             ) : (
-              (data?.progress ?? []).map((task) => (
-                <div
-                  key={task.label}
-                  className="rounded-md border border-border bg-background px-4 py-3 text-sm"
-                >
-                  <p className="font-medium text-foreground">{task.label}</p>
-                  <p className="mt-1 text-xs text-muted">{task.value}</p>
-                </div>
-              ))
+              <ul className="divide-y divide-border">
+                {(data?.progress ?? []).map((task) => (
+                  <li
+                    key={task.label}
+                    className="min-w-0 py-4 first:pt-0 last:pb-0"
+                  >
+                    <p className="break-words text-sm font-medium leading-6 text-foreground">{task.label}</p>
+                    <p className="mt-1 break-words text-xs leading-5 tabular-nums text-muted">{task.value}</p>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )
