@@ -143,7 +143,7 @@ export class RecipesController {
     @Param('id') id: string,
     @Body() dto: UpdateRecipeDto,
   ) {
-    return this.recipes.updateById(id, dto, this.buildActor(req));
+    return this.recipes.updateById(id, dto, this.buildActor(req, dto.site));
   }
 
   @Patch(':id/submit-draft')
@@ -308,6 +308,9 @@ export class RecipesController {
     requestedSite?: string,
     required = false,
   ) {
+    if (req.user.roles?.includes(AppRole.Superadmin)) {
+      return requestedSite?.trim() || getUserSiteScope(req.user);
+    }
     if (!req.user.roles?.includes(AppRole.CorporateChef)) {
       return getUserSiteScope(req.user);
     }

@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import type { RecipeIngredient } from '../../recipes/schemas/recipe.schema';
 
 export type MenuProductionDocument = HydratedDocument<MenuProduction>;
 
@@ -43,6 +44,9 @@ export type MenuProductionIngredientVendor = {
 
 @Schema({ timestamps: true })
 export class MenuProduction {
+  @Prop({ type: Object })
+  recipeSnapshot?: { portionSize?: number; ingredients: RecipeIngredient[] };
+
   @Prop({
     type: String,
     trim: true,

@@ -35,6 +35,7 @@ const makeService = (menus: Array<Record<string, unknown>> = makeMenus()) => {
     {} as never,
     {} as never,
     {} as never,
+    { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
   );
   return { service, model };
 };

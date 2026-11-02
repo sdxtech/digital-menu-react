@@ -188,6 +188,7 @@ type CreateRecipeInput = {
 }
 
 type UpdateRecipeInput = {
+  site?: string;
   cookingMethod?: string[]
   targetFoodCostPercentage?: number | null
   saveAsDraft?: boolean
@@ -1066,6 +1067,7 @@ export const ChefDataProvider = ({ children }: { children: ReactNode }) => {
 
       const safeLimit = Math.min(limit, 100)
       const params = new URLSearchParams()
+      params.set('catalog', 'true')
       params.set('page', '1')
       params.set('limit', String(safeLimit))
       if (search?.trim()) params.set('search', search.trim())

@@ -52,6 +52,7 @@ const makeService = (menus: Array<Record<string, unknown>> = makeMenus()) => {
       {} as never,
       notifications as never,
       mail as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     ),
   };
 };
