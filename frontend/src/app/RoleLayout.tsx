@@ -407,7 +407,7 @@ const RoleLayout = ({
         </NavLink>
 
         {showChildren ? (
-          <div className="dm-role-submenu ml-5 space-y-0.5 pl-3">
+          <div className="dm-role-submenu ml-5 mt-1 space-y-0.5 pl-3">
             {item.children?.map((child) => renderPanelLink(child, level + 1))}
           </div>
         ) : null}
