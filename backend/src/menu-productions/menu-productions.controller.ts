@@ -102,6 +102,12 @@ export class MenuProductionsController {
     );
   }
 
+  @Patch('drafts/sync-costs')
+  @Roles(AppRole.Superadmin)
+  syncDraftCosts() {
+    return this.menuProductions.syncDraftCosts();
+  }
+
   @Get('drafts')
   @Roles(AppRole.Chef, AppRole.Superadmin)
   drafts(

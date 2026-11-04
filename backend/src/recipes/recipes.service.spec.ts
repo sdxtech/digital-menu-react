@@ -3073,6 +3073,56 @@ describe('RecipesService site visibility', () => {
     }
   });
 
+  it.each(['pending', 'rejected'])(
+    'syncs %s recipes in Recipe Data while retaining their cost estimates',
+    async (approvalStatus) => {
+      const { rawMaterials, recipeModel, service } = makeService();
+      recipeModel.find.mockReturnValue(
+        mockRecipeQuery([
+          {
+            _id: 'recipe-a',
+            site: 'SITE-A',
+            isDraft: false,
+            approvalStatus,
+            foodCostRecipe: 2,
+            ingredients: [
+              {
+                productCode: 'RM-001',
+                name: 'Chicken',
+                unitOfMeasures: 'KG',
+                qty: 2,
+                priceUom: 1,
+                foodCost: 2,
+              },
+            ],
+          },
+        ]),
+      );
+      rawMaterials.findLookupsByNormalizedCodes.mockResolvedValue([
+        { productCodeNormalized: 'rm-001', price: 100 },
+      ]);
+      rawMaterials.findVendorPrices.mockResolvedValue([
+        { vendor: 'Vendor A', unitOfMeasures: 'KG', price: 10 },
+      ]);
+
+      await service.backfillApprovedIngredientCosts();
+
+      expect(recipeModel.find).toHaveBeenCalledWith({
+        deletedAt: { $exists: false },
+        'ingredients.0': { $exists: true },
+      });
+      const updates = recipeModel.updateOne.mock.calls as unknown as Array<
+        [{ _id: string }, RecipeUpdatePayload]
+      >;
+      expect(updates[0]?.[0]).toEqual({ _id: 'recipe-a' });
+      expect(updates[0]?.[1].$set.foodCostRecipe).toBe(20);
+      expect(updates[0]?.[1].$set.ingredients?.[0]).toMatchObject({
+        priceUom: 10,
+        foodCost: 20,
+      });
+    },
+  );
+
   describe('recipe conversion sync', () => {
     const ingredient = {
       productCode: 'RM-001',

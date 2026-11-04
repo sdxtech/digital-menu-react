@@ -15,6 +15,7 @@ describe('MenuProductionsController sales input actor', () => {
       replaceDraft: jest.fn(),
       submitDraftBatch: jest.fn(),
       deleteDraft: jest.fn(),
+      syncDraftCosts: jest.fn(),
       editSalesBatch: jest.fn(),
       rejectSalesBatch: jest.fn(),
     };
@@ -52,6 +53,19 @@ describe('MenuProductionsController sales input actor', () => {
       dto,
     );
     expect(menuProductions.deleteBatch).toHaveBeenCalledWith(dto, undefined);
+  });
+
+  it('restricts global draft cost sync to superadmin', async () => {
+    const { controller, menuProductions } = makeController();
+    const handler = Object.getOwnPropertyDescriptor(
+      MenuProductionsController.prototype,
+      'syncDraftCosts',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Superadmin,
+    ]);
+    await controller.syncDraftCosts();
+    expect(menuProductions.syncDraftCosts).toHaveBeenCalledTimes(1);
   });
 
   it.each([AppRole.Chef, AppRole.Superadmin])(

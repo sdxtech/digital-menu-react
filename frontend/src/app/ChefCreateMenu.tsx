@@ -22,6 +22,7 @@ import {
   getRecipeVersion,
 } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import { syncSharedCosts } from '../lib/sync-shared-costs'
 
 const INGREDIENT_ROWS_PER_PAGE = 30
 const isPositiveNumber = (value: string | number | undefined) =>
@@ -322,6 +323,8 @@ const ChefCreateMenu = ({
   const [unitConversions, setUnitConversions] = useState<UnitConversion[]>([])
   const [submitError, setSubmitError] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
+  const [syncCostLoading, setSyncCostLoading] = useState(false)
+  const [syncCostStatus, setSyncCostStatus] = useState<{ error: boolean; message: string } | null>(null)
   const [categoryOptions, setCategoryOptions] = useState<string[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(false)
   const [categoriesError, setCategoriesError] = useState('')
@@ -339,6 +342,24 @@ const ChefCreateMenu = ({
   const searchRequestRef = useRef(0)
   const isMountedRef = useRef(true)
   const baseRecipeRef = useRef<BaseRecipe | null>(null)
+
+  const handleSyncCost = async () => {
+    if (!isSuperadmin || !accessToken) {
+      setVendorPrices({})
+      return
+    }
+    setSyncCostLoading(true)
+    setSyncCostStatus(null)
+    try {
+      const result = await syncSharedCosts(accessToken)
+      setVendorPrices({})
+      setSyncCostStatus({ error: false, message: `Costs updated for ${result.updatedRecipes} recipes and ${result.updatedDrafts} production drafts across all roles.` })
+    } catch (reason) {
+      setSyncCostStatus({ error: true, message: reason instanceof Error ? reason.message : 'Failed to sync costs.' })
+    } finally {
+      setSyncCostLoading(false)
+    }
+  }
 
   useEffect(() => {
     isMountedRef.current = true
@@ -2047,12 +2068,17 @@ const ChefCreateMenu = ({
         <div className="mt-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-semibold text-foreground">Ingredients</h3>
-            <button type="button" disabled={!rawMaterialSite || Object.values(vendorPrices).some((state) => state.loading)}
-              onClick={() => setVendorPrices({})}
+            <button type="button" disabled={(!isSuperadmin && !rawMaterialSite) || syncCostLoading || Object.values(vendorPrices).some((state) => state.loading)}
+              onClick={() => { void handleSyncCost() }}
               className="rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary disabled:opacity-60">
-              Sync Cost
+              {syncCostLoading ? 'Syncing costs...' : 'Sync Cost'}
             </button>
           </div>
+          {syncCostStatus ? (
+            <p role="status" className={`mt-2 text-xs ${syncCostStatus.error ? 'text-danger' : 'text-primary'}`}>
+              {syncCostStatus.message}
+            </p>
+          ) : null}
           <p className="mt-1 text-xs text-muted">
             Add ingredients
           </p>
