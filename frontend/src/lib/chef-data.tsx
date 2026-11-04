@@ -142,6 +142,8 @@ export type RawMaterial = {
   name: string
   unitOfMeasures: string
   price?: number
+  sitePrice?: number
+  hasPrice?: boolean
   baseUnitOfMeasures?: string
   conversionFactor?: number
   specificConversions?: RawMaterialSpecificConversion[]
@@ -488,6 +490,8 @@ const mapRawMaterial = (item: RawMaterial & { _id?: string }): RawMaterial => ({
   price: item.price != null && Number.isFinite(Number(item.price))
     ? Number(item.price)
     : undefined,
+  hasPrice: item.hasPrice,
+  sitePrice: item.sitePrice,
   baseUnitOfMeasures: item.baseUnitOfMeasures,
   conversionFactor: Number.isFinite(Number(item.conversionFactor))
     ? Number(item.conversionFactor)

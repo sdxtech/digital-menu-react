@@ -229,6 +229,7 @@ const ChefMenuCycle = ({
     ? '/superadmin/menu-management?tab=menu-production'
     : '/chef/menu-cycle'
   const hydratedDraftRef = useRef('')
+  const restoredDraftRowIdsRef = useRef<Set<string>>(new Set())
   const restoredDraftVendorsRef = useRef('')
   const [draftRecipesLoading, setDraftRecipesLoading] = useState(false)
   const [draftRecipesError, setDraftRecipesError] = useState('')
@@ -345,16 +346,16 @@ const ChefMenuCycle = ({
     setProductionChefId(draftMenus[0]?.createdBy ?? '')
     setProductionUnitManagerId(draftMenus[0]?.unitManagerId ?? '')
     setProductionDate(draftMenus[0]?.productionDate ?? '')
-    setMenuRows(
-      draftMenus.map((menu) =>
-        createMenuInputRow({
-          group: menu.group ?? '',
-          recipeId: menu.recipeId ?? '',
-          recipeQuery: menu.menuName,
-          portion: menu.portion > 0 ? menu.portion : '',
-        }),
-      ),
+    const restoredRows = draftMenus.map((menu) =>
+      createMenuInputRow({
+        group: menu.group ?? '',
+        recipeId: menu.recipeId ?? '',
+        recipeQuery: menu.menuName,
+        portion: menu.portion > 0 ? menu.portion : '',
+      }),
     )
+    restoredDraftRowIdsRef.current = new Set(restoredRows.map((row) => row.id))
+    setMenuRows(restoredRows)
     setInputPage(1)
     setInputError('')
     setInputMessage(`Continuing draft ${draftProductionCode}.`)
@@ -510,6 +511,8 @@ const ChefMenuCycle = ({
       ? parsedPrice
       : undefined
   }
+  const isUnsyncedDraftRow = (rowId: string) =>
+    Boolean(draftProductionCode) && !draftCostsSynced && restoredDraftRowIdsRef.current.has(rowId)
 
   const sortedProductionSiteOptions = useMemo(
     () =>
@@ -1323,7 +1326,7 @@ const ChefMenuCycle = ({
           (option) => option.key === selectedVendorKey,
         )
         const requiresManualPrice =
-          isNmp || (Boolean(draftProductionCode) && !draftCostsSynced) ||
+          isNmp || isUnsyncedDraftRow(row.id) ||
           (showIngredientVendorColumn && vendorDataLoaded &&
             (vendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendor)) > 0)))
         const price = requiresManualPrice
@@ -1389,7 +1392,7 @@ const ChefMenuCycle = ({
                     site: selectedVendor.site,
                     currency: selectedVendor.currency,
                     minimumQuantity: selectedVendor.minimumQuantity,
-                    price: (Boolean(draftProductionCode) && !draftCostsSynced) || !(Number(getVendorUnitPrice(selectedVendor)) > 0)
+                    price: isUnsyncedDraftRow(row.id) || !(Number(getVendorUnitPrice(selectedVendor)) > 0)
                       ? getManualUnitPrice(vendorSelectionKey)
                       : getVendorUnitPrice(selectedVendor),
                   }
@@ -1819,7 +1822,7 @@ const ChefMenuCycle = ({
                       (option) => option.key === selectedVendorKey,
                     )
                     const requiresManualPrice =
-                      ingredient.ingredientType === 'NMP' || (Boolean(draftProductionCode) && !draftCostsSynced) ||
+                      ingredient.ingredientType === 'NMP' || isUnsyncedDraftRow(row.id) ||
                       (hasSiteVendorResult &&
                         (siteVendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
                     const unitPrice =
@@ -2122,7 +2125,7 @@ const ChefMenuCycle = ({
                                             )
                                           const isNmp = ingredient.ingredientType === 'NMP'
                                           const requiresManualPrice =
-                                            isNmp || (Boolean(draftProductionCode) && !draftCostsSynced) ||
+                                            isNmp || isUnsyncedDraftRow(row.id) ||
                                             (hasSiteVendorResult &&
                                               (siteVendorOptions.length === 0 ||
                                                 !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
@@ -2345,7 +2348,7 @@ const ChefMenuCycle = ({
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {showIngredientVendorColumn ? (
+            {user?.role === 'superadmin' && showIngredientVendorColumn ? (
               <button type="button"
                 disabled={Object.values(vendorPriceLoadingByProductKey).some(Boolean)}
                 onClick={() => {
