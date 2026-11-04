@@ -113,32 +113,32 @@ const SuperadminDashboardPage = () => {
     {
       label: 'Active sites',
       value: summary?.activeSites ?? 0,
-      icon: 'bi-buildings',
+      accent: 'bg-accent-blue',
     },
     {
       label: 'Active users',
       value: summary?.activeUsers ?? 0,
-      icon: 'bi-people',
+      accent: 'bg-accent-indigo',
     },
     {
       label: 'Menus scheduled today',
       value: summary?.menusToday ?? 0,
-      icon: 'bi-calendar2-check',
+      accent: 'bg-accent-cyan',
     },
     {
       label: 'Pending approvals',
       value: summary?.pendingApprovals ?? 0,
-      icon: 'bi-hourglass-split',
+      accent: 'bg-accent-blue',
     },
     {
       label: 'Store requests waiting',
       value: summary?.requestedStoreRequests ?? 0,
-      icon: 'bi-box-seam',
+      accent: 'bg-accent-indigo',
     },
     {
       label: 'Pending recipe reviews',
       value: summary?.pendingRecipes ?? 0,
-      icon: 'bi-journal-check',
+      accent: 'bg-accent-cyan',
     },
   ]
 
@@ -167,24 +167,22 @@ const SuperadminDashboardPage = () => {
           </button>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <section aria-label="Platform key metrics" className="grid gap-px overflow-hidden rounded-lg border border-border bg-border shadow-sm sm:grid-cols-2 xl:grid-cols-3">
           {metricCards.map((card) => (
             <div
               key={card.label}
-              className="rounded-md border border-border bg-surface p-6 shadow-sm"
+              className="flex min-h-28 min-w-0 flex-col justify-between bg-surface p-2"
             >
-              <p className="text-xs text-foreground">{card.label}</p>
-              <div className="mt-3 flex items-center justify-between gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-                  <i className={`bi ${card.icon} text-xl`} aria-hidden="true" />
-                </div>
-                <div className="text-[30px] font-semibold leading-none text-foreground">
-                  {card.value}
-                </div>
+              <p className="flex items-start gap-2 text-sm font-medium text-foreground">
+                <span aria-hidden="true" className={`mt-0.5 h-4 w-0.5 shrink-0 rounded-full ${card.accent}`} />
+                {card.label}
+              </p>
+              <div className="break-words text-[40px] font-semibold leading-tight tabular-nums text-foreground">
+                {card.value}
               </div>
             </div>
           ))}
-        </div>
+        </section>
       </div>
 
       <section className="rounded-md border border-border bg-surface p-6 shadow-sm">
