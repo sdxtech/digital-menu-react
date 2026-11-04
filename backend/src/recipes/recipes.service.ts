@@ -1193,10 +1193,15 @@ export class RecipesService {
     const recipes = await this.recipeModel
       .find({
         deletedAt: { $exists: false },
-        $or: [{ approvalStatus: 'approved' }, { isDraft: true }],
         'ingredients.0': { $exists: true },
       })
-      .select({ ingredients: 1, foodCostRecipe: 1, site: 1, isDraft: 1 })
+      .select({
+        ingredients: 1,
+        foodCostRecipe: 1,
+        site: 1,
+        isDraft: 1,
+        approvalStatus: 1,
+      })
       .lean();
 
     const productCodes = recipes.flatMap((recipe) =>
@@ -1221,8 +1226,12 @@ export class RecipesService {
     let skippedMissingPrice = 0;
 
     for (const recipe of recipes) {
+      const keepEstimates =
+        recipe.isDraft ||
+        (recipe.approvalStatus !== undefined &&
+          recipe.approvalStatus !== 'approved');
       let changed =
-        !recipe.isDraft &&
+        !keepEstimates &&
         (recipe.foodCostRecipe !== undefined ||
           (recipe.ingredients ?? []).some(
             (ingredient) => ingredient.foodCost !== undefined,
@@ -1245,7 +1254,7 @@ export class RecipesService {
           }
           if (
             ingredient.priceUom !== result.ingredient.priceUom ||
-            (!recipe.isDraft && ingredient.foodCost !== undefined) ||
+            (!keepEstimates && ingredient.foodCost !== undefined) ||
             result.changed
           ) {
             changed = true;
@@ -1259,15 +1268,15 @@ export class RecipesService {
 
       const updatePayload: Record<string, unknown> = {
         $set: {
-          ingredients: recipe.isDraft
+          ingredients: keepEstimates
             ? ingredients
             : this.withoutRecipeEstimates(ingredients),
-          ...(recipe.isDraft
+          ...(keepEstimates
             ? { foodCostRecipe: this.calculateFoodCostRecipe(ingredients) }
             : {}),
           ...updatedFields,
         },
-        ...(!recipe.isDraft ? { $unset: { foodCostRecipe: '' } } : {}),
+        ...(!keepEstimates ? { $unset: { foodCostRecipe: '' } } : {}),
       };
 
       await this.recipeModel.updateOne({ _id: recipe._id }, updatePayload);

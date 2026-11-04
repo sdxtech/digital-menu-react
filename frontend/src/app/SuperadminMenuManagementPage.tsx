@@ -24,6 +24,7 @@ import ChefMenuCycle from './ChefMenuCycle'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { syncSharedCosts } from '../lib/sync-shared-costs'
 import { useAuth } from '../lib/auth'
 import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
 import { formatQuantity } from '../lib/quantity'
@@ -200,14 +201,6 @@ type RawMaterialPriceUploadResult = {
   duplicateVendorPriceRowCount: number
   conflictingVendorPriceCount: number
   priceQuantityAdjustedCount: number
-}
-
-type IngredientCostBackfillResult = {
-  scannedRecipes: number
-  updatedRecipes: number
-  updatedIngredients: number
-  skippedNoRawMaterial: number
-  skippedMissingPrice: number
 }
 
 const DEFAULT_LIMIT = 10
@@ -2290,13 +2283,9 @@ const SuperadminMenuManagementPage = () => {
     setRecipeMessage('')
     setRecipeMeta((prev) => ({ ...prev, error: '' }))
     try {
-      const result = await apiFetch<IngredientCostBackfillResult>(
-        '/recipes/ingredient-costs/backfill',
-        { method: 'PATCH' },
-        accessToken,
-      )
+      const result = await syncSharedCosts(accessToken)
       setRecipeMessage(
-        `Synced ${result.updatedRecipes} recipes and ${result.updatedIngredients} ingredient costs.`,
+        `Synced ${result.updatedRecipes} recipes and ${result.updatedDrafts} production drafts.`,
       )
       fetchRecipes(recipeMeta.page, recipeMeta.limit, recipeSearch).catch(
         () => null,
@@ -2746,14 +2735,6 @@ const SuperadminMenuManagementPage = () => {
         },
         accessToken,
       )
-      const costSyncResult =
-        result.mode === 'vendor'
-          ? null
-          : await apiFetch<IngredientCostBackfillResult>(
-              '/recipes/ingredient-costs/backfill',
-              { method: 'PATCH' },
-              accessToken,
-            )
       const notFoundText = result.notFoundCount
         ? ` Skipped ${result.notFoundRowCount} rows for ${result.notFoundCount} product codes that were not found${
             result.notFoundProductCodes.length
@@ -2773,14 +2754,14 @@ const SuperadminMenuManagementPage = () => {
 
       if (result.mode === 'vendor') {
         setRawMaterialPriceUploadMessage(
-          `Updated ${result.vendorPriceModifiedCount} vendor prices and added ${result.vendorPriceUpsertedCount} vendor prices for ${result.matchedProductCount} existing raw materials.${duplicateText}${quantityText}${conflictText}${notFoundText}`,
+          `Updated ${result.vendorPriceModifiedCount} vendor prices and added ${result.vendorPriceUpsertedCount} vendor prices for ${result.matchedProductCount} existing raw materials.${duplicateText}${quantityText}${conflictText}${notFoundText} Run Sync Cost to update saved recipes and production drafts.`,
         )
       } else {
         const vendorText = result.vendorPriceRequestedCount
           ? ` Updated ${result.vendorPriceModifiedCount} vendor prices and added ${result.vendorPriceUpsertedCount} vendor prices.${duplicateText}${quantityText}${conflictText}`
           : ''
         setRawMaterialPriceUploadMessage(
-          `Updated ${result.modifiedCount} master prices from ${result.matchedCount} matched raw materials. Synced ${costSyncResult?.updatedIngredients ?? 0} approved recipe ingredient costs.${vendorText}${notFoundText}`,
+          `Updated ${result.modifiedCount} master prices from ${result.matchedCount} matched raw materials.${vendorText}${notFoundText} Run Sync Cost to update saved recipes and production drafts.`,
         )
       }
       setRawMaterialPriceUploadFile(null)
