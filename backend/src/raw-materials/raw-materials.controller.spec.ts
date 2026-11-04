@@ -108,6 +108,21 @@ describe('RawMaterialsController site scope', () => {
     });
   });
 
+  it('uses reference prices for corporate chef catalogue searches', async () => {
+    const { controller, rawMaterials } = makeController();
+    await controller.list(
+      { catalog: 'true', site: 'SITE-001' },
+      corporateChefRequest as never,
+    );
+    expect(rawMaterials.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        catalog: true,
+        site: 'SITE-001',
+        useReferencePrices: true,
+      }),
+    );
+  });
+
   it('forces vendor prices to the authenticated user site', async () => {
     const { controller, rawMaterials } = makeController();
 

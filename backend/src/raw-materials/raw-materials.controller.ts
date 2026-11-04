@@ -115,6 +115,11 @@ export class RawMaterialsController {
       search: query.search,
       site,
       ...(query.catalog === 'true' ? { catalog: true } : {}),
+      ...(query.catalog === 'true' &&
+      req.user.roles?.includes(AppRole.CorporateChef) &&
+      !req.user.roles?.includes(AppRole.Superadmin)
+        ? { useReferencePrices: true }
+        : {}),
     });
   }
 
