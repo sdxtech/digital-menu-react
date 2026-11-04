@@ -54,6 +54,7 @@ describe('Shared IT catalogue', () => {
     const material = {
       _id: 'product',
       productCode: 'IT002_N',
+      productCodeNormalized: 'it002_n',
       name: 'Shared product',
       unitOfMeasures: 'KG',
       price: 99999,
@@ -69,12 +70,23 @@ describe('Shared IT catalogue', () => {
       find: jest.fn().mockReturnValue(query),
       countDocuments: jest.fn().mockResolvedValue(1),
     };
-    const prices = { distinct: jest.fn() };
+    const priceQuery = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    };
+    const prices = { find: jest.fn().mockReturnValue(priceQuery) };
+    const sites = {
+      findSummariesByCodes: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([['SOKIT', { code: 'SOKIT', name: 'Sokit Site' }]]),
+        ),
+    };
     const service = new RawMaterialsService(
       model as never,
       prices as never,
       {} as never,
-      {} as never,
+      sites as never,
     );
     const result = await service.findAll({
       page: 1,
@@ -83,13 +95,128 @@ describe('Shared IT catalogue', () => {
       catalog: true,
     });
     expect(model.find).toHaveBeenCalledWith({ productCode: /^IT/i });
-    expect(prices.distinct).not.toHaveBeenCalled();
+    const priceCalls: unknown = prices.find.mock.calls;
+    const [priceFilter] = (priceCalls as Array<[unknown]>)[0];
+    expect(priceFilter).toMatchObject({
+      productCodeNormalized: { $in: ['it002_n'] },
+      price: { $gt: 0 },
+    });
+    expect(
+      (priceFilter as { siteNormalized: { $in: string[] } }).siteNormalized.$in,
+    ).toContain('sokit');
     expect(result.items[0]).toMatchObject({
       productCode: 'IT002_N',
       name: 'Shared product',
       price: 0,
+      sitePrice: 0,
+      hasPrice: false,
     });
     expect(result.items[0]).not.toHaveProperty('vendor');
+    priceQuery.lean.mockResolvedValueOnce([
+      {
+        productCodeNormalized: 'it002_n',
+        unitOfMeasuresNormalized: 'kg',
+        siteNormalized: 'sokit',
+        price: 15000,
+      },
+      {
+        productCodeNormalized: 'it002_n',
+        unitOfMeasuresNormalized: 'kg',
+        siteNormalized: 'sokit',
+        price: 18000,
+      },
+      {
+        productCodeNormalized: 'it002_n',
+        unitOfMeasuresNormalized: 'ltr',
+        siteNormalized: 'sokit',
+        price: 99999,
+      },
+    ]);
+    const pricedResult = await service.findAll({
+      page: 1,
+      limit: 20,
+      site: 'SOKIT',
+      catalog: true,
+    });
+    expect(pricedResult.items[0]).toMatchObject({
+      hasPrice: true,
+      sitePrice: 18000,
+      price: 0,
+    });
+  });
+
+  it('uses reference site priority for corporate catalogue prices', async () => {
+    const material = {
+      _id: 'product',
+      productCode: 'IT002_N',
+      productCodeNormalized: 'it002_n',
+      name: 'Shared product',
+      unitOfMeasures: 'KG',
+    };
+    const query = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([material]),
+    };
+    const model = {
+      find: jest.fn().mockReturnValue(query),
+      countDocuments: jest.fn().mockResolvedValue(1),
+    };
+    const priceQuery = {
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          productCodeNormalized: 'it002_n',
+          unitOfMeasuresNormalized: 'kg',
+          siteNormalized: 'b',
+          price: 30000,
+        },
+        {
+          productCodeNormalized: 'it002_n',
+          unitOfMeasuresNormalized: 'kg',
+          siteNormalized: 'a',
+          price: 20000,
+        },
+      ]),
+    };
+    const prices = { find: jest.fn().mockReturnValue(priceQuery) };
+    const sites = {
+      findMaterialSourceSites: jest.fn().mockResolvedValue([
+        { code: 'A', name: 'Reference A' },
+        { code: 'B', name: 'Reference B' },
+      ]),
+    };
+    const service = new RawMaterialsService(
+      model as never,
+      prices as never,
+      {} as never,
+      sites as never,
+    );
+    const input = {
+      page: 1,
+      limit: 20,
+      site: 'CORP',
+      catalog: true,
+      useReferencePrices: true,
+    };
+    const result = await service.findAll(input);
+    expect(sites.findMaterialSourceSites).toHaveBeenCalledWith('CORP');
+    expect(result.items[0]).toMatchObject({ sitePrice: 20000, hasPrice: true });
+
+    priceQuery.lean.mockResolvedValueOnce([
+      {
+        productCodeNormalized: 'it002_n',
+        unitOfMeasuresNormalized: 'kg',
+        siteNormalized: 'b',
+        price: 30000,
+      },
+    ]);
+    const fallbackResult = await service.findAll(input);
+    expect(fallbackResult.items[0]).toMatchObject({
+      sitePrice: 30000,
+      hasPrice: true,
+    });
   });
 
   it('keeps operational prices at the target site even when corporate reference sites are configured', async () => {

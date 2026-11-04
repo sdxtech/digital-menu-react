@@ -594,13 +594,13 @@ const ChefCreateMenu = ({
     }
     setRawMaterialsLoading(true)
     setRawMaterialsError('')
-    searchRawMaterials('', 5, rawMaterialSite)
+    searchRawMaterials('', 10, rawMaterialSite)
       .then((results) => {
         if (!isMountedRef.current || searchRequestRef.current !== requestId) {
           return
         }
         cacheRawMaterials(results)
-        setRawMaterialOptions(results.slice(0, 5))
+        setRawMaterialOptions(results.sort((a, b) => Number(Boolean(b.hasPrice)) - Number(Boolean(a.hasPrice))))
         setRawMaterialsLoading(false)
       })
       .catch((error: unknown) => {
@@ -999,6 +999,7 @@ const ChefCreateMenu = ({
   const rankRawMaterials = (query: string, items: RawMaterial[]) => {
     const normalized = normalizeValue(query)
     return [...items].sort((a, b) => {
+      if (a.hasPrice !== b.hasPrice) return Number(Boolean(b.hasPrice)) - Number(Boolean(a.hasPrice))
       const aCode = normalizeValue(a.productCode)
       const bCode = normalizeValue(b.productCode)
       const aName = normalizeValue(a.name)
@@ -1050,7 +1051,7 @@ const ChefCreateMenu = ({
           return
         }
         cacheRawMaterials(results)
-        const ranked = trimmed ? rankRawMaterials(trimmed, results) : results
+        const ranked = rankRawMaterials(trimmed, results)
         setRawMaterialOptions(ranked.slice(0, 10))
         setRawMaterialsLoading(false)
 
@@ -2251,13 +2252,16 @@ const ChefCreateMenu = ({
                                   type="button"
                                   onMouseDown={(event) => event.preventDefault()}
                                   onClick={() => selectRawMaterialForRow(row.id, item)}
-                                  className="block w-full border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-primary-soft"
+                                  className={`block w-full border-b border-border px-3 py-2 text-left last:border-b-0 ${item.hasPrice ? 'bg-emerald-50 hover:bg-emerald-100' : 'hover:bg-primary-soft'}`}
                                 >
                                   <span className="block truncate text-sm font-semibold text-foreground">
                                     {item.name}
                                   </span>
-                                  <span className="mt-1 block text-xs text-muted">
-                                    {item.productCode}
+                                  <span className="mt-1 flex items-center gap-3 text-xs text-muted">
+                                    <span>{item.productCode}</span>
+                                    <span className={item.hasPrice ? 'font-semibold text-emerald-700' : ''}>
+                                      {formatPrice(item.sitePrice ?? 0)}
+                                    </span>
                                   </span>
                                 </button>
                               ))}

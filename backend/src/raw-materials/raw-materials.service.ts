@@ -43,6 +43,7 @@ export type RawMaterialVendorPriceUpsertInput = RawMaterialUpsertInput & {
 
 type ListRawMaterialsQuery = {
   catalog?: boolean;
+  useReferencePrices?: boolean;
   page: number;
   limit: number;
   search?: string;
@@ -358,6 +359,66 @@ export class RawMaterialsService {
         .lean(),
       this.rawMaterialModel.countDocuments(filter),
     ]);
+    const sourceSites =
+      query.catalog && query.site?.trim()
+        ? query.useReferencePrices
+          ? await this.sites.findMaterialSourceSites(query.site)
+          : Array.from(
+              (await this.sites.findSummariesByCodes([query.site])).values(),
+            )
+        : [];
+    const sourceKeys = sourceSites.length
+      ? sourceSites.map((site) => this.siteNormalizedKeys(site.code, site.name))
+      : query.site?.trim()
+        ? [this.siteNormalizedKeys(query.site.trim(), '')]
+        : [];
+    const siteKeys = sourceKeys.flat();
+    const vendorPrices =
+      query.catalog && items.length && siteKeys.length
+        ? await this.rawMaterialVendorPriceModel
+            .find({
+              productCodeNormalized: {
+                $in: items.map((item) => item.productCodeNormalized),
+              },
+              siteNormalized: { $in: siteKeys },
+              price: { $gt: 0 },
+            })
+            .select({
+              productCodeNormalized: 1,
+              unitOfMeasuresNormalized: 1,
+              siteNormalized: 1,
+              price: 1,
+            })
+            .lean<
+              Array<{
+                productCodeNormalized: string;
+                unitOfMeasuresNormalized: string;
+                siteNormalized: string;
+                price: number;
+              }>
+            >()
+        : [];
+    const priceByProductAndUnit = new Map<string, number>();
+    const sourcePriorityByProductAndUnit = new Map<string, number>();
+    vendorPrices.forEach((vendorPrice) => {
+      const key = `${vendorPrice.productCodeNormalized}::${vendorPrice.unitOfMeasuresNormalized}`;
+      const priority = sourceKeys.findIndex((keys) =>
+        keys.includes(vendorPrice.siteNormalized),
+      );
+      const currentPriority = sourcePriorityByProductAndUnit.get(key);
+      if (
+        priority < 0 ||
+        (currentPriority !== undefined && priority > currentPriority)
+      )
+        return;
+      sourcePriorityByProductAndUnit.set(key, priority);
+      priceByProductAndUnit.set(
+        key,
+        currentPriority === priority
+          ? Math.max(priceByProductAndUnit.get(key) ?? 0, vendorPrice.price)
+          : vendorPrice.price,
+      );
+    });
 
     return {
       items: query.catalog
@@ -370,6 +431,13 @@ export class RawMaterialsService {
             conversionFactor: item.conversionFactor,
             specificConversions: item.specificConversions,
             price: 0,
+            sitePrice:
+              priceByProductAndUnit.get(
+                `${item.productCodeNormalized}::${this.normalizeUomCode(item.unitOfMeasures).toLowerCase()}`,
+              ) ?? 0,
+            hasPrice: priceByProductAndUnit.has(
+              `${item.productCodeNormalized}::${this.normalizeUomCode(item.unitOfMeasures).toLowerCase()}`,
+            ),
           }))
         : items,
       total,
