@@ -1,12 +1,11 @@
 import PageHeading from '../components/PageHeading'
-import RecipeCookingMethod from '../components/RecipeCookingMethod'
+import RecipeDetailOverview, { formatRecipeDetailPrice } from '../components/RecipeDetailOverview'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
 import RecipeFilters from '../components/RecipeFilters'
 import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
 import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
 import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
-import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -15,6 +14,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import ChefCreateMenu, { type BaseRecipe } from './ChefCreateMenu'
 import { useCorporateSite } from '../lib/corporate-site'
 import type { RecipeIngredient } from '../lib/chef-data'
+import { useRecipeIngredientVendors } from '../lib/use-recipe-ingredient-vendors'
 
 const ITEMS_PER_PAGE = 10
 
@@ -276,6 +276,7 @@ const UnitManagerRecipeDataPage = ({
       )
     : 'Unknown'
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
+  const ingredientVendors = useRecipeIngredientVendors(selectedRecipe, accessToken)
 
 
   return (
@@ -465,19 +466,7 @@ const UnitManagerRecipeDataPage = ({
       {selectedRecipe ? (
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">Recipe Detail</h2>
-              <p className="mt-1 text-xs text-muted">
-                Code: {selectedRecipe.recipeCode ?? '-'}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                {selectedRecipe.name} | {formatRecipeVersion(selectedRecipe.version)}
-              </p>
-              <p className="mt-2 text-sm text-muted">
-                {selectedRecipe.description?.trim() || 'No description.'}
-              </p>
-              <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
-            </div>
+            <h2 className="text-lg font-semibold">Recipe Detail</h2>
             <button
               type="button"
               onClick={() => setSelectedRecipeId(null)}
@@ -489,30 +478,7 @@ const UnitManagerRecipeDataPage = ({
             </button>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">Version</p>
-              <p className="mt-2 text-sm font-semibold text-primary">
-                {formatRecipeVersion(selectedRecipe.version)}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">Category</p>
-              <p className="mt-2 text-sm font-medium">{selectedRecipe.category}</p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">Base pax</p>
-              <p className="mt-2 text-sm font-medium">{selectedRecipe.portionSize}</p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">Approval status</p>
-              <p className="mt-2">
-                <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
-              </p>
-            </div>
-          </div>
-
-          <RecipeSalesRecommendation recipe={selectedRecipe} />
+          <RecipeDetailOverview recipe={selectedRecipe} siteLabel={formatRecipeSite(selectedRecipe)} />
 
           {selectedRecipe.approvalStatus !== 'approved' &&
           selectedRecipe.approvalHistory?.length ? (
@@ -558,6 +524,7 @@ const UnitManagerRecipeDataPage = ({
 
           <div className="mt-6">
             <h3 className="font-semibold text-foreground">Ingredients</h3>
+            {ingredientVendors.error ? <p className="mt-2 text-xs text-danger">{ingredientVendors.error}</p> : null}
             {selectedRecipeIngredients.length === 0 ? (
               <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
                 No ingredients for this recipe yet.
@@ -568,10 +535,14 @@ const UnitManagerRecipeDataPage = ({
                   <thead className="bg-background">
                     <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                       <th className="w-16 px-4 py-3 font-semibold">No</th>
+                      <th className="px-4 py-3 font-semibold">Type</th>
                       <th className="px-4 py-3 font-semibold">Product code</th>
                       <th className="px-4 py-3 font-semibold">Ingredient name</th>
                       <th className="px-4 py-3 font-semibold">Qty</th>
                       <th className="px-4 py-3 font-semibold">Unit</th>
+                      <th className="px-4 py-3 font-semibold">Vendor</th>
+                      <th className="px-4 py-3 font-semibold">Price</th>
+                      <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -581,6 +552,7 @@ const UnitManagerRecipeDataPage = ({
                         className="border-t border-border"
                       >
                         <td className="px-4 py-3 text-sm text-muted">{index + 1}</td>
+                        <td className="px-4 py-3">{ingredient.ingredientType || '-'}</td>
                         <td className="px-4 py-3">{ingredient.productCode || '-'}</td>
                         <td className="px-4 py-3">{ingredient.name || '-'}</td>
                         <td className="px-4 py-3">{ingredient.qty ?? '-'}</td>
@@ -589,6 +561,11 @@ const UnitManagerRecipeDataPage = ({
                             ? formatUnitLabel(ingredient.unitOfMeasures)
                             : '-'}
                         </td>
+                        <td className="px-4 py-3">
+                          {ingredientVendors.loading ? 'Loading...' : ingredientVendors.vendorsByCode[ingredient.productCode] || ingredient.vendor?.trim() || '-'}
+                        </td>
+                        <td className="px-4 py-3">{formatRecipeDetailPrice(ingredient.priceUom, '-')}</td>
+                        <td className="px-4 py-3 font-medium">{formatRecipeDetailPrice(ingredient.foodCost, '-')}</td>
                       </tr>
                     ))}
                   </tbody>

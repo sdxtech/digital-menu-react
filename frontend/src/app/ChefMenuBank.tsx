@@ -1,23 +1,23 @@
 import PageHeading from '../components/PageHeading'
-import RecipeCookingMethod from '../components/RecipeCookingMethod'
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
+import RecipeDetailOverview, { formatRecipeDetailPrice } from '../components/RecipeDetailOverview'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import ActionButton from '../components/ActionButton'
 import RecipeFilters from '../components/RecipeFilters'
 import { RecipeExportToolbar, RecipeExportDialog, RecipeExportCheckbox } from '../components/RecipeExportControls'
 import { useRecipeExportSelection } from '../lib/use-recipe-export-selection'
 import { useRecipeSiteOptions } from '../lib/use-recipe-site-options'
-import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
 import { RecipeStatusBadge, RecipeApprovalStatusBadge } from '../components/RecipeStatusBadge'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import { useRecipeIngredientVendors } from '../lib/use-recipe-ingredient-vendors'
 
 const ITEMS_PER_PAGE = 10
 const RECIPE_NOTIFICATION_COMPONENT_KEY = 'RECIPE_DATA_BANK'
 
 type RecipeIngredient = {
+  vendor?: string
   priceSourceSite?: string
   priceSourceSiteName?: string
   priceUom?: number
@@ -44,7 +44,6 @@ type Recipe = {
   site?: string
   siteName?: string
   description?: string
-  imageUrl?: string
   createdAt?: string
   updatedAt?: string
   createdBy?: string
@@ -72,12 +71,6 @@ type Recipe = {
     resubmittedAt?: string
   }>
   ingredients: RecipeIngredient[]
-}
-
-type PresignResponse = {
-  key: string
-  url: string
-  publicUrl: string
 }
 
 const formatActorLabel = (name?: string) => {
@@ -126,50 +119,6 @@ const getMissingIngredientFields = (ingredient: RecipeIngredient) => {
 }
 
 const getRecipeId = (recipe: Recipe) => recipe.id ?? recipe._id ?? ''
-
-type MenuPhotoFrameProps = {
-  size?: 'sm' | 'lg'
-  photoUrl?: string | null
-  onClick?: () => void
-  label?: string
-}
-
-const MenuPhotoFrame = ({
-  size = 'sm',
-  photoUrl,
-  onClick,
-  label = 'recipe photo',
-}: MenuPhotoFrameProps) => {
-  const isLarge = size === 'lg'
-  const frameClasses = isLarge ? 'h-24 w-24' : 'h-12 w-12'
-  const iconClasses = isLarge ? 'text-2xl' : 'text-base'
-  const borderStyle = photoUrl ? 'border-solid' : 'border-dashed'
-  const interactiveClasses = onClick
-    ? 'cursor-pointer transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
-    : 'cursor-default'
-  const actionLabel = onClick
-    ? `${photoUrl ? 'Edit' : 'Add'} ${label}`
-    : undefined
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      aria-label={actionLabel}
-      className={`flex items-center justify-center rounded-md border-2 ${borderStyle} border-border bg-background ${frameClasses} ${interactiveClasses} ${photoUrl ? 'overflow-hidden' : ''}`}
-    >
-      {photoUrl ? (
-        <img src={photoUrl} alt={label} className="h-full w-full object-cover" />
-      ) : (
-        <i
-          className={`bi bi-plus-lg ${iconClasses} text-muted`}
-          aria-hidden="true"
-        />
-      )}
-    </button>
-  )
-}
 
 const ChefMenuBank = () => {
   const { user, accessToken } = useAuth()
@@ -246,14 +195,6 @@ const ChefMenuBank = () => {
   const [loading, setLoading] = useState(false)
   const recipeExport = useRecipeExportSelection(accessToken, user?.id ?? user?.email, { loading })
   const [error, setError] = useState('')
-  const [photoModalOpen, setPhotoModalOpen] = useState(false)
-  const [photoModalRecipeId, setPhotoModalRecipeId] = useState<string | null>(null)
-  const [photoDraftFile, setPhotoDraftFile] = useState<File | null>(null)
-  const [photoDraftUrl, setPhotoDraftUrl] = useState<string | null>(null)
-  const [photoError, setPhotoError] = useState('')
-  const [photoSaving, setPhotoSaving] = useState(false)
-  const [photoDeleting, setPhotoDeleting] = useState(false)
-  const [photoInputKey, setPhotoInputKey] = useState(0)
 
   // FRONTEND VIEW: fetch filter categories from backend.
   const fetchCategories = useCallback(async () => {
@@ -327,8 +268,6 @@ const ChefMenuBank = () => {
     selectedRecipeId === null
       ? null
       : recipes.find((item) => (item.id ?? item._id) === selectedRecipeId) ?? null
-  const selectedRecipeKey = selectedRecipe ? getRecipeId(selectedRecipe) : ''
-  const selectedRecipePhoto = selectedRecipe?.imageUrl ?? null
   const createdByLabel = selectedRecipe
     ? formatActorLabel(selectedRecipe.createdByName)
     : 'Unknown'
@@ -353,16 +292,12 @@ const ChefMenuBank = () => {
   const reviewedAtLabel = selectedRecipe
     ? formatTimestamp(selectedRecipe.reviewedAt)
     : 'Unknown'
-  const photoModalRecipe = photoModalRecipeId
-    ? recipes.find((item) => getRecipeId(item) === photoModalRecipeId) ?? null
-    : null
-  const activePhotoUrl = photoModalRecipe?.imageUrl ?? null
   const selectedRecipeIngredients = selectedRecipe?.ingredients ?? []
+  const ingredientVendors = useRecipeIngredientVendors(selectedRecipe, accessToken)
   const selectedRecipeIngredientRows = selectedRecipeIngredients.map((ingredient) => ({
     ingredient,
     missingFields: getMissingIngredientFields(ingredient),
   }))
-  const previewPhotoUrl = photoDraftUrl ?? activePhotoUrl
   const canEditSelectedRecipe =
     selectedRecipe?.approvalStatus === 'rejected'
   const canCreateFromSelectedRecipe =
@@ -431,260 +366,9 @@ const ChefMenuBank = () => {
     })
   }
 
-  const openPhotoModal = (recipeId: string) => {
-    if (photoDraftUrl) {
-      URL.revokeObjectURL(photoDraftUrl)
-    }
-    setPhotoModalRecipeId(recipeId)
-    setPhotoModalOpen(true)
-    setPhotoDraftFile(null)
-    setPhotoDraftUrl(null)
-    setPhotoError('')
-    setPhotoInputKey((prev) => prev + 1)
-  }
-
-  const closePhotoModal = () => {
-    if (photoDraftUrl) {
-      URL.revokeObjectURL(photoDraftUrl)
-    }
-    setPhotoModalOpen(false)
-    setPhotoModalRecipeId(null)
-    setPhotoDraftFile(null)
-    setPhotoDraftUrl(null)
-    setPhotoError('')
-    setPhotoSaving(false)
-    setPhotoDeleting(false)
-    setPhotoInputKey((prev) => prev + 1)
-  }
-
-  const handlePhotoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextFile = event.target.files?.[0] ?? null
-    setPhotoError('')
-
-    if (!nextFile) {
-      setPhotoDraftFile(null)
-      if (photoDraftUrl) {
-        URL.revokeObjectURL(photoDraftUrl)
-      }
-      setPhotoDraftUrl(null)
-      return
-    }
-
-    if (!nextFile.type.startsWith('image/')) {
-      setPhotoDraftFile(null)
-      if (photoDraftUrl) {
-        URL.revokeObjectURL(photoDraftUrl)
-      }
-      setPhotoDraftUrl(null)
-      setPhotoError('File must be an image.')
-      return
-    }
-
-    const nextUrl = URL.createObjectURL(nextFile)
-    setPhotoDraftFile(nextFile)
-    setPhotoDraftUrl((prev) => {
-      if (prev) {
-        URL.revokeObjectURL(prev)
-      }
-      return nextUrl
-    })
-  }
-
-  const applyRecipeUpdate = (updated: Recipe) => {
-    const updatedId = getRecipeId(updated)
-    if (!updatedId) return
-    setRecipes((prev) =>
-      prev.map((item) => {
-        const itemId = getRecipeId(item)
-        if (itemId && itemId === updatedId) {
-          return { ...item, ...updated, imageUrl: updated.imageUrl }
-        }
-        return item
-      }),
-    )
-  }
-
-  const handleSavePhoto = async () => {
-    if (!photoModalRecipeId || !photoDraftFile) return
-    if (!accessToken) {
-      setPhotoError('Please log in first to upload a photo.')
-      return
-    }
-    if (photoSaving || photoDeleting) return
-
-    setPhotoSaving(true)
-    setPhotoError('')
-    try {
-      const contentType = photoDraftFile.type || 'application/octet-stream'
-      const presign = await apiFetch<PresignResponse>(
-        '/files/presign',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            contentType,
-            prefix: `recipes/${photoModalRecipeId}`,
-            fileSize: photoDraftFile.size,
-          }),
-        },
-        accessToken,
-      )
-
-      const uploadResponse = await fetch(presign.url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': contentType,
-        },
-        body: photoDraftFile,
-      })
-
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload photo to storage.')
-      }
-
-      const updated = await apiFetch<Recipe>(
-        `/recipes/${photoModalRecipeId}/photo`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ imageUrl: presign.publicUrl }),
-        },
-        accessToken,
-      )
-
-      applyRecipeUpdate(updated)
-
-      closePhotoModal()
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to upload photo.'
-      setPhotoError(message)
-    } finally {
-      setPhotoSaving(false)
-    }
-  }
-
-  const handleDeletePhoto = async () => {
-    if (!photoModalRecipeId || !activePhotoUrl) return
-    if (!accessToken) {
-      setPhotoError('Please log in first to delete a photo.')
-      return
-    }
-    if (photoSaving || photoDeleting) return
-
-    setPhotoDeleting(true)
-    setPhotoError('')
-    try {
-      const updated = await apiFetch<Recipe>(
-        `/recipes/${photoModalRecipeId}/photo`,
-        { method: 'DELETE' },
-        accessToken,
-      )
-      applyRecipeUpdate(updated)
-      setPhotoDraftFile(null)
-      if (photoDraftUrl) {
-        URL.revokeObjectURL(photoDraftUrl)
-      }
-      setPhotoDraftUrl(null)
-      setPhotoInputKey((prev) => prev + 1)
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to delete photo.'
-      setPhotoError(message)
-    } finally {
-      setPhotoDeleting(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <RecipeExportDialog exportState={recipeExport} />
-      {photoModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div
-            className="w-full max-w-lg rounded-md border border-border bg-surface p-6 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="font-semibold text-foreground">
-                  Recipe Photo
-                </h3>
-                <p className="mt-1 text-xs text-muted">
-                  {activePhotoUrl ? 'Edit photo' : 'Add photo'}
-                </p>
-                <p className="mt-2 text-sm text-muted">
-                  {activePhotoUrl
-                    ? 'Replace the current photo with a new one.'
-                    : 'Upload a photo for this recipe.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closePhotoModal}
-                className="rounded-md border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-4">
-              <div className="rounded-md border border-border bg-background p-4">
-                {previewPhotoUrl ? (
-                  <img
-                    src={previewPhotoUrl}
-                    alt="Recipe photo preview"
-                    className="h-40 w-full rounded-xl object-cover"
-                  />
-                ) : (
-                  <div className="flex h-40 w-full items-center justify-center rounded-xl border-2 border-dashed border-border text-muted">
-                    <i className="bi bi-plus-lg text-2xl" aria-hidden="true" />
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground">
-                  Photo file
-                </label>
-                <input
-                  key={photoInputKey}
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoFileChange}
-                  disabled={photoSaving || photoDeleting}
-                  className="mt-2 w-full rounded-2xl border border-border bg-white px-4 py-2 text-sm shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
-                />
-                {photoDraftFile ? (
-                  <p className="mt-2 text-xs text-muted">
-                    Selected file: {photoDraftFile.name}
-                  </p>
-                ) : null}
-                {photoError ? (
-                  <p className="mt-2 text-xs font-medium text-red-600">
-                    {photoError}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleDeletePhoto}
-                  disabled={!activePhotoUrl || photoSaving || photoDeleting}
-                  className="rounded-md border border-danger/40 bg-background px-4 py-2 text-xs font-semibold text-danger disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {photoDeleting ? 'Deleting...' : 'Delete photo'}
-                </button>
-                <ActionButton action="cancel" onClick={closePhotoModal} size="sm" />
-                <ActionButton
-                  action="save"
-                  onClick={handleSavePhoto}
-                  disabled={!photoDraftFile || photoSaving || photoDeleting}
-                  size="sm"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -834,21 +518,7 @@ const ChefMenuBank = () => {
       {selectedRecipe ? (
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h3 className="font-semibold text-foreground">
-                Recipe Detail
-              </h3>
-              <p className="mt-1 text-xs text-muted">
-                ID: {selectedRecipe.recipeCode ?? '-'}
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                {selectedRecipe.name} | {formatRecipeVersion(selectedRecipe.version)}
-              </p>
-              <p className="mt-2 text-sm text-muted">
-                {selectedRecipe.description}
-              </p>
-              <RecipeCookingMethod steps={selectedRecipe.cookingMethod} />
-            </div>
+            <h2 className="text-lg font-semibold">Recipe Detail</h2>
             <div className="flex items-center gap-2">
               {canCreateFromSelectedRecipe ? (
                 <>
@@ -888,52 +558,7 @@ const ChefMenuBank = () => {
               </button>
             </div>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <MenuPhotoFrame
-              size="lg"
-              photoUrl={selectedRecipePhoto}
-              onClick={
-                canEditSelectedRecipe && selectedRecipeKey
-                  ? () => openPhotoModal(selectedRecipeKey)
-                  : undefined
-              }
-            />
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">
-                Category
-              </p>
-              <p className="mt-2 text-sm font-medium">
-                {selectedRecipe.category}
-              </p>
-            </div>
-            {/* TODO: Re-enable price card when pricing is finalized. */}
-            {/* <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">
-                Price
-              </p>
-              <p className="mt-2 text-sm font-medium">
-                IDR {selectedRecipe.price}
-              </p>
-            </div> */}
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">
-                Base pax
-              </p>
-              <p className="mt-2 text-sm font-medium">
-                {selectedRecipe.portionSize}
-              </p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-4">
-              <p className="text-xs text-muted">
-                Approval
-              </p>
-              <p className="mt-2">
-                <RecipeApprovalStatusBadge status={selectedRecipe.approvalStatus} />
-              </p>
-            </div>
-          </div>
-
-          <RecipeSalesRecommendation recipe={selectedRecipe} />
+          <RecipeDetailOverview recipe={selectedRecipe} siteLabel={formatRecipeSite(selectedRecipe)} />
 
           {selectedRecipe.approvalStatus !== 'approved' &&
           selectedRecipe.approvalHistory?.length ? (
@@ -985,6 +610,7 @@ const ChefMenuBank = () => {
             <h3 className="font-semibold text-foreground">
               Ingredients
             </h3>
+            {ingredientVendors.error ? <p className="mt-2 text-xs text-danger">{ingredientVendors.error}</p> : null}
 
             {selectedRecipeIngredients.length === 0 ? (
               <div className="mt-3 rounded-md border border-border bg-background p-4 text-sm text-muted">
@@ -1001,6 +627,9 @@ const ChefMenuBank = () => {
                       <th className="px-4 py-3 font-semibold">Ingredient name</th>
                       <th className="px-4 py-3 font-semibold">Qty</th>
                       <th className="px-4 py-3 font-semibold">Unit</th>
+                      <th className="px-4 py-3 font-semibold">Vendor</th>
+                      <th className="px-4 py-3 font-semibold">Price</th>
+                      <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1063,6 +692,11 @@ const ChefMenuBank = () => {
                                 ? 'Missing unit'
                                 : formatUnitLabel(ingredient.unitOfMeasures)}
                             </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              {ingredientVendors.loading ? 'Loading...' : ingredientVendors.vendorsByCode[ingredient.productCode] || ingredient.vendor?.trim() || '-'}
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>{formatRecipeDetailPrice(ingredient.priceUom, '-')}</td>
+                            <td className={`px-4 py-3 align-top font-medium ${rowHighlightClass}`}>{formatRecipeDetailPrice(ingredient.foodCost, '-')}</td>
                           </tr>
                         )
                       },
