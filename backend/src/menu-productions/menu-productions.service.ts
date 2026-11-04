@@ -462,10 +462,11 @@ export class MenuProductionsService implements OnModuleInit {
           productCode,
           name,
           unitOfMeasures,
-          vendor: selected?.vendor || undefined,
-          site: selected ? site : undefined,
-          currency: selected?.currency,
-          minimumQuantity: selected?.minimumQuantity,
+          vendor: selected?.vendor || entered?.vendor,
+          site: selected ? site : entered?.site,
+          currency: selected?.currency ?? entered?.currency,
+          minimumQuantity:
+            selected?.minimumQuantity ?? entered?.minimumQuantity,
           price: price ?? 0,
         };
       }),
@@ -820,6 +821,139 @@ export class MenuProductionsService implements OnModuleInit {
       })),
       total: batchPage?.total[0]?.count ?? (paginated ? 0 : items.length),
     };
+  }
+
+  async syncDraftCosts() {
+    const drafts = await this.menuProductionModel
+      .find({ isDraft: true })
+      .lean();
+    const recipeIds = Array.from(
+      new Set(
+        drafts
+          .map((draft) => draft.recipeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const recipes = recipeIds.length
+      ? await this.recipeModel
+          .find({ _id: { $in: recipeIds } })
+          .select({
+            name: 1,
+            category: 1,
+            version: 1,
+            portionSize: 1,
+            ingredients: 1,
+          })
+          .lean()
+      : [];
+    const recipesById = new Map(
+      recipes.map((recipe) => [String(recipe._id), recipe]),
+    );
+    const priceRequests = new Map<
+      string,
+      ReturnType<RawMaterialsService['findVendorPrices']>
+    >();
+    let updatedDrafts = 0;
+    let skippedDrafts = 0;
+
+    for (const draft of drafts) {
+      const recipeId = draft.recipeId?.trim();
+      const site = draft.site?.trim();
+      const liveRecipe = recipeId ? recipesById.get(recipeId) : undefined;
+      const ingredients =
+        draft.recipeSnapshot?.ingredients ?? liveRecipe?.ingredients;
+      if (!recipeId || !site || !ingredients?.length) {
+        skippedDrafts += 1;
+        continue;
+      }
+
+      const recipe: EligibleRecipe = {
+        id: recipeId,
+        name: liveRecipe?.name ?? draft.menuName,
+        category: liveRecipe?.category ?? draft.category,
+        version: liveRecipe?.version ?? draft.recipeVersion ?? 1,
+        portionSize:
+          draft.recipeSnapshot?.portionSize ?? liveRecipe?.portionSize,
+        ingredients,
+      };
+      const savedVendors = this.normalizeIngredientVendors(
+        draft.ingredientVendors,
+      );
+      const fallbackVendors = ingredients.flatMap((ingredient, index) => {
+        const existing = this.findIngredientVendor(
+          savedVendors,
+          index,
+          ingredient.productCode,
+          ingredient.name,
+          ingredient.unitOfMeasures,
+        );
+        const price = Number(ingredient.priceUom);
+        if (
+          existing ||
+          ingredient.priceSourceSite ||
+          ingredient.priceSource === 'pricelist' ||
+          !Number.isFinite(price) ||
+          price <= 0
+        )
+          return [];
+        return [{ ingredientIndex: index, price }];
+      });
+      const input: CreateMenuProductionDto = {
+        recipeId,
+        portion: draft.portion,
+        cost: draft.cost,
+        productionDate: draft.productionDate,
+        ingredientVendors: [...savedVendors, ...fallbackVendors],
+        saveAsDraft: true,
+      };
+      const priced = await this.resolveProductionPrices(
+        input,
+        recipe,
+        site,
+        priceRequests,
+      );
+      const cost = this.calculateMenuProductionCostSnapshot(priced, recipe);
+      const existingVendors = savedVendors;
+      const updatedAt = (draft as typeof draft & { updatedAt?: Date })
+        .updatedAt;
+      if (!cost.ingredientVendors.some((vendor) => (vendor.price ?? 0) > 0)) {
+        skippedDrafts += 1;
+        continue;
+      }
+      if (
+        JSON.stringify(existingVendors) ===
+          JSON.stringify(cost.ingredientVendors) &&
+        draft.estimatedTotalCost === cost.estimatedTotalCost &&
+        draft.estimatedCostPerPax === cost.estimatedCostPerPax
+      )
+        continue;
+
+      const result = await this.menuProductionModel.updateOne(
+        {
+          _id: draft._id,
+          isDraft: true,
+          ...(updatedAt ? { updatedAt } : {}),
+        },
+        {
+          $set: {
+            ingredientVendors: cost.ingredientVendors,
+            ...(cost.estimatedTotalCost !== undefined
+              ? {
+                  cost: cost.estimatedTotalCost,
+                  estimatedTotalCost: cost.estimatedTotalCost,
+                }
+              : {}),
+            ...(cost.estimatedCostPerPax !== undefined
+              ? { estimatedCostPerPax: cost.estimatedCostPerPax }
+              : {}),
+          },
+        },
+      );
+      if (result.matchedCount) updatedDrafts += 1;
+      else skippedDrafts += 1;
+    }
+
+    return { scannedDrafts: drafts.length, updatedDrafts, skippedDrafts };
   }
 
   async deleteDraft(
@@ -3049,6 +3183,9 @@ export class MenuProductionsService implements OnModuleInit {
       const recipe = menu.recipeSnapshot
         ? { ...liveRecipe, ...menu.recipeSnapshot }
         : liveRecipe;
+      // Legacy MPRs may have no recipe snapshot. Their prices must still come
+      // from the submitted MPR, never from a recipe changed by Sync Cost.
+      const hasRecipeSnapshot = Boolean(menu.recipeSnapshot);
       let ingredients: StoreRequestIngredient[] = [];
       let missingRecipe = false;
       let portionSize = 1;
@@ -3057,7 +3194,9 @@ export class MenuProductionsService implements OnModuleInit {
       let estimatedCost: number | undefined =
         Number.isFinite(storedEstimatedCost) && storedEstimatedCost >= 0
           ? storedEstimatedCost
-          : undefined;
+          : Number.isFinite(Number(menu.cost)) && Number(menu.cost) >= 0
+            ? Number(menu.cost)
+            : undefined;
       let estimatedCostPerPax: number | undefined =
         Number.isFinite(storedEstimatedCostPerPax) &&
         storedEstimatedCostPerPax >= 0
@@ -3114,9 +3253,10 @@ export class MenuProductionsService implements OnModuleInit {
           const vendorPrice = Number(selectedVendor?.price);
           const unitPrice = Number.isFinite(vendorPrice)
             ? vendorPrice
-            : Number.isFinite(priceUom)
+            : hasRecipeSnapshot && Number.isFinite(priceUom)
               ? priceUom
-              : Number.isFinite(foodCost) &&
+              : hasRecipeSnapshot &&
+                  Number.isFinite(foodCost) &&
                   Number.isFinite(baseQty) &&
                   baseQty > 0
                 ? foodCost / baseQty
@@ -3125,7 +3265,7 @@ export class MenuProductionsService implements OnModuleInit {
           const ingredientCost =
             Number.isFinite(storedIngredientCost) && storedIngredientCost >= 0
               ? storedIngredientCost
-              : unitPrice !== undefined
+              : hasRecipeSnapshot && unitPrice !== undefined
                 ? qty * unitPrice
                 : undefined;
           if (ingredientCost !== undefined) {
@@ -3208,11 +3348,7 @@ export class MenuProductionsService implements OnModuleInit {
           };
         });
         estimatedCost =
-          Number.isFinite(storedEstimatedCost) && storedEstimatedCost >= 0
-            ? storedEstimatedCost
-            : hasEstimatedCost
-              ? estimatedCostTotal
-              : undefined;
+          estimatedCost ?? (hasEstimatedCost ? estimatedCostTotal : undefined);
         estimatedCostPerPax =
           Number.isFinite(storedEstimatedCostPerPax) &&
           storedEstimatedCostPerPax >= 0

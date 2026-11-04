@@ -13,6 +13,216 @@ describe('MenuProductionsService sales input', () => {
       { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
     );
 
+  it('syncs production drafts across chefs and sites while keeping manual prices without a site price', async () => {
+    const drafts = ['SITE-A', 'SITE-B', 'SITE-C'].map((site) => ({
+      _id: `draft-${site}`,
+      recipeId: `recipe-${site}`,
+      menuName: 'Chicken',
+      category: 'Main',
+      recipeVersion: 1,
+      createdBy: `chef-${site}`,
+      site,
+      portion: 10,
+      cost: 0,
+      productionDate: '2026-10-07',
+      ingredientVendors:
+        site === 'SITE-B'
+          ? [{ ingredientIndex: 0, vendor: 'CUSTOM', price: 5 }]
+          : [],
+      recipeSnapshot: {
+        portionSize: 10,
+        ingredients: [
+          {
+            ingredientType: 'IT',
+            productCode: 'IT001',
+            name: 'Chicken',
+            unitOfMeasures: 'KG',
+            qty: 2,
+            priceUom: 5,
+            priceSource: 'manual',
+          },
+        ],
+      },
+    }));
+    const menuProductionModel = {
+      find: jest
+        .fn()
+        .mockReturnValue({ lean: jest.fn().mockResolvedValue(drafts) }),
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+    };
+    const recipeModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest
+          .fn()
+          .mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+      }),
+    };
+    const findVendorPrices = jest
+      .fn()
+      .mockImplementation(({ site }) =>
+        Promise.resolve(
+          site === 'SITE-A'
+            ? [{ vendor: 'Local vendor', unitOfMeasures: 'KG', price: 10 }]
+            : [],
+        ),
+      );
+    const service = new MenuProductionsService(
+      menuProductionModel as never,
+      {} as never,
+      recipeModel as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { findVendorPrices } as never,
+    );
+
+    await expect(service.syncDraftCosts()).resolves.toEqual({
+      scannedDrafts: 3,
+      updatedDrafts: 3,
+      skippedDrafts: 0,
+    });
+    expect(menuProductionModel.find).toHaveBeenCalledWith({ isDraft: true });
+    expect(findVendorPrices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'SITE-A',
+        ownSiteOnly: true,
+      }),
+    );
+    expect(findVendorPrices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'SITE-B',
+        ownSiteOnly: true,
+      }),
+    );
+    expect(findVendorPrices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'SITE-C',
+        ownSiteOnly: true,
+      }),
+    );
+    const updates = menuProductionModel.updateOne.mock
+      .calls as unknown as Array<
+      [
+        { _id: string; isDraft: boolean },
+        {
+          $set: {
+            cost: number;
+            estimatedTotalCost: number;
+            ingredientVendors: Array<{ price: number; vendor?: string }>;
+          };
+        },
+      ]
+    >;
+    expect(updates.map(([filter]) => filter)).toEqual([
+      { _id: 'draft-SITE-A', isDraft: true },
+      { _id: 'draft-SITE-B', isDraft: true },
+      { _id: 'draft-SITE-C', isDraft: true },
+    ]);
+    expect(updates[0][1].$set).toMatchObject({
+      cost: 20,
+      estimatedTotalCost: 20,
+      ingredientVendors: [{ price: 10, vendor: 'Local vendor' }],
+    });
+    expect(updates[1][1].$set).toMatchObject({
+      cost: 10,
+      estimatedTotalCost: 10,
+      ingredientVendors: [{ price: 5, vendor: 'CUSTOM' }],
+    });
+    expect(updates[2][1].$set).toMatchObject({
+      cost: 10,
+      estimatedTotalCost: 10,
+      ingredientVendors: [{ price: 5 }],
+    });
+  });
+
+  it('keeps submitted MPR costs and ingredient prices independent of later recipe price changes', async () => {
+    const recipeId = '507f1f77bcf86cd799439011';
+    const ingredient = {
+      productCode: 'IT001',
+      name: 'Chicken',
+      unitOfMeasures: 'KG',
+      qty: 2,
+      priceUom: 999,
+    };
+    const submittedMenus = [
+      {
+        _id: 'legacy-menu',
+        recipeId,
+        menuName: 'Chicken',
+        category: 'Main',
+        site: 'SITE-A',
+        productionDate: '2026-01-01',
+        portion: 10,
+        cost: 100,
+        isDraft: false,
+        ingredientVendors: [{ ingredientIndex: 0, price: 5 }],
+      },
+      {
+        _id: 'saved-menu',
+        recipeId,
+        menuName: 'Chicken',
+        category: 'Main',
+        site: 'SITE-A',
+        productionDate: '2026-01-02',
+        portion: 10,
+        cost: 20,
+        estimatedTotalCost: 20,
+        isDraft: false,
+        ingredientVendors: [
+          { ingredientIndex: 0, price: 10, ingredientCost: 20 },
+        ],
+        recipeSnapshot: {
+          portionSize: 10,
+          ingredients: [{ ...ingredient, priceUom: 10 }],
+        },
+      },
+    ];
+    const menuProductionModel = {
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(submittedMenus),
+        }),
+      }),
+      updateOne: jest.fn(),
+      updateMany: jest.fn(),
+    };
+    const recipeModel = {
+      find: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: recipeId,
+            name: 'Chicken',
+            portionSize: 10,
+            ingredients: [ingredient],
+          },
+        ]),
+      }),
+    };
+    const service = new MenuProductionsService(
+      menuProductionModel as never,
+      {} as never,
+      recipeModel as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.buildStoreRequestGroups({});
+    expect(result.items[0].items[0]).toMatchObject({
+      cost: 100,
+      estimatedCost: 100,
+      ingredients: [{ ingredientCost: undefined, price: 5 }],
+    });
+    expect(result.items[1].items[0]).toMatchObject({
+      cost: 20,
+      estimatedCost: 20,
+      ingredients: [{ ingredientCost: 20, price: 10 }],
+    });
+    expect(menuProductionModel.updateOne).not.toHaveBeenCalled();
+    expect(menuProductionModel.updateMany).not.toHaveBeenCalled();
+  });
+
   it('reads analytics batches by date and site without backfilling or including drafts', async () => {
     const find = jest.fn().mockReturnValue({
       sort: jest

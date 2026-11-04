@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { formatQuantity } from '../lib/quantity'
 import { formatVersionedRecipeName } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
+import { syncSharedCosts } from '../lib/sync-shared-costs'
 
 const INPUT_ROWS_PER_PAGE = 30 /* Jumlah baris input menu yang ditampilkan per halaman */
 
@@ -1490,36 +1491,30 @@ const ChefMenuCycle = ({
     setCostSyncLoading(true)
     setCostSyncMessage('')
     setCostSyncError('')
+    setInputMessage('')
+    setInputError('')
     try {
-      const result = await apiFetch<{
-        scannedRecipes: number
-        updatedRecipes: number
-        updatedIngredients: number
-        skippedNoRawMaterial: number
-        skippedMissingPrice: number
-      }>(
-        '/recipes/ingredient-costs/backfill',
-        { method: 'PATCH' },
-        accessToken,
-      )
+      const result = await syncSharedCosts(accessToken)
       const nextRecipes = await fetchRecipes(
         requireProductionSite && productionSite
           ? { site: productionSite }
           : undefined,
-      )
-      if (requireProductionSite && productionSite) {
+      ).catch(() => null)
+      if (nextRecipes && requireProductionSite && productionSite) {
         setSiteRecipes(nextRecipes)
         setLoadedProductionSite(productionSite)
       }
-      setCostSyncMessage(
-        `Synced ${result.updatedIngredients} ingredient prices across ${result.updatedRecipes} recipes.`,
-      )
+      setDraftCostsSynced(true)
+      setVendorPricesByProductKey({})
+      setVendorPriceLoadingByProductKey({})
+      setVendorPriceErrorByProductKey({})
+      const message = `Costs updated for ${result.updatedRecipes} recipes and ${result.updatedDrafts} production drafts across all roles.${nextRecipes ? '' : ' Reload this page to see the latest recipe data.'}`
+      setCostSyncMessage(message)
+      setInputMessage(message)
     } catch (error) {
-      setCostSyncError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to sync ingredient prices.',
-      )
+      const message = error instanceof Error ? error.message : 'Failed to sync ingredient prices.'
+      setCostSyncError(message)
+      setInputError(message)
     } finally {
       setCostSyncLoading(false)
     }
@@ -2350,16 +2345,10 @@ const ChefMenuCycle = ({
           <div className="flex flex-wrap items-center gap-3">
             {user?.role === 'superadmin' && showIngredientVendorColumn ? (
               <button type="button"
-                disabled={Object.values(vendorPriceLoadingByProductKey).some(Boolean)}
-                onClick={() => {
-                  setDraftCostsSynced(true)
-                  setVendorPricesByProductKey({})
-                  setVendorPriceLoadingByProductKey({})
-                  setVendorPriceErrorByProductKey({})
-                  setInputMessage('Refreshing prices for this production site. Manual prices are kept when no site price is available. Save the draft to keep the updated costs.')
-                }}
+                disabled={costSyncLoading || Object.values(vendorPriceLoadingByProductKey).some(Boolean)}
+                onClick={() => { void handleBackfillIngredientCosts() }}
                 className="rounded-md border border-primary bg-white px-4 py-2 text-xs font-semibold text-primary disabled:opacity-60">
-                Sync Cost
+                {costSyncLoading ? 'Syncing costs...' : 'Sync Cost'}
               </button>
             ) : null}
             {draftProductionCode && !embedded ? (
