@@ -1051,6 +1051,9 @@ export class MenuProductionsService implements OnModuleInit {
       site,
     );
     const drafts = await this.menuProductionModel.find(draftFilter).lean();
+    if (drafts.some((draft) => !draft.group?.trim())) {
+      throw new BadRequestException('Group By is required for every menu.');
+    }
     const recipeIds = drafts.flatMap((draft) =>
       draft.recipeId ? [draft.recipeId] : [],
     );
