@@ -1249,7 +1249,7 @@ const ChefMenuCycle = ({
       recipeId: string
       menuName: string
       category: string
-      group?: string
+      group: string
       site?: string
       clientId?: string
       clientName?: string
@@ -1265,6 +1265,12 @@ const ChefMenuCycle = ({
     for (const row of usedRows) {
       if (!row.recipeId || row.portion === '') {
         setInputError('Make sure each row has a menu and portion.')
+        setInputMessage('')
+        return
+      }
+
+      if (!row.group.trim()) {
+        setInputError('Select Group By for every menu row.')
         setInputMessage('')
         return
       }
@@ -1409,7 +1415,7 @@ const ChefMenuCycle = ({
         recipeId: recipe.id,
         menuName: recipe.name,
         category: recipe.category,
-        ...(row.group.trim() ? { group: row.group.trim() } : {}),
+        group: row.group.trim(),
         ...(requireProductionSite ? { site: productionSite } : {}),
         clientId: selectedClient.clientId,
         clientName: selectedClient.name,
@@ -1748,7 +1754,7 @@ const ChefMenuCycle = ({
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="w-[48px] px-2 py-3 font-semibold" />
                 <th className="w-[48px] px-2 py-3 font-semibold text-center">No</th>
-                <th className="px-4 py-3 font-semibold">Group By</th>
+                <th className="px-4 py-3 font-semibold">Group By *</th>
                 <th className="px-4 py-3 font-semibold">Recipe ID</th>
                 <th className="px-4 py-3 font-semibold">Menu</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
@@ -1884,6 +1890,7 @@ const ChefMenuCycle = ({
                           className="w-[160px] rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                           aria-label={`Group By for menu row ${index + 1}`}
                           title={menuGroupError || undefined}
+                          required
                         >
                           <option value="">
                             {menuGroupLoading

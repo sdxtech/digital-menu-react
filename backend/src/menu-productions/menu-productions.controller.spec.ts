@@ -3,6 +3,7 @@ import { ROLES_KEY } from '../auth/decorators/roles.decorator';
 import { MenuProductionsController } from './menu-productions.controller';
 import { validate } from 'class-validator';
 import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch.dto';
+import { CreateMenuProductionDto } from './dto/create-menu-production.dto';
 
 describe('MenuProductionsController sales input actor', () => {
   const makeController = () => {
@@ -140,6 +141,29 @@ describe('MenuProductionsController sales input actor', () => {
         (
           await validate(
             Object.assign(new DeleteMenuProductionBatchDto(), input),
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('requires Group By when creating menu production', async () => {
+    const valid = {
+      recipeId: '507f1f77bcf86cd799439011',
+      group: 'Asian',
+      portion: 100,
+      cost: 0,
+      productionDate: '2026-11-05',
+    };
+    await expect(
+      validate(Object.assign(new CreateMenuProductionDto(), valid)),
+    ).resolves.toEqual([]);
+
+    for (const group of [undefined, '', '   ']) {
+      expect(
+        (
+          await validate(
+            Object.assign(new CreateMenuProductionDto(), { ...valid, group }),
           )
         ).length,
       ).toBeGreaterThan(0);
