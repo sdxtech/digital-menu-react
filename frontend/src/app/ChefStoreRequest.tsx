@@ -17,6 +17,7 @@ import { useChefData, type Recipe } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
+  aggregateStoreRequestSummaryAcrossGroups,
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
 } from '../lib/store-request-summary'
@@ -385,7 +386,24 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
   return rows
 }
 
-const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => {
+const buildIngredientSummaryExportRows = (
+  groups: StoreRequestGroup[],
+  aggregateAcrossGroups = false,
+) => {
+  if (aggregateAcrossGroups) {
+    return [
+      ['Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ...aggregateStoreRequestSummaryAcrossGroups(groups).map((item) => [
+        item.ingredientType ?? '',
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ] as SpreadsheetCell[][]
+  }
+
   const rows: SpreadsheetCell[][] = [
     [
       'Production Date',
@@ -1194,7 +1212,7 @@ const ChefStoreRequest = ({
           },
           {
             name: 'Ingredient Summary',
-            rows: buildIngredientSummaryExportRows(namedExportGroups),
+            rows: buildIngredientSummaryExportRows(namedExportGroups, true),
           },
           {
             name: 'Estimated Costs',

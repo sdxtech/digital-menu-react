@@ -20,6 +20,7 @@ type StoreRequestSummaryGroup = {
 
 export const aggregateStoreRequestSummary = (
   items: StoreRequestSummaryIngredient[] = [],
+  groupItByCodeAndVendor = false,
 ): StoreRequestSummaryIngredient[] => {
   const summaryMap = new Map<string, StoreRequestSummaryIngredient>()
   const nonSummarizedItems: StoreRequestSummaryIngredient[] = []
@@ -46,11 +47,13 @@ export const aggregateStoreRequestSummary = (
     const vendor = String(item.vendor ?? '').trim()
     const identity = (productCode || name).toLowerCase()
     const normalizedUnit = unitOfMeasures.toLowerCase()
-    if (!identity || !normalizedUnit) return
+    if (!identity || (!groupItByCodeAndVendor && !normalizedUnit)) return
 
-    // Recipe ingredients are already site-scoped. Summaries therefore group
-    // by IT identity, UOM, and vendor; vendorSite must not split equal vendors.
-    const keyBase = `${identity}__${normalizedUnit}`
+    // Recipe summaries include UOM; bulk ingredient summaries group IT rows
+    // by code and vendor across recipes. vendorSite never splits equal vendors.
+    const keyBase = groupItByCodeAndVendor
+      ? identity
+      : `${identity}__${normalizedUnit}`
     const key = `${keyBase}__${vendor.toLowerCase()}`
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
@@ -117,4 +120,16 @@ export const aggregateStoreRequestSummaryByVendor = (
   const sourceItems = ingredientRows.length ? ingredientRows : group.summary ?? []
 
   return aggregateStoreRequestSummary(sourceItems)
+}
+
+export const aggregateStoreRequestSummaryAcrossGroups = (
+  groups: StoreRequestSummaryGroup[],
+) => {
+  const sourceItems = groups.flatMap((group) => {
+    const ingredientRows =
+      group.items?.flatMap((item) => item.ingredients ?? []) ?? []
+    return ingredientRows.length ? ingredientRows : group.summary ?? []
+  })
+
+  return aggregateStoreRequestSummary(sourceItems, true)
 }
