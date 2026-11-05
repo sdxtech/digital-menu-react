@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -82,7 +83,9 @@ export class CreateMenuProductionDto {
   category?: string;
 
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
+  @Matches(/\S/, { message: 'Group By is required.' })
+  @MaxLength(100)
   group?: string;
 
   @IsString()
