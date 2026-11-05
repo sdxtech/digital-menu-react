@@ -3,6 +3,26 @@ type GroupedPortionItem = {
   portion: number
 }
 
+type GroupedMenuItem = {
+  group?: string
+  menuName: string
+}
+
+export const sortMenuItemsByGroup = <T extends GroupedMenuItem>(items: T[]) =>
+  [...items].sort((left, right) => {
+    const groupComparison = (left.group?.trim() || '-').localeCompare(
+      right.group?.trim() || '-',
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+    if (groupComparison !== 0) return groupComparison
+
+    return left.menuName.localeCompare(right.menuName, 'en', {
+      numeric: true,
+      sensitivity: 'base',
+    })
+  })
+
 export const summarizePortionsByGroup = (items: GroupedPortionItem[]) => {
   const groups = Array.from(
     items.reduce((portions, item) => {

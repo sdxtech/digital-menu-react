@@ -102,6 +102,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   salesInputBy?: string
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
@@ -1160,11 +1161,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       )
                         ? Number(firstMenu?.sellingQuantity)
                         : undefined
-                      const estimatedRevenue =
-                        sellingPricePerPax !== undefined &&
-                        sellingQuantity !== undefined
+                      const estimatedRevenue = firstMenu?.groupSales?.length
+                        ? firstMenu.estimatedRevenue
+                        : sellingPricePerPax !== undefined && sellingQuantity !== undefined
                           ? sellingPricePerPax * sellingQuantity
-                          : undefined
+                          : firstMenu?.estimatedRevenue
                       const foodCostPercentage = calculateFoodCostPercentage(
                         totalEstimatedCost,
                         estimatedRevenue,
@@ -1447,49 +1448,57 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             <td colSpan={2} />
                                           </tr>
                                           {portionSummary.groups.length > 0 ? (
-                                            <tr
-                                              aria-hidden="true"
-                                              className="border-y border-black"
-                                            >
-                                              <td
-                                                colSpan={9}
-                                                className="h-2 p-0"
-                                                style={{
-                                                  backgroundColor:
-                                                    'var(--dm-primary)',
-                                                }}
-                                              />
-                                            </tr>
+                                            <>
+                                              <tr aria-hidden="true"><td colSpan={9} className="border-y border-primary bg-white">&nbsp;</td></tr>
+                                              <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
+                                                <td colSpan={3} className="!bg-primary px-3 py-3 text-right">Menu Group Summary</td>
+                                                <td className="px-3 py-3">Qty</td>
+                                                <td colSpan={2} className="px-3 py-3">Selling Price/Pax</td>
+                                                <td colSpan={2} className="px-3 py-3">Estimated Revenue</td>
+                                                <td className="px-3 py-3">Cost Contribution (%)</td>
+                                              </tr>
+                                            </>
                                           ) : null}
-                                          {portionSummary.groups.map((item) => (
-                                            <tr
+                                          {portionSummary.groups.map((item) => {
+                                            const groupCost = group.items.reduce((sum, menu) => {
+                                              const estimatedCost = Number.isFinite(Number(menu.estimatedCost))
+                                                ? Number(menu.estimatedCost)
+                                                : Number.isFinite(Number(menu.cost))
+                                                  ? Number(menu.cost)
+                                                  : 0
+                                              return (menu.group?.trim() || '-') === item.name
+                                                ? sum + estimatedCost
+                                                : sum
+                                            }, 0)
+                                            const groupSale = firstMenu?.groupSales?.find((sale) => sale.name === item.name)
+                                            return <tr
                                               key={`group-portion-${item.name}`}
                                               className="border-t border-border"
                                             >
-                                              <td
-                                                colSpan={4}
-                                                className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]"
-                                              >
+                                              <td className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]" colSpan={3}>
                                                 {item.name} Qty
                                               </td>
-                                              <td
-                                                colSpan={5}
-                                                className="px-3 py-3 font-semibold"
-                                              >
+                                              <td className="px-3 py-3 font-semibold">
                                                 {formatQuantity(item.portion)}
                                               </td>
+                                              <td colSpan={2} className="px-3 py-3">{formatPrice(groupSale?.sellingPricePerPax)}</td>
+                                              <td colSpan={2} className="px-3 py-3 font-semibold">{formatPrice(groupSale?.estimatedRevenue)}</td>
+                                              <td className="px-3 py-3 font-semibold">{formatFoodCostPercentage(groupCost, estimatedRevenue)}</td>
                                             </tr>
-                                          ))}
+                                          })}
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={4}
+                                              colSpan={3}
                                               className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]"
                                             >
-                                              Total Qty
+                                              Total
                                             </td>
-                                            <td colSpan={5} className="px-3 py-3 font-bold">
+                                            <td className="px-3 py-3 font-bold">
                                               {formatQuantity(portionSummary.total)}
                                             </td>
+                                            <td colSpan={2} />
+                                            <td colSpan={2} className="px-3 py-3 font-bold">{formatPrice(firstMenu?.groupSales?.length ? firstMenu.groupSales.reduce((sum, sale) => sum + sale.estimatedRevenue, 0) : undefined)}</td>
+                                            <td className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td>
                                           </tr>
                                           <tr
                                             aria-hidden="true"
@@ -1504,7 +1513,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               }}
                                             />
                                           </tr>
-                                          <tr className="border-t border-border">
+                                          {!firstMenu?.groupSales?.length ? (<>
+<tr className="border-t border-border">
                                             <td
                                               colSpan={4}
                                               className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
@@ -1526,6 +1536,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               {sellingQuantity ?? '-'}
                                             </td>
                                           </tr>
+                                          </>) : null}
                                           <tr className="border-t border-border">
                                             <td
                                               colSpan={4}

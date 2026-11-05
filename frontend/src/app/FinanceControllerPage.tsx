@@ -6,7 +6,7 @@ import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { formatFoodCostPercentage } from '../lib/food-cost'
-import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
+import { sortMenuItemsByGroup, summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatQuantity } from '../lib/quantity'
 import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
@@ -48,6 +48,7 @@ type Menu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   salesRejectionReason?: string
   financeCostStatus?: 'pending' | 'approved' | 'rejected'
   financeSalesStatus?: 'pending' | 'approved' | 'rejected'
@@ -207,7 +208,7 @@ export default function FinanceControllerPage() {
                 const groupKey = `${group.site}-${group.date}-${group.productionCode}`
                 const expanded = expandedGroups.includes(groupKey)
                 const totalCost = group.items.reduce((sum, item) => sum + (item.estimatedCost ?? item.cost ?? 0), 0)
-                const revenue = typeof first?.sellingPricePerPax === 'number' && typeof first.sellingQuantity === 'number'
+                const revenue = first?.groupSales?.length ? first.estimatedRevenue : typeof first?.sellingPricePerPax === 'number' && typeof first.sellingQuantity === 'number'
                   ? first.sellingPricePerPax * first.sellingQuantity : undefined
                 const totalCostPerPax = group.items.reduce((sum, item) =>
                   sum + (item.estimatedCostPerPax ?? (item.portion > 0 ? (item.estimatedCost ?? item.cost ?? 0) / item.portion : 0)), 0)
@@ -233,7 +234,7 @@ export default function FinanceControllerPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-nowrap items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button type="button" onClick={() => setExpandedGroups((current) => expanded ? current.filter((key) => key !== groupKey) : [...current, groupKey])}
                           className="whitespace-nowrap rounded-md border border-primary bg-primary-soft px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary-soft/80">
                           {expanded ? 'Hide details' : 'View details'}
@@ -286,7 +287,7 @@ export default function FinanceControllerPage() {
                                   <th className="px-3 py-3 font-semibold">Action</th>
                                 </tr>
                               </thead>
-                              <tbody>{group.items.map((item, itemIndex) => {
+                              <tbody>{sortMenuItemsByGroup(group.items).map((item, itemIndex) => {
                                 const estimatedCost = item.estimatedCost ?? item.cost
                                 const costPerPax = item.estimatedCostPerPax ?? (estimatedCost !== undefined && item.portion > 0 ? estimatedCost / item.portion : undefined)
                                 return <tr key={item.id} className="border-t border-border">
@@ -319,28 +320,48 @@ export default function FinanceControllerPage() {
                           <td className="px-3 py-3 font-bold">{formatMoney(totalCostPerPax)}</td>
                           <td colSpan={2} />
                         </tr>
-                        {portionSummary.groups.length > 0 ? <tr aria-hidden="true" className="border-y border-black">
-                          <td colSpan={9} className="h-2 p-0" style={{ backgroundColor: 'var(--dm-primary)' }} />
-                        </tr> : null}
-                        {portionSummary.groups.map((item) => <tr key={item.name} className="border-t border-border">
-                          <td colSpan={4} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name} Qty</td>
-                          <td colSpan={5} className="px-3 py-3 font-semibold">{formatQuantity(item.portion)}</td>
-                        </tr>)}
+                        {portionSummary.groups.length > 0 ? <>
+                          <tr aria-hidden="true"><td colSpan={9} className="border-y border-primary bg-white">&nbsp;</td></tr>
+                          <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
+                            <td colSpan={3} className="!bg-primary px-3 py-3 text-right">Menu Group Summary</td>
+                            <td className="px-3 py-3">Qty</td>
+                            <td colSpan={2} className="px-3 py-3">Selling Price/Pax</td>
+                            <td colSpan={2} className="px-3 py-3">Estimated Revenue</td>
+                            <td className="px-3 py-3">Cost Contribution (%)</td>
+                          </tr>
+                        </> : null}
+                        {portionSummary.groups.map((item) => {
+                          const groupCost = group.items.reduce((sum, menu) =>
+                            (menu.group?.trim() || '-') === item.name
+                              ? sum + (menu.estimatedCost ?? menu.cost ?? 0)
+                              : sum, 0)
+                          const groupSale = first?.groupSales?.find((sale) => sale.name === item.name)
+                          return <tr key={item.name} className="border-t border-border">
+                            <td colSpan={3} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name} Qty</td>
+                            <td className="px-3 py-3 font-semibold">{formatQuantity(item.portion)}</td>
+                            <td colSpan={2} className="px-3 py-3">{formatMoney(groupSale?.sellingPricePerPax)}</td>
+                            <td colSpan={2} className="px-3 py-3 font-semibold">{formatMoney(groupSale?.estimatedRevenue)}</td>
+                            <td className="px-3 py-3 font-semibold">{formatFoodCostPercentage(groupCost, revenue)}</td>
+                          </tr>
+                        })}
                         <tr className="border-t border-border">
-                          <td colSpan={4} className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total Qty</td>
-                          <td colSpan={5} className="px-3 py-3 font-bold">{formatQuantity(portionSummary.total)}</td>
+                          <td colSpan={3} className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total</td>
+                          <td className="px-3 py-3 font-bold">{formatQuantity(portionSummary.total)}</td>
+                          <td colSpan={2} />
+                          <td colSpan={2} className="px-3 py-3 font-bold">{formatMoney(first?.groupSales?.length ? first.groupSales.reduce((sum, sale) => sum + sale.estimatedRevenue, 0) : undefined)}</td>
+                          <td className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
                         </tr>
                         <tr aria-hidden="true" className="border-y border-black">
                           <td colSpan={9} className="h-2 p-0" style={{ backgroundColor: 'var(--dm-primary)' }} />
                         </tr>
-                        <tr className="border-t border-border">
+                        {!first?.groupSales?.length ? <><tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Selling Price/Pax</td>
                           <td colSpan={5} className="px-3 py-3 font-bold">{formatMoney(first?.sellingPricePerPax)}</td>
                         </tr>
                         <tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Pax Calculation</td>
                           <td colSpan={5} className="px-3 py-3 font-bold">{first?.sellingQuantity ?? '-'}</td>
-                        </tr>
+                        </tr></> : null}
                         <tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Estimated Revenue</td>
                           <td colSpan={5} className="px-3 py-3 font-bold">{formatMoney(revenue)}</td>

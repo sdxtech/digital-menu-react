@@ -4,6 +4,13 @@ import type { RecipeIngredient } from '../../recipes/schemas/recipe.schema';
 
 export type MenuProductionDocument = HydratedDocument<MenuProduction>;
 
+export type MenuProductionGroupSale = {
+  name: string;
+  quantity: number;
+  sellingPricePerPax: number;
+  estimatedRevenue: number;
+};
+
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type StoreRequestStatus =
   | 'not-requested'
@@ -102,6 +109,20 @@ export class MenuProduction {
 
   @Prop({ type: Number, min: 0 })
   estimatedRevenue?: number;
+
+  @Prop({
+    type: [
+      {
+        _id: false,
+        name: String,
+        quantity: Number,
+        sellingPricePerPax: Number,
+        estimatedRevenue: Number,
+      },
+    ],
+    default: undefined,
+  })
+  groupSales?: MenuProductionGroupSale[];
 
   @Prop({ type: String, trim: true })
   salesInputBy?: string;

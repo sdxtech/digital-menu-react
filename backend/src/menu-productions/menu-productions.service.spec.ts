@@ -504,6 +504,7 @@ describe('MenuProductionsService sales input', () => {
         _id: 'menu-id',
         approvalStatus: 'pending',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
       },
       expect.any(Object),
       { new: true },
@@ -532,6 +533,7 @@ describe('MenuProductionsService sales input', () => {
         productionCode: 'MPR0038',
         approvalStatus: 'pending',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
       },
       expect.any(Object),
     );
@@ -589,6 +591,7 @@ describe('MenuProductionsService sales input', () => {
       {
         productionCode: 'MPR0038',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
         site: 'S001',
       },
       {
@@ -784,6 +787,7 @@ describe('MenuProductionsService sales input', () => {
           productionCode: 'MPR0038',
           menuName: 'Soup',
           productionDate: '2026-08-28',
+          group: 'Asian',
           site: 'SITE-001',
           createdBy: 'chef-1',
         },
@@ -833,6 +837,7 @@ describe('MenuProductionsService sales input', () => {
   it('does not submit an incomplete production draft using corporate reference prices', async () => {
     const draft = {
       recipeId: '507f1f77bcf86cd799439011',
+      group: 'Main Course',
       portion: 1,
       productionDate: '2026-10-07',
       ingredientVendors: [],
@@ -879,6 +884,36 @@ describe('MenuProductionsService sales input', () => {
     await expect(
       service.submitDraftBatch('MPR001', 'chef-1', 'LOCAL'),
     ).rejects.toThrow('Local price is required');
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not submit a production draft without Group By', async () => {
+    const model = {
+      find: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            recipeId: '507f1f77bcf86cd799439011',
+            group: '   ',
+            portion: 1,
+            productionDate: '2026-10-07',
+          },
+        ]),
+      }),
+      updateMany: jest.fn(),
+    };
+    const service = new MenuProductionsService(
+      model as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.submitDraftBatch('MPR001', 'chef-1', 'LOCAL'),
+    ).rejects.toThrow('Group By is required for every menu.');
     expect(model.updateMany).not.toHaveBeenCalled();
   });
 });

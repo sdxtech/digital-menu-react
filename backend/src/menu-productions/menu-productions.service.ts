@@ -41,6 +41,7 @@ import {
   MenuProduction,
   MenuProductionDocument,
   MenuProductionIngredientVendor,
+  MenuProductionGroupSale,
   StoreRequestStatus,
 } from './schemas/menu-production.schema';
 import { UsersService } from '../users/users.service';
@@ -111,6 +112,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number;
   sellingQuantity?: number;
   estimatedRevenue?: number;
+  groupSales?: MenuProductionGroupSale[];
   salesInputBy?: string;
   salesRejectionReason?: string;
   salesRejectedBy?: string;
@@ -1079,6 +1081,9 @@ export class MenuProductionsService implements OnModuleInit {
       site,
     );
     const drafts = await this.menuProductionModel.find(draftFilter).lean();
+    if (drafts.some((draft) => !draft.group?.trim())) {
+      throw new BadRequestException('Group By is required for every menu.');
+    }
     const recipeIds = drafts.flatMap((draft) =>
       draft.recipeId ? [draft.recipeId] : [],
     );
@@ -1536,6 +1541,7 @@ export class MenuProductionsService implements OnModuleInit {
             sellingPricePerPax: 1,
             sellingQuantity: 1,
             estimatedRevenue: 1,
+            groupSales: 1,
             salesInputBy: 1,
             fulfilledBy: 1,
             storeFulfillmentItems: 1,
@@ -1863,29 +1869,56 @@ export class MenuProductionsService implements OnModuleInit {
     site?: string,
     actor?: string,
   ) {
-    const price = input.sellingPricePerPax;
-    const quantity = input.sellingQuantity;
+    let price = input.sellingPricePerPax;
+    let quantity = input.sellingQuantity;
+    if (!actor?.trim())
+      throw new BadRequestException('An editor identity is required.');
+    const { menus, filter } = await this.findSalesActionBatch(
+      input.menuProductionIds,
+      site,
+    );
+    const groupSales = input.groupPrices
+      ? this.calculateGroupSales(menus, input.groupPrices)
+      : undefined;
+    if (!groupSales && menus.some((menu) => menu.groupSales?.length)) {
+      throw new ConflictException(
+        'A selling price is required for every menu group.',
+      );
+    }
+    if (groupSales) {
+      quantity = groupSales.reduce((total, entry) => total + entry.quantity, 0);
+      const revenue = groupSales.reduce(
+        (total, entry) => total + entry.estimatedRevenue,
+        0,
+      );
+      price = quantity ? revenue / quantity : 0;
+    }
     if (
+      price === undefined ||
+      quantity === undefined ||
       !Number.isFinite(price) ||
       price < 0 ||
       !Number.isFinite(quantity) ||
       quantity < 0 ||
-      !Number.isFinite(price * quantity) ||
-      !actor?.trim()
+      !Number.isFinite(price * quantity)
     ) {
       throw new BadRequestException(
         'Valid sales values and an editor identity are required.',
       );
     }
-    const { menus, filter } = await this.findSalesActionBatch(
-      input.menuProductionIds,
-      site,
-    );
     const result = await this.menuProductionModel.updateMany(filter, {
       $set: {
         sellingPricePerPax: price,
         sellingQuantity: quantity,
-        estimatedRevenue: this.roundQuantity(price * quantity),
+        estimatedRevenue: groupSales
+          ? this.roundQuantity(
+              groupSales.reduce(
+                (total, entry) => total + entry.estimatedRevenue,
+                0,
+              ),
+            )
+          : this.roundQuantity(price * quantity),
+        ...(groupSales ? { groupSales } : {}),
         salesInputBy: actor.trim(),
       },
       $unset: {
@@ -1967,6 +2000,7 @@ export class MenuProductionsService implements OnModuleInit {
           sellingPricePerPax: 1,
           sellingQuantity: 1,
           estimatedRevenue: 1,
+          groupSales: 1,
           salesInputBy: 1,
           reviewedBy: 1,
           approvedAt: 1,
@@ -2019,7 +2053,12 @@ export class MenuProductionsService implements OnModuleInit {
 
     const updated = await this.menuProductionModel.findOneAndUpdate(
       this.withSiteFilter(
-        { _id: id, approvalStatus: 'pending', isDraft: { $ne: true } },
+        {
+          _id: id,
+          approvalStatus: 'pending',
+          isDraft: { $ne: true },
+          groupSales: { $exists: false },
+        },
         site,
       ),
       {
@@ -2046,6 +2085,51 @@ export class MenuProductionsService implements OnModuleInit {
     return updated;
   }
 
+  private calculateGroupSales(
+    menus: Array<{ group?: string; portion: number }>,
+    groupPrices: Array<{ name: string; sellingPricePerPax: number }>,
+  ): MenuProductionGroupSale[] {
+    const quantities = new Map<string, number>();
+    for (const menu of menus) {
+      const name = menu.group?.trim() || '-';
+      quantities.set(
+        name,
+        Math.max(quantities.get(name) ?? 0, Number(menu.portion)),
+      );
+    }
+    const prices = new Map(
+      groupPrices.map((entry) => [entry.name.trim(), entry.sellingPricePerPax]),
+    );
+    if (
+      prices.size !== groupPrices.length ||
+      prices.size !== quantities.size ||
+      [...quantities.keys()].some((name) => !prices.has(name))
+    ) {
+      throw new BadRequestException(
+        'A selling price is required for every menu group.',
+      );
+    }
+    return [...quantities].map(([name, quantity]) => {
+      const price = prices.get(name);
+      if (
+        price === undefined ||
+        !Number.isFinite(price) ||
+        price < 0 ||
+        !Number.isFinite(quantity) ||
+        quantity < 0 ||
+        !Number.isFinite(price * quantity)
+      ) {
+        throw new BadRequestException('Group sales values are invalid.');
+      }
+      return {
+        name,
+        quantity,
+        sellingPricePerPax: price,
+        estimatedRevenue: this.roundQuantity(price * quantity),
+      };
+    });
+  }
+
   async updateBatchSalesDetails(
     productionCode: string,
     input: UpdateMenuProductionBatchSalesDetailsDto,
@@ -2053,9 +2137,43 @@ export class MenuProductionsService implements OnModuleInit {
     salesInputBy?: string,
   ) {
     const normalizedCode = productionCode?.trim();
-    const sellingPricePerPax = Number(input.sellingPricePerPax);
-    const sellingQuantity = Number(input.sellingQuantity);
+    let sellingPricePerPax = Number(input.sellingPricePerPax);
+    let sellingQuantity = Number(input.sellingQuantity);
     const actor = salesInputBy?.trim();
+    if (!normalizedCode || !actor) {
+      throw new BadRequestException(
+        'Production code and admin identity are required.',
+      );
+    }
+    let groupSales: MenuProductionGroupSale[] | undefined;
+    if (input.groupPrices) {
+      const batch = await this.menuProductionModel
+        .find(
+          this.withSiteFilter(
+            {
+              productionCode: normalizedCode,
+              approvalStatus: 'pending',
+              isDraft: { $ne: true },
+            },
+            site,
+          ),
+        )
+        .lean();
+      if (!batch.length)
+        throw new NotFoundException(
+          'Pending production batch not found for this site.',
+        );
+      groupSales = this.calculateGroupSales(batch, input.groupPrices);
+      sellingQuantity = groupSales.reduce(
+        (total, entry) => total + entry.quantity,
+        0,
+      );
+      const revenue = groupSales.reduce(
+        (total, entry) => total + entry.estimatedRevenue,
+        0,
+      );
+      sellingPricePerPax = sellingQuantity ? revenue / sellingQuantity : 0;
+    }
     if (
       !normalizedCode ||
       !Number.isFinite(sellingPricePerPax) ||
@@ -2076,6 +2194,7 @@ export class MenuProductionsService implements OnModuleInit {
         productionCode: normalizedCode,
         approvalStatus: 'pending',
         isDraft: { $ne: true },
+        ...(groupSales ? {} : { groupSales: { $exists: false } }),
       },
       site,
     );
@@ -2085,9 +2204,15 @@ export class MenuProductionsService implements OnModuleInit {
         storeRequestStatus: 'not-requested',
         sellingPricePerPax,
         sellingQuantity,
-        estimatedRevenue: this.roundQuantity(
-          sellingPricePerPax * sellingQuantity,
-        ),
+        estimatedRevenue: groupSales
+          ? this.roundQuantity(
+              groupSales.reduce(
+                (total, entry) => total + entry.estimatedRevenue,
+                0,
+              ),
+            )
+          : this.roundQuantity(sellingPricePerPax * sellingQuantity),
+        ...(groupSales ? { groupSales } : {}),
         salesInputBy: actor,
         financeSalesStatus: 'pending',
       },
@@ -2109,6 +2234,7 @@ export class MenuProductionsService implements OnModuleInit {
       {
         productionCode: normalizedCode,
         isDraft: { $ne: true },
+        ...(groupSales ? {} : { groupSales: { $exists: false } }),
       },
       site,
     );
@@ -2116,9 +2242,15 @@ export class MenuProductionsService implements OnModuleInit {
       $set: {
         sellingPricePerPax,
         sellingQuantity,
-        estimatedRevenue: this.roundQuantity(
-          sellingPricePerPax * sellingQuantity,
-        ),
+        estimatedRevenue: groupSales
+          ? this.roundQuantity(
+              groupSales.reduce(
+                (total, entry) => total + entry.estimatedRevenue,
+                0,
+              ),
+            )
+          : this.roundQuantity(sellingPricePerPax * sellingQuantity),
+        ...(groupSales ? { groupSales } : {}),
         salesInputBy: actor,
         financeSalesStatus: 'pending',
       },
@@ -3767,6 +3899,7 @@ export class MenuProductionsService implements OnModuleInit {
         estimatedRevenue: Number.isFinite(Number(menu.estimatedRevenue))
           ? Number(menu.estimatedRevenue)
           : undefined,
+        groupSales: menu.groupSales,
         productionDate,
         approvalStatus: menu.approvalStatus ?? 'pending',
         financeApprovalRequired: menu.financeApprovalRequired ?? false,

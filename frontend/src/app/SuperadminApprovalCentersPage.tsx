@@ -13,6 +13,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useCorporateSite } from '../lib/corporate-site'
+import { formatFoodCostPercentage } from '../lib/food-cost'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
@@ -97,6 +98,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   submittedAt?: string
   recipeVersion?: number
   group?: string
@@ -1102,6 +1104,12 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     const groupKey = getGroupKey(group)
                     const isExpanded = expandedGroups.includes(groupKey)
                     const summaryItems = aggregateStoreRequestSummary(group.summary)
+                     const groupSales = group.items[0]?.groupSales ?? []
+                     const totalEstimatedCost = group.items.reduce(
+                       (sum, item) => sum + (Number.isFinite(Number(item.estimatedCost)) ? Number(item.estimatedCost) : 0),
+                       0,
+                     )
+                     const estimatedRevenue = groupSales.reduce((sum, sale) => sum + sale.estimatedRevenue, 0)
                     const hasApproved = group.items.some(
                       (item) => item.approvalStatus === 'approved',
                     )
@@ -1279,6 +1287,40 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                           </tr>
                                         ))}
                                       </tbody>
+                                      {groupSales.length ? (
+                                        <tfoot className="bg-[#ccd9ec]">
+                                          <tr aria-hidden="true"><td colSpan={5} className="border-y border-primary bg-white">&nbsp;</td></tr>
+                                          <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
+                                            <td className="!bg-primary px-4 py-3 text-right">Menu Group Summary</td>
+                                            <td className="px-4 py-3">Qty</td>
+                                            <td className="px-4 py-3">Selling Price/Pax</td>
+                                            <td className="px-4 py-3">Estimated Revenue</td>
+                                            <td className="px-4 py-3">Cost Contribution (%)</td>
+                                          </tr>
+                                          {groupSales.map((sale) => {
+                                            const groupCost = group.items.reduce((sum, menu) =>
+                                              (menu.group?.trim() || '-') === sale.name
+                                                ? sum + (Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : 0)
+                                                : sum, 0)
+                                            return (
+                                            <tr key={sale.name} className="border-t border-border">
+                                              <td className="px-4 py-3 text-right font-semibold">{sale.name} Qty</td>
+                                              <td className="px-4 py-3">{formatQuantity(sale.quantity)}</td>
+                                              <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(sale.sellingPricePerPax)}</td>
+                                              <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(sale.estimatedRevenue)}</td>
+                                              <td className="px-4 py-3 font-semibold">{formatFoodCostPercentage(groupCost, estimatedRevenue)}</td>
+                                            </tr>
+                                            )
+                                          })}
+                                          <tr className="border-t border-border font-bold">
+                                            <td className="px-4 py-3 text-right">Total</td>
+                                            <td className="px-4 py-3">{formatQuantity(groupSales.reduce((sum, sale) => sum + sale.quantity, 0))}</td>
+                                            <td />
+                                            <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(estimatedRevenue)}</td>
+                                            <td className="px-4 py-3">{formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)}</td>
+                                          </tr>
+                                        </tfoot>
+                                      ) : null}
                                     </table>
                                   </div>
                                 </div>

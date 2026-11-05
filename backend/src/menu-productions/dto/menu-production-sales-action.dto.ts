@@ -4,11 +4,14 @@ import {
   IsArray,
   IsMongoId,
   IsNumber,
+  IsOptional,
   IsString,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { MenuProductionGroupPriceDto } from './update-menu-production-batch-sales-details.dto';
 
 export class MenuProductionSalesBatchDto {
   @IsArray()
@@ -18,15 +21,24 @@ export class MenuProductionSalesBatchDto {
 }
 
 export class EditMenuProductionSalesDto extends MenuProductionSalesBatchDto {
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  sellingPricePerPax: number;
+  sellingPricePerPax?: number;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  sellingQuantity: number;
+  sellingQuantity?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => MenuProductionGroupPriceDto)
+  groupPrices?: MenuProductionGroupPriceDto[];
 }
 
 export class RejectMenuProductionSalesDto extends MenuProductionSalesBatchDto {
