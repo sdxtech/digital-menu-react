@@ -8,6 +8,7 @@ import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
+  aggregateStoreRequestSummaryAcrossGroups,
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
 } from '../lib/store-request-summary'
@@ -17,7 +18,6 @@ import {
   downloadSpreadsheet,
   toSpreadsheetDate,
   toSpreadsheetDecimal,
-  toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
@@ -191,8 +191,6 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'Vendor',
       'Planned QTY',
       'Unit',
-      'Price',
-      'Ingredient Cost',
     ],
   ]
 
@@ -219,8 +217,6 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient?.vendor ?? '',
           ingredient ? toSpreadsheetDecimal(formatQuantity(ingredient.qty)) : '',
           ingredient ? formatUnitLabel(ingredient.unitOfMeasures) : '',
-          ingredient ? toSpreadsheetInteger(ingredient.price) : '',
-          ingredient ? toSpreadsheetInteger(ingredient.ingredientCost) : '',
         ])
         rowNumber += 1
       })
@@ -230,60 +226,41 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
   return rows
 }
 
-const buildIngredientSummaryExportRows = (groups: StoreRequestGroup[]) => [
-  ['Production Date', 'Site', 'Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-  ...groups.flatMap((group) =>
-    aggregateStoreRequestSummaryByVendor(group).map((item) => [
-      toSpreadsheetDate(group.date),
-      group.site ?? '',
-      group.items[0]?.clientName ?? '',
-      item.ingredientType ?? '',
-      item.productCode,
-      item.name,
-      item.vendor ?? '',
-      toSpreadsheetDecimal(formatQuantity(item.qty)),
-      formatUnitLabel(item.unitOfMeasures),
-    ]),
-  ),
-] as SpreadsheetCell[][]
+const buildIngredientSummaryExportRows = (
+  groups: StoreRequestGroup[],
+  aggregateAcrossGroups = false,
+) => {
+  if (aggregateAcrossGroups) {
+    return [
+      ['Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+      ...aggregateStoreRequestSummaryAcrossGroups(groups).map((item) => [
+        item.ingredientType ?? '',
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ] as SpreadsheetCell[][]
+  }
 
-const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => [
-  [
-    'Production Date',
-    'Site',
-    'Client Name',
-    'Menu Name',
-    'Version',
-    'Category',
-    'Portion',
-    'Estimated Total Cost',
-    'Cost Per Pax',
-  ],
-  ...groups.flatMap((group) =>
-    group.items.map((menu) => {
-      const estimatedTotalCost = Number.isFinite(menu.estimatedCost)
-        ? menu.estimatedCost
-        : undefined
-      const estimatedCostPerPax = Number.isFinite(menu.estimatedCostPerPax)
-        ? menu.estimatedCostPerPax
-        : estimatedTotalCost !== undefined && menu.portion > 0
-          ? estimatedTotalCost / menu.portion
-          : undefined
-
-      return [
-      toSpreadsheetDate(group.date),
-      group.site ?? '',
-      menu.clientName ?? '',
-      menu.menuName,
-        formatRecipeVersion(menu.recipeVersion),
-        menu.category,
-        menu.portion,
-        toSpreadsheetInteger(estimatedTotalCost),
-        toSpreadsheetInteger(estimatedCostPerPax),
-      ]
-    }),
-  ),
-] as SpreadsheetCell[][]
+  return [
+    ['Production Date', 'Site', 'Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
+    ...groups.flatMap((group) =>
+      aggregateStoreRequestSummaryByVendor(group).map((item) => [
+        toSpreadsheetDate(group.date),
+        group.site ?? '',
+        group.items[0]?.clientName ?? '',
+        item.ingredientType ?? '',
+        item.productCode,
+        item.name,
+        item.vendor ?? '',
+        toSpreadsheetDecimal(formatQuantity(item.qty)),
+        formatUnitLabel(item.unitOfMeasures),
+      ]),
+    ),
+  ] as SpreadsheetCell[][]
+}
 
 const parseDotDecimal = (value: string) => {
   const trimmed = value.trim()
@@ -669,11 +646,7 @@ const StorekeeperPage = () => {
           },
           {
             name: 'Ingredient Summary',
-            rows: buildIngredientSummaryExportRows(namedExportGroups),
-          },
-          {
-            name: 'Estimated Costs',
-            rows: buildEstimatedCostExportRows(namedExportGroups),
+            rows: buildIngredientSummaryExportRows(namedExportGroups, true),
           },
         ],
       )
