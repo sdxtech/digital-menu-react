@@ -310,6 +310,8 @@ export class SuperadminUsersController {
       'unit-manager': AppRole.UnitManager,
       unitmanager: AppRole.UnitManager,
       'unit manager': AppRole.UnitManager,
+      'finance-controller': AppRole.FinanceController,
+      'finance-operations-controller': AppRole.FinanceController,
       executive: AppRole.Executive,
       'admin-site': AppRole.AdminSite,
       adminsite: AppRole.AdminSite,

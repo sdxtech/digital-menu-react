@@ -39,6 +39,20 @@ export const resolveRecipeReadSite = (
       );
     return assignedSite;
   }
+  if (user.roles?.includes(AppRole.FinanceController)) {
+    const assignedSites = user.sites ?? [];
+    const requested = requestedSite?.trim();
+    if (!requested) return assignedSites[0];
+    const assignedSite = assignedSites.find(
+      (site) => site.toLowerCase() === requested.toLowerCase(),
+    );
+    if (!assignedSite) {
+      throw new ForbiddenException(
+        'The selected site is not assigned to this Finance Controller.',
+      );
+    }
+    return assignedSite;
+  }
   if (user.roles?.includes(AppRole.CorporateChef)) {
     const assignedSites = (user.sites ?? []).map((site) =>
       site.trim().toLowerCase(),

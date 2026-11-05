@@ -39,6 +39,35 @@ describe('SitesService corporate settings', () => {
     );
   });
 
+  it('requires an assigned controller before finance approval can be enabled', async () => {
+    const { model, service } = makeService([]);
+    await expect(
+      service.create({
+        name: 'Site A',
+        code: 'A',
+        financeApprovalEnabled: true,
+      }),
+    ).rejects.toThrow('Select at least one finance controller');
+    expect(model.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects inactive or non-controller users in an enabled site', async () => {
+    const siteModel = {
+      create: jest.fn(),
+    };
+    const userModel = { countDocuments: jest.fn().mockResolvedValue(0) };
+    const service = new SitesService(siteModel as never, userModel as never);
+    await expect(
+      service.create({
+        name: 'Site A',
+        code: 'A',
+        financeApprovalEnabled: true,
+        financeControllerIds: ['507f1f77bcf86cd799439011'],
+      }),
+    ).rejects.toThrow('Select active users with the finance controller role');
+    expect(siteModel.create).not.toHaveBeenCalled();
+  });
+
   it('normalizes reference codes and preserves priority', async () => {
     const { service } = makeService([operational('A'), operational('B')]);
     await expect(

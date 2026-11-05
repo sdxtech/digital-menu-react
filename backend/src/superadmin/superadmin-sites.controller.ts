@@ -51,6 +51,12 @@ export class SuperadminSitesController {
     });
   }
 
+  @Get('finance-controllers')
+  @Roles(AppRole.Superadmin)
+  financeControllers() {
+    return this.sites.listFinanceControllers();
+  }
+
   @Post()
   @Roles(AppRole.Superadmin)
   create(@Body() dto: CreateSiteDto) {
@@ -62,6 +68,8 @@ export class SuperadminSitesController {
       siteFunction: dto.siteFunction,
       materialSource: dto.materialSource,
       referenceSiteCodes: dto.referenceSiteCodes,
+      financeApprovalEnabled: dto.financeApprovalEnabled,
+      financeControllerIds: dto.financeControllerIds,
     });
   }
 
@@ -127,6 +135,8 @@ export class SuperadminSitesController {
       siteFunction: dto.siteFunction,
       materialSource: dto.materialSource,
       referenceSiteCodes: dto.referenceSiteCodes,
+      financeApprovalEnabled: dto.financeApprovalEnabled,
+      financeControllerIds: dto.financeControllerIds,
     });
   }
 

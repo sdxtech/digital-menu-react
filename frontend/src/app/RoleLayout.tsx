@@ -80,27 +80,31 @@ const RoleLayout = ({
   const dropdownRef = useRef<HTMLDivElement>(null)
   const notificationDropdownRef = useRef<HTMLDivElement>(null)
 
-  const rawRole = user?.roles?.[0] || user?.role || ''
+  const rawRole = user?.role === 'finance-controller' ? user.role : user?.roles?.[0] || user?.role || ''
   const cleanRole = rawRole.startsWith('/') ? rawRole.slice(1) : rawRole
   
   const targetUserRole = cleanRole === 'unit-manager' ? 'unit.manager' : cleanRole
   const siteCode = user?.site || 'global'
+  const notificationSiteKey = user?.role === 'finance-controller'
+    ? (user.sites ?? []).join('|')
+    : siteCode
 
   // Dynamic metrics polling loop 
   useEffect(() => {
-    if (!targetUserRole || !siteCode || !accessToken) return
+    if (!targetUserRole || !notificationSiteKey || !accessToken) return
 
     const fetchActiveNotifications = async () => {
       try {
         const apiRole = targetUserRole === 'unit-manager' ? 'unit.manager' : targetUserRole;
 
-        const data = await apiFetch<NotificationItem[]>(
-          `/notifications/role?siteCode=${encodeURIComponent(siteCode)}&targetUserRole=${encodeURIComponent(apiRole)}`,
-          undefined,
-          accessToken,
-        )
-
-        setNotifications(data)
+        const batches = await Promise.all(notificationSiteKey.split('|').filter(Boolean).map((code) =>
+          apiFetch<NotificationItem[]>(
+            `/notifications/role?siteCode=${encodeURIComponent(code)}&targetUserRole=${encodeURIComponent(apiRole)}`,
+            undefined,
+            accessToken,
+          ),
+        ))
+        setNotifications(batches.flat())
       } catch (err) {
         console.error('Failed to look up unread notification metrics:', err)
       }
@@ -120,7 +124,7 @@ const RoleLayout = ({
       clearInterval(pollInterval)
       window.removeEventListener('refresh-notifications', fetchActiveNotifications)
     }
-  }, [targetUserRole, siteCode, accessToken])
+  }, [targetUserRole, notificationSiteKey, accessToken])
 
   const unreadNotifications = notifications.filter((notification) => !notification.read)
   const readNotifications = notifications.filter((notification) => notification.read)
@@ -185,17 +189,16 @@ const RoleLayout = ({
     setNotificationActionError('')
 
     try {
-      await apiFetch(
-        '/notifications/mark-role-read',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            siteCode,
-            targetUserRole,
-          }),
-        },
-        accessToken,
-      )
+      await Promise.all(notificationSiteKey.split('|').filter(Boolean).map((code) =>
+        apiFetch(
+          '/notifications/mark-role-read',
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ siteCode: code, targetUserRole }),
+          },
+          accessToken,
+        ),
+      ))
       setNotifications((current) =>
         current.map((notification) => ({ ...notification, read: true })),
       )

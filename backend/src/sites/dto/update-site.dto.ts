@@ -23,6 +23,16 @@ export class UpdateSiteDto {
   referenceSiteCodes?: string[];
 
   @IsOptional()
+  @IsBoolean()
+  financeApprovalEnabled?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  financeControllerIds?: string[];
+
+  @IsOptional()
   @IsString()
   name?: string;
 

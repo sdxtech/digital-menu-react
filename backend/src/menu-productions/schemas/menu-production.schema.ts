@@ -145,6 +145,30 @@ export class MenuProduction {
   approvalStatus: ApprovalStatus;
 
   @Prop({ type: Boolean, default: false, index: true })
+  financeApprovalRequired: boolean;
+
+  @Prop({ type: [String], default: [] })
+  financeControllerIds: string[];
+
+  @Prop({ enum: ['pending', 'approved', 'rejected'] })
+  financeCostStatus?: ApprovalStatus;
+
+  @Prop({ enum: ['pending', 'approved', 'rejected'] })
+  financeSalesStatus?: ApprovalStatus;
+
+  @Prop({ type: String, trim: true })
+  financeCostReviewedBy?: string;
+
+  @Prop({ type: String, trim: true })
+  financeSalesReviewedBy?: string;
+
+  @Prop({ type: Date })
+  financeCostReviewedAt?: Date;
+
+  @Prop({ type: Date })
+  financeSalesReviewedAt?: Date;
+
+  @Prop({ type: Boolean, default: false, index: true })
   isDraft: boolean;
 
   @Prop({ type: Date, index: true })

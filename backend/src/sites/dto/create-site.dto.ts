@@ -23,6 +23,16 @@ export class CreateSiteDto {
   @IsString({ each: true })
   referenceSiteCodes?: string[];
 
+  @IsOptional()
+  @IsBoolean()
+  financeApprovalEnabled?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  financeControllerIds?: string[];
+
   @IsString()
   @IsNotEmpty()
   name: string;

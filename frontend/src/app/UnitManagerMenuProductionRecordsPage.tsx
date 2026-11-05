@@ -382,16 +382,24 @@ const UnitManagerMenuProductionRecordsPage = ({
 }) => {
   const { accessToken, user } = useAuth()
   const canDeleteMpr = user?.role === 'superadmin'
+  const [financeSites, setFinanceSites] = useState<Array<{ code: string; name: string }>>([])
+  const [financeSiteError, setFinanceSiteError] = useState('')
+  useEffect(() => {
+    if (user?.role !== 'finance-controller' || !accessToken) return
+    apiFetch<Array<{ code: string; name: string }>>('/menu-productions/finance-sites', undefined, accessToken)
+      .then((items) => { setFinanceSites(items); setFinanceSiteError('') })
+      .catch((cause: unknown) => setFinanceSiteError(cause instanceof Error ? cause.message : 'Failed to load assigned sites.'))
+  }, [accessToken, user?.role])
   const siteOptions = useMemo(
     () =>
-      Array.from(
+      user?.role === 'finance-controller' ? financeSites : Array.from(
         new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
       ).map((code) => ({
         code,
         name:
           user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
       })),
-    [user?.site, user?.siteOptions, user?.sites],
+    [financeSites, user?.role, user?.site, user?.siteOptions, user?.sites],
   )
   const [selectedSite, setSelectedSite] = useState('')
   const [productionDateFrom, setProductionDateFrom] = useState('')
@@ -910,6 +918,7 @@ const UnitManagerMenuProductionRecordsPage = ({
               buildBatch={buildRecordSheets}
             />
           </div>
+          {financeSiteError ? <p role="alert" className="text-sm text-danger">{financeSiteError}</p> : null}
           {error ? (
             <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
           ) : null}

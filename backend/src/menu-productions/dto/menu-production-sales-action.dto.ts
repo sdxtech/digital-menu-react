@@ -10,7 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-class MenuProductionSalesBatchDto {
+export class MenuProductionSalesBatchDto {
   @IsArray()
   @ArrayMinSize(1)
   @IsMongoId({ each: true })

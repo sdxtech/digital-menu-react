@@ -109,13 +109,16 @@ const UnitManagerRecipeDataPage = ({
   const siteOptions = useMemo(
     () =>
       Array.from(
-        new Set([...(user?.site ? [user.site] : []), ...(user?.sites ?? [])]),
+        new Set([
+          ...(user?.role === 'finance-controller' || !user?.site ? [] : [user.site]),
+          ...(user?.sites ?? []),
+        ]),
       ).map((code) => ({
         code,
         name:
           user?.siteOptions?.find((site) => site.code === code)?.name ?? code,
       })),
-    [user?.site, user?.siteOptions, user?.sites],
+    [user?.role, user?.site, user?.siteOptions, user?.sites],
   )
   const [selectedSite, setSelectedSite] = useState('')
   const [recipes, setRecipes] = useState<Recipe[]>([])

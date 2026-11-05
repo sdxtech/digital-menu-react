@@ -28,6 +28,7 @@ import { DeleteMenuProductionBatchDto } from './dto/delete-menu-production-batch
 import {
   EditMenuProductionSalesDto,
   RejectMenuProductionSalesDto,
+  MenuProductionSalesBatchDto,
 } from './dto/menu-production-sales-action.dto';
 import { FulfillStoreRequestBatchDto } from './dto/fulfill-store-request-batch.dto';
 import { ListMenuProductionsQueryDto } from './dto/list-menu-productions.query.dto';
@@ -174,6 +175,15 @@ export class MenuProductionsController {
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
   ) {
+    if (
+      req.user.roles?.includes(AppRole.FinanceController) &&
+      query.view !== 'finance-approval' &&
+      query.view !== 'records-all'
+    ) {
+      throw new ForbiddenException(
+        'Finance controllers can only view their approval queue and records.',
+      );
+    }
     return this.menuProductions.buildStoreRequestGroups(
       query,
       this.resolveQuerySite(req, query.site),
@@ -182,12 +192,15 @@ export class MenuProductionsController {
         (req.user.roles?.includes(AppRole.Superadmin) &&
           query.approvalStatus === 'pending' &&
           !query.salesInput),
+      ...(req.user.roles?.includes(AppRole.FinanceController)
+        ? [req.user.sub]
+        : []),
     );
   }
 
   // BACKEND LOGIC: timeline grouping + approval stats for production menus.
   @Get('timeline')
-  @Roles(...ALL_APP_ROLES)
+  @Roles(...ALL_APP_ROLES.filter((role) => role !== AppRole.FinanceController))
   timeline(
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
@@ -199,8 +212,14 @@ export class MenuProductionsController {
     );
   }
 
+  @Get('finance-sites')
+  @Roles(AppRole.FinanceController)
+  financeSites(@Req() req: AuthenticatedRequest) {
+    return this.menuProductions.financeSites(req.user.sub);
+  }
+
   @Get()
-  @Roles(...ALL_APP_ROLES)
+  @Roles(...ALL_APP_ROLES.filter((role) => role !== AppRole.FinanceController))
   list(
     @Req() req: AuthenticatedRequest,
     @Query() query: ListMenuProductionsQueryDto,
@@ -270,6 +289,65 @@ export class MenuProductionsController {
       getUserSiteScope(req.user),
       req.user.name || req.user.email,
       this.resolveUnitManagerAssignmentScope(req),
+    );
+  }
+
+  @Patch(':id/finance-approve-cost')
+  @Roles(AppRole.FinanceController)
+  approveFinanceCost(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.menuProductions.reviewFinanceCost(
+      id,
+      'approved',
+      req.user.sub,
+      req.user.name || req.user.email,
+    );
+  }
+
+  @Patch(':id/finance-reject-cost')
+  @Roles(AppRole.FinanceController)
+  rejectFinanceCost(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: RejectMenuProductionDto,
+  ) {
+    return this.menuProductions.reviewFinanceCost(
+      id,
+      'rejected',
+      req.user.sub,
+      req.user.name || req.user.email,
+      dto.reason,
+    );
+  }
+
+  @Patch('batch/finance-approve-sales')
+  @Roles(AppRole.FinanceController)
+  approveFinanceSales(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: MenuProductionSalesBatchDto,
+  ) {
+    return this.menuProductions.reviewFinanceSales(
+      dto.menuProductionIds,
+      'approved',
+      req.user.sub,
+      req.user.name || req.user.email,
+    );
+  }
+
+  @Patch('batch/finance-reject-sales')
+  @Roles(AppRole.FinanceController)
+  rejectFinanceSales(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RejectMenuProductionSalesDto,
+  ) {
+    return this.menuProductions.reviewFinanceSales(
+      dto.menuProductionIds,
+      'rejected',
+      req.user.sub,
+      req.user.name || req.user.email,
+      dto.reason,
     );
   }
 
@@ -437,6 +515,9 @@ export class MenuProductionsController {
   }
 
   private resolveQuerySite(req: AuthenticatedRequest, requestedSite?: string) {
+    if (req.user.roles?.includes(AppRole.FinanceController)) {
+      return requestedSite?.trim() || undefined;
+    }
     if (req.user.roles?.includes(AppRole.Executive)) {
       const assignedSites = Array.from(
         new Set([req.user.site, ...(req.user.sites ?? [])]),
