@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -19,9 +19,11 @@ type SalesGroup = {
   }>
 }
 
-const MenuProductionSalesActions = ({ group, onSaved }: {
+const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, actionRequest = null }: {
   group: SalesGroup
   onSaved: () => void | Promise<void>
+  showButtons?: boolean
+  actionRequest?: { groupKey: string; mode: 'edit' | 'reject'; requestId: number } | null
 }) => {
   const { user, accessToken } = useAuth()
   const [mode, setMode] = useState<'edit' | 'reject' | null>(null)
@@ -31,10 +33,10 @@ const MenuProductionSalesActions = ({ group, onSaved }: {
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const canEdit = user?.role === 'superadmin'
+  const handledActionRequestId = useRef(0)
+  const canEdit = user?.role === 'superadmin' || user?.roles?.includes('superadmin') === true
   const savedGroupSales = group.items[0]?.groupSales ?? []
   const canReject = canEdit || user?.role === 'unit-manager'
-  if (!canEdit && !canReject) return null
   const eligibleForReject = group.items.length > 0 && group.items.every((item) =>
     ['not-requested', 'requested'].includes(item.storeRequestStatus ?? '') &&
     item.approvalStatus !== 'rejected' && !item.salesRejectionReason &&
@@ -48,6 +50,22 @@ const MenuProductionSalesActions = ({ group, onSaved }: {
     setReason('')
     setError('')
   }
+  useEffect(() => {
+    const groupKey = `${group.date}__${group.productionCode ?? 'no-code'}`
+    if (
+      !actionRequest ||
+      actionRequest.groupKey !== groupKey ||
+      actionRequest.requestId === handledActionRequestId.current
+    ) return
+    handledActionRequestId.current = actionRequest.requestId
+    setMode(actionRequest.mode)
+    setPrice(group.items[0]?.sellingPricePerPax?.toString() ?? '')
+    setQuantity(group.items[0]?.sellingQuantity?.toString() ?? '')
+    setGroupPrices(Object.fromEntries(savedGroupSales.map((sale) => [sale.name, String(sale.sellingPricePerPax)])))
+    setReason('')
+    setError('')
+  }, [actionRequest, group])
+  if (!canEdit && !canReject) return null
   const save = async () => {
     if (!mode || !accessToken || saving) return
     const nextPrice = Number(price)
@@ -82,8 +100,8 @@ const MenuProductionSalesActions = ({ group, onSaved }: {
 
   return (
     <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
-      {canEdit ? <button type="button" onClick={() => open('edit')} className="whitespace-nowrap rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary">Edit Sales</button> : null}
-      {canReject && eligibleForReject ? <button type="button" onClick={() => open('reject')} className="whitespace-nowrap rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger">Reject Sales</button> : null}
+      {showButtons && canEdit ? <button type="button" onClick={() => open('edit')} className="whitespace-nowrap rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary">Edit Sales</button> : null}
+      {showButtons && canReject && eligibleForReject ? <button type="button" onClick={() => open('reject')} className="whitespace-nowrap rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger">Reject Sales</button> : null}
       {mode ? createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <form role="dialog" aria-modal="true" aria-labelledby={`sales-action-${group.items[0]?.id}`}

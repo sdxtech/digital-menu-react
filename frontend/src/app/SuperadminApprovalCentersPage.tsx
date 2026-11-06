@@ -1,9 +1,10 @@
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
+import ProductionInformation from '../components/ProductionInformation'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import PageHeading from '../components/PageHeading'
 import MenuProductionSalesActions from '../components/MenuProductionSalesActions'
-import { formatProductionDate } from '../lib/date-format'
+import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import RecipeCookingMethod from '../components/RecipeCookingMethod'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TablePagination from '../components/TablePagination'
@@ -13,10 +14,11 @@ import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useCorporateSite } from '../lib/corporate-site'
-import { formatFoodCostPercentage } from '../lib/food-cost'
+import { calculateFoodCostPercentage, formatFoodCostPercentage } from '../lib/food-cost'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
-import { aggregateStoreRequestSummary } from '../lib/store-request-summary'
+import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
+import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -96,6 +98,8 @@ type StoreRequestIngredient = {
 
 type StoreRequestMenu = {
   estimatedCost?: number
+  estimatedCostPerPax?: number
+  cost?: number
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
@@ -131,6 +135,29 @@ type StoreRequestGroup = {
   items: StoreRequestMenu[]
   summary: StoreRequestIngredient[]
   missingRecipes: string[]
+}
+
+const getGroupSubmittedAt = (group: StoreRequestGroup) =>
+  group.items.find((item) => item.submittedAt)?.submittedAt
+
+const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
+  const names = Array.from(
+    new Set(
+      items
+        .map((item) => item.submittedByName?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  )
+  return names.length ? names.join(', ') : '-'
+}
+
+const formatPrice = (value?: number) => {
+  if (value === undefined || value === null || !Number.isFinite(value)) return '-'
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
 }
 
 const ITEMS_PER_PAGE = 10
@@ -214,17 +241,6 @@ const getRecipeCostLabels = (recipe: Recipe) => {
 const getGroupKey = (group: StoreRequestGroup) =>
   `${group.date}__${group.productionCode ?? 'no-code'}`
 
-const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
-  const names = Array.from(
-    new Set(
-      items
-        .map((item) => item.submittedByName?.trim())
-        .filter((value): value is string => Boolean(value)),
-    ),
-  )
-  return names.length ? names.join(', ') : '-'
-}
-
 const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
   const { accessToken, user } = useAuth()
   const isSuperadmin = user?.role === 'superadmin' || user?.roles?.includes('superadmin') === true
@@ -256,21 +272,38 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   const [menuGroups, setMenuGroups] = useState<StoreRequestGroup[]>([])
   const [productionDateFrom, setProductionDateFrom] = useState('')
   const [productionDateTo, setProductionDateTo] = useState('')
-  const [productionDateSort, setProductionDateSort] = useState<'asc' | 'desc'>('desc')
+  const [createdDateFrom, setCreatedDateFrom] = useState('')
+  const [createdDateTo, setCreatedDateTo] = useState('')
+  const [dateSort, setDateSort] = useState('production-desc')
   const [clientName, setClientName] = useState('')
   const invalidProductionRange = Boolean(productionDateFrom && productionDateTo && productionDateFrom > productionDateTo)
+  const invalidCreatedRange = Boolean(createdDateFrom && createdDateTo && createdDateFrom > createdDateTo)
   const clientOptions = menuClients
   const filteredMenuGroups = useMemo(() => menuGroups.filter((group) =>
-    !invalidProductionRange &&
+    !invalidProductionRange && !invalidCreatedRange &&
     (!productionDateFrom || group.date >= productionDateFrom) &&
     (!productionDateTo || group.date <= productionDateTo) &&
+    (!(createdDateFrom || createdDateTo) || (() => {
+      const submittedAt = getGroupSubmittedAt(group)
+      if (!submittedAt) return false
+      const date = new Date(submittedAt)
+      if (Number.isNaN(date.getTime())) return false
+      const createdDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      return (!createdDateFrom || createdDate >= createdDateFrom) && (!createdDateTo || createdDate <= createdDateTo)
+    })()) &&
     (!clientName || group.items.some((item) => item.clientName?.trim().toLowerCase() === clientName.toLowerCase())),
-  ).sort((a, b) => (productionDateSort === 'asc' ? 1 : -1) * a.date.localeCompare(b.date)),
-  [menuGroups, invalidProductionRange, productionDateFrom, productionDateTo, clientName, productionDateSort])
+  ).sort((a, b) => {
+    const direction = dateSort.endsWith('-asc') ? 1 : -1
+    if (dateSort.startsWith('created-')) {
+      return direction * new Date(getGroupSubmittedAt(a) ?? '').getTime() - direction * new Date(getGroupSubmittedAt(b) ?? '').getTime()
+    }
+    return direction * a.date.localeCompare(b.date)
+  }),
+  [menuGroups, invalidProductionRange, invalidCreatedRange, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
     setMenuPage(1)
-  }, [productionDateFrom, productionDateTo, clientName, productionDateSort])
+  }, [productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -278,6 +311,12 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
   const [menuPage, setMenuPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [processingKey, setProcessingKey] = useState<string | null>(null)
+  const [salesActionRequest, setSalesActionRequest] = useState<{
+    groupKey: string
+    mode: 'edit' | 'reject'
+    requestId: number
+  } | null>(null)
+  const salesActionRequestId = useRef(0)
   const [overrideAction, setOverrideAction] = useState<OverrideAction | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
   const [overrideError, setOverrideError] = useState('')
@@ -393,7 +432,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       if (approvalFilter) recipeParams.set('approvalStatus', approvalFilter)
 
       const menuParams = new URLSearchParams({ view: 'approval', page: String(menuPage), limit: String(ITEMS_PER_PAGE) })
-      applyProductionTableFilters(menuParams, { productionDateFrom, productionDateTo, clientName, dateSort: `production-${productionDateSort}` })
+      applyProductionTableFilters(menuParams, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
       menuParams.set('site', selectedSite)
       if (approvalFilter) menuParams.set('approvalStatus', approvalFilter)
 
@@ -440,7 +479,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     } finally {
       if (requestId === approvalRequestId.current && !signal?.aborted) setLoading(false)
     }
-  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite, hasApprovalScope, corporateSettings.loading, corporateSettings.error, corporateSiteCodes, selectedCorporateSites, isCorporateSite, activeSection, menuPage, productionDateFrom, productionDateTo, clientName, productionDateSort])
+  }, [accessToken, approvalFilter, corporateOnly, recipePage, selectedSite, hasApprovalScope, corporateSettings.loading, corporateSettings.error, corporateSiteCodes, selectedCorporateSites, isCorporateSite, activeSection, menuPage, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
 
   useEffect(() => {
     fetchSites().catch(() => null)
@@ -1002,28 +1041,21 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                     <table className="dm-table min-w-full text-sm">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
-                                            No
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Product code
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Ingredient
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Qty
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Unit
-                                          </th>
+                                          <th className="px-3 py-3 font-semibold">No</th>
+                                          <th className="px-3 py-3 font-semibold">Product code</th>
+                                          <th className="px-3 py-3 font-semibold">Ingredient name</th>
+                                          <th className="px-3 py-3 font-semibold">Qty</th>
+                                          <th className="px-3 py-3 font-semibold">Unit</th>
+                                          <th className="px-3 py-3 font-semibold">Vendor</th>
+                                          <th className="px-3 py-3 font-semibold">Price</th>
+                                          <th className="px-3 py-3 font-semibold">Ingredient Cost</th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {ingredients.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={5}
+                                              colSpan={8}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available.
@@ -1094,14 +1126,23 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               label="Production Date"
               from={productionDateFrom}
               to={productionDateTo}
-              sortDirection={productionDateSort}
-              onSort={setProductionDateSort}
+              sortDirection={dateSort.startsWith('production-') ? dateSort.endsWith('-asc') ? 'asc' : 'desc' : undefined}
+              onSort={(direction) => setDateSort(`production-${direction}`)}
               onApply={(from, to) => { setProductionDateFrom(from); setProductionDateTo(to) }}
+            />
+            <DateRangeFilter
+              id="superadmin-created-date"
+              label="Created Date"
+              from={createdDateFrom}
+              to={createdDateTo}
+              sortDirection={dateSort.startsWith('created-') ? dateSort.endsWith('-asc') ? 'asc' : 'desc' : undefined}
+              onSort={(direction) => setDateSort(`created-${direction}`)}
+              onApply={(from, to) => { setCreatedDateFrom(from); setCreatedDateTo(to) }}
             />
             <button
               type="button"
-              onClick={() => { setProductionDateFrom(''); setProductionDateTo(''); setClientName(''); setProductionDateSort('desc') }}
-              className="h-10 rounded-lg border border-border bg-white px-3 text-xs font-medium"
+              onClick={() => { setProductionDateFrom(''); setProductionDateTo(''); setCreatedDateFrom(''); setCreatedDateTo(''); setClientName(''); setDateSort('production-desc') }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium hover:bg-background"
             >Reset filters</button>
             <ProductionBulkExportButton
               groups={menuGroups}
@@ -1119,7 +1160,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               buildBatch={buildMenuProductionApprovalSheets}
             />
           </div>
-          <div className="rounded-md border border-border bg-surface shadow-sm">
+          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <TablePagination
             page={menuPage}
             totalPages={menuTotalPages}
@@ -1128,32 +1169,38 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             summary={`Showing ${paginatedMenuGroups.length} of ${menuTotal} production batches`}
             className="border-b border-border bg-white px-5 py-4"
           />
-          <div className="max-w-full overflow-x-auto">
-            <table className="dm-table min-w-full text-sm">
+          <div className="mt-4 overflow-hidden rounded-md border border-border">
+            <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+              <colgroup>
+                <col className="w-[5%]" />
+                <col className="w-[15%]" />
+                <col className="w-[14%]" />
+                <col className="w-[16%]" />
+                <col className="w-[15%]" />
+                <col className="w-[17%]" />
+                <col className="w-[18%]" />
+              </colgroup>
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                  <th className="w-16 px-5 py-4 font-semibold">No</th>
-                  <th className="px-5 py-4 font-semibold">Production date</th>
-                  <th className="px-5 py-4 font-semibold">Production code</th>
-                  <th className="px-5 py-4 font-semibold">Chef</th>
-                  <th className="px-5 py-4 font-semibold">Admin</th>
-                  <th className="px-5 py-4 font-semibold">Approval status</th>
-                  <th className="px-5 py-4 font-semibold">
-                    Store request status
-                  </th>
-                  <th className="px-5 py-4 font-semibold">Action</th>
+                  <th className="px-4 py-3 font-semibold">No</th>
+                  <th className="px-4 py-3 font-semibold">Created date</th>
+                  <th className="px-4 py-3 font-semibold">Production date</th>
+                  <th className="px-4 py-3 font-semibold">Production code</th>
+                  <th className="px-4 py-3 font-semibold">Client name</th>
+                  <th className="px-4 py-3 font-semibold">Approval status</th>
+                  <th className="px-4 py-3 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted">
                       Loading approval data...
                     </td>
                   </tr>
                 ) : filteredMenuGroups.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted">
                       {selectedSite
                         ? 'No production batches found.'
                         : 'Select a site first.'}
@@ -1163,13 +1210,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   paginatedMenuGroups.map((group, index) => {
                     const groupKey = getGroupKey(group)
                     const isExpanded = expandedGroups.includes(groupKey)
-                    const summaryItems = aggregateStoreRequestSummary(group.summary)
-                     const groupSales = group.items[0]?.groupSales ?? []
-                     const totalEstimatedCost = group.items.reduce(
-                       (sum, item) => sum + (Number.isFinite(Number(item.estimatedCost)) ? Number(item.estimatedCost) : 0),
-                       0,
-                     )
-                     const estimatedRevenue = groupSales.reduce((sum, sale) => sum + sale.estimatedRevenue, 0)
+                    const summaryItems = aggregateStoreRequestSummaryByVendor(group)
                     const hasApproved = group.items.some(
                       (item) => item.approvalStatus === 'approved',
                     )
@@ -1191,38 +1232,73 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     const hasNotRequested = group.items.some(
                       (item) => item.storeRequestStatus === 'not-requested',
                     )
+                    const canRejectSales = group.items.length > 0 && group.items.every((item) =>
+                      ['not-requested', 'requested'].includes(item.storeRequestStatus) &&
+                      item.approvalStatus !== 'rejected' && !item.salesRejectionReason &&
+                      item.sellingPricePerPax != null && item.sellingQuantity != null,
+                    )
+                    const submittedByLabel = getSubmittedByLabel(group.items)
+                    const salesInputByLabel = group.items[0]?.salesInputBy?.trim() || '-'
+                    const totalEstimatedCost = group.items.reduce(
+                      (total, item) => total + (Number.isFinite(Number(item.estimatedCost))
+                        ? Number(item.estimatedCost)
+                        : Number.isFinite(Number(item.cost)) ? Number(item.cost) : 0),
+                      0,
+                    )
+                    const totalEstimatedCostPerPax = group.items.reduce((total, item) => {
+                      const estimatedCost = Number.isFinite(Number(item.estimatedCost))
+                        ? Number(item.estimatedCost)
+                        : Number.isFinite(Number(item.cost)) ? Number(item.cost) : undefined
+                      const costPerPax = Number.isFinite(Number(item.estimatedCostPerPax))
+                        ? Number(item.estimatedCostPerPax)
+                        : estimatedCost !== undefined && item.portion > 0 ? estimatedCost / item.portion : 0
+                      return total + costPerPax
+                    }, 0)
+                    const firstMenu = group.items[0]
+                    const sellingPricePerPax = Number.isFinite(Number(firstMenu?.sellingPricePerPax))
+                      ? Number(firstMenu?.sellingPricePerPax)
+                      : undefined
+                    const sellingQuantity = Number.isFinite(Number(firstMenu?.sellingQuantity))
+                      ? Number(firstMenu?.sellingQuantity)
+                      : undefined
+                    const estimatedRevenue = sellingPricePerPax !== undefined && sellingQuantity !== undefined
+                      ? sellingPricePerPax * sellingQuantity
+                      : undefined
+                    const foodCostPercentage = calculateFoodCostPercentage(totalEstimatedCost, estimatedRevenue)
+                    const portionSummary = summarizePortionsByGroup(group.items)
+                    const groupSales = firstMenu?.groupSales ?? []
+                    const groupSalesRevenue = groupSales.reduce((total, sale) => total + sale.estimatedRevenue, 0)
 
                     return (
                       <Fragment key={groupKey}>
                         <tr className="border-t border-border">
-                          <td className="px-5 py-4 text-sm font-bold text-black">
+                          <td className="px-4 py-3 text-sm font-bold text-black">
                             {(menuPage - 1) * ITEMS_PER_PAGE + index + 1}
                           </td>
-                          <td className="px-5 py-4 font-bold text-black">{formatProductionDate(group.date)}</td>
-                          <td className="px-5 py-4 text-xs font-bold text-black">
+                          <td className="px-4 py-3 text-sm font-bold text-black">
+                            {formatCreatedDate(getGroupSubmittedAt(group))}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-black">{formatProductionDate(group.date)}</td>
+                          <td className="px-4 py-3 text-xs font-bold text-black">
                             {group.productionCode ?? '-'}
                           </td>
-                          <td className="px-5 py-4">
-                            {getSubmittedByLabel(group.items)}
+                          <td className="px-4 py-3 font-bold text-black">
+                            {group.items[0]?.clientName ?? '-'}
                           </td>
-                          <td className="px-5 py-4">
-                            {group.items[0]?.salesInputBy ?? '-'}
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <td className="px-4 py-3">
+                            <div className="flex flex-nowrap items-center gap-1.5">
                               {hasPending ? (
-                                <span className="text-muted">Submitted</span>
+                                <span className="whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-0.5 text-[11px] font-semibold text-primary">Submitted</span>
                               ) : null}
                               {hasApproved ? (
-                                <span className="text-primary">Approved</span>
+                                <span className="whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-0.5 text-[11px] font-semibold text-primary">Approved</span>
                               ) : null}
                               {hasRejected ? (
-                                <span className="text-danger">Rejected</span>
+                                <span className="whitespace-nowrap rounded-full bg-danger/10 px-1.5 py-0.5 text-[11px] font-semibold text-danger">Rejected</span>
                               ) : null}
+                              <span className="whitespace-nowrap text-[11px] text-muted">{group.items.filter((item) => item.approvalStatus === 'pending').length} of {group.items.length} menus pending</span>
                             </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
                               {hasNotRequested ? (
                                 <span className="text-muted">
                                   {getStoreRequestStatusLabel('not-requested')}
@@ -1239,42 +1315,63 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                               ) : null}
                             </div>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-4 py-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleGroup(groupKey)}
-                                className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
-                              >
-                                {isExpanded ? 'Hide details' : 'View details'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => downloadMenuProductionApproval(group)}
-                                className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success hover:bg-success/10"
-                              >
-                                <span className="flex items-center gap-1.5">
-                                  <i className="bi bi-download" aria-hidden="true" />
-                                  Export
-                                </span>
-                              </button>
+                              {!isSuperadmin ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGroup(groupKey)}
+                                    className="rounded-md border border-primary bg-background px-3 py-1 text-xs font-semibold text-primary hover:bg-primary-soft/80"
+                                  >
+                                    {isExpanded ? 'Hide details' : 'View details'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadMenuProductionApproval(group)}
+                                    className="rounded-md border border-success bg-white px-3 py-1 text-xs font-semibold text-success hover:bg-success/10"
+                                  >
+                                    <span className="flex items-center gap-1.5">
+                                      <i className="bi bi-download" aria-hidden="true" />
+                                      Export
+                                    </span>
+                                  </button>
+                                </>
+                              ) : null}
                               <select
                                 value=""
                                 onChange={(event) => {
-                                  const nextStatus = event.target.value as
-                                    | ApprovalStatus
-                                    | ''
-                                  if (!nextStatus) return
+                                  const action = event.target.value
+                                  event.currentTarget.value = ''
+                                  if (!action) return
+                                  if (action === 'toggle-details') {
+                                    toggleGroup(groupKey)
+                                    return
+                                  }
+                                  if (action === 'export') {
+                                    downloadMenuProductionApproval(group)
+                                    return
+                                  }
+                                  if (action === 'edit-sales' || action === 'reject-sales') {
+                                    setSalesActionRequest({
+                                      groupKey,
+                                      mode: action === 'edit-sales' ? 'edit' : 'reject',
+                                      requestId: ++salesActionRequestId.current,
+                                    })
+                                    return
+                                  }
                                   openOverrideAction({
                                     kind: 'menu',
                                     group,
-                                    nextStatus,
+                                    nextStatus: action as ApprovalStatus,
                                   })
                                 }}
                                 disabled={processingKey === groupKey}
-                                className="h-8 w-36 rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                                className="h-8 w-44 rounded-md border border-border bg-white px-3 py-1 text-xs font-semibold text-primary shadow-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 <option value="">Select action</option>
+                                {isSuperadmin ? <option value="toggle-details">{isExpanded ? 'Hide details' : 'View details'}</option> : null}
+                                {isSuperadmin ? <option value="export">Export</option> : null}
                                 {group.items.some(
                                   (item) => item.approvalStatus !== 'approved',
                                 ) ? (
@@ -1285,72 +1382,74 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                 ) ? (
                                   <option value="rejected">Force reject</option>
                                 ) : null}
+                                {isSuperadmin ? <option value="edit-sales">Edit Sales</option> : null}
+                                {isSuperadmin && canRejectSales ? <option value="reject-sales">Reject Sales</option> : null}
                               </select>
-                              <MenuProductionSalesActions group={group} onSaved={fetchApprovals} />
+                              <MenuProductionSalesActions
+                                group={group}
+                                onSaved={fetchApprovals}
+                                showButtons={!isSuperadmin}
+                                actionRequest={isSuperadmin ? salesActionRequest : null}
+                              />
                             </div>
                           </td>
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={8} className="px-5 py-5">
-                              <div className="grid gap-4 lg:grid-cols-12">
-                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-6">
-                                  <p className="text-xs text-muted">Menu list</p>
-                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
-                                    <table className="dm-table min-w-full text-sm">
+                            <td colSpan={7} className="px-4 py-5">
+                              <div className="space-y-4">
+                                <ProductionInformation
+                                  productionCode={group.productionCode}
+                                  createdAt={getGroupSubmittedAt(group)}
+                                  submittedBy={submittedByLabel}
+                                  admin={salesInputByLabel}
+                                  batchStatus={group.items[0]?.salesInputBy?.trim() ? 'Waiting for Approval' : 'Waiting for Sales Input'}
+                                  productionDate={group.date}
+                                  client={group.items[0]?.clientName}
+                                  totalMenu={group.items.length}
+                                  approvalStatus={[hasPending ? getApprovalStatusLabel('pending') : '', hasApproved ? getApprovalStatusLabel('approved') : '', hasRejected ? getApprovalStatusLabel('rejected') : ''].filter(Boolean).join(', ')}
+                                  storeRequestStatus={[hasNotRequested ? getStoreRequestStatusLabel('not-requested') : '', hasRequested ? getStoreRequestStatusLabel('requested') : '', hasFulfilled ? getStoreRequestStatusLabel('fulfilled') : '', hasCancelled ? getStoreRequestStatusLabel('cancelled') : ''].filter(Boolean).join(', ')}
+                                />
+                                <section>
+                                  <h3 className="text-sm font-semibold text-foreground">Menu list</h3>
+                                  <div className="mt-3 overflow-hidden rounded-md border border-black bg-white">
+                                    <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
-                                            No
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Menu ID
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Menu
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Approval
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Portion
-                                          </th>
-                                          {isSuperadmin ? (
-                                            <th className="px-4 py-3 font-semibold">
-                                              Action
-                                            </th>
-                                          ) : null}
+                                          <th className="px-3 py-3 font-semibold">No</th>
+                                          <th className="px-3 py-3 font-semibold">Group By</th>
+                                          <th className="px-3 py-3 font-semibold">Menu</th>
+                                          <th className="px-3 py-3 font-semibold">Portion</th>
+                                          <th className="px-3 py-3 font-semibold">Estimated Cost</th>
+                                          <th className="px-3 py-3 font-semibold">Cost Contribution (%)</th>
+                                          <th className="px-3 py-3 font-semibold">Cost/Pax</th>
+                                          <th className="px-3 py-3 font-semibold">Approval Status</th>
+                                          <th className="px-3 py-3 font-semibold">Action</th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((menu, idx) => (
+                                        {group.items.map((menu, idx) => {
+                                          const estimatedCost = Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : undefined
+                                          const estimatedCostPerPax = Number.isFinite(Number(menu.estimatedCostPerPax)) ? Number(menu.estimatedCostPerPax) : estimatedCost !== undefined && menu.portion > 0 ? estimatedCost / menu.portion : undefined
+                                          return (
                                           <tr
                                             key={menu.id}
                                             className="border-t border-border"
                                           >
-                                            <td className="px-4 py-3 text-sm text-muted">
-                                              {idx + 1}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium">
-                                              {menu.recipeCode ?? menu.recipeId ?? '-'}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {menu.menuName}
-                                            </td>
+                                            <td className="px-3 py-3 text-sm text-muted">{idx + 1}</td>
+                                            <td className="px-3 py-3">{menu.group ?? '-'}</td>
+                                            <td className="px-3 py-3"><p className="truncate !whitespace-nowrap font-semibold text-foreground" title={menu.menuName}>{menu.menuName}</p><p className="mt-1 truncate !whitespace-nowrap text-xs text-muted">{menu.recipeCode ?? '-'} · {menu.category}</p></td>
+                                            <td className="px-3 py-3">{menu.portion}</td>
+                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCost)}</td>
+                                            <td className="px-3 py-3 font-medium">{estimatedRevenue ? `${(((estimatedCost ?? 0) / estimatedRevenue) * 100).toFixed(2)}%` : '-'}</td>
+                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCostPerPax)}</td>
                                             <td
-                                              className={`px-4 py-3 font-medium ${approvalStatusClass(
-                                                menu.approvalStatus,
-                                              )}`}
+                                              className="px-3 py-3"
                                             >
-                                              {getApprovalStatusLabel(
-                                                menu.approvalStatus,
-                                              )}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              {menu.portion}
+                                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${menu.approvalStatus === 'approved' ? 'bg-primary-soft text-primary' : menu.approvalStatus === 'rejected' ? 'bg-danger/10 text-danger' : 'bg-background text-muted'}`}>{getApprovalStatusLabel(menu.approvalStatus)}</span>
                                             </td>
                                             {isSuperadmin ? (
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-3">
                                                 <div className="flex flex-nowrap items-center gap-1.5">
                                                   {menu.approvalStatus !== 'approved' ? (
                                                     <button
@@ -1384,75 +1483,69 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                               </td>
                                             ) : null}
                                           </tr>
-                                        ))}
+                                          )
+                                        })}
                                       </tbody>
-                                      {groupSales.length ? (
-                                        <tfoot className="bg-[#ccd9ec]">
-                                          <tr aria-hidden="true"><td colSpan={5} className="border-y border-primary bg-white">&nbsp;</td></tr>
-                                          <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
-                                            <td className="!bg-primary px-4 py-3 text-right">Menu Group Summary</td>
-                                            <td className="px-4 py-3">Qty</td>
-                                            <td className="px-4 py-3">Selling Price/Pax</td>
-                                            <td className="px-4 py-3">Estimated Revenue</td>
-                                            <td className="px-4 py-3">Cost Contribution (%)</td>
-                                          </tr>
+                                      <tfoot className="bg-[#ccd9ec]">
+                                        <tr className="border-t-2 border-primary"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Total</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCost)}</td><td className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCostPerPax)}</td><td colSpan={2} /></tr>
+                                        {portionSummary.groups.map((item) => <tr key={`group-portion-${item.name}`} className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name} Qty</td><td colSpan={5} className="px-3 py-3 font-semibold">{formatQuantity(item.portion)}</td></tr>)}
+                                        <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total Qty</td><td colSpan={5} className="px-3 py-3 font-bold">{formatQuantity(portionSummary.total)}</td></tr>
+                                        <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Selling Price/Pax</td><td colSpan={5} className="px-3 py-3 font-bold">{formatPrice(sellingPricePerPax)}</td></tr>
+                                        <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Pax Calculation</td><td colSpan={5} className="px-3 py-3 font-bold">{sellingQuantity ?? '-'}</td></tr>
+                                        <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Estimated Revenue</td><td colSpan={5} className="px-3 py-3 font-bold">{formatPrice(estimatedRevenue)}</td></tr>
+                                        <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Food Cost Percentage</td><td colSpan={5} className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td></tr>
+                                        {groupSales.length > 0 ? <>
+                                          <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white"><td colSpan={2} className="px-3 py-3">Menu Group Summary</td><td>Qty</td><td>Selling Price/Pax</td><td colSpan={2}>Estimated Revenue</td><td colSpan={3}>Cost Contribution (%)</td></tr>
                                           {groupSales.map((sale) => {
-                                            const groupCost = group.items.reduce((sum, menu) =>
-                                              (menu.group?.trim() || '-') === sale.name
-                                                ? sum + (Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : 0)
-                                                : sum, 0)
-                                            return (
-                                            <tr key={sale.name} className="border-t border-border">
-                                              <td className="px-4 py-3 text-right font-semibold">{sale.name} Qty</td>
-                                              <td className="px-4 py-3">{formatQuantity(sale.quantity)}</td>
-                                              <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(sale.sellingPricePerPax)}</td>
-                                              <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(sale.estimatedRevenue)}</td>
-                                              <td className="px-4 py-3 font-semibold">{formatFoodCostPercentage(groupCost, estimatedRevenue)}</td>
-                                            </tr>
-                                            )
+                                            const groupCost = group.items.reduce((total, menu) => (menu.group?.trim() || '-') === sale.name ? total + (Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : 0) : total, 0)
+                                            return <tr key={`sales-${sale.name}`} className="border-t border-border"><td colSpan={2} className="px-3 py-3 text-right font-semibold">{sale.name}</td><td>{formatQuantity(sale.quantity)}</td><td>{formatPrice(sale.sellingPricePerPax)}</td><td colSpan={2}>{formatPrice(sale.estimatedRevenue)}</td><td colSpan={3}>{formatFoodCostPercentage(groupCost, groupSalesRevenue)}</td></tr>
                                           })}
-                                          <tr className="border-t border-border font-bold">
-                                            <td className="px-4 py-3 text-right">Total</td>
-                                            <td className="px-4 py-3">{formatQuantity(groupSales.reduce((sum, sale) => sum + sale.quantity, 0))}</td>
-                                            <td />
-                                            <td className="px-4 py-3">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(estimatedRevenue)}</td>
-                                            <td className="px-4 py-3">{formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)}</td>
-                                          </tr>
-                                        </tfoot>
-                                      ) : null}
+                                        </> : null}
+                                      </tfoot>
                                     </table>
                                   </div>
-                                </div>
-                                <div className="rounded-md border border-border bg-surface p-4 lg:col-span-6">
-                                  <p className="text-xs text-muted">
-                                    Ingredient summary
-                                  </p>
-                                  <div className="mt-3 max-w-full overflow-x-auto rounded-md border border-border bg-white">
-                                    <table className="dm-table min-w-full text-sm">
+                                  {group.missingRecipes.length > 0 ? <p className="mt-3 text-xs text-danger">Recipe not found for: {group.missingRecipes.join(', ')}</p> : null}
+                                </section>
+                                <section>
+                                  <h3 className="text-sm font-semibold text-foreground">Ingredient requirements per menu</h3>
+                                  <div className="mt-3 space-y-3">
+                                    {group.items.map((menu) => (
+                                      <article key={`ingredients-${menu.id}`}>
+                                        <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                                          <div><p className="font-semibold text-foreground">{menu.menuName}</p><p className="mt-1 text-xs text-muted">{menu.recipeCode ?? '-'} · {menu.category} · {menu.portion} pax</p></div>
+                                          <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">{menu.ingredients.length} ingredients</span>
+                                        </div>
+                                        <div className="overflow-hidden rounded-md border border-border bg-white">
+                                          <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+                                            <thead className="bg-background"><tr className="text-left text-xs uppercase tracking-[0.18em] text-muted"><th className="px-3 py-3 font-semibold">No</th><th className="px-3 py-3 font-semibold">Product code</th><th className="px-3 py-3 font-semibold">Ingredient name</th><th className="px-3 py-3 font-semibold">Qty</th><th className="px-3 py-3 font-semibold">Unit</th><th className="px-3 py-3 font-semibold">Vendor</th><th className="px-3 py-3 font-semibold">Price</th><th className="px-3 py-3 font-semibold">Ingredient Cost</th></tr></thead>
+                                            <tbody>{menu.ingredients.length === 0 ? <tr className="border-t border-border"><td colSpan={8} className="px-4 py-5 text-center text-muted">No ingredients available.</td></tr> : menu.ingredients.map((ingredient, ingredientIndex) => <tr key={`${menu.id}-${ingredient.productCode}-${ingredientIndex}`} className="border-t border-border"><td className="px-3 py-3 text-muted">{ingredientIndex + 1}</td><td className="break-all px-3 py-3">{ingredient.productCode || '-'}</td><td className="break-words px-3 py-3 font-medium">{ingredient.name || '-'}</td><td className="px-3 py-3">{formatQuantity(ingredient.qty)}</td><td className="break-words px-3 py-3">{formatUnitLabel(ingredient.unitOfMeasures)}</td><td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price)}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost)}</td></tr>)}</tbody>
+                                          </table>
+                                        </div>
+                                      </article>
+                                    ))}
+                                  </div>
+                                </section>
+                                <section>
+                                  <h3 className="text-sm font-semibold text-foreground">Ingredient summary</h3>
+                                  <div className="mt-3 overflow-hidden rounded-md border border-border bg-white">
+                                    <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                       <thead className="bg-background">
                                         <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
-                                          <th className="w-12 px-4 py-3 font-semibold">
-                                            No
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Product code
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Ingredient
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Qty
-                                          </th>
-                                          <th className="px-4 py-3 font-semibold">
-                                            Unit
-                                          </th>
+                                          <th className="px-3 py-3 font-semibold">No</th>
+                                          <th className="px-3 py-3 font-semibold">Product code</th>
+                                          <th className="px-3 py-3 font-semibold">Ingredient name</th>
+                                          <th className="px-3 py-3 font-semibold">Qty</th>
+                                          <th className="px-3 py-3 font-semibold">Unit</th>
+                                          <th className="px-3 py-3 font-semibold">Vendor</th>
+                                          <th className="px-3 py-3 font-semibold">Price</th>
+                                          <th className="px-3 py-3 font-semibold">Ingredient Cost</th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {summaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={5}
+                                              colSpan={8}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredient summary available.
@@ -1461,33 +1554,36 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                         ) : (
                                           summaryItems.map((ingredient, idx) => (
                                             <tr
-                                              key={`${ingredient.productCode}-${idx}`}
+                                              key={`${ingredient.productCode}-${ingredient.unitOfMeasures}-${idx}`}
                                               className="border-t border-border"
                                             >
-                                              <td className="px-4 py-3 text-sm text-muted">
+                                              <td className="px-3 py-3 text-sm text-muted">
                                                 {idx + 1}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="break-all px-3 py-3">
                                                 {ingredient.productCode}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="break-words px-3 py-3 font-medium">
                                                 {ingredient.name}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="px-3 py-3">
                                                 {formatQuantity(ingredient.qty)}
                                               </td>
-                                              <td className="px-4 py-3">
+                                              <td className="break-words px-3 py-3">
                                                 {formatUnitLabel(
                                                   ingredient.unitOfMeasures,
                                                 )}
                                               </td>
+                                              <td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td>
+                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price)}</td>
+                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost)}</td>
                                             </tr>
                                           ))
                                         )}
                                       </tbody>
                                     </table>
                                   </div>
-                                </div>
+                                </section>
                               </div>
                             </td>
                           </tr>
