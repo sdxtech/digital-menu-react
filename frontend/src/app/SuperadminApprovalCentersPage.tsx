@@ -29,6 +29,7 @@ type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 type ApprovalSection = 'recipes' | 'menu-productions'
 type OverrideAction =
   | { kind: 'recipe'; recipe: Recipe; nextStatus: ApprovalStatus }
+  | { kind: 'menu-item'; menu: StoreRequestMenu; nextStatus: ApprovalStatus }
   | { kind: 'menu'; group: StoreRequestGroup; nextStatus: ApprovalStatus }
 
 type SiteApi = {
@@ -223,7 +224,8 @@ const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
 }
 
 const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnly?: boolean }) => {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
+  const isSuperadmin = user?.role === 'superadmin' || user?.roles?.includes('superadmin') === true
   const corporateSettings = useCorporateSite(corporateOnly)
   const isCorporateSite = corporateOnly && corporateSettings.context?.corporateSite === true
   const [searchParams] = useSearchParams()
@@ -513,6 +515,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
 
   const getOverrideActionLabel = (action: OverrideAction) => {
     if (action.kind === 'recipe') return action.recipe.name
+    if (action.kind === 'menu-item') return action.menu.menuName
     return action.group.productionCode
       ? `${action.group.date} (${action.group.productionCode})`
       : action.group.date
@@ -620,6 +623,45 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
     }
   }
 
+  const updateMenuItemApproval = async ({
+    menu,
+    nextStatus,
+    reason,
+  }: {
+    menu: StoreRequestMenu
+    nextStatus: ApprovalStatus
+    reason?: string
+  }) => {
+    if (!accessToken || menu.approvalStatus === nextStatus) return
+
+    const action = nextStatus === 'approved' ? 'approve' : 'reject'
+    setProcessingKey(menu.id)
+    setError('')
+    setMessage('')
+    try {
+      await apiFetch(
+        `/menu-productions/${menu.id}/${action}`,
+        {
+          method: 'PATCH',
+          ...(nextStatus === 'rejected'
+            ? { body: JSON.stringify({ reason: reason?.trim() }) }
+            : {}),
+        },
+        accessToken,
+      )
+      setMessage(`${menu.menuName} set to ${nextStatus}.`)
+      await fetchApprovals()
+      setOverrideAction(null)
+      setOverrideReason('')
+    } catch (caught) {
+      setOverrideError(
+        caught instanceof Error ? caught.message : `Failed to ${action} menu.`,
+      )
+    } finally {
+      setProcessingKey(null)
+    }
+  }
+
   const handleConfirmOverride = async () => {
     if (!overrideAction) return
 
@@ -632,10 +674,28 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
       return
     }
 
+    if (
+      overrideAction.kind === 'menu-item' &&
+      overrideAction.nextStatus === 'rejected' &&
+      !overrideReason.trim()
+    ) {
+      setOverrideError('Rejection reason is required.')
+      return
+    }
+
     setOverrideError('')
     if (overrideAction.kind === 'recipe') {
       await updateRecipeApproval({
         recipe: overrideAction.recipe,
+        nextStatus: overrideAction.nextStatus,
+        reason: overrideReason,
+      })
+      return
+    }
+
+    if (overrideAction.kind === 'menu-item') {
+      await updateMenuItemApproval({
+        menu: overrideAction.menu,
         nextStatus: overrideAction.nextStatus,
         reason: overrideReason,
       })
@@ -1247,6 +1307,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                           <th className="px-4 py-3 font-semibold">
                                             Portion
                                           </th>
+                                          {isSuperadmin ? (
+                                            <th className="px-4 py-3 font-semibold">
+                                              Action
+                                            </th>
+                                          ) : null}
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -1276,6 +1341,40 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                             <td className="px-4 py-3">
                                               {menu.portion}
                                             </td>
+                                            {isSuperadmin ? (
+                                              <td className="px-4 py-3">
+                                                <div className="flex flex-nowrap items-center gap-1.5">
+                                                  {menu.approvalStatus !== 'approved' ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => openOverrideAction({
+                                                        kind: 'menu-item',
+                                                        menu,
+                                                        nextStatus: 'approved',
+                                                      })}
+                                                      disabled={processingKey === menu.id}
+                                                      className="whitespace-nowrap rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                                                    >
+                                                      {menu.approvalStatus === 'pending' ? 'Approve' : 'Force approve'}
+                                                    </button>
+                                                  ) : null}
+                                                  {menu.approvalStatus !== 'rejected' ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => openOverrideAction({
+                                                        kind: 'menu-item',
+                                                        menu,
+                                                        nextStatus: 'rejected',
+                                                      })}
+                                                      disabled={processingKey === menu.id}
+                                                      className="whitespace-nowrap rounded-md border border-danger bg-white px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-60"
+                                                    >
+                                                      {menu.approvalStatus === 'pending' ? 'Reject' : 'Force reject'}
+                                                    </button>
+                                                  ) : null}
+                                                </div>
+                                              </td>
+                                            ) : null}
                                           </tr>
                                         ))}
                                       </tbody>
@@ -1418,15 +1517,20 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               </div>
               <div className="rounded-md border border-border bg-background p-4">
                 <p className="text-xs text-muted">
-                  {overrideAction.kind === 'recipe' ? 'Record type' : 'Menus affected'}
+                  {overrideAction.kind === 'recipe'
+                    ? 'Record type'
+                    : overrideAction.kind === 'menu-item'
+                      ? 'Menus affected'
+                      : 'Menus affected'}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-foreground">
                   {overrideAction.kind === 'recipe'
                     ? 'Recipe'
-                    : overrideAction.group.items.filter(
-                        (item) =>
-                          item.approvalStatus !== overrideAction.nextStatus,
-                      ).length}
+                    : overrideAction.kind === 'menu-item'
+                      ? 1
+                      : overrideAction.group.items.filter(
+                          (item) => item.approvalStatus !== overrideAction.nextStatus,
+                        ).length}
                 </p>
               </div>
             </div>
@@ -1434,12 +1538,14 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
             <div className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
               {corporateOnly
                 ? 'This follows the normal recipe review flow used by the Unit Manager.'
-                : overrideAction.kind === 'recipe'
-                  ? 'This changes the recipe approval state outside the normal Unit Manager review flow.'
+              : overrideAction.kind === 'recipe'
+                ? 'This changes the recipe approval state outside the normal Unit Manager review flow.'
+                : overrideAction.kind === 'menu-item'
+                  ? 'This changes the menu approval state outside the normal Unit Manager review flow and resets related store request or actual qty data for this menu.'
                   : 'This changes production menu approval outside the normal Unit Manager review flow and resets related store request or actual qty data for affected menus.'}
             </div>
 
-            {overrideAction.kind === 'recipe' &&
+            {(overrideAction.kind === 'recipe' || overrideAction.kind === 'menu-item') &&
             overrideAction.nextStatus === 'rejected' ? (
               <div className="mt-5">
                 <label className="text-sm font-medium text-foreground">
@@ -1453,11 +1559,11 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   }}
                   rows={4}
                   maxLength={500}
-                  placeholder={
-                    corporateOnly
+                  placeholder={overrideAction.kind === 'menu-item'
+                    ? 'Explain why this menu is being rejected.'
+                    : corporateOnly
                       ? 'Explain why this recipe is rejected.'
-                      : 'Explain why this recipe approval is being overridden.'
-                  }
+                      : 'Explain why this recipe approval is being overridden.'}
                   className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                 />
                 <p className="mt-2 text-xs text-muted">
