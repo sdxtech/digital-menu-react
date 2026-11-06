@@ -314,7 +314,8 @@ const buildReconciliationItemKey = (
   const identity = normalizeReconciliationText(productCode || name)
   const unit = normalizeReconciliationText(unitOfMeasures)
   if (!identity || !unit) return ''
-  return `${identity}__${unit}__${normalizeReconciliationText(
+  const nmpName = identity === 'nmp' ? `__${normalizeReconciliationText(name)}` : ''
+  return `${identity}${nmpName}__${unit}__${normalizeReconciliationText(
     vendor ?? '',
   )}__${normalizeReconciliationText(vendorSite ?? '')}`
 }
@@ -784,7 +785,7 @@ const StorekeeperPage = () => {
         )
         return
       }
-      if (seenKeys.has(itemKey)) {
+      if (seenKeys.has(itemKey) && (productCode.toUpperCase() !== 'NMP' || row.isAdditional)) {
         setReconciliationError(
           `Duplicate ingredient found in actual issuance for ${fieldLabel}.`,
         )
