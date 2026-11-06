@@ -928,7 +928,8 @@ const ChefStoreRequest = ({
     name: string,
     unitOfMeasures: string,
   ) => {
-    const identity = (productCode || name).trim().toLowerCase()
+    const code = (productCode || name).trim().toLowerCase()
+    const identity = code === 'nmp' ? `${code}__${name.trim().toLowerCase()}` : code
     const unit = unitOfMeasures.trim().toLowerCase()
     if (!identity || !unit) return ''
     return `${identity}__${unit}`
@@ -1517,7 +1518,7 @@ const ChefStoreRequest = ({
   }
 
   const buildCompletionRows = (group: StoreRequestGroup): ReconciliationRow[] => {
-    const fulfilledByKey = new Map<string, StoreRequestFulfillment['items'][number]>()
+    const fulfilledByKey = new Map<string, StoreRequestFulfillment['items']>()
     const fulfilledItems = group.fulfillment?.items ?? []
     fulfilledItems.forEach((item) => {
       const key = buildReconciliationItemKey(
@@ -1525,7 +1526,7 @@ const ChefStoreRequest = ({
         item.name,
         item.unitOfMeasures,
       )
-      if (key) fulfilledByKey.set(key, item)
+      if (key) fulfilledByKey.set(key, [...(fulfilledByKey.get(key) ?? []), item])
     })
 
     const plannedKeys = new Set<string>()
@@ -1537,7 +1538,8 @@ const ChefStoreRequest = ({
           item.unitOfMeasures,
         )
         if (key) plannedKeys.add(key)
-        const fulfilledItem = key ? fulfilledByKey.get(key) : undefined
+        const matches = key ? fulfilledByKey.get(key) : undefined
+        const fulfilledItem = item.productCode?.trim().toUpperCase() === 'NMP' ? matches?.shift() : matches?.[0]
         return {
           id: makeReconciliationRowId(),
           productCode: item.productCode,
@@ -1657,7 +1659,7 @@ const ChefStoreRequest = ({
         )
         return
       }
-      if (seenKeys.has(itemKey)) {
+      if (seenKeys.has(itemKey) && (productCode.toUpperCase() !== 'NMP' || row.isAdditional)) {
         setCompletionError(
           `Duplicate ingredient found in actual qty for ${fieldLabel}.`,
         )
