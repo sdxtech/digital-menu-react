@@ -14,7 +14,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useCorporateSite } from '../lib/corporate-site'
-import { calculateFoodCostPercentage } from '../lib/food-cost'
+import { calculateFoodCostPercentage, formatFoodCostPercentage } from '../lib/food-cost'
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
@@ -103,6 +103,7 @@ type StoreRequestMenu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   submittedAt?: string
   recipeVersion?: number
   group?: string
@@ -1265,6 +1266,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                       : undefined
                     const foodCostPercentage = calculateFoodCostPercentage(totalEstimatedCost, estimatedRevenue)
                     const portionSummary = summarizePortionsByGroup(group.items)
+                    const groupSales = firstMenu?.groupSales ?? []
+                    const groupSalesRevenue = groupSales.reduce((total, sale) => total + sale.estimatedRevenue, 0)
 
                     return (
                       <Fragment key={groupKey}>
@@ -1491,6 +1494,13 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                         <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Pax Calculation</td><td colSpan={5} className="px-3 py-3 font-bold">{sellingQuantity ?? '-'}</td></tr>
                                         <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Estimated Revenue</td><td colSpan={5} className="px-3 py-3 font-bold">{formatPrice(estimatedRevenue)}</td></tr>
                                         <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Food Cost Percentage</td><td colSpan={5} className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td></tr>
+                                        {groupSales.length > 0 ? <>
+                                          <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white"><td colSpan={2} className="px-3 py-3">Menu Group Summary</td><td>Qty</td><td>Selling Price/Pax</td><td colSpan={2}>Estimated Revenue</td><td colSpan={3}>Cost Contribution (%)</td></tr>
+                                          {groupSales.map((sale) => {
+                                            const groupCost = group.items.reduce((total, menu) => (menu.group?.trim() || '-') === sale.name ? total + (Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : 0) : total, 0)
+                                            return <tr key={`sales-${sale.name}`} className="border-t border-border"><td colSpan={2} className="px-3 py-3 text-right font-semibold">{sale.name}</td><td>{formatQuantity(sale.quantity)}</td><td>{formatPrice(sale.sellingPricePerPax)}</td><td colSpan={2}>{formatPrice(sale.estimatedRevenue)}</td><td colSpan={3}>{formatFoodCostPercentage(groupCost, groupSalesRevenue)}</td></tr>
+                                          })}
+                                        </> : null}
                                       </tfoot>
                                     </table>
                                   </div>

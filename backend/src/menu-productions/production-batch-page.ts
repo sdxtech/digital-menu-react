@@ -26,6 +26,10 @@ export function productionBatchPagePipeline(
     matches.push({ approvalStatuses: query.approvalStatus });
   if (query.view === 'sales')
     matches.push({ $or: [{ salesComplete: 0 }, { returnedSales: 1 }] });
+  if (query.view === 'finance-approval')
+    matches.push({ financePending: 1, salesReady: 1 });
+  if (query.view === 'approval')
+    matches.push({ financeBlocked: 0, salesReady: 1 });
   if (query.view === 'records')
     matches.push({
       $or: [
@@ -77,6 +81,66 @@ export function productionBatchPagePipeline(
         createdAt: { $max: { $ifNull: ['$submittedAt', '$createdAt'] } },
         ...(drafts ? { updatedAt: { $max: '$updatedAt' } } : {}),
         clients: { $addToSet: trim('clientName') },
+        ...(query.view === 'finance-approval'
+          ? {
+              financePending: {
+                $max: {
+                  $cond: [
+                    {
+                      $or: [
+                        { $eq: ['$financeCostStatus', 'pending'] },
+                        { $eq: ['$financeSalesStatus', 'pending'] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
+        ...(query.view === 'approval' || query.view === 'finance-approval'
+          ? {
+              salesReady: {
+                $min: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $isNumber: '$sellingPricePerPax' },
+                        { $isNumber: '$sellingQuantity' },
+                        { $eq: [trim('salesRejectionReason'), ''] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
+        ...(query.view === 'approval'
+          ? {
+              financeBlocked: {
+                $max: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$financeApprovalRequired', true] },
+                        {
+                          $or: [
+                            { $ne: ['$financeCostStatus', 'approved'] },
+                            { $ne: ['$financeSalesStatus', 'approved'] },
+                          ],
+                        },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
         ...(query.clientName?.trim()
           ? {
               normalizedClients: {

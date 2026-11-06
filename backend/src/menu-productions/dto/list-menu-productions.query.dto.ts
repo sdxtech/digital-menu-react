@@ -64,12 +64,13 @@ export class ListMenuProductionsQueryDto {
   limit?: number;
 
   @IsOptional()
-  @IsIn(['sales', 'records', 'records-all', 'approval', 'history', 'requests'])
+  @IsIn(['sales', 'records', 'records-all', 'approval', 'finance-approval', 'history', 'requests'])
   view?:
     | 'sales'
     | 'records'
     | 'records-all'
     | 'approval'
+    | 'finance-approval'
     | 'history'
     | 'requests';
 

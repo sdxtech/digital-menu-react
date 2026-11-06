@@ -26,6 +26,7 @@ export class Notification {
     enum: [
       'superadmin',
       'unit.manager',
+      'finance-controller',
       'corporate-chef',
       'admin-site',
       'storekeeper',

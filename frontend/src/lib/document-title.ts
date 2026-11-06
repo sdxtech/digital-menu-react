@@ -111,6 +111,26 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Approval Center',
   },
   {
+    path: '/finance-controller',
+    getPageTitle: () => 'Approval Center',
+  },
+  {
+    path: '/finance-controller/menu-production-records',
+    getPageTitle: () => 'Menu Production Records',
+  },
+  {
+    path: '/finance-controller/recipe-data',
+    getPageTitle: () => 'Recipe Data',
+  },
+  {
+    path: '/finance-controller/profile',
+    getPageTitle: () => 'My Profile',
+  },
+  {
+    path: '/finance-controller/security',
+    getPageTitle: () => 'Security & Password',
+  },
+  {
     path: '/corporate-chef',
     getPageTitle: () => 'Recipe Approval',
   },

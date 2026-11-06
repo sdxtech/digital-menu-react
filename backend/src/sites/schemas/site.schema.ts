@@ -23,6 +23,12 @@ export class Site {
   @Prop({ type: [String], default: [] })
   referenceSiteCodes: string[];
 
+  @Prop({ type: Boolean, default: false })
+  financeApprovalEnabled: boolean;
+
+  @Prop({ type: [String], default: [] })
+  financeControllerIds: string[];
+
   @Prop({ default: true, index: true })
   isActive: boolean;
 }

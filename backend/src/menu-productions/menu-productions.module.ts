@@ -16,6 +16,7 @@ import { MenuProductionsService } from './menu-productions.service';
 import { NotificationsModule } from '../notifications/notifications.module'; // 🌟 ADDED IMPORT
 import { MailModule } from '../mail/mail.module';
 import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
+import { SitesModule } from '../sites/sites.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
     NotificationsModule, // 🌟 ADDED TO IMPORTS ARRAY
     MailModule,
     RawMaterialsModule,
+    SitesModule,
   ],
   controllers: [MenuProductionsController],
   providers: [MenuProductionsService],

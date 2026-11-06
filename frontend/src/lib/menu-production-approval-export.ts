@@ -21,6 +21,7 @@ type MenuProductionApprovalExportMenu = {
   sellingPricePerPax?: number
   sellingQuantity?: number
   estimatedRevenue?: number
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   productionCode?: string
   submittedByName?: string
   submittedAt?: string
@@ -56,6 +57,7 @@ export const buildMenuProductionFinancialRows = (
     sellingPricePerPax?: number
     sellingQuantity?: number
     estimatedRevenue?: number
+    groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   }>,
 ): SpreadsheetCell[][] => {
   const totalEstimatedCost = items.reduce(
@@ -66,7 +68,7 @@ export const buildMenuProductionFinancialRows = (
   const firstMenu = items[0]
   const sellingPrice = Number(firstMenu?.sellingPricePerPax)
   const sellingQuantity = Number(firstMenu?.sellingQuantity)
-  const estimatedRevenue = Number.isFinite(sellingPrice) && Number.isFinite(sellingQuantity)
+  const estimatedRevenue = firstMenu?.groupSales?.length ? firstMenu.estimatedRevenue : Number.isFinite(sellingPrice) && Number.isFinite(sellingQuantity)
     ? sellingPrice * sellingQuantity
     : firstMenu?.estimatedRevenue
 
@@ -74,7 +76,13 @@ export const buildMenuProductionFinancialRows = (
     ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost, 'integer')],
     ['Total Pax Calculation', toSpreadsheetDecimal(sellingQuantity)],
     ['Food Cost Percentage', formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)],
-    ['Selling Price', toSpreadsheetDecimal(sellingPrice)],
+    ...(firstMenu?.groupSales?.length
+      ? firstMenu.groupSales.flatMap((sale): SpreadsheetCell[][] => [
+          [`${sale.name} Qty`, toSpreadsheetDecimal(sale.quantity)],
+          [`${sale.name} Selling Price/Pax`, toSpreadsheetDecimal(sale.sellingPricePerPax)],
+          [`${sale.name} Estimated Revenue`, toSpreadsheetDecimal(sale.estimatedRevenue)],
+        ])
+      : [['Selling Price', toSpreadsheetDecimal(sellingPrice)] as SpreadsheetCell[]]),
     ['Estimated Revenue', toSpreadsheetDecimal(estimatedRevenue)],
   ]
 }

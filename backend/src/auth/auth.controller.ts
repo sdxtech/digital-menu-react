@@ -16,6 +16,7 @@ import { SetMetadata } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { AuthService } from './auth.service';
+import { AppRole } from './roles.constants';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -29,7 +30,7 @@ import { MailService } from '../mail/mail.service';
 import { EMAIL_LOGO_URL } from '../mail/mail.constants';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { SitesService } from '../sites/sites.service';
+import { SitesService, type SiteSummary } from '../sites/sites.service';
 
 const REFRESH_COOKIE_NAME = 'dm_refresh_token';
 
@@ -120,15 +121,18 @@ export class AuthController {
       ? this.sites.toSummary(storedPrimarySite)
       : undefined;
     const effectiveSite = primarySummary?.code ?? site;
-    const assignedSites = Array.from(
-      new Set([
-        ...(effectiveSite ? [effectiveSite] : []),
-        ...(storedUser?.sites?.length ? storedUser.sites : (sites ?? [])),
-      ]),
-    );
+    const assignedSites =
+      appRole === AppRole.FinanceController
+        ? (sites ?? [])
+        : Array.from(
+            new Set([
+              ...(effectiveSite ? [effectiveSite] : []),
+              ...(storedUser?.sites?.length ? storedUser.sites : (sites ?? [])),
+            ]),
+          );
     const siteSummaries = assignedSites?.length
       ? await this.sites.findSummariesByCodes(assignedSites)
-      : new Map();
+      : new Map<string, SiteSummary>();
     const siteOptions = (assignedSites ?? []).map((code) => {
       const summary = siteSummaries.get(code);
       return { code, name: summary?.name ?? code };

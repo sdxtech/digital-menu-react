@@ -4,6 +4,13 @@ import type { RecipeIngredient } from '../../recipes/schemas/recipe.schema';
 
 export type MenuProductionDocument = HydratedDocument<MenuProduction>;
 
+export type MenuProductionGroupSale = {
+  name: string;
+  quantity: number;
+  sellingPricePerPax: number;
+  estimatedRevenue: number;
+};
+
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type StoreRequestStatus =
   | 'not-requested'
@@ -103,6 +110,20 @@ export class MenuProduction {
   @Prop({ type: Number, min: 0 })
   estimatedRevenue?: number;
 
+  @Prop({
+    type: [
+      {
+        _id: false,
+        name: String,
+        quantity: Number,
+        sellingPricePerPax: Number,
+        estimatedRevenue: Number,
+      },
+    ],
+    default: undefined,
+  })
+  groupSales?: MenuProductionGroupSale[];
+
   @Prop({ type: String, trim: true })
   salesInputBy?: string;
 
@@ -143,6 +164,30 @@ export class MenuProduction {
     index: true,
   })
   approvalStatus: ApprovalStatus;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  financeApprovalRequired: boolean;
+
+  @Prop({ type: [String], default: [] })
+  financeControllerIds: string[];
+
+  @Prop({ enum: ['pending', 'approved', 'rejected'] })
+  financeCostStatus?: ApprovalStatus;
+
+  @Prop({ enum: ['pending', 'approved', 'rejected'] })
+  financeSalesStatus?: ApprovalStatus;
+
+  @Prop({ type: String, trim: true })
+  financeCostReviewedBy?: string;
+
+  @Prop({ type: String, trim: true })
+  financeSalesReviewedBy?: string;
+
+  @Prop({ type: Date })
+  financeCostReviewedAt?: Date;
+
+  @Prop({ type: Date })
+  financeSalesReviewedAt?: Date;
 
   @Prop({ type: Boolean, default: false, index: true })
   isDraft: boolean;

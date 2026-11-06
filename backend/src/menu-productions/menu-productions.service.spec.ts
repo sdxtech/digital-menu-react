@@ -504,6 +504,7 @@ describe('MenuProductionsService sales input', () => {
         _id: 'menu-id',
         approvalStatus: 'pending',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
       },
       expect.any(Object),
       { new: true },
@@ -532,6 +533,7 @@ describe('MenuProductionsService sales input', () => {
         productionCode: 'MPR0038',
         approvalStatus: 'pending',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
       },
       expect.any(Object),
     );
@@ -589,6 +591,7 @@ describe('MenuProductionsService sales input', () => {
       {
         productionCode: 'MPR0038',
         isDraft: { $ne: true },
+        groupSales: { $exists: false },
         site: 'S001',
       },
       {

@@ -58,6 +58,131 @@ const makeService = (menus: Array<Record<string, unknown>> = makeMenus()) => {
 };
 
 describe('MPR sales correction workflow', () => {
+  it('stores each group price and revenue, using the largest portion in each group', async () => {
+    const menus = [
+      {
+        ...makeMenus()[0],
+        group: 'Asian',
+        portion: 100,
+        approvalStatus: 'pending',
+      },
+      {
+        ...makeMenus()[1],
+        group: 'Asian',
+        portion: 80,
+        approvalStatus: 'pending',
+      },
+      {
+        ...makeMenus()[1],
+        group: 'Regular',
+        portion: 50,
+        approvalStatus: 'pending',
+      },
+    ];
+    const { service, model } = makeService(menus);
+    await service.updateBatchSalesDetails(
+      'MPR0001',
+      {
+        productionCode: 'MPR0001',
+        groupPrices: [
+          { name: 'Asian', sellingPricePerPax: 20000 },
+          { name: 'Regular', sellingPricePerPax: 30000 },
+        ],
+      },
+      'S001',
+      'Admin',
+    );
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          sellingQuantity: 150,
+          estimatedRevenue: 3500000,
+          groupSales: [
+            {
+              name: 'Asian',
+              quantity: 100,
+              sellingPricePerPax: 20000,
+              estimatedRevenue: 2000000,
+            },
+            {
+              name: 'Regular',
+              quantity: 50,
+              sellingPricePerPax: 30000,
+              estimatedRevenue: 1500000,
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('rejects missing or duplicate group prices before saving', async () => {
+    const { service, model } = makeService(
+      makeMenus().map((menu, i) => ({
+        ...menu,
+        group: i ? 'Regular' : 'Asian',
+      })),
+    );
+    await expect(
+      service.updateBatchSalesDetails(
+        'MPR0001',
+        {
+          productionCode: 'MPR0001',
+          groupPrices: [{ name: 'Asian', sellingPricePerPax: 20000 }],
+        },
+        'S001',
+        'Admin',
+      ),
+    ).rejects.toThrow('every menu group');
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('edits group prices without replacing them with a single price', async () => {
+    const menus = makeMenus().map((menu, index) => ({
+      ...menu,
+      group: index ? 'Regular' : 'Asian',
+      portion: index ? 50 : 100,
+      groupSales: [
+        {
+          name: 'Asian',
+          quantity: 100,
+          sellingPricePerPax: 1,
+          estimatedRevenue: 100,
+        },
+      ],
+    }));
+    const { service, model } = makeService(menus);
+    await service.editSalesBatch(
+      {
+        menuProductionIds: ids,
+        groupPrices: [
+          { name: 'Asian', sellingPricePerPax: 20000 },
+          { name: 'Regular', sellingPricePerPax: 30000 },
+        ],
+      },
+      'S001',
+      'Superadmin',
+    );
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          estimatedRevenue: 3500000,
+          groupSales: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Asian',
+              estimatedRevenue: 2000000,
+            }),
+            expect.objectContaining({
+              name: 'Regular',
+              estimatedRevenue: 1500000,
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
   it('blocks direct approval while sales rejection instructions remain active even if numbers are present', async () => {
     const { service, model } = makeService(
       makeMenus().map((menu) => ({ ...menu, salesRejectionReason: reason })),
@@ -202,6 +327,7 @@ describe('MPR sales correction workflow', () => {
         sellingPricePerPax: 1,
         sellingQuantity: 1,
         estimatedRevenue: 1,
+        groupSales: 1,
         salesInputBy: 1,
         reviewedBy: 1,
         approvedAt: 1,

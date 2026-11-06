@@ -1,17 +1,44 @@
-import { IsNumber, IsString, Min } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class UpdateMenuProductionBatchSalesDetailsDto {
+export class MenuProductionGroupPriceDto {
   @IsString()
-  productionCode: string;
+  name: string;
 
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   sellingPricePerPax: number;
+}
 
+export class UpdateMenuProductionBatchSalesDetailsDto {
+  @IsString()
+  productionCode: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  sellingQuantity: number;
+  sellingPricePerPax?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  sellingQuantity?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => MenuProductionGroupPriceDto)
+  groupPrices?: MenuProductionGroupPriceDto[];
 }

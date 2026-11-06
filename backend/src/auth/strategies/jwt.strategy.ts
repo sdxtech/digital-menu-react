@@ -66,6 +66,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       corporateSite: false,
       approvalSites: undefined as string[] | undefined,
     };
+    if (payload.appRole === AppRole.FinanceController) {
+      scopedPayload.sites = await this.sites.findFinanceControllerSites(
+        user.id,
+      );
+    }
     if (payload.roles.includes(AppRole.CorporateChef)) {
       const primary = user.siteId
         ? await this.sites.findSummaryById(user.siteId)
