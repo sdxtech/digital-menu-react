@@ -269,6 +269,39 @@ describe('WorkflowMailService', () => {
     );
   });
 
+  it('emails only assigned finance controllers using the approval template', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      { id: 'finance-1', name: 'Finance', email: 'finance@example.com' },
+    ]);
+    await service.notifyMenuProductionsReadyForApproval(
+      [
+        {
+          id: 'menu-1',
+          productionCode: 'MPR0001',
+          menuName: 'Soup',
+          productionDate: '2026-08-28',
+          site: 'S001',
+        },
+      ],
+      'sales-1',
+      ['finance-1'],
+    );
+    expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
+      roles: ['finance-controller'],
+      userIds: ['finance-1'],
+    });
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'finance@example.com',
+        subject: 'Menu Production Awaiting Approval: MPR0001',
+        html: expect.stringContaining('/finance-controller'),
+        deduplicationKey:
+          'menu-production-awaiting-approval-finance-MPR0001-sales-1-finance-1',
+      }),
+    );
+  });
+
   it('waits until every menu in a production batch has been reviewed', async () => {
     const { mail, service, users } = makeService();
 
