@@ -196,7 +196,9 @@ const buildIngredientKey = (
   vendor?: string,
   vendorSite?: string,
 ) => {
-  const baseKey = `${String(productCode || name || '').trim().toLowerCase()}__${String(
+  const code = String(productCode || name || '').trim().toLowerCase()
+  const identity = code === 'nmp' ? `${code}__${String(name || '').trim().toLowerCase()}` : code
+  const baseKey = `${identity}__${String(
     unitOfMeasures ?? '',
   )
     .trim()
@@ -635,6 +637,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     )
     const completedAt = toSpreadsheetDate(group.fulfillment?.completedAt)
     const completedBy = group.fulfillment?.completedBy ?? ''
+    const nmpOffsets = new Map<string, number>()
 
     let rowNumber = 1
     group.items.forEach((menu) => {
@@ -686,8 +689,13 @@ const UnitManagerMenuProductionRecordsPage = ({
           ingredient.vendor,
           ingredient.vendorSite,
         )
+        const nmpMatches = ingredient.productCode?.trim().toUpperCase() === 'NMP'
+          ? (group.fulfillment?.items ?? []).filter((item) => buildIngredientKey(item.productCode, item.name, item.unitOfMeasures, item.vendor, item.vendorSite) === ingredientKey)
+          : []
+        const nmpOffset = nmpOffsets.get(ingredientKey) ?? 0
+        if (nmpMatches.length) nmpOffsets.set(ingredientKey, nmpOffset + 1)
         const fulfillmentItem =
-          fulfillmentByKey.get(ingredientKey) ??
+          (nmpMatches.length ? nmpMatches[nmpOffset] : fulfillmentByKey.get(ingredientKey)) ??
           fulfillmentByKey.get(
             buildIngredientKey(
               ingredient.productCode,

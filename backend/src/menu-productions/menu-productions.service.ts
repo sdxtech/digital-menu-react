@@ -2437,7 +2437,7 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    const actualItems = new Map<string, FulfillStoreRequestBatchItemDto>();
+    const actualItems = new Map<string, FulfillStoreRequestBatchItemDto[]>();
     input.items.forEach((item) => {
       const key = this.buildStoreFulfillmentItemKey(
         item.productCode,
@@ -2451,12 +2451,15 @@ export class MenuProductionsService implements OnModuleInit {
           'Each fulfillment item must be identifiable.',
         );
       }
-      if (actualItems.has(key)) {
+      if (
+        actualItems.has(key) &&
+        item.productCode.trim().toUpperCase() !== 'NMP'
+      ) {
         throw new BadRequestException(
           `Duplicate fulfillment item submitted for ${item.productCode}.`,
         );
       }
-      actualItems.set(key, item);
+      actualItems.set(key, [...(actualItems.get(key) ?? []), item]);
     });
 
     const fulfillmentItems: StoreFulfillmentIngredient[] = batch.summary.map(
@@ -2468,7 +2471,7 @@ export class MenuProductionsService implements OnModuleInit {
           plannedItem.vendor,
           plannedItem.vendorSite,
         );
-        const actualItem = key ? actualItems.get(key) : undefined;
+        const actualItem = key ? actualItems.get(key)?.shift() : undefined;
         if (!actualItem) {
           throw new BadRequestException(
             `Missing actual quantity for ${plannedItem.productCode || plannedItem.name}.`,
@@ -2513,7 +2516,7 @@ export class MenuProductionsService implements OnModuleInit {
           );
         }
 
-        actualItems.delete(key);
+        if (!actualItems.get(key)?.length) actualItems.delete(key);
         return {
           productCode: plannedItem.productCode,
           name: plannedItem.name,
@@ -2535,45 +2538,47 @@ export class MenuProductionsService implements OnModuleInit {
       },
     );
 
-    actualItems.forEach((actualItem) => {
-      const actualQty = this.roundQuantity(Number(actualItem.actualQty));
-      const actualPrice = Number.isFinite(Number(actualItem.actualPrice))
-        ? Number(actualItem.actualPrice)
-        : undefined;
-      const actualIngredientCost =
-        actualPrice !== undefined
-          ? this.roundQuantity(actualPrice * actualQty)
+    Array.from(actualItems.values())
+      .flat()
+      .forEach((actualItem) => {
+        const actualQty = this.roundQuantity(Number(actualItem.actualQty));
+        const actualPrice = Number.isFinite(Number(actualItem.actualPrice))
+          ? Number(actualItem.actualPrice)
           : undefined;
-      const normalizedReason = actualItem.reason?.trim();
-      if (!Number.isFinite(actualQty) || actualQty <= 0) {
-        throw new BadRequestException(
-          `Actual qty for added ingredient ${actualItem.productCode || actualItem.name} must be greater than 0.`,
-        );
-      }
-      if (!normalizedReason) {
-        throw new BadRequestException(
-          `Reason is required for added ingredient ${actualItem.productCode || actualItem.name}.`,
-        );
-      }
+        const actualIngredientCost =
+          actualPrice !== undefined
+            ? this.roundQuantity(actualPrice * actualQty)
+            : undefined;
+        const normalizedReason = actualItem.reason?.trim();
+        if (!Number.isFinite(actualQty) || actualQty <= 0) {
+          throw new BadRequestException(
+            `Actual qty for added ingredient ${actualItem.productCode || actualItem.name} must be greater than 0.`,
+          );
+        }
+        if (!normalizedReason) {
+          throw new BadRequestException(
+            `Reason is required for added ingredient ${actualItem.productCode || actualItem.name}.`,
+          );
+        }
 
-      fulfillmentItems.push({
-        productCode: actualItem.productCode,
-        name: actualItem.name,
-        unitOfMeasures: actualItem.unitOfMeasures,
-        vendor: actualItem.vendor?.trim() || undefined,
-        vendorSite: actualItem.vendorSite?.trim() || undefined,
-        plannedQty: 0,
-        actualQty,
-        varianceQty: actualQty,
-        ingredientCost: 0,
-        plannedIngredientCost: 0,
-        actualIngredientCost,
-        plannedPrice: 0,
-        actualPrice,
-        variancePrice: actualPrice,
-        reason: normalizedReason,
+        fulfillmentItems.push({
+          productCode: actualItem.productCode,
+          name: actualItem.name,
+          unitOfMeasures: actualItem.unitOfMeasures,
+          vendor: actualItem.vendor?.trim() || undefined,
+          vendorSite: actualItem.vendorSite?.trim() || undefined,
+          plannedQty: 0,
+          actualQty,
+          varianceQty: actualQty,
+          ingredientCost: 0,
+          plannedIngredientCost: 0,
+          actualIngredientCost,
+          plannedPrice: 0,
+          actualPrice,
+          variancePrice: actualPrice,
+          reason: normalizedReason,
+        });
       });
-    });
 
     const actor = fulfilledBy?.trim() || 'Unknown user';
     const completedAt = new Date();
@@ -3357,7 +3362,9 @@ export class MenuProductionsService implements OnModuleInit {
     name?: string,
     unitOfMeasures?: string,
   ) {
-    const identity = this.normalizeName(productCode || name || '');
+    const code = this.normalizeName(productCode || name || '');
+    const identity =
+      code === 'nmp' ? `${code}__${this.normalizeName(name || '')}` : code;
     const unit = this.normalizeName(unitOfMeasures || '');
     if (!identity || !unit) return '';
     return `${identity}__${unit}`;
