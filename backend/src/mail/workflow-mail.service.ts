@@ -174,6 +174,7 @@ export class WorkflowMailService {
   async notifyMenuProductionsReadyForApproval(
     records: MenuProductionMailRecord[],
     deduplicationContext?: string,
+    financeControllerIds?: string[],
   ) {
     if (!this.isEnabled()) return;
     const groups = this.groupMenuRecords(records);
@@ -185,12 +186,25 @@ export class WorkflowMailService {
       const assignedManagerIds = Array.from(
         new Set(group.map((item) => item.unitManagerId).filter(Boolean)),
       ) as string[];
-      let recipients = await this.users.findActiveEmailRecipients({
-        roles: [AppRole.UnitManager],
-        site: first.site,
-        ...(assignedManagerIds.length ? { userIds: assignedManagerIds } : {}),
-      });
-      if (!recipients.length && assignedManagerIds.length) {
+      let recipients = await this.users.findActiveEmailRecipients(
+        financeControllerIds !== undefined
+          ? {
+              roles: [AppRole.FinanceController],
+              userIds: financeControllerIds,
+            }
+          : {
+              roles: [AppRole.UnitManager],
+              site: first.site,
+              ...(assignedManagerIds.length
+                ? { userIds: assignedManagerIds }
+                : {}),
+            },
+      );
+      if (
+        financeControllerIds === undefined &&
+        !recipients.length &&
+        assignedManagerIds.length
+      ) {
         this.logger.warn(
           `Assigned Unit Manager has no active email for ${first.productionCode}; falling back to active managers at the site.`,
         );
@@ -208,10 +222,13 @@ export class WorkflowMailService {
           ['Production date', first.productionDate ?? '-'],
           ['Site', first.site ?? '-'],
         ],
-        path: '/unit-manager?section=menu-productions',
+        path:
+          financeControllerIds !== undefined
+            ? '/finance-controller'
+            : '/unit-manager?section=menu-productions',
         actionLabel: 'Review Menu Production',
         category: 'menu-production-awaiting-approval',
-        deduplicationPrefix: `menu-production-awaiting-approval-${first.productionCode}${
+        deduplicationPrefix: `menu-production-awaiting-approval-${financeControllerIds !== undefined ? 'finance-' : ''}${first.productionCode}${
           deduplicationContext ? `-${deduplicationContext}` : ''
         }`,
       });

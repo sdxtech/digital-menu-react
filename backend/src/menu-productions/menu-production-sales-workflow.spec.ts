@@ -58,6 +58,31 @@ const makeService = (menus: Array<Record<string, unknown>> = makeMenus()) => {
 };
 
 describe('MPR sales correction workflow', () => {
+  it('routes sales submission email to the assigned finance controllers', async () => {
+    const menus = makeMenus().map((menu) => ({
+      ...menu,
+      approvalStatus: 'pending',
+      financeApprovalRequired: true,
+      financeControllerIds: [ids[0]],
+    }));
+    const { service, mail } = makeService(menus);
+    await service.updateBatchSalesDetails(
+      'MPR0001',
+      {
+        productionCode: 'MPR0001',
+        sellingPricePerPax: 10000,
+        sellingQuantity: 50,
+      },
+      'S001',
+      'Admin',
+    );
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.stringMatching(/^sales-resubmission-/),
+      [ids[0]],
+    );
+  });
+
   it('stores each group price and revenue, using the largest portion in each group', async () => {
     const menus = [
       {
