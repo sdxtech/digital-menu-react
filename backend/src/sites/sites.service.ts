@@ -3,12 +3,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import ExcelJS from 'exceljs';
 import { createReadStream, promises as fs } from 'fs';
 import { Model, Types } from 'mongoose';
 import { Site, SiteDocument } from './schemas/site.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
+import { AppRole } from '../auth/roles.constants';
 
 const SITE_IMPORT_HEADER_ALIASES = new Set([
   'sites',
@@ -29,6 +32,8 @@ export type CreateSiteInput = {
   siteFunction?: 'operational' | 'corporate';
   materialSource?: 'own' | 'reference';
   referenceSiteCodes?: string[];
+  financeApprovalEnabled?: boolean;
+  financeControllerIds?: string[];
 };
 
 export type UpdateSiteInput = Partial<CreateSiteInput>;
@@ -49,6 +54,8 @@ export type SiteSummary = {
   siteFunction: 'operational' | 'corporate';
   materialSource: 'own' | 'reference';
   referenceSiteCodes: string[];
+  financeApprovalEnabled: boolean;
+  financeControllerIds: string[];
 };
 
 export type ImportSiteRow = {
@@ -75,6 +82,9 @@ export class SitesService {
   constructor(
     @InjectModel(Site.name)
     private readonly siteModel: Model<SiteDocument>,
+    @Optional()
+    @InjectModel(User.name)
+    private readonly userModel?: Model<UserDocument>,
   ) {}
 
   async create(input: CreateSiteInput) {
@@ -88,6 +98,10 @@ export class SitesService {
       ...input,
       code,
     });
+    const financeSettings = await this.validateFinanceSettings(
+      input.financeApprovalEnabled ?? false,
+      input.financeControllerIds ?? [],
+    );
     try {
       return await this.siteModel.create({
         name,
@@ -95,6 +109,7 @@ export class SitesService {
         description: this.normalizeOptionalText(input.description),
         isActive: input.isActive ?? true,
         ...materialSettings,
+        ...financeSettings,
       });
     } catch (error) {
       if ((error as { code?: number }).code === 11000) {
@@ -163,13 +178,29 @@ export class SitesService {
       if (
         input.siteFunction === undefined &&
         input.materialSource === undefined &&
-        input.referenceSiteCodes === undefined
+        input.referenceSiteCodes === undefined &&
+        input.financeApprovalEnabled === undefined &&
+        input.financeControllerIds === undefined
       ) {
         throw new BadRequestException('No changes provided');
       }
     }
 
     const existing = await this.findById(id);
+    if (
+      input.financeApprovalEnabled !== undefined ||
+      input.financeControllerIds !== undefined
+    ) {
+      Object.assign(
+        updateFields,
+        await this.validateFinanceSettings(
+          input.financeApprovalEnabled ??
+            existing.financeApprovalEnabled ??
+            false,
+          input.financeControllerIds ?? existing.financeControllerIds ?? [],
+        ),
+      );
+    }
     await this.assertReferenceAvailable(existing.code, {
       ...input,
       code: updateFields.code ?? existing.code,
@@ -328,6 +359,8 @@ export class SitesService {
     siteFunction?: 'operational' | 'corporate';
     materialSource?: 'own' | 'reference';
     referenceSiteCodes?: string[];
+    financeApprovalEnabled?: boolean;
+    financeControllerIds?: string[];
   }): SiteSummary {
     return {
       id: String(site._id),
@@ -338,6 +371,8 @@ export class SitesService {
       siteFunction: site.siteFunction ?? 'operational',
       materialSource: site.materialSource ?? 'own',
       referenceSiteCodes: site.referenceSiteCodes ?? [],
+      financeApprovalEnabled: site.financeApprovalEnabled ?? false,
+      financeControllerIds: site.financeControllerIds ?? [],
     };
   }
 
@@ -677,6 +712,64 @@ export class SitesService {
   private normalizeOptionalText(value?: string) {
     const trimmed = value?.trim();
     return trimmed || undefined;
+  }
+
+  private async validateFinanceSettings(
+    enabled: boolean,
+    controllerIds: string[],
+  ) {
+    const ids = Array.from(new Set(controllerIds.map((id) => id.trim())));
+    if (ids.some((id) => !Types.ObjectId.isValid(id))) {
+      throw new BadRequestException(
+        'Finance controller IDs must be valid user IDs.',
+      );
+    }
+    if (enabled && ids.length === 0) {
+      throw new BadRequestException(
+        'Select at least one finance controller before enabling finance approval.',
+      );
+    }
+    if (enabled && ids.length && this.userModel) {
+      const count = await this.userModel.countDocuments({
+        _id: { $in: ids },
+        roles: AppRole.FinanceController,
+        isActive: true,
+      });
+      if (count !== ids.length) {
+        throw new BadRequestException(
+          'Select active users with the finance controller role.',
+        );
+      }
+    }
+    return { financeApprovalEnabled: enabled, financeControllerIds: ids };
+  }
+
+  async listFinanceControllers() {
+    const users = await this.userModel
+      ?.find({
+        roles: AppRole.FinanceController,
+      })
+      .select({ name: 1, email: 1, isActive: 1 })
+      .sort({ name: 1 })
+      .lean();
+    return (users ?? []).map((user) => ({
+      id: String(user._id),
+      name: user.name,
+      email: user.email,
+      isActive: user.isActive,
+    }));
+  }
+
+  async findFinanceControllerSites(controllerId: string) {
+    const sites = await this.siteModel
+      .find({
+        financeApprovalEnabled: true,
+        financeControllerIds: controllerId,
+        isActive: true,
+      })
+      .select({ code: 1 })
+      .lean();
+    return sites.map((site) => site.code);
   }
 
   private normalizeId(id?: string | Types.ObjectId | null) {

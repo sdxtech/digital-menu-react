@@ -16,6 +16,8 @@ type SiteApi = {
   siteFunction?: 'operational' | 'corporate'
   materialSource?: 'own' | 'reference'
   referenceSiteCodes?: string[]
+  financeApprovalEnabled?: boolean
+  financeControllerIds?: string[]
 }
 
 type Site = {
@@ -28,6 +30,8 @@ type Site = {
   siteFunction: 'operational' | 'corporate'
   materialSource: 'own' | 'reference'
   referenceSiteCodes: string[]
+  financeApprovalEnabled: boolean
+  financeControllerIds: string[]
 }
 
 type SiteMeta = {
@@ -47,6 +51,8 @@ type SiteForm = {
   siteFunction: 'operational' | 'corporate'
   materialSource: 'own' | 'reference'
   referenceSiteCodes: string[]
+  financeApprovalEnabled: boolean
+  financeControllerIds: string[]
 }
 
 type SiteImportError = {
@@ -75,6 +81,8 @@ const emptyForm: SiteForm = {
   siteFunction: 'operational',
   materialSource: 'own',
   referenceSiteCodes: [],
+  financeApprovalEnabled: false,
+  financeControllerIds: [],
 }
 
 const mapSite = (item: SiteApi): Site => ({
@@ -87,7 +95,39 @@ const mapSite = (item: SiteApi): Site => ({
   siteFunction: item.siteFunction ?? 'operational',
   materialSource: item.materialSource ?? 'own',
   referenceSiteCodes: item.referenceSiteCodes ?? [],
+  financeApprovalEnabled: item.financeApprovalEnabled ?? false,
+  financeControllerIds: item.financeControllerIds ?? [],
 })
+
+type FinanceControllerOption = { id: string; name: string; email: string; isActive: boolean }
+
+const FinanceApprovalSettings = ({ form, onChange, options }: {
+  form: SiteForm
+  onChange: (form: SiteForm) => void
+  options: FinanceControllerOption[]
+}) => (
+  <div className="space-y-3 rounded-xl border border-border p-4">
+    <label className="flex items-center gap-2 text-sm font-medium">
+      <input type="checkbox" checked={form.financeApprovalEnabled}
+        onChange={(event) => onChange({ ...form, financeApprovalEnabled: event.target.checked })} />
+      Require Finance Operations Controller approval
+    </label>
+    <p className="text-xs text-muted">When disabled, menu productions go directly to Unit Manager after sales input.</p>
+    <div className="max-h-40 space-y-2 overflow-y-auto">
+      {options.map((option) => (
+        <label key={option.id} className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={form.financeControllerIds.includes(option.id)}
+            disabled={!option.isActive && !form.financeControllerIds.includes(option.id)}
+            onChange={(event) => onChange({ ...form, financeControllerIds: event.target.checked
+              ? [...form.financeControllerIds, option.id]
+              : form.financeControllerIds.filter((id) => id !== option.id) })} />
+          {option.name} ({option.email}){option.isActive ? '' : ' — inactive'}
+        </label>
+      ))}
+      {options.length === 0 ? <p className="text-xs text-muted">Create a Finance Controller user before enabling this approval.</p> : null}
+    </div>
+  </div>
+)
 
 const SiteMaterialSettings = ({ form, onChange, options }: {
   form: SiteForm
@@ -201,6 +241,8 @@ const SuperadminSitesPage = () => {
   const { accessToken } = useAuth()
   const [sites, setSites] = useState<Site[]>([])
   const [referenceOptions, setReferenceOptions] = useState<Site[]>([])
+  const [financeControllerOptions, setFinanceControllerOptions] = useState<FinanceControllerOption[]>([])
+  const [financeControllerError, setFinanceControllerError] = useState('')
   const [referenceError, setReferenceError] = useState('')
   const [meta, setMeta] = useState<SiteMeta>({
     page: 1,
@@ -245,6 +287,9 @@ const SuperadminSitesPage = () => {
       if (active) { setReferenceOptions(options); setReferenceError('') }
     }
     loadOptions().catch((reason: unknown) => { if (active) setReferenceError(reason instanceof Error ? reason.message : 'Failed to load reference sites.') })
+    apiFetch<FinanceControllerOption[]>('/superadmin/sites/finance-controllers', undefined, accessToken)
+      .then((controllers) => { if (active) { setFinanceControllerOptions(controllers); setFinanceControllerError('') } })
+      .catch((reason: unknown) => { if (active) setFinanceControllerError(reason instanceof Error ? reason.message : 'Failed to load finance controllers.') })
     return () => { active = false }
   }, [accessToken, createOpen, editingId])
 
@@ -430,6 +475,8 @@ const SuperadminSitesPage = () => {
             siteFunction: createForm.siteFunction,
             materialSource: createForm.materialSource,
             referenceSiteCodes: createForm.referenceSiteCodes,
+            financeApprovalEnabled: createForm.financeApprovalEnabled,
+            financeControllerIds: createForm.financeControllerIds,
           }),
         },
         accessToken,
@@ -455,6 +502,8 @@ const SuperadminSitesPage = () => {
       siteFunction: site.siteFunction,
       materialSource: site.materialSource,
       referenceSiteCodes: site.referenceSiteCodes,
+      financeApprovalEnabled: site.financeApprovalEnabled,
+      financeControllerIds: site.financeControllerIds,
     })
     setEditError('')
     setMessage('')
@@ -488,6 +537,8 @@ const SuperadminSitesPage = () => {
             siteFunction: editForm.siteFunction,
             materialSource: editForm.materialSource,
             referenceSiteCodes: editForm.referenceSiteCodes,
+            financeApprovalEnabled: editForm.financeApprovalEnabled,
+            financeControllerIds: editForm.financeControllerIds,
           }),
         },
         accessToken,
@@ -637,6 +688,8 @@ const SuperadminSitesPage = () => {
                   </p>
                 ) : null}
                 <SiteMaterialSettings form={createForm} onChange={setCreateForm} options={referenceOptions} />
+                <FinanceApprovalSettings form={createForm} onChange={setCreateForm} options={financeControllerOptions} />
+                {financeControllerError ? <p role="alert" className="text-xs text-danger">{financeControllerError}</p> : null}
                 {referenceError ? <p className="text-xs text-red-600">{referenceError}</p> : null}
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -826,6 +879,7 @@ const SuperadminSitesPage = () => {
                   <th className="px-5 py-4 font-semibold">Description</th>
                   <th className="px-5 py-4 font-semibold">Site function</th>
                   <th className="px-5 py-4 font-semibold">Material & price source</th>
+                  <th className="px-5 py-4 font-semibold">Finance approval</th>
                   <th className="px-5 py-4 font-semibold">Status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
@@ -833,13 +887,13 @@ const SuperadminSitesPage = () => {
               <tbody>
                 {meta.loading ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       Loading sites...
                     </td>
                   </tr>
                 ) : sites.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={8} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       {meta.error ? meta.error : 'No sites found.'}
                     </td>
                   </tr>
@@ -900,6 +954,7 @@ const SuperadminSitesPage = () => {
                       <td className="px-5 py-4">
                         {site.materialSource === 'reference' ? `Reference sites (${site.referenceSiteCodes.length})` : 'Own site data'}
                       </td>
+                      <td className="px-5 py-4">{site.financeApprovalEnabled ? `Active (${site.financeControllerIds.length} controllers)` : 'Disabled'}</td>
                       <td className="px-5 py-4">
                         {editingId === site.id ? (
                           <select
@@ -967,8 +1022,10 @@ const SuperadminSitesPage = () => {
                       </td>
                     </tr>
                     {editingId === site.id ? (
-                      <tr className="border-t border-border bg-background"><td colSpan={8} className="px-5 py-4">
+                      <tr className="border-t border-border bg-background"><td colSpan={9} className="px-5 py-4">
                         <div className="max-w-xl"><SiteMaterialSettings form={editForm} onChange={setEditForm} options={referenceOptions} />
+                        <FinanceApprovalSettings form={editForm} onChange={setEditForm} options={financeControllerOptions} />
+                        {financeControllerError ? <p role="alert" className="text-xs text-danger">{financeControllerError}</p> : null}
                           {referenceError ? <p className="mt-2 text-xs text-red-600">{referenceError}</p> : null}
                         </div>
                       </td></tr>

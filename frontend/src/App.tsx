@@ -24,6 +24,8 @@ import StorekeeperInventoryPage from './app/StorekeeperInventoryPage'
 import UnitManagerLayout from './app/UnitManagerLayout'
 import UnitManagerMenuProductionRecordsPage from './app/UnitManagerMenuProductionRecordsPage'
 import UnitManagerPage from './app/UnitManagerPage'
+import FinanceControllerPage from './app/FinanceControllerPage'
+import FinanceControllerLayout from './app/FinanceControllerLayout'
 import CorporateChefLayout from './app/CorporateChefLayout'
 import UnitManagerRecipeDataPage from './app/UnitManagerRecipeDataPage'
 import ExecutiveLayout from './app/ExecutiveLayout'
@@ -169,6 +171,16 @@ function App() {
         </Route>
 
         {/* UNIT MANAGER SPACE SUB-ROUTES MAP */}
+        <Route element={<RequireRole role="finance-controller" />}>
+          <Route path="/finance-controller" element={<FinanceControllerLayout />}>
+            <Route index element={<FinanceControllerPage />} />
+            <Route path="menu-production-records" element={<UnitManagerMenuProductionRecordsPage includePending enableSiteSelection />} />
+            <Route path="recipe-data" element={<UnitManagerRecipeDataPage enableSiteSelection />} />
+            <Route path="profile" element={<ProfileView />} />
+            <Route path="security" element={<SecurityView />} />
+          </Route>
+        </Route>
+
         <Route element={<RequireRole role="unit-manager" />}>
           <Route path="/unit-manager" element={<UnitManagerLayout />}>
             <Route index element={<UnitManagerPage />} />

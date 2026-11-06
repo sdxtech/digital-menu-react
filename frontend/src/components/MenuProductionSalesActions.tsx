@@ -14,6 +14,7 @@ type SalesGroup = {
     storeRequestStatus?: string
     sellingPricePerPax?: number
     sellingQuantity?: number
+    groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
     salesRejectionReason?: string
   }>
 }
@@ -28,11 +29,13 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
   const [mode, setMode] = useState<'edit' | 'reject' | null>(null)
   const [price, setPrice] = useState('')
   const [quantity, setQuantity] = useState('')
+  const [groupPrices, setGroupPrices] = useState<Record<string, string>>({})
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const handledActionRequestId = useRef(0)
   const canEdit = user?.role === 'superadmin' || user?.roles?.includes('superadmin') === true
+  const savedGroupSales = group.items[0]?.groupSales ?? []
   const canReject = canEdit || user?.role === 'unit-manager'
   const eligibleForReject = group.items.length > 0 && group.items.every((item) =>
     ['not-requested', 'requested'].includes(item.storeRequestStatus ?? '') &&
@@ -43,6 +46,7 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
     setMode(nextMode)
     setPrice(group.items[0]?.sellingPricePerPax?.toString() ?? '')
     setQuantity(group.items[0]?.sellingQuantity?.toString() ?? '')
+    setGroupPrices(Object.fromEntries(savedGroupSales.map((sale) => [sale.name, String(sale.sellingPricePerPax)])))
     setReason('')
     setError('')
   }
@@ -57,6 +61,7 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
     setMode(actionRequest.mode)
     setPrice(group.items[0]?.sellingPricePerPax?.toString() ?? '')
     setQuantity(group.items[0]?.sellingQuantity?.toString() ?? '')
+    setGroupPrices(Object.fromEntries(savedGroupSales.map((sale) => [sale.name, String(sale.sellingPricePerPax)])))
     setReason('')
     setError('')
   }, [actionRequest, group])
@@ -65,7 +70,9 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
     if (!mode || !accessToken || saving) return
     const nextPrice = Number(price)
     const nextQuantity = Number(quantity)
-    if (mode === 'edit' && (!price.trim() || !quantity.trim() || !Number.isFinite(nextPrice) || nextPrice < 0 || !Number.isFinite(nextQuantity) || nextQuantity < 0 || !Number.isFinite(nextPrice * nextQuantity))) {
+    if (mode === 'edit' && (savedGroupSales.length
+      ? savedGroupSales.some((sale) => !groupPrices[sale.name]?.trim() || !Number.isFinite(Number(groupPrices[sale.name])) || Number(groupPrices[sale.name]) < 0)
+      : (!price.trim() || !quantity.trim() || !Number.isFinite(nextPrice) || nextPrice < 0 || !Number.isFinite(nextQuantity) || nextQuantity < 0 || !Number.isFinite(nextPrice * nextQuantity)))) {
       setError('Enter valid non-negative Sales/Pax and Pax Calculation values.')
       return
     }
@@ -79,7 +86,7 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
       await apiFetch(`/menu-productions/batch/${mode === 'edit' ? 'edit-sales' : 'reject-sales'}`, {
         method: 'PATCH',
         body: JSON.stringify({ menuProductionIds: group.items.map((item) => item.id),
-          ...(mode === 'edit' ? { sellingPricePerPax: nextPrice, sellingQuantity: nextQuantity } : { reason: reason.trim() }),
+          ...(mode === 'edit' ? (savedGroupSales.length ? { groupPrices: savedGroupSales.map((sale) => ({ name: sale.name, sellingPricePerPax: Number(groupPrices[sale.name]) })) } : { sellingPricePerPax: nextPrice, sellingQuantity: nextQuantity }) : { reason: reason.trim() }),
         }),
       }, accessToken)
       await onSaved()
@@ -103,9 +110,15 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
             <h3 id={`sales-action-${group.items[0]?.id}`} className="text-lg font-bold text-black">{mode === 'edit' ? 'Edit Sales' : 'Reject Sales'}</h3>
             <p className="mt-2 text-sm font-bold text-black">{group.productionCode ?? 'MPR'} · {formatProductionDate(group.date)} · {group.items[0]?.clientName ?? '-'}</p>
             <p className="mt-2 text-sm text-muted">{mode === 'edit'
-              ? 'Update Sales/Pax and Pax Calculation for the entire MPR. Production quantities, approvals, and actual issuance are preserved.'
+              ? 'Update selling prices. Production quantities, approvals, and actual issuance are preserved.'
               : 'Return this MPR to Admin Sales for correction. Previous sales values will be cleared and the MPR will require Unit Manager approval after resubmission.'}</p>
-            {mode === 'edit' ? (
+            {mode === 'edit' && savedGroupSales.length ? (
+              <div className="mt-4 grid gap-3">
+                {savedGroupSales.map((sale) => <label key={sale.name} className="text-sm font-semibold text-black">{sale.name} ({sale.quantity} pax) - Selling Price/Pax
+                  <input type="number" min={0} step="any" required value={groupPrices[sale.name] ?? ''} onChange={(event) => setGroupPrices((previous) => ({ ...previous, [sale.name]: event.target.value }))} disabled={saving} className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2" />
+                </label>)}
+              </div>
+            ) : mode === 'edit' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="text-sm font-semibold text-black">Sales/Pax (IDR)
                   <input type="number" min={0} step="any" required value={price} onChange={(event) => setPrice(event.target.value)} disabled={saving} className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2" />

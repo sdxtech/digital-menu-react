@@ -4,7 +4,6 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useChefData } from "../lib/chef-data";
 import { formatQuantity } from "../lib/quantity";
 import { summarizePortionsByGroup } from "../lib/menu-production-quantity";
 import { formatRecipeVersion } from "../lib/recipe-version";
@@ -45,6 +44,7 @@ type Menu = {
   sellingPricePerPax?: number;
   sellingQuantity?: number;
   estimatedRevenue?: number;
+  groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>;
   salesInputBy?: string;
   salesRejectionReason?: string;
   salesRejectedBy?: string;
@@ -106,11 +106,10 @@ const getSalesStatus = (group: Group) => {
 
 const AdminSiteMenuProductionPage = () => {
   const { accessToken } = useAuth();
-  const { updateMenuProductionBatchSalesDetails } = useChefData();
   const [groups, setGroups] = useState<Group[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [values, setValues] = useState<
-    Record<string, { price: string; quantity: string }>
+    Record<string, Record<string, string>>
   >({});
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -151,48 +150,27 @@ const AdminSiteMenuProductionPage = () => {
   const totalPages = Math.max(1, Math.ceil(total / GROUPS_PER_PAGE));
   const groupKey = (group: Group) =>
     `${group.date}__${group.productionCode ?? "no-code"}`;
-  const batchValues = (group: Group) => {
-    const key = groupKey(group);
-    const saved = isSubmittedGroup(group) ? group.items[0] : undefined;
-    return (
-      values[key] ?? {
-        price:
-          saved?.sellingPricePerPax === undefined
-            ? ""
-            : String(saved.sellingPricePerPax),
-        quantity:
-          saved?.sellingQuantity === undefined
-            ? ""
-            : String(saved.sellingQuantity),
-      }
-    );
+  const groupPrice = (group: Group, name: string) => {
+    const saved = group.items[0]?.groupSales?.find((sale) => sale.name === name);
+    return values[groupKey(group)]?.[name] ?? (saved ? String(saved.sellingPricePerPax) : "");
   };
 
   const save = async (group: Group) => {
-    const current = batchValues(group);
-    const price = Number(current.price);
-    const quantity = Number(current.quantity);
-    if (
-      !current.price.trim() ||
-      !current.quantity.trim() ||
-      !Number.isFinite(price) ||
-      price < 0 ||
-      !Number.isFinite(quantity) ||
-      quantity < 0
-    ) {
-      setError(
-        "Selling price and selling quantity must be valid non-negative numbers.",
-      );
+    const groupPrices = summarizePortionsByGroup(group.items).groups.map((item) => ({
+      name: item.name, rawPrice: groupPrice(group, item.name),
+    }));
+    if (!groupPrices.length || groupPrices.some((item) => !item.rawPrice.trim() || !Number.isFinite(Number(item.rawPrice)) || Number(item.rawPrice) < 0)) {
+      setError("Enter a valid selling price for every menu group.");
       return;
     }
     setSavingId(groupKey(group));
     setError("");
     setMessage("");
     try {
-      await updateMenuProductionBatchSalesDetails(group.productionCode ?? "", {
-        sellingPricePerPax: price,
-        sellingQuantity: quantity,
-      });
+      await apiFetch('/menu-productions/batch/sales-details', {
+        method: 'PATCH',
+        body: JSON.stringify({ productionCode: group.productionCode ?? '', groupPrices: groupPrices.map(({ name, rawPrice }) => ({ name, sellingPricePerPax: Number(rawPrice) })) }),
+      }, accessToken ?? undefined);
       setMessage(
         `${group.productionCode ?? "Production batch"} submitted to Unit Manager.`,
       );
@@ -247,9 +225,9 @@ const AdminSiteMenuProductionPage = () => {
         menu.portion,
         menu.estimatedCost ?? menu.cost ?? "",
         menu.estimatedCostPerPax ?? "",
-        menu.sellingPricePerPax ?? "",
-        menu.sellingQuantity ?? "",
-        menu.estimatedRevenue ?? "",
+        menu.groupSales?.find((sale) => sale.name === (menu.group?.trim() || '-'))?.sellingPricePerPax ?? menu.sellingPricePerPax ?? "",
+        menu.groupSales?.find((sale) => sale.name === (menu.group?.trim() || '-'))?.quantity ?? menu.sellingQuantity ?? "",
+        menu.groupSales?.find((sale) => sale.name === (menu.group?.trim() || '-'))?.estimatedRevenue ?? menu.estimatedRevenue ?? "",
       ]),
     ];
     const ingredientRows: SpreadsheetCell[][] = [
@@ -283,6 +261,11 @@ const AdminSiteMenuProductionPage = () => {
     downloadSpreadsheet(`menu-production-${group.date}-${safeCode}.xlsx`, [
       { name: "Menu Production", rows: menuRows },
       { name: "Ingredient Summary", rows: ingredientRows },
+      ...(group.items[0]?.groupSales?.length ? [{ name: "Sales Summary", rows: [
+        ["Group By", "Qty", "Selling Price/Pax", "Estimated Revenue"],
+        ...group.items[0].groupSales.map((sale) => [sale.name, sale.quantity, sale.sellingPricePerPax, sale.estimatedRevenue]),
+        ["Total", "", "", group.items[0].estimatedRevenue ?? ""],
+      ] }] : []),
     ]);
   };
 
@@ -291,7 +274,7 @@ const AdminSiteMenuProductionPage = () => {
       <div>
         <PageHeading className="text-2xl font-semibold">Menu Production Sales Input</PageHeading>
         <p className="mt-1 text-sm text-muted">
-          Complete selling price and quantity before Unit Manager approval.
+          Complete the selling price for each menu group before Unit Manager approval.
         </p>
       </div>
       {error ? (
@@ -364,14 +347,12 @@ const AdminSiteMenuProductionPage = () => {
                     group.items,
                     (item) => item.estimatedCostPerPax,
                   );
-                  const sellingPrice = Number(batchValues(group).price);
-                  const sellingQuantity = Number(batchValues(group).quantity);
-                  const estimatedRevenue = sellingPrice * sellingQuantity;
+                  const portionSummary = summarizePortionsByGroup(group.items);
+                  const estimatedRevenue = portionSummary.groups.reduce((total, item) => total + item.portion * Number(groupPrice(group, item.name)), 0);
                   const foodCostPercentage =
                     estimatedRevenue > 0
                       ? (estimatedTotal / estimatedRevenue) * 100
                       : undefined;
-                  const portionSummary = summarizePortionsByGroup(group.items);
                   return (
                     <Fragment key={key}>
                       <tr className="border-t border-border">
@@ -513,53 +494,54 @@ const AdminSiteMenuProductionPage = () => {
                                           {formatPrice(costPerPaxTotal)}
                                         </td>
                                       </tr>
-                                      {portionSummary.groups.length > 0 ? (
-                                        <tr
-                                          aria-hidden="true"
-                                          className="border-y border-black"
-                                        >
-                                          <td
-                                            colSpan={8}
-                                            className="h-2 p-0"
-                                            style={{
-                                              backgroundColor:
-                                                'var(--dm-primary)',
-                                            }}
-                                          />
-                                        </tr>
-                                      ) : null}
+                                      <tr aria-hidden="true">
+                                        <td colSpan={8} className="border-y border-primary bg-white">&nbsp;</td>
+                                      </tr>
+                                      <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
+                                        <td colSpan={5} className="!bg-primary px-4 py-3 text-right text-white">Menu Group Summary</td>
+                                        <td className="bg-primary px-4 py-3 text-white">Qty</td>
+                                        <td className="bg-primary px-4 py-3 text-white">Selling Price/Pax</td>
+                                        <td className="bg-primary px-4 py-3 text-white">Estimated Revenue</td>
+                                      </tr>
                                       {portionSummary.groups.map((item) => (
                                         <tr
                                           key={`group-portion-${item.name}`}
                                           className="border-t border-border"
                                         >
                                           <td
-                                            colSpan={6}
+                                            colSpan={5}
                                             className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]"
                                           >
                                             {item.name} Qty
                                           </td>
-                                          <td
-                                            colSpan={2}
-                                            className="px-4 py-3 font-semibold"
-                                          >
+                                          <td className="px-4 py-3 font-semibold">
                                             {formatQuantity(item.portion)}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <label className="sr-only" htmlFor={`${key}-${item.name}`}>Selling price for {item.name}</label>
+                                            <input id={`${key}-${item.name}`} type="text" inputMode="numeric" placeholder="Selling price/pax" value={formatIntegerInput(groupPrice(group, item.name))}
+                                              onChange={(event) => setValues((prev) => ({ ...prev, [key]: { ...prev[key], [item.name]: normalizeIntegerInput(event.target.value) } }))}
+                                              className="dm-sales-price-input w-full rounded-md border border-border bg-white px-2 py-1 text-sm" />
+                                          </td>
+                                          <td className="px-4 py-3 font-semibold">
+                                            {formatPrice(item.portion * Number(groupPrice(group, item.name)))}
                                           </td>
                                         </tr>
                                       ))}
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={6}
+                                          colSpan={5}
                                           className="px-4 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]"
                                         >
-                                          Total Qty
+                                          Total
                                         </td>
                                         <td
-                                          colSpan={2}
                                           className="px-4 py-3 font-bold"
                                         >
                                           {formatQuantity(portionSummary.total)}
                                         </td>
+                                        <td />
+                                        <td className="px-4 py-3 font-bold">{formatPrice(estimatedRevenue)}</td>
                                       </tr>
                                       <tr
                                         aria-hidden="true"
@@ -576,91 +558,30 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={6}
-                                          className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
-                                        >
-                                          Selling Price/Pax
-                                        </td>
-                                        <td colSpan={2} className="px-4 py-3">
-                                          <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={formatIntegerInput(
-                                              batchValues(group).price,
-                                            )}
-                                            onChange={(event) =>
-                                              setValues((prev) => ({
-                                                ...prev,
-                                                [key]: {
-                                                  ...batchValues(group),
-                                                  price: normalizeIntegerInput(
-                                                    event.target.value,
-                                                  ),
-                                                },
-                                              }))
-                                            }
-                                            className="w-full rounded-md border border-border bg-white px-2 py-2 text-sm"
-                                          />
-                                        </td>
-                                      </tr>
-                                      <tr className="border-t border-border">
-                                        <td
-                                          colSpan={6}
-                                          className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
-                                        >
-                                          Pax Calculation
-                                        </td>
-                                        <td colSpan={2} className="px-4 py-3">
-                                          <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            value={formatIntegerInput(
-                                              batchValues(group).quantity,
-                                            )}
-                                            onChange={(event) =>
-                                              setValues((prev) => ({
-                                                ...prev,
-                                                [key]: {
-                                                  ...batchValues(group),
-                                                  quantity: normalizeIntegerInput(
-                                                    event.target.value,
-                                                  ),
-                                                },
-                                              }))
-                                            }
-                                            className="w-full rounded-md border border-border bg-white px-2 py-2 text-sm"
-                                          />
-                                        </td>
-                                      </tr>
-                                      <tr className="border-t border-border">
-                                        <td
-                                          colSpan={6}
+                                          colSpan={5}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Estimated Revenue
                                         </td>
                                         <td
-                                          colSpan={2}
+                                          colSpan={3}
                                           className="px-4 py-3 font-bold"
                                         >
                                           {formatPrice(
-                                            Number(batchValues(group).price) *
-                                              Number(
-                                                batchValues(group).quantity,
-                                              ),
+                                            estimatedRevenue,
                                           )}
                                         </td>
                                       </tr>
                                       <tr className="border-t border-border">
                                         <td
-                                          colSpan={6}
+                                          colSpan={5}
                                           className="px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]"
                                         >
                                           Food Cost Percentage
                                         </td>
                                         <td
-                                          colSpan={2}
-                                          className="px-4 py-3 text-center font-bold"
+                                          colSpan={3}
+                                          className="px-4 py-3 text-left font-bold"
                                         >
                                           {foodCostPercentage === undefined
                                             ? "-"
@@ -668,8 +589,8 @@ const AdminSiteMenuProductionPage = () => {
                                         </td>
                                       </tr>
                                       <tr className="border-t border-border">
-                                        <td colSpan={6} />
-                                        <td colSpan={2} className="px-4 py-3">
+                                        <td colSpan={5} />
+                                        <td colSpan={3} className="px-4 py-3">
                                           <button
                                             type="button"
                                             onClick={() => save(group)}
@@ -678,7 +599,7 @@ const AdminSiteMenuProductionPage = () => {
                                           >
                                             {savingId === key
                                               ? "Saving..."
-                                              : "Submit to Unit Manager"}
+                                              : "Submit"}
                                           </button>
                                         </td>
                                       </tr>

@@ -7,6 +7,7 @@ import { apiFetch } from '../lib/api'
 const roleLabels: Record<string, string> = {
   chef: 'Chef',
   'unit-manager': 'Unit Manager',
+  'finance-controller': 'Finance Operations Controller',
   storekeeper: 'Storekeeper',
   superadmin: 'Superadmin',
 }

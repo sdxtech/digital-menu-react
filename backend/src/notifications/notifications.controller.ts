@@ -16,6 +16,7 @@ import { GetRoleNotificationsDto } from './dto/get-role-notifications.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { canAccessAllSites, getUserSiteScope } from '../auth/site-scope';
+import { AppRole } from '../auth/roles.constants';
 
 @Controller(['notifications', 'api/notifications'])
 @UseGuards(JwtAuthGuard)
@@ -97,7 +98,22 @@ export class NotificationsController {
     req: AuthenticatedRequest,
     filter: GetRoleNotificationsDto,
   ): GetRoleNotificationsDto {
-    const siteCode = getUserSiteScope(req.user) ?? filter.siteCode?.trim();
+    const requestedSite = filter.siteCode?.trim();
+    const financeController = req.user.appRole === AppRole.FinanceController;
+    if (
+      financeController &&
+      requestedSite &&
+      !req.user.sites?.some(
+        (site) => site.toLowerCase() === requestedSite.toLowerCase(),
+      )
+    ) {
+      throw new ForbiddenException(
+        'The selected site is not assigned to this Finance Controller.',
+      );
+    }
+    const siteCode = financeController
+      ? requestedSite
+      : (getUserSiteScope(req.user) ?? requestedSite);
     if (!siteCode) {
       throw new BadRequestException('siteCode is required.');
     }

@@ -12,7 +12,7 @@ import {
   AUTH_TOKEN_REFRESHED_EVENT,
 } from './api' /* Fungsi untuk melakukan fetch API dengan penanganan token dan error yang sesuai. */
 
-export type Role = 'chef' | 'corporate-chef' | 'unit-manager' | 'executive' | 'admin-site' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
+export type Role = 'chef' | 'corporate-chef' | 'unit-manager' | 'finance-controller' | 'executive' | 'admin-site' | 'storekeeper' | 'superadmin'/* Tipe data untuk peran pengguna dalam aplikasi. */
 
 export type User = {
   id?: string
@@ -43,13 +43,14 @@ const rolePaths: Record<Role, string> = {
   chef: '/chef',
   'corporate-chef': '/corporate-chef',
   'unit-manager': '/unit-manager',
+  'finance-controller': '/finance-controller',
   executive: '/executive',
   'admin-site': '/admin-site',
   storekeeper: '/storekeeper',
   superadmin: '/superadmin',
 }/* Pemetaan peran pengguna ke path dashboard yang sesuai. */
 
-const rolePriority: Role[] = ['superadmin', 'executive', 'corporate-chef', 'unit-manager', 'admin-site', 'storekeeper', 'chef']
+const rolePriority: Role[] = ['superadmin', 'executive', 'corporate-chef', 'unit-manager', 'finance-controller', 'admin-site', 'storekeeper', 'chef']
 
 const isRole = (value?: string): value is Role => {
   return Boolean(value && value in rolePaths)
