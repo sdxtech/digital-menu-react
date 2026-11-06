@@ -2283,15 +2283,18 @@ export class MenuProductionsService implements OnModuleInit {
           ),
         );
     }
-    if (!firstItem?.financeApprovalRequired)
+    if (firstItem)
       void this.workflowMail
         .notifyMenuProductionsReadyForApproval(
           updatedItems.map((item) => this.toMailRecord(item)),
           `sales-resubmission-${Date.now()}`,
+          firstItem.financeApprovalRequired
+            ? (firstItem.financeControllerIds ?? [])
+            : undefined,
         )
         .catch((error) =>
           this.logger.error(
-            `Unit Manager sales submission email failed: ${this.errorMessage(error)}`,
+            `Sales submission approval email failed: ${this.errorMessage(error)}`,
           ),
         );
     return updatedItems;
