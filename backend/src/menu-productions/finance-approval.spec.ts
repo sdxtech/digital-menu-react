@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { MenuProductionsService } from './menu-productions.service';
 import { productionBatchPagePipeline } from './production-batch-page';
 import type { MenuProduction } from './schemas/menu-production.schema';
+import type { SitesService } from '../sites/sites.service';
+import type { PipelineStage } from 'mongoose';
 
 const ids = ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'];
 const makeMenus = (): (MenuProduction & { _id: string })[] =>
@@ -28,12 +30,21 @@ const makeMenus = (): (MenuProduction & { _id: string })[] =>
     financeSalesStatus: 'pending',
   }));
 
-const makeService = (menus = makeMenus()) => {
+const makeService = (
+  menus = makeMenus(),
+  sites?: Pick<
+    SitesService,
+    'findSummariesByCodes' | 'findFinanceControllerSites'
+  >,
+) => {
   const query = {
     select: jest.fn().mockReturnThis(),
     lean: jest.fn().mockImplementation(() => Promise.resolve(menus)),
   };
   const model = {
+    aggregate: jest
+      .fn<Promise<unknown[]>, [PipelineStage[]]>()
+      .mockResolvedValue([{ items: [], total: [], clients: [] }]),
     find: jest.fn().mockReturnValue(query),
     findOne: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnThis(),
@@ -51,9 +62,27 @@ const makeService = (menus = makeMenus()) => {
     updateMany: jest
       .fn()
       .mockImplementation(
-        (_filter: unknown, update: { $set?: Partial<MenuProduction> }) => {
-          menus.forEach((menu) => Object.assign(menu, update.$set));
-          return Promise.resolve({ matchedCount: menus.length });
+        (
+          filter: Record<string, unknown>,
+          update: { $set?: Partial<MenuProduction> },
+        ) => {
+          const matching =
+            typeof filter.financeApprovalRequired === 'object'
+              ? menus.filter(
+                  (menu) =>
+                    menu.site === filter.site &&
+                    !menu.isDraft &&
+                    menu.storeRequestStatus === 'not-requested' &&
+                    !menu.financeApprovalRequired &&
+                    !menu.storeFulfillmentCompletedAt &&
+                    !menu.storeFulfillmentItems?.length &&
+                    (!filter.productionCode ||
+                      menu.productionCode === filter.productionCode) &&
+                    (!filter._id || menu._id === filter._id),
+                )
+              : menus;
+          matching.forEach((menu) => Object.assign(menu, update.$set));
+          return Promise.resolve({ matchedCount: matching.length });
         },
       ),
   };
@@ -75,12 +104,231 @@ const makeService = (menus = makeMenus()) => {
     notifications as never,
     mail as never,
     {} as never,
+    sites as SitesService | undefined,
   );
   return { service, model, menus, mail, notifications };
 };
 
 const approveLastMenu = (service: MenuProductionsService) =>
   service.setApprovalStatus(ids[1], 'approved', 'S001', 'Manager');
+
+const makeFinanceSites = (enabled = true, assignedSites = ['S001']) => ({
+  findFinanceControllerSites: jest.fn().mockResolvedValue(assignedSites),
+  findSummariesByCodes: jest.fn().mockResolvedValue(
+    new Map([
+      [
+        'S001',
+        {
+          code: 'S001',
+          name: 'Site One',
+          financeApprovalEnabled: enabled,
+          financeControllerIds: ['controller-1'],
+        },
+      ],
+    ]),
+  ),
+});
+
+const makeLegacyMenus = () =>
+  makeMenus().map((menu) => {
+    menu.financeApprovalRequired = false;
+    menu.financeControllerIds = [];
+    delete menu.financeCostStatus;
+    delete menu.financeSalesStatus;
+    return menu;
+  });
+
+describe('Finance enabled after Chef submission', () => {
+  it('enrolls the complete partially approved batch before final recipe approval', async () => {
+    const menus = makeLegacyMenus();
+    menus[1].approvalStatus = 'pending';
+    const { service, mail } = makeService(menus, makeFinanceSites());
+    await approveLastMenu(service);
+    expect(
+      menus.every(
+        (menu) =>
+          menu.financeApprovalRequired &&
+          menu.financeControllerIds?.includes('controller-1') &&
+          menu.financeCostStatus === 'pending' &&
+          menu.financeSalesStatus === 'pending' &&
+          menu.storeRequestStatus === 'not-requested',
+      ),
+    ).toBe(true);
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.stringMatching(/^manager-review-/),
+      ['controller-1'],
+    );
+    await service.reviewFinanceBatch(
+      ids,
+      'approved',
+      'controller-1',
+      'Finance',
+    );
+    expect(menus.every((menu) => menu.storeRequestStatus === 'requested')).toBe(
+      true,
+    );
+  });
+
+  it('waits for separate sales approval when all recipes were already approved', async () => {
+    const menus = makeLegacyMenus();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
+    });
+    const { service, mail } = makeService(menus, makeFinanceSites());
+    await service.approveSalesBatch(ids, 'S001', {
+      id: 'manager-1',
+      name: 'Manager',
+    });
+    expect(
+      menus.every(
+        (menu) =>
+          menu.financeApprovalRequired &&
+          menu.storeRequestStatus === 'not-requested',
+      ),
+    ).toBe(true);
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalled();
+  });
+
+  it('keeps the original flow when site Finance approval is disabled', async () => {
+    const menus = makeLegacyMenus();
+    menus[1].approvalStatus = 'pending';
+    const { service } = makeService(menus, makeFinanceSites(false));
+    await approveLastMenu(service);
+    expect(
+      menus.every(
+        (menu) =>
+          !menu.financeApprovalRequired &&
+          menu.storeRequestStatus === 'requested',
+      ),
+    ).toBe(true);
+  });
+
+  it('enrolls already approved undispatched MPRs when loading the Finance queue', async () => {
+    const menus = makeLegacyMenus();
+    const { service, model } = makeService(menus, makeFinanceSites());
+    await service.buildStoreRequestGroups(
+      { view: 'finance-approval', summaryOnly: true },
+      undefined,
+      undefined,
+      false,
+      'controller-1',
+    );
+    expect(menus.every((menu) => menu.financeApprovalRequired)).toBe(true);
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        site: 'S001',
+        isDraft: { $ne: true },
+        storeRequestStatus: 'not-requested',
+        financeApprovalRequired: { $ne: true },
+        storeFulfillmentCompletedAt: { $exists: false },
+        'storeFulfillmentItems.0': { $exists: false },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it.each(['requested', 'fulfilled', 'cancelled'] as const)(
+    'does not require retroactive Finance approval for %s MPRs',
+    async (status) => {
+      const menus = makeLegacyMenus();
+      menus.forEach((menu) => {
+        menu.storeRequestStatus = status;
+      });
+      const before = structuredClone(menus);
+      const { service } = makeService(menus, makeFinanceSites());
+      await service.buildStoreRequestGroups(
+        { view: 'finance-approval', summaryOnly: true },
+        undefined,
+        undefined,
+        false,
+        'controller-1',
+      );
+      expect(menus).toEqual(before);
+    },
+  );
+
+  it('preserves existing Finance decisions and excludes drafts and other sites', async () => {
+    const menus = [...makeLegacyMenus(), ...makeMenus()];
+    menus[0].isDraft = true;
+    menus[1].site = 'S002';
+    menus[2].financeCostStatus = 'approved';
+    menus[2].financeSalesStatus = 'approved';
+    const before = structuredClone(menus);
+    const { service } = makeService(menus, makeFinanceSites());
+    await service.buildStoreRequestGroups(
+      { view: 'finance-approval', summaryOnly: true },
+      undefined,
+      undefined,
+      false,
+      'controller-1',
+    );
+    expect(menus).toEqual(before);
+  });
+
+  it('blocks the direct Storekeeper dispatch endpoint for newly required Finance', async () => {
+    const menus = makeLegacyMenus();
+    const { service, model } = makeService(menus, makeFinanceSites());
+    model.findOne.mockReturnValue(menus[0]);
+    await expect(
+      service.setStoreRequestStatus(ids[0], 'requested', 'S001'),
+    ).rejects.toThrow('Finance approval is not complete');
+    expect(menus[0].storeRequestStatus).toBe('not-requested');
+  });
+
+  it('lists current assigned sites even without any MPR snapshot', async () => {
+    const { service } = makeService([], makeFinanceSites());
+    await expect(service.financeSites('controller-1')).resolves.toEqual([
+      { code: 'S001', name: 'Site One' },
+    ]);
+  });
+
+  it('allows legacy history by current site assignment without changing its approval data', async () => {
+    const menus = makeLegacyMenus();
+    menus.forEach((menu) => {
+      menu.storeRequestStatus = 'requested';
+    });
+    const { service, model } = makeService(menus, makeFinanceSites());
+    await service.buildStoreRequestGroups(
+      { view: 'records-all', summaryOnly: true },
+      'S001',
+      undefined,
+      false,
+      'controller-1',
+    );
+    expect(model.aggregate.mock.calls[0][0][0]).toEqual({
+      $match: {
+        isDraft: { $ne: true },
+        $and: [{ site: { $in: ['S001'] } }, { site: 'S001' }],
+      },
+    });
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('restricts history to current assigned sites even when an old MPR names the controller', async () => {
+    const { service, model } = makeService(
+      makeMenus(),
+      makeFinanceSites(true, []),
+    );
+    await service.buildStoreRequestGroups(
+      { view: 'records-all', summaryOnly: true },
+      'S001',
+      undefined,
+      false,
+      'controller-1',
+    );
+    expect(model.aggregate.mock.calls[0][0][0]).toEqual({
+      $match: {
+        isDraft: { $ne: true },
+        $and: [{ site: { $in: [] } }, { site: 'S001' }],
+      },
+    });
+    await expect(
+      service.reviewFinanceBatch(ids, 'approved', 'controller-1', 'Finance'),
+    ).rejects.toThrow(ConflictException);
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+});
 
 describe('Unit Manager then Finance batch approval', () => {
   it('requires a separate sales approval even after every recipe is approved', async () => {
