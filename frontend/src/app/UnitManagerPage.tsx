@@ -104,6 +104,13 @@ type StoreRequestMenu = {
   estimatedRevenue?: number
   groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   salesInputBy?: string
+  salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
+  salesApprovedBy?: string
+  financeCostStatus?: 'pending' | 'approved' | 'rejected'
+  financeSalesStatus?: 'pending' | 'approved' | 'rejected'
+  financeReviewReason?: string
+  financeCostReviewedBy?: string
+  financeSalesReviewedBy?: string
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
@@ -1086,7 +1093,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     <th className="px-4 py-3 font-semibold">Production date</th>
                     <th className="px-4 py-3 font-semibold">Production code</th>
                     <th className="px-4 py-3 font-semibold">Client name</th>
-                    <th className="px-4 py-3 font-semibold">Approval status</th>
+                    <th className="px-4 py-3 font-semibold">Batch status</th>
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
                 </thead>
@@ -1117,9 +1124,6 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                         : '-'
                       const salesInputByLabel =
                         group.items[0]?.salesInputBy?.trim() || '-'
-                      const pendingMenuCount = group.items.filter(
-                        (item) => item.approvalStatus === 'pending',
-                      ).length
                       const totalEstimatedCost = group.items.reduce(
                         (total, item) =>
                           total +
@@ -1151,6 +1155,17 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                         0,
                       )
                       const firstMenu = group.items[0]
+                      const financeFeedback = group.items.find((item) => item.financeReviewReason?.trim())
+                      const financeReviewer = financeFeedback?.financeCostReviewedBy?.trim()
+                        || financeFeedback?.financeSalesReviewedBy?.trim()
+                        || 'Unknown user'
+                      const financeReturned = group.items.every((item) =>
+                        item.approvalStatus === 'pending' && item.salesApprovalStatus === 'pending' &&
+                        (item.financeCostStatus === 'rejected' || item.financeSalesStatus === 'rejected'),
+                      )
+                      const batchStatus = financeReturned
+                        ? 'Rejected by Finance Controller'
+                        : firstMenu?.salesInputBy?.trim() ? 'Waiting for Unit Manager approval' : 'Waiting for Sales Input'
                       const sellingPricePerPax = Number.isFinite(
                         Number(firstMenu?.sellingPricePerPax),
                       )
@@ -1193,15 +1208,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                               {group.items[0]?.clientName ?? '-'}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-nowrap items-center gap-1.5">
-                                <span className="whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-0.5 text-[11px] font-semibold text-primary">
-                                  {getApprovalStatusLabel('pending')}
-                                </span>
-                                <span className="whitespace-nowrap text-[11px] text-muted">
-                                  {pendingMenuCount} of {group.items.length} menus
-                                  pending
-                                </span>
-                              </div>
+                              <span className={`inline-block rounded-md px-2 py-1 text-xs font-semibold ${financeReturned ? 'border border-danger bg-danger text-white' : 'bg-primary-soft text-primary'}`}>
+                                {batchStatus}
+                              </span>
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-nowrap items-center gap-1.5">
@@ -1227,7 +1236,6 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     <span>Export</span>
                                   </span>
                                 </button>
-                                <MenuProductionSalesActions group={group} onSaved={fetchPending} />
                               </div>
                             </td>
                           </tr>
@@ -1240,8 +1248,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     createdAt={getGroupSubmittedAt(group)}
                                     submittedBy={submittedByLabel}
                                     admin={salesInputByLabel}
-                                    batchStatus={firstMenu?.salesInputBy?.trim()
-                                      ? 'Waiting for Approval' : 'Waiting for Sales Input'}
+                                    batchStatus={batchStatus}
                                     productionDate={group.date}
                                     client={firstMenu?.clientName}
                                     totalMenu={group.items.length}
@@ -1253,6 +1260,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                     )).join(', ')}
                                   />
 
+                                  {financeFeedback ? (
+                                      <div className="w-full rounded-md border-2 border-l-4 border-red-400 bg-red-50 p-2 text-sm shadow-sm md:w-1/2" role="note">
+                                      <p className="font-semibold">Feedback from {financeReviewer} - Finance Controller</p>
+                                      <p className="mt-2 whitespace-pre-wrap">{financeFeedback.financeReviewReason}</p>
+                                    </div>
+                                  ) : null}
                                   <section>
                                     <h3 className="text-sm font-semibold text-foreground">
                                       Menu list
@@ -1559,6 +1572,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               {foodCostPercentage === undefined
                                                 ? '-'
                                                 : `${foodCostPercentage.toFixed(2)}%`}
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-border">
+                                            <td colSpan={4} />
+                                            <td colSpan={5} className="px-3 py-3">
+                                              <MenuProductionSalesActions group={group} onSaved={fetchPending} />
                                             </td>
                                           </tr>
                                         </tfoot>

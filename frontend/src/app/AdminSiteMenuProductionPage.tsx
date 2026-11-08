@@ -126,7 +126,7 @@ const AdminSiteMenuProductionPage = () => {
     setError("");
     try {
       const data = await apiFetch<{ items?: Group[]; total: number }>(
-        `/menu-productions/store-requests?approvalStatus=pending&salesInput=true&view=sales&page=${page}&limit=${GROUPS_PER_PAGE}&dateSort=production-asc`,
+        `/menu-productions/store-requests?salesInput=true&view=sales&page=${page}&limit=${GROUPS_PER_PAGE}&dateSort=production-asc`,
         { signal }, accessToken,
       );
       if (requestId !== salesRequestId.current || signal?.aborted) return

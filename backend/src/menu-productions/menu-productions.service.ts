@@ -114,6 +114,8 @@ type StoreRequestMenu = {
   estimatedRevenue?: number;
   groupSales?: MenuProductionGroupSale[];
   salesInputBy?: string;
+  salesApprovalStatus?: ApprovalStatus;
+  salesApprovedBy?: string;
   salesRejectionReason?: string;
   salesRejectedBy?: string;
   salesRejectedAt?: string;
@@ -124,6 +126,7 @@ type StoreRequestMenu = {
   financeSalesStatus?: ApprovalStatus;
   financeCostReviewedBy?: string;
   financeSalesReviewedBy?: string;
+  financeReviewReason?: string;
   rejectionReason?: string;
   storeRequestStatus: StoreRequestStatus;
   portionSize: number;
@@ -209,7 +212,7 @@ export class MenuProductionsService implements OnModuleInit {
     @InjectModel(Recipe.name)
     private readonly recipeModel: Model<RecipeDocument>,
     private readonly users: UsersService,
-    private readonly notificationsService: NotificationsService, // 🌟 ADDED SAFELY HERE
+    private readonly notificationsService: NotificationsService, // ðŸŒŸ ADDED SAFELY HERE
     private readonly workflowMail: WorkflowMailService,
     private readonly rawMaterials: RawMaterialsService,
     @Optional() private readonly sites?: SitesService,
@@ -243,6 +246,7 @@ export class MenuProductionsService implements OnModuleInit {
     createdBy?: unknown;
     unitManagerId?: unknown;
     approvalStatus?: unknown;
+    financeReviewReason?: string;
   }) {
     return {
       id: this.textValue(record._id ?? record.id),
@@ -257,6 +261,7 @@ export class MenuProductionsService implements OnModuleInit {
         | 'approved'
         | 'rejected'
         | undefined,
+      financeReviewReason: record.financeReviewReason,
     };
   }
 
@@ -300,6 +305,19 @@ export class MenuProductionsService implements OnModuleInit {
       );
   }
 
+  private isSalesApproved(
+    record: Partial<
+      Pick<MenuProduction, 'salesApprovalStatus' | 'approvalStatus'>
+    >,
+  ) {
+    // Older completed approvals had no separate sales decision.
+    return (
+      record.salesApprovalStatus === 'approved' ||
+      (record.salesApprovalStatus == null &&
+        record.approvalStatus === 'approved')
+    );
+  }
+
   private async finalizeMenuProductionBatchReview(record: {
     _id?: unknown;
     id?: unknown;
@@ -322,6 +340,12 @@ export class MenuProductionsService implements OnModuleInit {
         createdBy: 1,
         unitManagerId: 1,
         approvalStatus: 1,
+        salesApprovalStatus: 1,
+        financeApprovalRequired: 1,
+        financeCostStatus: 1,
+        financeSalesStatus: 1,
+        financeControllerIds: 1,
+        financeReviewReason: 1,
       })
       .lean();
     const pendingCount = reviewedBatch.filter(
@@ -337,12 +361,34 @@ export class MenuProductionsService implements OnModuleInit {
     const allApproved =
       isComplete &&
       rejectedCount === 0 &&
-      approvedCount === reviewedBatch.length;
+      approvedCount === reviewedBatch.length &&
+      reviewedBatch.every((item) => this.isSalesApproved(item));
+    const readyForStore =
+      allApproved &&
+      reviewedBatch.every(
+        (item) =>
+          !item.financeApprovalRequired ||
+          (item.financeCostStatus === 'approved' &&
+            item.financeSalesStatus === 'approved'),
+      );
+    // A returned batch must receive a fresh Finance decision after manager review.
+    if (
+      allApproved &&
+      reviewedBatch.some(
+        (item) =>
+          item.financeCostStatus === 'rejected' ||
+          item.financeSalesStatus === 'rejected',
+      )
+    ) {
+      await this.menuProductionModel.updateMany(batchFilter, {
+        $set: { financeCostStatus: 'pending', financeSalesStatus: 'pending' },
+      });
+    }
 
     if (isComplete) {
       await this.menuProductionModel.updateMany(batchFilter, {
         $set: {
-          storeRequestStatus: allApproved ? 'requested' : 'not-requested',
+          storeRequestStatus: readyForStore ? 'requested' : 'not-requested',
         },
         ...(!allApproved
           ? {
@@ -364,6 +410,12 @@ export class MenuProductionsService implements OnModuleInit {
       records: reviewedBatch.map((item) => this.toMailRecord(item)),
       isComplete,
       allApproved,
+      readyForStore,
+      financeControllerIds: Array.from(
+        new Set(
+          reviewedBatch.flatMap((item) => item.financeControllerIds ?? []),
+        ),
+      ),
       approvedCount,
       rejectedCount,
     };
@@ -675,6 +727,7 @@ export class MenuProductionsService implements OnModuleInit {
       },
       productionDate: input.productionDate,
       approvalStatus: 'pending',
+      salesApprovalStatus: 'pending',
       ...finance,
       isDraft,
       ...(isDraft ? {} : { submittedAt: new Date() }),
@@ -773,6 +826,7 @@ export class MenuProductionsService implements OnModuleInit {
           },
           productionDate: input.productionDate,
           approvalStatus: 'pending',
+          salesApprovalStatus: 'pending',
           ...finance,
           isDraft: saveAsDraft,
           ...(submittedAt ? { submittedAt } : {}),
@@ -788,7 +842,7 @@ export class MenuProductionsService implements OnModuleInit {
       }),
     );
 
-    // 🚀 Write the records to the database first
+    // ðŸš€ Write the records to the database first
     const createdDocs = await this.menuProductionModel.insertMany(payload, {
       ordered: false,
     });
@@ -1118,7 +1172,12 @@ export class MenuProductionsService implements OnModuleInit {
       this.requireSite(drafts[0]?.site ?? site),
     );
     const result = await this.menuProductionModel.updateMany(draftFilter, {
-      $set: { isDraft: false, submittedAt: new Date(), ...finance },
+      $set: {
+        isDraft: false,
+        submittedAt: new Date(),
+        salesApprovalStatus: 'pending',
+        ...finance,
+      },
     });
     if (!result.matchedCount) {
       throw new NotFoundException('Menu production draft not found.');
@@ -1199,32 +1258,7 @@ export class MenuProductionsService implements OnModuleInit {
     unitManagerId?: string,
     rejectionReason?: string,
   ) {
-    if (status === 'approved') {
-      const salesDetails = await this.menuProductionModel
-        .findOne(
-          this.withUnitManagerFilter(
-            this.withSiteFilter({ _id: id }, site),
-            unitManagerId,
-          ),
-        )
-        .select({
-          sellingPricePerPax: 1,
-          sellingQuantity: 1,
-          salesRejectionReason: 1,
-        })
-        .lean();
-      if (
-        !salesDetails ||
-        salesDetails.salesRejectionReason?.trim() ||
-        !Number.isFinite(Number(salesDetails.sellingPricePerPax)) ||
-        !Number.isFinite(Number(salesDetails.sellingQuantity))
-      ) {
-        throw new BadRequestException(
-          'Selling price per pax and selling quantity must be completed by Admin Site before approval.',
-        );
-      }
-    }
-    const financeGate = await this.menuProductionModel
+    const salesDetails = await this.menuProductionModel
       .findOne(
         this.withUnitManagerFilter(
           this.withSiteFilter({ _id: id }, site),
@@ -1232,62 +1266,49 @@ export class MenuProductionsService implements OnModuleInit {
         ),
       )
       .select({
-        financeApprovalRequired: 1,
-        financeCostStatus: 1,
-        financeSalesStatus: 1,
-        site: 1,
-        productionDate: 1,
-        productionCode: 1,
+        sellingPricePerPax: 1,
+        sellingQuantity: 1,
+        salesRejectionReason: 1,
+        salesApprovalStatus: 1,
       })
       .lean();
+    if (!salesDetails) throw new NotFoundException('Menu production not found');
     if (
-      financeGate?.financeApprovalRequired &&
-      (financeGate.financeCostStatus !== 'approved' ||
-        financeGate.financeSalesStatus !== 'approved')
+      status === 'approved' &&
+      (salesDetails.salesRejectionReason?.trim() ||
+        typeof salesDetails.sellingPricePerPax !== 'number' ||
+        typeof salesDetails.sellingQuantity !== 'number' ||
+        !Number.isFinite(salesDetails.sellingPricePerPax) ||
+        !Number.isFinite(salesDetails.sellingQuantity))
     ) {
-      throw new ConflictException(
-        'Finance approval must be completed before Unit Manager review.',
+      throw new BadRequestException(
+        'Selling price per pax and selling quantity must be completed by Admin Site before approval.',
       );
-    }
-    if (financeGate?.financeApprovalRequired) {
-      const unfinished = await this.menuProductionModel.countDocuments({
-        site: financeGate.site,
-        productionDate: financeGate.productionDate,
-        productionCode: financeGate.productionCode,
-        isDraft: { $ne: true },
-        $or: [
-          { financeCostStatus: { $ne: 'approved' } },
-          { financeSalesStatus: { $ne: 'approved' } },
-        ],
-      });
-      if (unfinished) {
-        throw new ConflictException(
-          'All menus in the batch require finance approval before Unit Manager review.',
-        );
-      }
     }
     const actor = reviewedBy?.trim();
     const reason = rejectionReason?.trim();
     if (status === 'rejected' && !reason) {
       throw new BadRequestException('Rejection reason is required.');
     }
-    const scopedFilter = this.withUnitManagerFilter(
-      this.withSiteFilter({ _id: id, isDraft: { $ne: true } }, site),
+    const filter = this.withUnitManagerFilter(
+      this.withSiteFilter(
+        {
+          _id: id,
+          isDraft: { $ne: true },
+          approvalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+        },
+        site,
+      ),
       unitManagerId,
     );
-    const filter = financeGate?.financeApprovalRequired
-      ? {
-          ...scopedFilter,
-          financeCostStatus: 'approved',
-          financeSalesStatus: 'approved',
-        }
-      : scopedFilter;
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
         filter,
         {
           $set: {
             approvalStatus: status,
+            salesApprovalStatus: salesDetails.salesApprovalStatus ?? 'pending',
             storeRequestStatus: 'not-requested',
             ...(actor ? { reviewedBy: actor } : {}),
             ...(status === 'approved' ? { approvedAt: new Date() } : {}),
@@ -1310,14 +1331,21 @@ export class MenuProductionsService implements OnModuleInit {
       .lean();
     if (!updated) throw new NotFoundException('Menu production not found');
 
+    await this.completeManagerReview(updated);
+    return updated;
+  }
+
+  private async completeManagerReview(
+    updated: MenuProduction & { _id?: unknown },
+  ) {
     const batchReview = await this.finalizeMenuProductionBatchReview(updated);
     if (batchReview.isComplete) {
-      updated.storeRequestStatus = batchReview.allApproved
+      updated.storeRequestStatus = batchReview.readyForStore
         ? 'requested'
         : 'not-requested';
     }
 
-    if (batchReview.isComplete && batchReview.allApproved) {
+    if (batchReview.readyForStore) {
       this.notificationsService
         .createHierarchicalNotification(
           updated.createdBy || 'system',
@@ -1349,7 +1377,7 @@ export class MenuProductionsService implements OnModuleInit {
             `Chef notification failed: ${this.errorMessage(err)}`,
           ),
         );
-    } else if (batchReview.isComplete) {
+    } else if (batchReview.isComplete && batchReview.rejectedCount > 0) {
       this.notificationsService
         .createHierarchicalNotification(
           'system',
@@ -1367,7 +1395,10 @@ export class MenuProductionsService implements OnModuleInit {
         );
     }
 
-    if (batchReview.isComplete) {
+    if (
+      batchReview.isComplete &&
+      (batchReview.allApproved || batchReview.rejectedCount > 0)
+    ) {
       this.notificationsService
         .markRoleNotificationsAsRead({
           siteCode: updated.site || 'global',
@@ -1380,16 +1411,21 @@ export class MenuProductionsService implements OnModuleInit {
           ),
         );
 
-      void this.workflowMail
-        .notifyMenuProductionBatchReviewed(batchReview.records)
-        .catch((error) =>
-          this.logger.error(
-            `Menu production decision email failed: ${this.errorMessage(error)}`,
-          ),
+      if (batchReview.readyForStore || batchReview.rejectedCount > 0) {
+        void this.workflowMail
+          .notifyMenuProductionBatchReviewed(batchReview.records)
+          .catch((error) =>
+            this.logger.error(
+              `Menu production decision email failed: ${this.errorMessage(error)}`,
+            ),
+          );
+      } else {
+        await this.notifyFinanceApprovalReady(
+          batchReview.records,
+          batchReview.financeControllerIds,
         );
+      }
     }
-
-    return updated;
   }
 
   async changeRejectedMenu(
@@ -1482,9 +1518,15 @@ export class MenuProductionsService implements OnModuleInit {
         recipe,
       );
     }
+    const salesBasisChanged =
+      normalizedGroup !== existing.group?.trim() ||
+      portion !== existing.portion;
+    const preserveApprovedSales =
+      existing.salesApprovalStatus === 'approved' && !salesBasisChanged;
     const updatedValues: Record<string, unknown> = {
       approvalStatus: 'pending',
       storeRequestStatus: 'not-requested',
+      ...(!preserveApprovedSales ? { salesApprovalStatus: 'pending' } : {}),
     };
     if (existing.financeCostStatus === 'rejected') {
       updatedValues.financeCostStatus = 'pending';
@@ -1529,7 +1571,12 @@ export class MenuProductionsService implements OnModuleInit {
     }
     const updated = await this.menuProductionModel
       .findOneAndUpdate(
-        filter,
+        {
+          ...filter,
+          salesApprovalStatus: existing.salesApprovalStatus ?? {
+            $exists: false,
+          },
+        },
         {
           $set: {
             ...updatedValues,
@@ -1538,11 +1585,17 @@ export class MenuProductionsService implements OnModuleInit {
             rejectionReason: 1,
             reviewedBy: 1,
             approvedAt: 1,
-            sellingPricePerPax: 1,
-            sellingQuantity: 1,
-            estimatedRevenue: 1,
-            groupSales: 1,
-            salesInputBy: 1,
+            ...(!preserveApprovedSales
+              ? {
+                  sellingPricePerPax: 1,
+                  sellingQuantity: 1,
+                  estimatedRevenue: 1,
+                  groupSales: 1,
+                  salesInputBy: 1,
+                  salesApprovedBy: 1,
+                  salesApprovedAt: 1,
+                }
+              : {}),
             fulfilledBy: 1,
             storeFulfillmentItems: 1,
             storeFulfillmentCompletedAt: 1,
@@ -1556,20 +1609,54 @@ export class MenuProductionsService implements OnModuleInit {
       )
       .lean();
     if (!updated) {
-      throw new NotFoundException('Rejected menu production not found.');
+      throw new ConflictException(
+        'The rejected menu or its sales approval changed. Refresh before resubmitting.',
+      );
     }
 
+    const revisedBatchFilter = this.withSiteFilter(
+      {
+        ...(existing.productionCode
+          ? { productionCode: existing.productionCode }
+          : { _id: existing._id }),
+        createdBy: normalizedChefId,
+        isDraft: { $ne: true },
+      },
+      site,
+    );
+    if (
+      existing.financeApprovalRequired ||
+      (existing.salesApprovalStatus === 'approved' && salesBasisChanged)
+    ) {
+      await this.menuProductionModel.updateMany(revisedBatchFilter, {
+        $set: {
+          ...(existing.financeApprovalRequired
+            ? { financeCostStatus: 'pending', financeSalesStatus: 'pending' }
+            : {}),
+          ...(salesBasisChanged
+            ? {
+                salesApprovalStatus: 'pending',
+                storeRequestStatus: 'not-requested',
+              }
+            : {}),
+        },
+        ...(salesBasisChanged
+          ? {
+              $unset: {
+                sellingPricePerPax: 1,
+                sellingQuantity: 1,
+                estimatedRevenue: 1,
+                groupSales: 1,
+                salesInputBy: 1,
+                salesApprovedBy: 1,
+                salesApprovedAt: 1,
+              },
+            }
+          : {}),
+      });
+    }
     const revisedBatch = await this.menuProductionModel
-      .find(
-        this.withSiteFilter(
-          {
-            productionCode: existing.productionCode,
-            createdBy: normalizedChefId,
-            isDraft: { $ne: true },
-          },
-          site,
-        ),
-      )
+      .find(revisedBatchFilter)
       .lean();
     const revisionComplete =
       revisedBatch.length > 0 &&
@@ -1587,128 +1674,245 @@ export class MenuProductionsService implements OnModuleInit {
         )
         .digest('hex')
         .slice(0, 16);
-      this.dispatchMenuProductionSubmissionNotifications(
-        revisedBatch,
-        `replacement-batch-${existing.productionCode}-${revisionFingerprint}`,
-      );
-    }
-
-    return updated;
-  }
-
-  async reviewFinanceCost(
-    id: string,
-    status: 'approved' | 'rejected',
-    controllerId: string,
-    reviewer: string,
-    reason?: string,
-  ) {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Invalid menu production id.');
-    }
-    if (status === 'rejected' && !reason?.trim()) {
-      throw new BadRequestException('Rejection reason is required.');
-    }
-    const filter: Record<string, unknown> = {
-      _id: id,
-      isDraft: { $ne: true },
-      approvalStatus: 'pending',
-      financeApprovalRequired: true,
-      financeControllerIds: controllerId,
-      financeCostStatus: 'pending',
-      sellingPricePerPax: { $type: 'number' },
-      sellingQuantity: { $type: 'number' },
-    };
-    const updated = await this.menuProductionModel
-      .findOneAndUpdate(
-        filter,
-        {
-          $set: {
-            financeCostStatus: status,
-            financeCostReviewedBy: reviewer,
-            financeCostReviewedAt: new Date(),
-            ...(status === 'rejected'
-              ? {
-                  approvalStatus: 'rejected',
-                  rejectionReason: reason?.trim(),
-                  reviewedBy: reviewer,
-                }
-              : {}),
-          },
-        },
-        { new: true },
-      )
-      .lean();
-    if (!updated)
-      throw new ConflictException(
-        'Finance cost review is unavailable or already completed.',
-      );
-    if (status === 'approved') {
-      await this.notifyAfterFinanceReview(updated);
-    } else {
-      await this.notificationsService
-        .createHierarchicalNotification(
-          controllerId,
-          'Menu Production Cost Returned',
-          `${updated.menuName} was returned by ${reviewer}: ${reason?.trim()}`,
-          updated.site || 'global',
-          'chef',
-          'STORE_REQUEST_RECORDS',
-          { productionCode: updated.productionCode, reason: reason?.trim() },
-        )
-        .catch((error) =>
-          this.logger.error(
-            `Finance cost rejection notification failed: ${this.errorMessage(error)}`,
-          ),
+      if (
+        preserveApprovedSales &&
+        revisedBatch.every((item) => this.isSalesApproved(item))
+      ) {
+        await this.notificationsService
+          .createHierarchicalNotification(
+            normalizedChefId,
+            'Revised Menu Production Ready For Approval',
+            `Revised recipes in ${existing.productionCode} are ready for Unit Manager review. Sales approval is preserved.`,
+            existing.site || 'global',
+            'unit.manager',
+            'MENU_PRODUCTION_APPROVAL_REQUESTS',
+            { productionCode: existing.productionCode },
+          )
+          .catch((error) =>
+            this.logger.error(
+              `Revised recipe notification failed: ${this.errorMessage(error)}`,
+            ),
+          );
+        void this.workflowMail
+          .notifyMenuProductionsReadyForApproval(
+            revisedBatch.map((item) => this.toMailRecord(item)),
+            `replacement-batch-${existing.productionCode}-${revisionFingerprint}`,
+          )
+          .catch((error) =>
+            this.logger.error(
+              `Revised recipe approval email failed: ${this.errorMessage(error)}`,
+            ),
+          );
+      } else {
+        this.dispatchMenuProductionSubmissionNotifications(
+          revisedBatch,
+          `replacement-batch-${existing.productionCode}-${revisionFingerprint}`,
         );
+      }
     }
+
     return updated;
   }
 
-  private async notifyAfterFinanceReview(record: MenuProduction) {
-    const batch = await this.menuProductionModel
-      .find({
-        site: record.site,
-        productionDate: record.productionDate,
-        productionCode: record.productionCode,
-        isDraft: { $ne: true },
-      })
-      .lean();
-    if (
-      !batch.length ||
-      batch.some(
-        (item) =>
-          item.financeCostStatus !== 'approved' ||
-          item.financeSalesStatus !== 'approved',
-      )
-    )
-      return;
-    const first = batch[0];
+  reviewFinanceCost(
+    _id: string,
+    _status: 'approved' | 'rejected',
+    _controllerId: string,
+    _reviewer: string,
+    _reason?: string,
+  ) {
+    return Promise.reject(
+      new ConflictException(
+        'Finance reviews now apply to a complete batch. Refresh the approval page.',
+      ),
+    );
+  }
+
+  private async notifyFinanceApprovalReady(
+    records: ReturnType<MenuProductionsService['toMailRecord']>[],
+    controllerIds: string[],
+  ) {
+    const first = records[0];
+    if (!first) return;
     await this.notificationsService
       .createHierarchicalNotification(
         first.createdBy || 'system',
-        'Menu Production Ready For Approval',
-        `Production batch ${first.productionCode} has completed Finance Controller review and is ready for Unit Manager approval.`,
+        'Menu Production Ready For Finance Review',
+        `Production batch ${first.productionCode} has completed Unit Manager review and is ready for Finance Controller approval.`,
         first.site || 'global',
-        'unit.manager',
+        'finance-controller',
         'MENU_PRODUCTION_APPROVAL_REQUESTS',
         { productionCode: first.productionCode },
       )
       .catch((error) =>
         this.logger.error(
-          `Unit Manager finance approval notification failed: ${this.errorMessage(error)}`,
+          `Finance approval notification failed: ${this.errorMessage(error)}`,
         ),
       );
     void this.workflowMail
       .notifyMenuProductionsReadyForApproval(
-        batch.map((item) => this.toMailRecord(item)),
-        `finance-review-${first.productionCode}`,
+        records,
+        `manager-review-${Date.now()}`,
+        controllerIds,
       )
       .catch((error) =>
         this.logger.error(
-          `Unit Manager finance approval email failed: ${this.errorMessage(error)}`,
+          `Finance approval email failed: ${this.errorMessage(error)}`,
         ),
       );
+  }
+
+  async reviewFinanceBatch(
+    ids: string[],
+    status: 'approved' | 'rejected',
+    controllerId: string,
+    reviewer: string,
+    reason?: string,
+  ) {
+    const reviewReason = reason?.trim();
+    if (
+      status === 'rejected' &&
+      (!reviewReason || reviewReason.length < 3 || reviewReason.length > 1000)
+    ) {
+      throw new BadRequestException(
+        'A review reason between 3 and 1000 characters is required.',
+      );
+    }
+    const { menus, filter } = await this.findSalesActionBatch(ids);
+    if (
+      menus.some(
+        (menu) =>
+          !menu.financeApprovalRequired ||
+          !menu.financeControllerIds?.includes(controllerId) ||
+          menu.approvalStatus !== 'approved' ||
+          !this.isSalesApproved(menu) ||
+          menu.storeRequestStatus !== 'not-requested' ||
+          menu.salesRejectionReason ||
+          typeof menu.sellingPricePerPax !== 'number' ||
+          typeof menu.sellingQuantity !== 'number' ||
+          !Number.isFinite(menu.sellingPricePerPax) ||
+          !Number.isFinite(menu.sellingQuantity) ||
+          menu.storeFulfillmentCompletedAt ||
+          menu.storeFulfillmentItems?.length,
+      ) ||
+      menus.every(
+        (menu) =>
+          menu.financeCostStatus === 'approved' &&
+          menu.financeSalesStatus === 'approved',
+      )
+    ) {
+      throw new ConflictException(
+        'The complete batch must finish Unit Manager review before Finance review.',
+      );
+    }
+    const result = await this.menuProductionModel.updateMany(
+      {
+        ...filter,
+        financeControllerIds: controllerId,
+        financeApprovalRequired: true,
+        approvalStatus: 'approved',
+        salesApprovalStatus: { $nin: ['pending', 'rejected'] },
+        storeRequestStatus: 'not-requested',
+      },
+      {
+        $set: {
+          financeCostStatus: status,
+          financeSalesStatus: status,
+          financeCostReviewedBy: reviewer,
+          financeSalesReviewedBy: reviewer,
+          financeCostReviewedAt: new Date(),
+          financeSalesReviewedAt: new Date(),
+          ...(status === 'rejected'
+            ? {
+                approvalStatus: 'pending',
+                salesApprovalStatus: 'pending',
+                financeReviewReason: reviewReason,
+              }
+            : {}),
+        },
+        $unset:
+          status === 'rejected'
+            ? { approvedAt: 1 }
+            : { financeReviewReason: 1 },
+      },
+    );
+    if (result.matchedCount !== menus.length) {
+      throw new ConflictException(
+        'The MPR changed during Finance review. Refresh the list.',
+      );
+    }
+    const first = menus[0];
+    if (status === 'rejected') {
+      await this.notificationsService
+        .createHierarchicalNotification(
+          controllerId,
+          'Finance Review Returned To Unit Manager',
+          `Finance returned ${first.productionCode} for Unit Manager review: ${reviewReason}`,
+          first.site || 'global',
+          'unit.manager',
+          'MENU_PRODUCTION_APPROVAL_REQUESTS',
+          { productionCode: first.productionCode, reason: reviewReason },
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Finance return notification failed: ${this.errorMessage(error)}`,
+          ),
+        );
+      void this.workflowMail
+        .notifyMenuProductionsReadyForApproval(
+          menus.map((menu) =>
+            this.toMailRecord({ ...menu, financeReviewReason: reviewReason }),
+          ),
+          `finance-return-${Date.now()}`,
+        )
+        .catch((error) =>
+          this.logger.error(
+            `Finance return email failed: ${this.errorMessage(error)}`,
+          ),
+        );
+    } else {
+      const reviewed = await this.finalizeMenuProductionBatchReview(first);
+      if (reviewed.readyForStore) {
+        await this.notificationsService
+          .createHierarchicalNotification(
+            controllerId,
+            'New Store Request Dispatched',
+            `Production batch ${first.productionCode} has completed Unit Manager and Finance approval and is ready for fulfillment.`,
+            first.site || 'global',
+            'storekeeper',
+            'STORE_REQUEST_STOREKEEPER',
+            { productionCode: first.productionCode },
+          )
+          .catch((error) =>
+            this.logger.error(
+              `Storekeeper notification failed: ${this.errorMessage(error)}`,
+            ),
+          );
+        await this.notificationsService
+          .createHierarchicalNotification(
+            controllerId,
+            'Menu Production Approved',
+            `Production batch ${first.productionCode} has completed Finance approval and was forwarded to Storekeeper.`,
+            first.site || 'global',
+            'chef',
+            'STORE_REQUEST_RECORDS',
+            { productionCode: first.productionCode },
+          )
+          .catch((error) =>
+            this.logger.error(
+              `Chef approval notification failed: ${this.errorMessage(error)}`,
+            ),
+          );
+        void this.workflowMail
+          .notifyMenuProductionBatchReviewed(reviewed.records)
+          .catch((error) =>
+            this.logger.error(
+              `Finance decision email failed: ${this.errorMessage(error)}`,
+            ),
+          );
+      }
+    }
+    return { updatedCount: result.matchedCount };
   }
 
   async financeSites(controllerId: string) {
@@ -1726,81 +1930,18 @@ export class MenuProductionsService implements OnModuleInit {
       }));
   }
 
-  async reviewFinanceSales(
-    ids: string[],
-    status: 'approved' | 'rejected',
-    controllerId: string,
-    reviewer: string,
-    reason?: string,
+  reviewFinanceSales(
+    _ids: string[],
+    _status: 'approved' | 'rejected',
+    _controllerId: string,
+    _reviewer: string,
+    _reason?: string,
   ) {
-    if (status === 'rejected' && !reason?.trim()) {
-      throw new BadRequestException('Rejection reason is required.');
-    }
-    const { menus, filter } = await this.findSalesActionBatch(ids);
-    if (
-      menus.some(
-        (menu) =>
-          !menu.financeApprovalRequired ||
-          !menu.financeControllerIds?.includes(controllerId) ||
-          menu.financeSalesStatus !== 'pending' ||
-          (menu.approvalStatus !== 'pending' &&
-            menu.financeCostStatus !== 'rejected') ||
-          menu.salesRejectionReason ||
-          !Number.isFinite(Number(menu.sellingPricePerPax)) ||
-          !Number.isFinite(Number(menu.sellingQuantity)),
-      )
-    ) {
-      throw new ConflictException(
-        'Finance sales review is unavailable or already completed.',
-      );
-    }
-    const result = await this.menuProductionModel.updateMany(
-      {
-        ...filter,
-        financeControllerIds: controllerId,
-        financeSalesStatus: 'pending',
-      },
-      {
-        $set: {
-          financeSalesStatus: status,
-          financeSalesReviewedBy: reviewer,
-          financeSalesReviewedAt: new Date(),
-          ...(status === 'rejected'
-            ? {
-                salesRejectionReason: reason?.trim(),
-                salesRejectedBy: reviewer,
-                salesRejectedAt: new Date(),
-              }
-            : {}),
-        },
-      },
+    return Promise.reject(
+      new ConflictException(
+        'Finance reviews now apply to a complete batch. Refresh the approval page.',
+      ),
     );
-    if (result.matchedCount !== menus.length) {
-      throw new ConflictException(
-        'The MPR changed during finance sales review. Refresh the list.',
-      );
-    }
-    if (status === 'rejected') {
-      const first = menus[0];
-      await this.notificationsService
-        .createHierarchicalNotification(
-          controllerId,
-          'Sales Correction Required',
-          `Sales for ${first.productionCode ?? 'MPR'} were returned by ${reviewer}: ${reason?.trim()}`,
-          first.site || 'global',
-          'admin-site',
-          'ADMIN_SITE_MENU_PRODUCTION_SALES',
-          { productionCode: first.productionCode, reason: reason?.trim() },
-        )
-        .catch((error) =>
-          this.logger.error(
-            `Finance sales rejection notification failed: ${this.errorMessage(error)}`,
-          ),
-        );
-    } else {
-      await this.notifyAfterFinanceReview(menus[0]);
-    }
-    return { updatedCount: result.matchedCount };
   }
 
   private async findSalesActionBatch(
@@ -1934,6 +2075,74 @@ export class MenuProductionsService implements OnModuleInit {
     return { updatedCount: result.matchedCount };
   }
 
+  async approveSalesBatch(
+    ids: string[],
+    site: string | undefined,
+    actor: { id: string; name: string },
+    unitManagerId?: string,
+  ) {
+    if (!actor.id?.trim() || !actor.name?.trim()) {
+      throw new BadRequestException('Reviewer identity is required.');
+    }
+    const { menus, filter } = await this.findSalesActionBatch(
+      ids,
+      site,
+      unitManagerId,
+    );
+    if (
+      menus.some(
+        (menu) =>
+          menu.storeRequestStatus !== 'not-requested' ||
+          menu.salesRejectionReason ||
+          menu.storeFulfillmentCompletedAt ||
+          menu.storeFulfillmentItems?.length ||
+          typeof menu.sellingPricePerPax !== 'number' ||
+          typeof menu.sellingQuantity !== 'number' ||
+          !Number.isFinite(menu.sellingPricePerPax) ||
+          !Number.isFinite(menu.sellingQuantity) ||
+          menu.sellingPricePerPax < 0 ||
+          menu.sellingQuantity < 0,
+      ) ||
+      menus.every((menu) => this.isSalesApproved(menu))
+    ) {
+      throw new ConflictException(
+        'Sales are unavailable for approval or already approved.',
+      );
+    }
+    const result = await this.menuProductionModel.updateMany(
+      {
+        ...filter,
+        storeRequestStatus: 'not-requested',
+        salesApprovalStatus: { $ne: 'approved' },
+        salesRejectionReason: { $in: [null, ''] },
+        $or: menus.map((menu) => ({
+          _id: menu._id,
+          sellingPricePerPax: menu.sellingPricePerPax,
+          sellingQuantity: menu.sellingQuantity,
+          ...(menu.groupSales
+            ? { groupSales: menu.groupSales }
+            : { groupSales: { $exists: false } }),
+        })),
+      },
+      {
+        $set: {
+          salesApprovalStatus: 'approved',
+          salesApprovedBy: actor.name,
+          salesApprovedAt: new Date(),
+        },
+      },
+    );
+    if (result.matchedCount !== menus.length) {
+      throw new ConflictException(
+        'The MPR changed during sales approval. Refresh the list.',
+      );
+    }
+    if (menus.every((menu) => menu.approvalStatus === 'approved')) {
+      await this.completeManagerReview(menus[0]);
+    }
+    return { updatedCount: result.matchedCount };
+  }
+
   async rejectSalesBatch(
     input: RejectMenuProductionSalesDto,
     site: string | undefined,
@@ -1964,10 +2173,6 @@ export class MenuProductionsService implements OnModuleInit {
         'Completed or cancelled MPRs cannot have sales rejected. Superadmin can use Edit Sales instead.',
       );
     }
-    if (menus.some((menu) => menu.approvalStatus === 'rejected'))
-      throw new BadRequestException(
-        'Resolve the rejected menus before returning sales to Admin Site.',
-      );
     if (
       menus.some(
         (menu) =>
@@ -1983,18 +2188,20 @@ export class MenuProductionsService implements OnModuleInit {
     const result = await this.menuProductionModel.updateMany(
       {
         ...filter,
-        approvalStatus: { $in: ['pending', 'approved'] },
+        approvalStatus: { $in: ['pending', 'approved', 'rejected'] },
         storeRequestStatus: { $in: ['not-requested', 'requested'] },
         storeFulfillmentCompletedAt: null,
         'storeFulfillmentItems.0': { $exists: false },
       },
       {
         $set: {
-          approvalStatus: 'pending',
+          salesApprovalStatus: 'rejected',
           storeRequestStatus: 'not-requested',
           salesRejectionReason: reason,
           salesRejectedBy: actor.name,
           salesRejectedAt: new Date(),
+          financeCostStatus: 'pending',
+          financeSalesStatus: 'pending',
         },
         $unset: {
           sellingPricePerPax: 1,
@@ -2002,8 +2209,8 @@ export class MenuProductionsService implements OnModuleInit {
           estimatedRevenue: 1,
           groupSales: 1,
           salesInputBy: 1,
-          reviewedBy: 1,
-          approvedAt: 1,
+          salesApprovedBy: 1,
+          salesApprovedAt: 1,
         },
       },
     );
@@ -2055,7 +2262,15 @@ export class MenuProductionsService implements OnModuleInit {
       this.withSiteFilter(
         {
           _id: id,
-          approvalStatus: 'pending',
+          salesApprovalStatus: { $ne: 'approved' },
+          $or: [
+            { salesApprovalStatus: { $in: ['pending', 'rejected'] } },
+            {
+              salesApprovalStatus: { $exists: false },
+              approvalStatus: { $ne: 'approved' },
+            },
+          ],
+          storeRequestStatus: 'not-requested',
           isDraft: { $ne: true },
           groupSales: { $exists: false },
         },
@@ -2063,7 +2278,7 @@ export class MenuProductionsService implements OnModuleInit {
       ),
       {
         $set: {
-          approvalStatus: 'pending',
+          salesApprovalStatus: 'pending',
           storeRequestStatus: 'not-requested',
           sellingPricePerPax,
           sellingQuantity,
@@ -2073,7 +2288,13 @@ export class MenuProductionsService implements OnModuleInit {
           salesInputBy: actor,
           financeSalesStatus: 'pending',
         },
-        $unset: { rejectionReason: 1, reviewedBy: 1, approvedAt: 1 },
+        $unset: {
+          salesRejectionReason: 1,
+          salesRejectedBy: 1,
+          salesRejectedAt: 1,
+          salesApprovedBy: 1,
+          salesApprovedAt: 1,
+        },
       },
       { new: true },
     );
@@ -2145,24 +2366,28 @@ export class MenuProductionsService implements OnModuleInit {
         'Production code and admin identity are required.',
       );
     }
+    const batchFilter = this.withSiteFilter(
+      { productionCode: normalizedCode, isDraft: { $ne: true } },
+      site,
+    );
+    const batch = await this.menuProductionModel.find(batchFilter).lean();
+    if (!batch.length)
+      throw new NotFoundException('Production batch not found for this site.');
+    if (
+      batch.some(
+        (menu) =>
+          !['not-requested', 'requested'].includes(menu.storeRequestStatus) ||
+          menu.storeFulfillmentCompletedAt ||
+          menu.storeFulfillmentItems?.length,
+      ) ||
+      batch.every((menu) => this.isSalesApproved(menu))
+    ) {
+      throw new ConflictException(
+        'Sales are already approved or this MPR has been processed.',
+      );
+    }
     let groupSales: MenuProductionGroupSale[] | undefined;
     if (input.groupPrices) {
-      const batch = await this.menuProductionModel
-        .find(
-          this.withSiteFilter(
-            {
-              productionCode: normalizedCode,
-              approvalStatus: 'pending',
-              isDraft: { $ne: true },
-            },
-            site,
-          ),
-        )
-        .lean();
-      if (!batch.length)
-        throw new NotFoundException(
-          'Pending production batch not found for this site.',
-        );
       groupSales = this.calculateGroupSales(batch, input.groupPrices);
       sellingQuantity = groupSales.reduce(
         (total, entry) => total + entry.quantity,
@@ -2173,93 +2398,61 @@ export class MenuProductionsService implements OnModuleInit {
         0,
       );
       sellingPricePerPax = sellingQuantity ? revenue / sellingQuantity : 0;
+    } else if (batch.some((menu) => menu.groupSales?.length)) {
+      throw new ConflictException(
+        'A selling price is required for every menu group.',
+      );
     }
     if (
-      !normalizedCode ||
       !Number.isFinite(sellingPricePerPax) ||
-      !Number.isFinite(sellingQuantity)
+      !Number.isFinite(sellingQuantity) ||
+      sellingPricePerPax < 0 ||
+      sellingQuantity < 0 ||
+      !Number.isFinite(sellingPricePerPax * sellingQuantity)
     ) {
       throw new BadRequestException(
         'Production batch sales details are invalid.',
       );
     }
-    if (!actor) {
-      throw new BadRequestException(
-        'Admin identity is required for sales input.',
+    const result = await this.menuProductionModel.updateMany(
+      {
+        ...batchFilter,
+        storeRequestStatus: { $in: ['not-requested', 'requested'] },
+        salesApprovalStatus: { $ne: 'approved' },
+      },
+      {
+        $set: {
+          storeRequestStatus: 'not-requested',
+          sellingPricePerPax,
+          sellingQuantity,
+          estimatedRevenue: groupSales
+            ? this.roundQuantity(
+                groupSales.reduce(
+                  (total, entry) => total + entry.estimatedRevenue,
+                  0,
+                ),
+              )
+            : this.roundQuantity(sellingPricePerPax * sellingQuantity),
+          ...(groupSales ? { groupSales } : {}),
+          salesInputBy: actor,
+          salesApprovalStatus: 'pending',
+          financeCostStatus: 'pending',
+          financeSalesStatus: 'pending',
+        },
+        $unset: {
+          salesRejectionReason: 1,
+          salesRejectedBy: 1,
+          salesRejectedAt: 1,
+          salesApprovedBy: 1,
+          salesApprovedAt: 1,
+        },
+      },
+    );
+    if (result.matchedCount !== batch.length) {
+      throw new ConflictException(
+        'The MPR changed while submitting sales. Refresh the list.',
       );
     }
-
-    const filter = this.withSiteFilter(
-      {
-        productionCode: normalizedCode,
-        approvalStatus: 'pending',
-        isDraft: { $ne: true },
-        ...(groupSales ? {} : { groupSales: { $exists: false } }),
-      },
-      site,
-    );
-    const result = await this.menuProductionModel.updateMany(filter, {
-      $set: {
-        approvalStatus: 'pending',
-        storeRequestStatus: 'not-requested',
-        sellingPricePerPax,
-        sellingQuantity,
-        estimatedRevenue: groupSales
-          ? this.roundQuantity(
-              groupSales.reduce(
-                (total, entry) => total + entry.estimatedRevenue,
-                0,
-              ),
-            )
-          : this.roundQuantity(sellingPricePerPax * sellingQuantity),
-        ...(groupSales ? { groupSales } : {}),
-        salesInputBy: actor,
-        financeSalesStatus: 'pending',
-      },
-      $unset: {
-        rejectionReason: 1,
-        reviewedBy: 1,
-        approvedAt: 1,
-        salesRejectionReason: 1,
-        salesRejectedBy: 1,
-        salesRejectedAt: 1,
-      },
-    });
-    if (!result.matchedCount) {
-      throw new NotFoundException(
-        'Pending production batch not found for this site.',
-      );
-    }
-    const batchFilter = this.withSiteFilter(
-      {
-        productionCode: normalizedCode,
-        isDraft: { $ne: true },
-        ...(groupSales ? {} : { groupSales: { $exists: false } }),
-      },
-      site,
-    );
-    await this.menuProductionModel.updateMany(batchFilter, {
-      $set: {
-        sellingPricePerPax,
-        sellingQuantity,
-        estimatedRevenue: groupSales
-          ? this.roundQuantity(
-              groupSales.reduce(
-                (total, entry) => total + entry.estimatedRevenue,
-                0,
-              ),
-            )
-          : this.roundQuantity(sellingPricePerPax * sellingQuantity),
-        ...(groupSales ? { groupSales } : {}),
-        salesInputBy: actor,
-        financeSalesStatus: 'pending',
-      },
-      $unset: {
-        salesRejectionReason: 1,
-        salesRejectedBy: 1,
-        salesRejectedAt: 1,
-      },
-    });
     const updatedItems = await this.menuProductionModel
       .find(batchFilter)
       .lean();
@@ -2269,11 +2462,9 @@ export class MenuProductionsService implements OnModuleInit {
         .createHierarchicalNotification(
           firstItem.createdBy || 'system',
           'Menu Production Ready For Approval',
-          `Production batch ${normalizedCode} has completed sales input and is ready for ${firstItem.financeApprovalRequired ? 'Finance Controller' : 'Unit Manager'} approval.`,
+          `Production batch ${normalizedCode} has completed sales input and is ready for Unit Manager approval.`,
           firstItem.site || 'global',
-          firstItem.financeApprovalRequired
-            ? 'finance-controller'
-            : 'unit.manager',
+          'unit.manager',
           'MENU_PRODUCTION_APPROVAL_REQUESTS',
           { productionCode: normalizedCode },
         )
@@ -2288,9 +2479,6 @@ export class MenuProductionsService implements OnModuleInit {
         .notifyMenuProductionsReadyForApproval(
           updatedItems.map((item) => this.toMailRecord(item)),
           `sales-resubmission-${Date.now()}`,
-          firstItem.financeApprovalRequired
-            ? (firstItem.financeControllerIds ?? [])
-            : undefined,
         )
         .catch((error) =>
           this.logger.error(
@@ -2309,10 +2497,53 @@ export class MenuProductionsService implements OnModuleInit {
     const filter = this.withSiteFilter({ _id: id }, site);
     const item = await this.menuProductionModel.findOne(filter);
     if (!item) throw new NotFoundException('Menu production not found');
+    if (
+      (status === 'requested' || status === 'fulfilled') &&
+      !this.isSalesApproved(item)
+    ) {
+      throw new BadRequestException(
+        'Unit Manager sales approval is not complete.',
+      );
+    }
+    if (
+      (status === 'requested' || status === 'fulfilled') &&
+      item.financeApprovalRequired &&
+      (item.financeCostStatus !== 'approved' ||
+        item.financeSalesStatus !== 'approved')
+    ) {
+      throw new BadRequestException('Finance approval is not complete.');
+    }
     if (status === 'requested') {
       if (item.approvalStatus !== 'approved') {
         throw new BadRequestException('Menu production is not approved yet.');
       }
+    }
+    if (status === 'requested' || status === 'fulfilled') {
+      const unfinished = await this.menuProductionModel.countDocuments({
+        ...(item.productionCode
+          ? {
+              productionCode: item.productionCode,
+              productionDate: item.productionDate,
+              site: item.site,
+            }
+          : { _id: item._id }),
+        isDraft: { $ne: true },
+        $or: [
+          { approvalStatus: { $ne: 'approved' } },
+          { salesApprovalStatus: { $in: ['pending', 'rejected'] } },
+          {
+            financeApprovalRequired: true,
+            $or: [
+              { financeCostStatus: { $ne: 'approved' } },
+              { financeSalesStatus: { $ne: 'approved' } },
+            ],
+          },
+        ],
+      });
+      if (unfinished)
+        throw new BadRequestException(
+          'The complete batch must finish approval before Storekeeper processing.',
+        );
     }
     if (status === 'fulfilled') {
       if (item.approvalStatus !== 'approved') {
@@ -2338,7 +2569,7 @@ export class MenuProductionsService implements OnModuleInit {
           'system',
           'Store Request Materials Ready',
           `The materials for production batch ${item.productionCode || 'N/A'} have been fulfilled and are ready for pickup.`,
-          targetSite, // 🌟 Updated to ensure it hits your specific site filter block
+          targetSite, // ðŸŒŸ Updated to ensure it hits your specific site filter block
           'chef',
           'STORE_REQUEST_RECORDS',
           { productionCode: item.productionCode },
@@ -2400,6 +2631,18 @@ export class MenuProductionsService implements OnModuleInit {
 
     if (!options.allowStatusOverride) {
       menus.forEach((menu) => {
+        if (!this.isSalesApproved(menu)) {
+          throw new BadRequestException(
+            'Unit Manager sales approval is not complete.',
+          );
+        }
+        if (
+          menu.financeApprovalRequired &&
+          (menu.financeCostStatus !== 'approved' ||
+            menu.financeSalesStatus !== 'approved')
+        ) {
+          throw new BadRequestException('Finance approval is not complete.');
+        }
         if (menu.approvalStatus !== 'approved') {
           throw new BadRequestException('Menu production is not approved yet.');
         }
@@ -2592,7 +2835,12 @@ export class MenuProductionsService implements OnModuleInit {
     };
     if (!options.allowStatusOverride) {
       updateFilter.approvalStatus = 'approved';
+      updateFilter.salesApprovalStatus = { $nin: ['pending', 'rejected'] };
       updateFilter.storeRequestStatus = 'requested';
+      updateFilter.$or = [
+        { financeApprovalRequired: { $ne: true } },
+        { financeCostStatus: 'approved', financeSalesStatus: 'approved' },
+      ];
     }
 
     const updateResult = await this.menuProductionModel.updateMany(
@@ -3065,18 +3313,16 @@ export class MenuProductionsService implements OnModuleInit {
         sellingPricePerPax: { $type: 'number', $gte: 0 },
         sellingQuantity: { $type: 'number', $gte: 0 },
       });
-      andFilters.push({
-        $or: [
-          { financeApprovalRequired: { $ne: true } },
-          { financeCostStatus: 'approved', financeSalesStatus: 'approved' },
-        ],
-      });
       filter.$and = andFilters;
     }
     if (query.view === 'finance-approval') {
       andFilters.push({
         financeApprovalRequired: true,
       });
+      filter.$and = andFilters;
+    }
+    if (query.view === 'sales') {
+      andFilters.push({ storeRequestStatus: 'not-requested' });
       filter.$and = andFilters;
     }
     const requestedApprovalStatus = query.approvalStatus;
@@ -3900,6 +4146,10 @@ export class MenuProductionsService implements OnModuleInit {
           ? Number(menu.sellingQuantity)
           : undefined,
         salesInputBy: String(menu.salesInputBy ?? '').trim() || undefined,
+        salesApprovalStatus: this.isSalesApproved(menu)
+          ? 'approved'
+          : (menu.salesApprovalStatus ?? 'pending'),
+        salesApprovedBy: menu.salesApprovedBy,
         salesRejectionReason:
           String(menu.salesRejectionReason ?? '').trim() || undefined,
         salesRejectedBy: String(menu.salesRejectedBy ?? '').trim() || undefined,
@@ -3917,6 +4167,7 @@ export class MenuProductionsService implements OnModuleInit {
         financeSalesStatus: menu.financeSalesStatus,
         financeCostReviewedBy: menu.financeCostReviewedBy,
         financeSalesReviewedBy: menu.financeSalesReviewedBy,
+        financeReviewReason: menu.financeReviewReason,
         rejectionReason: String(menu.rejectionReason ?? '').trim() || undefined,
         storeRequestStatus: menu.storeRequestStatus ?? 'not-requested',
         portionSize,

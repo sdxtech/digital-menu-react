@@ -1,111 +1,625 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { MenuProductionsService } from './menu-productions.service';
 import { productionBatchPagePipeline } from './production-batch-page';
+import type { MenuProduction } from './schemas/menu-production.schema';
 
-const createService = (model: Record<string, jest.Mock>) =>
-  new MenuProductionsService(
+const ids = ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'];
+const makeMenus = (): (MenuProduction & { _id: string })[] =>
+  ids.map((_id) => ({
+    _id,
+    productionCode: 'MPR0001',
+    productionDate: '2026-11-08',
+    site: 'S001',
+    menuName: 'Rice',
+    category: 'Main',
+    portion: 100,
+    cost: 1000,
+    isDraft: false,
+    createdBy: 'chef-1',
+    unitManagerId: 'manager-1',
+    approvalStatus: 'approved',
+    salesApprovalStatus: 'approved',
+    storeRequestStatus: 'not-requested',
+    sellingPricePerPax: 10000,
+    sellingQuantity: 100,
+    financeApprovalRequired: true,
+    financeControllerIds: ['controller-1'],
+    financeCostStatus: 'pending',
+    financeSalesStatus: 'pending',
+  }));
+
+const makeService = (menus = makeMenus()) => {
+  const query = {
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockImplementation(() => Promise.resolve(menus)),
+  };
+  const model = {
+    find: jest.fn().mockReturnValue(query),
+    findOne: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockImplementation(() => Promise.resolve(menus.at(-1))),
+    }),
+    countDocuments: jest.fn().mockResolvedValue(menus.length),
+    findOneAndUpdate: jest
+      .fn()
+      .mockImplementation(
+        (_filter: unknown, update: { $set: Partial<MenuProduction> }) => ({
+          lean: () =>
+            Promise.resolve(Object.assign(menus.at(-1)!, update.$set)),
+        }),
+      ),
+    updateMany: jest
+      .fn()
+      .mockImplementation(
+        (_filter: unknown, update: { $set?: Partial<MenuProduction> }) => {
+          menus.forEach((menu) => Object.assign(menu, update.$set));
+          return Promise.resolve({ matchedCount: menus.length });
+        },
+      ),
+  };
+  const notifications = {
+    createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
+    markRoleNotificationsAsRead: jest.fn().mockResolvedValue(undefined),
+  };
+  const mail = {
+    notifyMenuProductionsReadyForApproval: jest
+      .fn()
+      .mockResolvedValue(undefined),
+    notifyMenuProductionBatchReviewed: jest.fn().mockResolvedValue(undefined),
+  };
+  const service = new MenuProductionsService(
     model as never,
     {} as never,
     {} as never,
     {} as never,
-    {
-      createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
-    } as never,
-    {} as never,
+    notifications as never,
+    mail as never,
     {} as never,
   );
+  return { service, model, menus, mail, notifications };
+};
 
-describe('Finance Controller approval', () => {
-  it('lists assigned batches only after Admin Site enters sales', () => {
-    const pipeline = productionBatchPagePipeline(
-      {},
-      { view: 'finance-approval', page: 1, limit: 10 },
+const approveLastMenu = (service: MenuProductionsService) =>
+  service.setApprovalStatus(ids[1], 'approved', 'S001', 'Manager');
+
+describe('Unit Manager then Finance batch approval', () => {
+  it('requires a separate sales approval even after every recipe is approved', async () => {
+    const { service, menus, mail, notifications } = makeService();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
+    });
+    menus[1].approvalStatus = 'pending';
+    await approveLastMenu(service);
+    expect(mail.notifyMenuProductionsReadyForApproval).not.toHaveBeenCalled();
+    expect(mail.notifyMenuProductionBatchReviewed).not.toHaveBeenCalled();
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(
+      menus.every((menu) => menu.storeRequestStatus === 'not-requested'),
+    ).toBe(true);
+    await service.approveSalesBatch(ids, 'S001', {
+      id: 'manager-1',
+      name: 'Manager',
+    });
+    expect(menus.every((menu) => menu.salesApprovalStatus === 'approved')).toBe(
+      true,
     );
-    expect(pipeline).toContainEqual({
-      $match: { $and: [{ financePending: 1, salesReady: 1 }] },
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.stringMatching(/^manager-review-/),
+      ['controller-1'],
+    );
+  });
+
+  it('allows sales approval while recipes are pending or rejected without changing their decisions', async () => {
+    const { service, menus, notifications } = makeService();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
+    });
+    menus[0].approvalStatus = 'rejected';
+    menus[1].approvalStatus = 'pending';
+    await service.approveSalesBatch(ids, 'S001', {
+      id: 'manager-1',
+      name: 'Manager',
+    });
+    expect(menus.map((menu) => menu.approvalStatus)).toEqual([
+      'rejected',
+      'pending',
+    ]);
+    expect(
+      menus.every(
+        (menu) =>
+          menu.salesApprovalStatus === 'approved' &&
+          menu.salesApprovedBy === 'Manager',
+      ),
+    ).toBe(true);
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a site without Finance only after the separate sales decision is approved', async () => {
+    const { service, menus } = makeService();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
+      menu.financeApprovalRequired = false;
+    });
+    await service.approveSalesBatch(ids, 'S001', {
+      id: 'manager-1',
+      name: 'Manager',
+    });
+    expect(menus.every((menu) => menu.storeRequestStatus === 'requested')).toBe(
+      true,
+    );
+  });
+
+  it('keeps batches with only sales pending in the Unit Manager queue', () => {
+    expect(
+      productionBatchPagePipeline(
+        {},
+        { view: 'approval', approvalStatus: 'pending' },
+      ),
+    ).toContainEqual({
+      $match: {
+        $and: [
+          {
+            $or: [{ approvalStatuses: 'pending' }, { salesApprovalPending: 1 }],
+          },
+          { salesReady: 1 },
+        ],
+      },
     });
   });
 
-  it('holds the complete batch out of the Unit Manager queue while finance review is pending', () => {
-    const pipeline = productionBatchPagePipeline(
-      {},
-      { view: 'approval', page: 1, limit: 10 },
-    );
-    expect(pipeline).toContainEqual({
-      $match: { $and: [{ financeBlocked: 0, salesReady: 1 }] },
+  it('blocks direct Finance and Storekeeper actions while Unit Manager sales approval is pending', async () => {
+    const { service, menus, model } = makeService();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
     });
-  });
-
-  it('keeps Unit Manager review blocked until both finance decisions are approved', async () => {
-    const model = {
-      findOne: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          lean: jest.fn().mockResolvedValue({
-            financeApprovalRequired: true,
-            financeCostStatus: 'approved',
-            financeSalesStatus: 'pending',
-          }),
-        }),
-      }),
-      findOneAndUpdate: jest.fn(),
-    };
-    const service = createService(model);
-
     await expect(
-      service.setApprovalStatus(
-        'menu-1',
+      service.reviewFinanceBatch(ids, 'approved', 'controller-1', 'Finance'),
+    ).rejects.toThrow(ConflictException);
+    model.findOne.mockReturnValueOnce(menus[0]);
+    await expect(
+      service.setStoreRequestStatus(ids[0], 'requested', 'S001'),
+    ).rejects.toThrow('sales approval is not complete');
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate sales approval and incomplete batch selections', async () => {
+    const { service, model } = makeService();
+    await expect(
+      service.approveSalesBatch(ids, 'S001', {
+        id: 'manager-1',
+        name: 'Manager',
+      }),
+    ).rejects.toThrow('already approved');
+    await expect(
+      service.approveSalesBatch([ids[0]], 'S001', {
+        id: 'manager-1',
+        name: 'Manager',
+      }),
+    ).rejects.toThrow();
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not forward the MPR if sales change during approval', async () => {
+    const { service, model, menus, notifications } = makeService();
+    menus.forEach((menu) => {
+      menu.salesApprovalStatus = 'pending';
+    });
+    model.updateMany.mockResolvedValueOnce({ matchedCount: 0 });
+    await expect(
+      service.approveSalesBatch(ids, 'S001', {
+        id: 'manager-1',
+        name: 'Manager',
+      }),
+    ).rejects.toThrow('MPR changed');
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+    expect(model.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $or: ids.map((_id) => ({
+          _id,
+          sellingPricePerPax: 10000,
+          sellingQuantity: 100,
+          groupSales: { $exists: false },
+        })),
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('retains already completed approvals on legacy records without a separate sales status', async () => {
+    const { service, menus } = makeService();
+    menus.forEach((menu) => {
+      delete menu.salesApprovalStatus;
+    });
+    await service.reviewFinanceBatch(
+      ids,
+      'approved',
+      'controller-1',
+      'Finance',
+    );
+    expect(menus.every((menu) => menu.storeRequestStatus === 'requested')).toBe(
+      true,
+    );
+  });
+  it('requires manager approval for every menu before listing a Finance batch', () => {
+    expect(
+      productionBatchPagePipeline({}, { view: 'finance-approval' }),
+    ).toContainEqual({
+      $match: {
+        $and: [
+          {
+            financePending: 1,
+            salesReady: 1,
+            managerApproved: 1,
+            storeOpen: 1,
+          },
+        ],
+      },
+    });
+    expect(
+      productionBatchPagePipeline({}, { view: 'approval' }),
+    ).toContainEqual({
+      $match: { $and: [{ salesReady: 1 }] },
+    });
+  });
+
+  it('allows manager review while Finance is pending and forwards only to Finance', async () => {
+    const { service, menus, mail, notifications } = makeService();
+    menus[1].approvalStatus = 'pending';
+    await approveLastMenu(service);
+    expect(
+      menus.every((menu) => menu.storeRequestStatus === 'not-requested'),
+    ).toBe(true);
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.stringMatching(/^manager-review-/),
+      ['controller-1'],
+    );
+    expect(mail.notifyMenuProductionBatchReviewed).not.toHaveBeenCalled();
+    expect(
+      notifications.createHierarchicalNotification.mock.calls.some(
+        (call: unknown[]) => call[4] === 'storekeeper',
+      ),
+    ).toBe(false);
+  });
+
+  it('holds a partially reviewed batch for the remaining manager decisions', async () => {
+    const { service, menus, mail } = makeService();
+    menus.forEach((menu) => {
+      menu.approvalStatus = 'pending';
+    });
+    await approveLastMenu(service);
+    expect(mail.notifyMenuProductionsReadyForApproval).not.toHaveBeenCalled();
+    expect(
+      menus.every((menu) => menu.storeRequestStatus === 'not-requested'),
+    ).toBe(true);
+  });
+
+  it.each(['no-finance', 'legacy-approved'])(
+    'forwards %s batches to Storekeeper after manager approval',
+    async (kind) => {
+      const { service, menus, mail } = makeService();
+      menus.forEach((menu) => {
+        menu.financeApprovalRequired = kind !== 'no-finance';
+        if (kind === 'legacy-approved') {
+          menu.financeCostStatus = 'approved';
+          menu.financeSalesStatus = 'approved';
+        }
+      });
+      menus[1].approvalStatus = 'pending';
+      await approveLastMenu(service);
+      expect(
+        menus.every((menu) => menu.storeRequestStatus === 'requested'),
+      ).toBe(true);
+      expect(mail.notifyMenuProductionBatchReviewed).toHaveBeenCalled();
+      expect(mail.notifyMenuProductionsReadyForApproval).not.toHaveBeenCalled();
+    },
+  );
+
+  it('approves the complete batch and releases it to Storekeeper', async () => {
+    const { service, menus, mail } = makeService();
+    await expect(
+      service.reviewFinanceBatch(ids, 'approved', 'controller-1', 'Finance'),
+    ).resolves.toEqual({ updatedCount: 2 });
+    expect(
+      menus.every(
+        (menu) =>
+          menu.financeCostStatus === 'approved' &&
+          menu.financeSalesStatus === 'approved' &&
+          menu.storeRequestStatus === 'requested',
+      ),
+    ).toBe(true);
+    expect(mail.notifyMenuProductionBatchReviewed).toHaveBeenCalled();
+  });
+
+  it('returns Finance feedback to the manager without rejecting recipes or sales', async () => {
+    const { service, menus, notifications, mail } = makeService();
+    await service.reviewFinanceBatch(
+      ids,
+      'rejected',
+      'controller-1',
+      'Finance',
+      'Please check the rice cost and sales pax.',
+    );
+    expect(
+      menus.every(
+        (menu) =>
+          menu.approvalStatus === 'pending' &&
+          menu.storeRequestStatus === 'not-requested' &&
+          !menu.rejectionReason &&
+          !menu.salesRejectionReason &&
+          menu.sellingQuantity === 100,
+      ),
+    ).toBe(true);
+    expect(menus[0].financeReviewReason).toContain('rice cost');
+    expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
+      'controller-1',
+      expect.any(String),
+      expect.stringContaining('rice cost'),
+      'S001',
+      'unit.manager',
+      'MENU_PRODUCTION_APPROVAL_REQUESTS',
+      expect.any(Object),
+    );
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          financeReviewReason: expect.stringContaining('rice cost'),
+        }),
+      ]),
+      expect.stringMatching(/^finance-return-/),
+    );
+    expect(mail.notifyMenuProductionBatchReviewed).not.toHaveBeenCalled();
+  });
+
+  it('emails the new feedback even when the loaded records are unchanged snapshots', async () => {
+    const { service, model, mail } = makeService();
+    model.updateMany.mockResolvedValueOnce({ matchedCount: 2 });
+    await service.reviewFinanceBatch(
+      ids,
+      'rejected',
+      'controller-1',
+      'Finance',
+      'Check the sales pax.',
+    );
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          financeReviewReason: 'Check the sales pax.',
+        }),
+      ]),
+      expect.stringMatching(/^finance-return-/),
+    );
+  });
+
+  it('lets the manager return a recipe to Chef after Finance feedback', async () => {
+    const { service, menus, notifications, mail } = makeService();
+    menus.forEach((menu) => {
+      menu.financeCostStatus = 'rejected';
+      menu.financeSalesStatus = 'rejected';
+    });
+    menus[1].approvalStatus = 'pending';
+    await service.setApprovalStatus(
+      ids[1],
+      'rejected',
+      'S001',
+      'Manager',
+      undefined,
+      'Revise the recipe portion.',
+    );
+    expect(menus[1].rejectionReason).toBe('Revise the recipe portion.');
+    expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
+      'system',
+      'Menu Production Returned',
+      expect.any(String),
+      'S001',
+      'chef',
+      'STORE_REQUEST_RECORDS',
+      expect.any(Object),
+    );
+    expect(mail.notifyMenuProductionsReadyForApproval).not.toHaveBeenCalled();
+  });
+
+  it('lets the manager return sales to Admin and invalidates Finance approval for the correction', async () => {
+    const { service, menus, notifications } = makeService();
+    await service.reviewFinanceBatch(
+      ids,
+      'rejected',
+      'controller-1',
+      'Finance',
+      'Check the sales pax.',
+    );
+    await service.rejectSalesBatch(
+      { menuProductionIds: ids, reason: 'Revise sales pax.' },
+      'S001',
+      { id: 'manager-1', name: 'Manager' },
+    );
+    expect(
+      menus.every(
+        (menu) =>
+          menu.financeCostStatus === 'pending' &&
+          menu.financeSalesStatus === 'pending' &&
+          menu.salesRejectionReason === 'Revise sales pax.',
+      ),
+    ).toBe(true);
+    expect(
+      notifications.createHierarchicalNotification,
+    ).toHaveBeenLastCalledWith(
+      'manager-1',
+      'Sales Correction Required',
+      expect.any(String),
+      'S001',
+      'admin-site',
+      'ADMIN_SITE_MENU_PRODUCTION_SALES',
+      expect.any(Object),
+    );
+  });
+
+  it('requires another Finance review even when the manager approves without revisions', async () => {
+    const { service, menus, mail } = makeService();
+    await service.reviewFinanceBatch(
+      ids,
+      'rejected',
+      'controller-1',
+      'Finance',
+      'Check food cost.',
+    );
+    menus[0].approvalStatus = 'approved';
+    await approveLastMenu(service);
+    await service.approveSalesBatch(ids, 'S001', {
+      id: 'manager-1',
+      name: 'Manager',
+    });
+    expect(
+      menus.every(
+        (menu) =>
+          menu.financeCostStatus === 'pending' &&
+          menu.financeSalesStatus === 'pending' &&
+          menu.storeRequestStatus === 'not-requested',
+      ),
+    ).toBe(true);
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenLastCalledWith(
+      expect.any(Array),
+      expect.stringMatching(/^manager-review-/),
+      ['controller-1'],
+    );
+    await service.reviewFinanceBatch(
+      ids,
+      'approved',
+      'controller-1',
+      'Finance',
+    );
+    expect(menus.every((menu) => menu.storeRequestStatus === 'requested')).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    'unassigned',
+    'manager-pending',
+    'completed',
+    'sales-missing',
+    'already-approved',
+  ])('blocks invalid Finance review: %s', async (kind) => {
+    const { service, menus, model } = makeService();
+    if (kind === 'unassigned')
+      menus[1].financeControllerIds = ['other-controller'];
+    if (kind === 'manager-pending') menus[1].approvalStatus = 'pending';
+    if (kind === 'completed') menus[1].storeRequestStatus = 'fulfilled';
+    if (kind === 'sales-missing') menus[1].sellingQuantity = undefined;
+    if (kind === 'already-approved')
+      menus.forEach((menu) => {
+        menu.financeCostStatus = 'approved';
+        menu.financeSalesStatus = 'approved';
+      });
+    await expect(
+      service.reviewFinanceBatch(ids, 'approved', 'controller-1', 'Finance'),
+    ).rejects.toThrow(ConflictException);
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('allows a completed manager review with stale Finance rejection statuses to return to Finance', async () => {
+    const { service, menus } = makeService();
+    menus[0].financeCostStatus = 'rejected';
+    menus[0].financeSalesStatus = 'rejected';
+    menus[0].financeReviewReason = 'Check food cost.';
+    await service.reviewFinanceBatch(
+      ids,
+      'approved',
+      'controller-1',
+      'Finance',
+    );
+    expect(menus.every((menu) => menu.storeRequestStatus === 'requested')).toBe(
+      true,
+    );
+  });
+
+  it('rejects incomplete selections and missing reasons before changing a batch', async () => {
+    const { service, model } = makeService();
+    await expect(
+      service.reviewFinanceBatch(
+        [ids[0]],
+        'approved',
+        'controller-1',
+        'Finance',
+      ),
+    ).rejects.toThrow();
+    await expect(
+      service.reviewFinanceBatch(
+        ids,
         'rejected',
-        'SITE-A',
-        'Manager',
-        '507f1f77bcf86cd799439011',
-        'Review required',
+        'controller-1',
+        'Finance',
+        '  ',
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch a batch if it changes during review', async () => {
+    const { service, model, mail } = makeService();
+    model.updateMany.mockResolvedValueOnce({ matchedCount: 1 });
+    await expect(
+      service.reviewFinanceBatch(ids, 'approved', 'controller-1', 'Finance'),
+    ).rejects.toThrow(ConflictException);
+    expect(mail.notifyMenuProductionBatchReviewed).not.toHaveBeenCalled();
+  });
+
+  it('blocks the old per-menu and sales Finance endpoints', async () => {
+    const { service, model } = makeService();
+    await expect(
+      service.reviewFinanceCost(
+        ids[0],
+        'rejected',
+        'controller-1',
+        'Finance',
+        'Cost',
       ),
     ).rejects.toThrow(ConflictException);
+    await expect(
+      service.reviewFinanceSales(ids, 'approved', 'controller-1', 'Finance'),
+    ).rejects.toThrow(ConflictException);
+    expect(model.updateMany).not.toHaveBeenCalled();
     expect(model.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('allows one assigned controller to return a menu cost to the Chef', async () => {
-    const updated = {
-      id: 'menu-1',
-      financeCostStatus: 'rejected',
-      approvalStatus: 'rejected',
-    };
-    const model = {
-      findOneAndUpdate: jest
-        .fn()
-        .mockReturnValue({ lean: jest.fn().mockResolvedValue(updated) }),
-    };
-    const service = createService(model);
-
+  it('blocks direct store requests while Finance is pending', async () => {
+    const { service, model, menus } = makeService();
+    model.findOne.mockReturnValueOnce(menus[0]);
     await expect(
-      service.reviewFinanceCost(
-        '507f1f77bcf86cd799439012',
-        'rejected',
-        'controller-2',
-        'Controller B',
-        'Cost too high',
-      ),
-    ).resolves.toEqual(updated);
-    const [[filter, update, options]] = model.findOneAndUpdate.mock
-      .calls as unknown as [
-      Record<string, unknown>,
-      { $set: Record<string, unknown> },
-      { new: boolean },
-    ][];
-    expect(filter).toMatchObject({
-      _id: '507f1f77bcf86cd799439012',
-      financeControllerIds: 'controller-2',
-      financeCostStatus: 'pending',
+      service.setStoreRequestStatus(ids[0], 'requested', 'S001'),
+    ).rejects.toThrow('Finance approval is not complete');
+  });
+
+  it('blocks direct store requests until the remaining manager decisions are finished', async () => {
+    const { service, model, menus } = makeService();
+    menus.forEach((menu) => {
+      menu.financeCostStatus = 'approved';
+      menu.financeSalesStatus = 'approved';
     });
-    expect(filter).toMatchObject({
-      sellingPricePerPax: { $type: 'number' },
-      sellingQuantity: { $type: 'number' },
-    });
-    expect(update.$set).toMatchObject({
-      financeCostStatus: 'rejected',
-      approvalStatus: 'rejected',
-      rejectionReason: 'Cost too high',
-    });
-    expect(options).toEqual({ new: true });
+    model.findOne.mockReturnValueOnce(menus[0]);
+    model.countDocuments.mockResolvedValueOnce(1);
+    await expect(
+      service.setStoreRequestStatus(ids[0], 'requested', 'S001'),
+    ).rejects.toThrow('The complete batch must finish approval');
+  });
+
+  it('keeps batches awaiting Finance in production records', () => {
+    expect(productionBatchPagePipeline({}, { view: 'records' })).toContainEqual(
+      {
+        $match: {
+          $and: [
+            {
+              $or: [
+                { storeStatuses: { $in: ['fulfilled', 'cancelled'] } },
+                { approvalStatuses: 'rejected' },
+                { approvedRequested: 1 },
+                { managerApproved: 1, financeAwaiting: 1 },
+              ],
+            },
+          ],
+        },
+      },
+    );
   });
 });

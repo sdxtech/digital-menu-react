@@ -302,6 +302,37 @@ describe('WorkflowMailService', () => {
     );
   });
 
+  it('includes Finance feedback in the email returned to the assigned Unit Manager', async () => {
+    const { mail, service, users } = makeService();
+    users.findActiveEmailRecipients.mockResolvedValueOnce([
+      { id: 'manager-1', name: 'Manager', email: 'manager@example.com' },
+    ]);
+    await service.notifyMenuProductionsReadyForApproval(
+      [
+        {
+          id: 'menu-1',
+          productionCode: 'MPR0001',
+          menuName: 'Soup',
+          site: 'S001',
+          unitManagerId: 'manager-1',
+          financeReviewReason: 'Check rice cost < 40%.',
+        },
+      ],
+      'finance-return-1',
+    );
+    expect(users.findActiveEmailRecipients).toHaveBeenCalledWith({
+      roles: ['unit-manager'],
+      site: 'S001',
+      userIds: ['manager-1'],
+    });
+    expect(mail.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'manager@example.com',
+        html: expect.stringContaining('Check rice cost &lt; 40%.'),
+      }),
+    );
+  });
+
   it('waits until every menu in a production batch has been reviewed', async () => {
     const { mail, service, users } = makeService();
 

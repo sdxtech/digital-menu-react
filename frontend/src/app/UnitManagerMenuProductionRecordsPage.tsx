@@ -95,6 +95,11 @@ type StoreRequestMenu = {
   estimatedRevenue?: number
   groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   approvalStatus: 'pending' | 'approved' | 'rejected'
+  financeApprovalRequired?: boolean
+  salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
+  salesApprovedBy?: string
+  financeCostStatus?: 'pending' | 'approved' | 'rejected'
+  financeSalesStatus?: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   ingredients?: StoreRequestIngredient[]
   fulfilledBy?: string
@@ -122,6 +127,7 @@ const getProductionDateTimestamp = (value: string) => {
 }
 
 type RecordStatus =
+  | 'finance-review'
   | 'sales-input'
   | 'pending'
   | 'requested'
@@ -158,6 +164,15 @@ const getGroupRecordStatus = (
   if (hasRequested) {
     return 'requested'
   }
+  if (group.items.every((item) => item.approvalStatus === 'approved') &&
+    group.items.some((item) => item.salesApprovalStatus && item.salesApprovalStatus !== 'approved')) {
+    return includePending ? 'pending' : null
+  }
+  if (group.items.every((item) => item.approvalStatus === 'approved') &&
+    group.items.some((item) => item.financeApprovalRequired &&
+      (item.financeCostStatus !== 'approved' || item.financeSalesStatus !== 'approved'))) {
+    return 'finance-review'
+  }
   if (
     includePending &&
     group.items.some((item) => item.approvalStatus === 'pending')
@@ -171,6 +186,7 @@ const getGroupRecordStatus = (
 }
 
 const getRecordStatusLabel = (status: RecordStatus) => {
+  if (status === 'finance-review') return 'Waiting for Finance Review'
   if (status === 'sales-input') return 'Waiting for Sales Input'
   if (status === 'pending') return 'Waiting for Approval'
   if (status === 'requested') return 'Waiting for Storekeeper'
@@ -1421,7 +1437,7 @@ const UnitManagerMenuProductionRecordsPage = ({
 
                                 <div>
                                   <p className="text-xs text-black">
-                                    {recordStatus === 'pending' ||
+                                    {recordStatus === 'pending' || recordStatus === 'finance-review' ||
                                     recordStatus === 'sales-input'
                                       ? 'Planned ingredient summary'
                                       : recordStatus === 'rejected'
@@ -1573,6 +1589,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                   </div>
                                   {recordStatus !== 'requested' &&
                                   recordStatus !== 'pending' &&
+                                  recordStatus !== 'finance-review' &&
                                   recordStatus !== 'sales-input' ? (
                                     <p className="mt-2 text-xs text-muted">
                                       {`${recordStatus === 'rejected' ? 'Reviewed at' : 'Handled at'}: ${

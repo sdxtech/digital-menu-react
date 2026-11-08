@@ -19,6 +19,8 @@ describe('MenuProductionsController sales input actor', () => {
       syncDraftCosts: jest.fn(),
       editSalesBatch: jest.fn(),
       rejectSalesBatch: jest.fn(),
+      approveSalesBatch: jest.fn(),
+      reviewFinanceBatch: jest.fn(),
     };
     return {
       controller: new MenuProductionsController(menuProductions as never),
@@ -35,6 +37,67 @@ describe('MenuProductionsController sales input actor', () => {
       site: 'SITE-001',
     },
   };
+
+  it('restricts sales approval to Unit Manager and Superadmin and forwards assignment scope', async () => {
+    const { controller, menuProductions } = makeController();
+    const req = {
+      user: { ...request.user, sub: 'manager-1', roles: [AppRole.UnitManager] },
+    };
+    const handler = Object.getOwnPropertyDescriptor(
+      MenuProductionsController.prototype,
+      'approveSales',
+    )?.value as object;
+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toEqual([
+      AppRole.Superadmin,
+      AppRole.UnitManager,
+    ]);
+    const dto = { menuProductionIds: ['507f1f77bcf86cd799439011'] };
+    await controller.approveSales(req as never, dto);
+    expect(menuProductions.approveSalesBatch).toHaveBeenCalledWith(
+      dto.menuProductionIds,
+      'SITE-001',
+      { id: 'manager-1', name: 'Admin Site One' },
+      'manager-1',
+    );
+  });
+
+  it('restricts batch finance decisions to Finance Controllers and passes the complete selection', async () => {
+    const { controller, menuProductions } = makeController();
+    const req = {
+      user: {
+        ...request.user,
+        sub: 'finance-1',
+        roles: [AppRole.FinanceController],
+      },
+    };
+    const dto = {
+      menuProductionIds: ['507f1f77bcf86cd799439011'],
+      reason: 'Check the food cost.',
+    };
+    for (const method of [
+      'approveFinanceBatch',
+      'rejectFinanceBatch',
+    ] as const) {
+      expect(Reflect.getMetadata(ROLES_KEY, controller[method])).toEqual([
+        AppRole.FinanceController,
+      ]);
+    }
+    await controller.approveFinanceBatch(req as never, dto);
+    expect(menuProductions.reviewFinanceBatch).toHaveBeenLastCalledWith(
+      dto.menuProductionIds,
+      'approved',
+      'finance-1',
+      request.user.name,
+    );
+    await controller.rejectFinanceBatch(req as never, dto);
+    expect(menuProductions.reviewFinanceBatch).toHaveBeenLastCalledWith(
+      dto.menuProductionIds,
+      'rejected',
+      'finance-1',
+      request.user.name,
+      dto.reason,
+    );
+  });
 
   it('restricts MPR deletion to superadmin and forwards the exact reviewed selection', async () => {
     const { controller, menuProductions } = makeController();
