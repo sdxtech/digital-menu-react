@@ -16,6 +16,8 @@ type SalesGroup = {
     sellingQuantity?: number
     groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
     salesRejectionReason?: string
+    salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
+    salesApprovedBy?: string
   }>
 }
 
@@ -39,9 +41,28 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
   const canReject = canEdit || user?.role === 'unit-manager'
   const eligibleForReject = group.items.length > 0 && group.items.every((item) =>
     ['not-requested', 'requested'].includes(item.storeRequestStatus ?? '') &&
-    item.approvalStatus !== 'rejected' && !item.salesRejectionReason &&
+    !item.salesRejectionReason &&
     item.sellingPricePerPax != null && item.sellingQuantity != null,
   )
+  const salesApproved = group.items.length > 0 && group.items.every((item) =>
+    item.salesApprovalStatus === 'approved' || (item.salesApprovalStatus == null && item.approvalStatus === 'approved'),
+  )
+  const eligibleForApprove = eligibleForReject && group.items.every((item) => item.storeRequestStatus === 'not-requested')
+  const approveSales = async () => {
+    if (!accessToken || saving || salesApproved) return
+    setSaving(true)
+    setError('')
+    try {
+      await apiFetch('/menu-productions/batch/approve-sales', {
+        method: 'PATCH', body: JSON.stringify({ menuProductionIds: group.items.map((item) => item.id) }),
+      }, accessToken)
+      await onSaved()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Failed to approve sales.')
+    } finally {
+      setSaving(false)
+    }
+  }
   const open = (nextMode: 'edit' | 'reject') => {
     setMode(nextMode)
     setPrice(group.items[0]?.sellingPricePerPax?.toString() ?? '')
@@ -101,7 +122,9 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
   return (
     <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
       {showButtons && canEdit ? <button type="button" onClick={() => open('edit')} className="whitespace-nowrap rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary">Edit Sales</button> : null}
-      {showButtons && canReject && eligibleForReject ? <button type="button" onClick={() => open('reject')} className="whitespace-nowrap rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger">Reject Sales</button> : null}
+      {showButtons && canReject && eligibleForApprove ? <button type="button" disabled={saving || salesApproved} onClick={() => void approveSales()} className="whitespace-nowrap rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">{salesApproved ? 'Sales Approved' : saving ? 'Saving...' : 'Approve Sales'}</button> : null}
+      {showButtons && canReject && eligibleForReject ? <button type="button" disabled={saving} onClick={() => open('reject')} className="whitespace-nowrap rounded-md border border-danger bg-white px-3 py-1 text-xs font-semibold text-danger disabled:opacity-50">Reject Sales</button> : null}
+      {error && !mode ? <p role="alert" className="text-xs text-danger">{error}</p> : null}
       {mode ? createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <form role="dialog" aria-modal="true" aria-labelledby={`sales-action-${group.items[0]?.id}`}
@@ -111,7 +134,7 @@ const MenuProductionSalesActions = ({ group, onSaved, showButtons = true, action
             <p className="mt-2 text-sm font-bold text-black">{group.productionCode ?? 'MPR'} · {formatProductionDate(group.date)} · {group.items[0]?.clientName ?? '-'}</p>
             <p className="mt-2 text-sm text-muted">{mode === 'edit'
               ? 'Update selling prices. Production quantities, approvals, and actual issuance are preserved.'
-              : 'Return this MPR to Admin Sales for correction. Previous sales values will be cleared and the MPR will require Unit Manager approval after resubmission.'}</p>
+              : 'Return sales to Admin Sales for correction. Recipe decisions are preserved. Sales will require Unit Manager approval after resubmission.'}</p>
             {mode === 'edit' && savedGroupSales.length ? (
               <div className="mt-4 grid gap-3">
                 {savedGroupSales.map((sale) => <label key={sale.name} className="text-sm font-semibold text-black">{sale.name} ({sale.quantity} pax) - Selling Price/Pax

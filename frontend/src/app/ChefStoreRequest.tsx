@@ -112,6 +112,7 @@ type StoreRequestMenu = {
   approvalStatus: 'pending' | 'approved' | 'rejected'
   rejectionReason?: string
   reviewedBy?: string
+  salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
   fulfilledAt?: string
@@ -1433,7 +1434,7 @@ const ChefStoreRequest = ({
         payload.recipeId = replacementRecipeId
         payload.ingredientVendors = ingredientVendors
       }
-      await apiFetch(
+      const revised = await apiFetch<StoreRequestMenu>(
         `/menu-productions/${menu.id}/change-rejected-menu`,
         {
           method: 'PATCH',
@@ -1443,7 +1444,9 @@ const ChefStoreRequest = ({
       )
       await fetchStoreRequests()
       setActionMessage(
-        `${menu.menuName} was changed and submitted to Admin Site for new sales input.`,
+        revised.salesApprovalStatus === 'approved'
+          ? `${menu.menuName} was revised and submitted to Unit Manager. Sales approval is preserved.`
+          : `${menu.menuName} was changed and submitted to Admin Site for new sales input.`,
       )
       setChangingMenuId(null)
       setChangeMenuScope(null)

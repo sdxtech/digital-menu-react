@@ -1,3 +1,4 @@
+import type { MenuProduction } from './schemas/menu-production.schema';
 import { NotFoundException } from '@nestjs/common';
 import { MenuProductionsService } from './menu-productions.service';
 
@@ -486,10 +487,9 @@ describe('MenuProductionsService sales input', () => {
     });
   });
 
-  it('only updates pending menu productions', async () => {
+  it('only updates unapproved sales on an open MPR', async () => {
     const findOneAndUpdate = jest.fn().mockResolvedValue(null);
     const service = createService({ findOneAndUpdate });
-
     await expect(
       service.updateSalesDetails(
         'menu-id',
@@ -498,23 +498,25 @@ describe('MenuProductionsService sales input', () => {
         'Admin Site',
       ),
     ).rejects.toThrow(NotFoundException);
-
     expect(findOneAndUpdate).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         _id: 'menu-id',
-        approvalStatus: 'pending',
+        salesApprovalStatus: { $ne: 'approved' },
+        storeRequestStatus: 'not-requested',
         isDraft: { $ne: true },
         groupSales: { $exists: false },
-      },
+      }),
       expect.any(Object),
       { new: true },
     );
   });
 
-  it('requires a pending item when submitting batch sales details', async () => {
-    const updateMany = jest.fn().mockResolvedValue({ matchedCount: 0 });
-    const service = createService({ updateMany });
-
+  it('requires an existing batch when submitting sales details', async () => {
+    const find = jest
+      .fn()
+      .mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+    const updateMany = jest.fn();
+    const service = createService({ find, updateMany });
     await expect(
       service.updateBatchSalesDetails(
         'MPR0038',
@@ -527,16 +529,7 @@ describe('MenuProductionsService sales input', () => {
         'Admin Site',
       ),
     ).rejects.toThrow(NotFoundException);
-
-    expect(updateMany).toHaveBeenCalledWith(
-      {
-        productionCode: 'MPR0038',
-        approvalStatus: 'pending',
-        isDraft: { $ne: true },
-        groupSales: { $exists: false },
-      },
-      expect.any(Object),
-    );
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it('dispatches an email to Unit Manager after batch sales details are submitted', async () => {
@@ -550,6 +543,7 @@ describe('MenuProductionsService sales input', () => {
         createdBy: 'chef-1',
         unitManagerId: '507f1f77bcf86cd799439011',
         approvalStatus: 'pending',
+        storeRequestStatus: 'not-requested',
       },
     ];
     const lean = jest.fn().mockResolvedValue(updatedItems);
@@ -587,11 +581,12 @@ describe('MenuProductionsService sales input', () => {
     );
 
     expect(menuProductionModel.updateMany).toHaveBeenNthCalledWith(
-      2,
+      1,
       {
         productionCode: 'MPR0038',
         isDraft: { $ne: true },
-        groupSales: { $exists: false },
+        storeRequestStatus: { $in: ['not-requested', 'requested'] },
+        salesApprovalStatus: { $ne: 'approved' },
         site: 'S001',
       },
       {
@@ -604,6 +599,8 @@ describe('MenuProductionsService sales input', () => {
           salesRejectionReason: 1,
           salesRejectedBy: 1,
           salesRejectedAt: 1,
+          salesApprovedBy: 1,
+          salesApprovedAt: 1,
         },
       },
     );
@@ -827,6 +824,7 @@ describe('MenuProductionsService sales input', () => {
         {
           $set: {
             isDraft: false,
+            salesApprovalStatus: 'pending',
             submittedAt: expect.any(Date) as Date,
           },
         },
@@ -1251,7 +1249,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
     };
     expect(menuFindOne).toHaveBeenCalledWith(expectedFilter);
     expect(findOneAndUpdate).toHaveBeenCalledWith(
-      expectedFilter,
+      { ...expectedFilter, salesApprovalStatus: { $exists: false } },
       expect.objectContaining({
         $set: expect.objectContaining({
           recipeId: replacementRecipeId,
@@ -1464,6 +1462,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
         $set: {
           group: 'New Group',
           approvalStatus: 'pending',
+          salesApprovalStatus: 'pending',
           storeRequestStatus: 'not-requested',
         },
       }),
@@ -1530,6 +1529,7 @@ describe('MenuProductionsService rejected menu replacement', () => {
           estimatedTotalCost: 600000,
           estimatedCostPerPax: 12000,
           approvalStatus: 'pending',
+          salesApprovalStatus: 'pending',
           storeRequestStatus: 'not-requested',
         },
       }),
@@ -1573,5 +1573,240 @@ describe('MenuProductionsService rejected menu replacement', () => {
         site: 'S001',
       }),
     );
+  });
+});
+
+describe('Approved sales during Chef recipe revisions', () => {
+  const chefId = '507f1f77bcf86cd799439013';
+  const oldRecipeId = '507f1f77bcf86cd799439011';
+  const newRecipeId = '507f1f77bcf86cd799439012';
+  type Update = {
+    $set?: Record<string, unknown>;
+    $unset?: Record<string, unknown>;
+  };
+  const makeRevisionService = (
+    salesStatus: 'approved' | 'pending' = 'approved',
+  ) => {
+    const first: MenuProduction & { _id: string } = {
+      _id: 'menu-1',
+      recipeId: oldRecipeId,
+      productionCode: 'MPR0038',
+      productionDate: '2026-11-08',
+      site: 'S001',
+      createdBy: chefId,
+      unitManagerId: 'manager-1',
+      group: 'Regular',
+      portion: 100,
+      menuName: 'Rice',
+      category: 'Main',
+      cost: 1000,
+      isDraft: false,
+      approvalStatus: 'rejected',
+      storeRequestStatus: 'not-requested',
+      salesApprovalStatus: salesStatus,
+      salesApprovedBy: 'Manager',
+      sellingPricePerPax: 10000,
+      sellingQuantity: 100,
+      estimatedRevenue: 1000000,
+      salesInputBy: 'Admin',
+      groupSales: [
+        {
+          name: 'Regular',
+          quantity: 100,
+          sellingPricePerPax: 10000,
+          estimatedRevenue: 1000000,
+        },
+      ],
+      financeApprovalRequired: true,
+      financeControllerIds: ['finance-1'],
+      financeCostStatus: 'approved',
+      financeSalesStatus: 'approved',
+    };
+    const records = [
+      first,
+      { ...first, _id: 'menu-2', approvalStatus: 'approved' as const },
+    ];
+    const applyUpdate = (record: MenuProduction, update: Update) => {
+      Object.assign(record, update.$set);
+      for (const key of Object.keys(update.$unset ?? {}))
+        Reflect.deleteProperty(record, key);
+    };
+    const model = {
+      findOne: jest
+        .fn()
+        .mockReturnValue({ lean: () => Promise.resolve({ ...records[0] }) }),
+      findOneAndUpdate: jest
+        .fn()
+        .mockImplementation((_filter: unknown, update: Update) => ({
+          lean: () => {
+            applyUpdate(records[0], update);
+            return Promise.resolve({ ...records[0] });
+          },
+        })),
+      find: jest.fn().mockReturnValue({
+        lean: () => Promise.resolve(records.map((record) => ({ ...record }))),
+      }),
+      updateMany: jest
+        .fn()
+        .mockImplementation((_filter: unknown, update: Update) => {
+          records.forEach((record) => applyUpdate(record, update));
+          return Promise.resolve({ matchedCount: records.length });
+        }),
+    };
+    const recipes = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: newRecipeId,
+              recipeCode: 'RCP0002',
+              version: 1,
+              name: 'Soup',
+              category: 'Main',
+              portionSize: 100,
+              ingredients: [],
+            },
+          ]),
+        }),
+      }),
+    };
+    const notifications = {
+      createHierarchicalNotification: jest.fn().mockResolvedValue(undefined),
+    };
+    const mail = {
+      notifyMenuProductionsSubmitted: jest.fn().mockResolvedValue(undefined),
+      notifyMenuProductionsReadyForApproval: jest
+        .fn()
+        .mockResolvedValue(undefined),
+    };
+    const service = new MenuProductionsService(
+      model as never,
+      {} as never,
+      recipes as never,
+      {} as never,
+      notifications as never,
+      mail as never,
+      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
+    );
+    return { service, records, model, notifications, mail };
+  };
+
+  it('preserves approved sales and returns a replaced recipe directly to Unit Manager', async () => {
+    const { service, records, model, notifications, mail } =
+      makeRevisionService();
+    const result = await service.changeRejectedMenu(
+      'menu-1',
+      { scope: 'menu', recipeId: newRecipeId },
+      chefId,
+      'S001',
+    );
+    expect(result).toMatchObject({
+      approvalStatus: 'pending',
+      salesApprovalStatus: 'approved',
+      sellingPricePerPax: 10000,
+      sellingQuantity: 100,
+      estimatedRevenue: 1000000,
+      salesInputBy: 'Admin',
+      salesApprovedBy: 'Manager',
+    });
+    expect(records[1].approvalStatus).toBe('approved');
+    expect(records[0].groupSales).toEqual([
+      {
+        name: 'Regular',
+        quantity: 100,
+        sellingPricePerPax: 10000,
+        estimatedRevenue: 1000000,
+      },
+    ]);
+    const update = model.findOneAndUpdate.mock.calls[0][1] as Update;
+    expect(update.$unset).not.toHaveProperty('sellingPricePerPax');
+    expect(update.$unset).not.toHaveProperty('groupSales');
+    expect(
+      records.every(
+        (record) =>
+          record.financeCostStatus === 'pending' &&
+          record.financeSalesStatus === 'pending',
+      ),
+    ).toBe(true);
+    expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
+      chefId,
+      expect.any(String),
+      expect.stringContaining('Sales approval is preserved'),
+      'S001',
+      'unit.manager',
+      'MENU_PRODUCTION_APPROVAL_REQUESTS',
+      expect.any(Object),
+    );
+    expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalled();
+    expect(mail.notifyMenuProductionsSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('stops resubmission if the sales approval changed after the Chef loaded the recipe', async () => {
+    const { service, model, notifications } = makeRevisionService();
+    model.findOneAndUpdate.mockReturnValueOnce({
+      lean: () => Promise.resolve(null),
+    });
+    await expect(
+      service.changeRejectedMenu(
+        'menu-1',
+        { scope: 'menu', recipeId: newRecipeId },
+        chefId,
+        'S001',
+      ),
+    ).rejects.toThrow('sales approval changed');
+    expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ salesApprovalStatus: 'approved' }),
+      expect.any(Object),
+      { new: true },
+    );
+    expect(notifications.createHierarchicalNotification).not.toHaveBeenCalled();
+  });
+
+  it.each(['portion', 'group'] as const)(
+    'requires updated sales when the approved sales basis changes: %s',
+    async (scope) => {
+      const { service, records, notifications, mail } = makeRevisionService();
+      await service.changeRejectedMenu(
+        'menu-1',
+        scope === 'portion'
+          ? { scope, portion: 125 }
+          : { scope, group: 'Special' },
+        chefId,
+        'S001',
+      );
+      expect(
+        records.every(
+          (record) =>
+            record.salesApprovalStatus === 'pending' &&
+            record.sellingQuantity == null &&
+            record.groupSales == null,
+        ),
+      ).toBe(true);
+      expect(records[1].approvalStatus).toBe('approved');
+      expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
+        chefId,
+        'New Menu Production Sales Input',
+        expect.any(String),
+        'S001',
+        'admin-site',
+        'ADMIN_SITE_MENU_PRODUCTION_SALES',
+        expect.any(Object),
+      );
+      expect(mail.notifyMenuProductionsSubmitted).toHaveBeenCalled();
+      expect(mail.notifyMenuProductionsReadyForApproval).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not treat unapproved sales as approved when a recipe is resubmitted', async () => {
+    const { service, records, mail } = makeRevisionService('pending');
+    await service.changeRejectedMenu(
+      'menu-1',
+      { scope: 'menu', recipeId: newRecipeId },
+      chefId,
+      'S001',
+    );
+    expect(records[0].salesApprovalStatus).toBe('pending');
+    expect(records[0].sellingQuantity).toBeUndefined();
+    expect(mail.notifyMenuProductionsSubmitted).toHaveBeenCalled();
   });
 });

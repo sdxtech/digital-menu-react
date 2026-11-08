@@ -38,6 +38,12 @@ type MenuProductionApprovalExportMenu = {
   fulfilledBy?: string
   cancelledBy?: string
   salesRejectionReason?: string
+  salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
+  salesApprovedBy?: string
+  financeApprovalRequired?: boolean
+  financeCostStatus?: 'pending' | 'approved' | 'rejected'
+  financeSalesStatus?: 'pending' | 'approved' | 'rejected'
+  financeReviewReason?: string
   productionDate: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
@@ -96,6 +102,11 @@ const getBatchStatus = (items: MenuProductionApprovalExportMenu[]) => {
   if (items.some((item) => item.storeRequestStatus === 'fulfilled')) return 'Completed'
   if (items.some((item) => item.approvalStatus === 'rejected')) return 'Returned to Chef'
   if (items.some((item) => item.storeRequestStatus === 'requested')) return 'Waiting for Storekeeper'
+  if (items.every((item) => item.approvalStatus === 'approved') &&
+    items.some((item) => item.salesApprovalStatus && item.salesApprovalStatus !== 'approved')) return 'Waiting for Sales Approval'
+  if (items.every((item) => item.approvalStatus === 'approved') &&
+    items.some((item) => item.financeApprovalRequired &&
+      (item.financeCostStatus !== 'approved' || item.financeSalesStatus !== 'approved'))) return 'Waiting for Finance Review'
   return items[0]?.salesInputBy?.trim() ? 'Waiting for Approval' : 'Waiting for Sales Input'
 }
 
@@ -207,6 +218,8 @@ export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalE
     ['Submitted by', submittedBy || '-'],
     ['Client', firstMenu?.clientName || '-'],
     ['Admin', firstMenu?.salesInputBy?.trim() || '-'],
+    ['Sales approval', firstMenu?.salesApprovalStatus ? getApprovalStatusLabel(firstMenu.salesApprovalStatus) : '-'],
+    ['Sales approved by', firstMenu?.salesApprovedBy || '-'],
     ['Total menu', group.items.length],
     ['Reviewed by', Array.from(new Set(
       group.items.map((item) => item.reviewedBy?.trim()).filter(Boolean),

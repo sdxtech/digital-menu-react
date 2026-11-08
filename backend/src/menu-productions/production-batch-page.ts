@@ -21,28 +21,49 @@ export function productionBatchPagePipeline(
   });
   const code = trim('productionCode');
   const recordsView = query.view === 'records' || query.view === 'records-all';
+  const salesApproval = {
+    $ifNull: [
+      '$salesApprovalStatus',
+      {
+        $cond: [
+          { $eq: ['$approvalStatus', 'approved'] },
+          'approved',
+          'pending',
+        ],
+      },
+    ],
+  };
   const matches: Record<string, unknown>[] = [];
-  if (query.approvalStatus)
+  if (query.view === 'approval' && query.approvalStatus === 'pending')
+    matches.push({
+      $or: [{ approvalStatuses: 'pending' }, { salesApprovalPending: 1 }],
+    });
+  else if (query.approvalStatus)
     matches.push({ approvalStatuses: query.approvalStatus });
   if (query.view === 'sales')
     matches.push({ $or: [{ salesComplete: 0 }, { returnedSales: 1 }] });
   if (query.view === 'finance-approval')
-    matches.push({ financePending: 1, salesReady: 1 });
-  if (query.view === 'approval')
-    matches.push({ financeBlocked: 0, salesReady: 1 });
+    matches.push({
+      financePending: 1,
+      salesReady: 1,
+      managerApproved: 1,
+      storeOpen: 1,
+    });
+  if (query.view === 'approval') matches.push({ salesReady: 1 });
   if (query.view === 'records')
     matches.push({
       $or: [
         { storeStatuses: { $in: ['fulfilled', 'cancelled'] } },
         { approvalStatuses: 'rejected' },
         { approvedRequested: 1 },
+        { managerApproved: 1, financeAwaiting: 1 },
       ],
     });
   if (query.view === 'records-all')
     matches.push({
       $or: [
         { storeStatuses: { $in: ['fulfilled', 'cancelled'] } },
-        { approvalStatuses: { $in: ['pending', 'rejected'] } },
+        { approvalStatuses: { $in: ['pending', 'rejected', 'approved'] } },
         { approvedRequested: 1 },
       ],
     });
@@ -81,6 +102,13 @@ export function productionBatchPagePipeline(
         createdAt: { $max: { $ifNull: ['$submittedAt', '$createdAt'] } },
         ...(drafts ? { updatedAt: { $max: '$updatedAt' } } : {}),
         clients: { $addToSet: trim('clientName') },
+        ...(query.view === 'approval'
+          ? {
+              salesApprovalPending: {
+                $max: { $cond: [{ $ne: [salesApproval, 'approved'] }, 1, 0] },
+              },
+            }
+          : {}),
         ...(query.view === 'finance-approval'
           ? {
               financePending: {
@@ -88,8 +116,8 @@ export function productionBatchPagePipeline(
                   $cond: [
                     {
                       $or: [
-                        { $eq: ['$financeCostStatus', 'pending'] },
-                        { $eq: ['$financeSalesStatus', 'pending'] },
+                        { $ne: ['$financeCostStatus', 'approved'] },
+                        { $ne: ['$financeSalesStatus', 'approved'] },
                       ],
                     },
                     1,
@@ -118,14 +146,42 @@ export function productionBatchPagePipeline(
               },
             }
           : {}),
-        ...(query.view === 'approval'
+        ...(query.view === 'finance-approval' || query.view === 'records'
           ? {
-              financeBlocked: {
+              managerApproved: {
+                $min: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$approvalStatus', 'approved'] },
+                        { $eq: [salesApproval, 'approved'] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              storeOpen: {
+                $min: {
+                  $cond: [
+                    { $eq: ['$storeRequestStatus', 'not-requested'] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
+        ...(query.view === 'records'
+          ? {
+              financeAwaiting: {
                 $max: {
                   $cond: [
                     {
                       $and: [
                         { $eq: ['$financeApprovalRequired', true] },
+                        { $eq: ['$storeRequestStatus', 'not-requested'] },
                         {
                           $or: [
                             { $ne: ['$financeCostStatus', 'approved'] },
