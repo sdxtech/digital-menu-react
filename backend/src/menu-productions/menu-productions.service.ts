@@ -232,6 +232,30 @@ export class MenuProductionsService implements OnModuleInit {
       : {};
   }
 
+  private async enrollPendingFinanceProductions(
+    site: string,
+    batchFilter: Record<string, unknown> = {},
+  ) {
+    const finance = await this.financeSnapshot(site);
+    if (!finance.financeApprovalRequired) return;
+
+    // Submitted batches adopt Finance when enabled, until dispatched to Storekeeper.
+    // Existing Finance decisions remain intact, including approved legacy batches.
+    const result = await this.menuProductionModel.updateMany(
+      {
+        ...batchFilter,
+        site,
+        isDraft: { $ne: true },
+        storeRequestStatus: 'not-requested',
+        financeApprovalRequired: { $ne: true },
+        storeFulfillmentCompletedAt: { $exists: false },
+        'storeFulfillmentItems.0': { $exists: false },
+      },
+      { $set: finance },
+    );
+    return result.matchedCount > 0;
+  }
+
   private errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -330,6 +354,9 @@ export class MenuProductionsService implements OnModuleInit {
           ...(record.site ? { site: record.site } : {}),
         }
       : { _id: record._id ?? record.id };
+    if (record.site) {
+      await this.enrollPendingFinanceProductions(record.site, batchFilter);
+    }
     const reviewedBatch = await this.menuProductionModel
       .find(batchFilter)
       .select({
@@ -1779,9 +1806,12 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
     const { menus, filter } = await this.findSalesActionBatch(ids);
+    const assignedSites =
+      await this.sites?.findFinanceControllerSites(controllerId);
     if (
       menus.some(
         (menu) =>
+          (assignedSites && !assignedSites.includes(menu.site ?? '')) ||
           !menu.financeApprovalRequired ||
           !menu.financeControllerIds?.includes(controllerId) ||
           menu.approvalStatus !== 'approved' ||
@@ -1916,10 +1946,8 @@ export class MenuProductionsService implements OnModuleInit {
   }
 
   async financeSites(controllerId: string) {
-    const assignedSites = await this.menuProductionModel.distinct('site', {
-      financeControllerIds: controllerId,
-    });
-    const codes = assignedSites.map((value) => String(value)).filter(Boolean);
+    const codes =
+      (await this.sites?.findFinanceControllerSites(controllerId)) ?? [];
     const summaries = await this.sites?.findSummariesByCodes(codes);
     return codes
       .filter(Boolean)
@@ -2495,8 +2523,24 @@ export class MenuProductionsService implements OnModuleInit {
     fulfilledBy?: string,
   ) {
     const filter = this.withSiteFilter({ _id: id }, site);
-    const item = await this.menuProductionModel.findOne(filter);
+    let item = await this.menuProductionModel.findOne(filter);
     if (!item) throw new NotFoundException('Menu production not found');
+    if (
+      status === 'requested' &&
+      item.storeRequestStatus === 'not-requested' &&
+      item.site
+    ) {
+      const enrolled = await this.enrollPendingFinanceProductions(
+        item.site,
+        item.productionCode
+          ? { productionCode: item.productionCode }
+          : { _id: item._id },
+      );
+      if (enrolled) {
+        item = await this.menuProductionModel.findOne(filter);
+        if (!item) throw new NotFoundException('Menu production not found');
+      }
+    }
     if (
       (status === 'requested' || status === 'fulfilled') &&
       !this.isSalesApproved(item)
@@ -3284,7 +3328,18 @@ export class MenuProductionsService implements OnModuleInit {
     const filter: Record<string, unknown> = { isDraft: { $ne: true } };
     const andFilters: Record<string, unknown>[] = [];
     if (financeControllerId) {
-      andFilters.push({ financeControllerIds: financeControllerId });
+      const assignedSites =
+        (await this.sites?.findFinanceControllerSites(financeControllerId)) ??
+        [];
+      andFilters.push({ site: { $in: assignedSites } });
+      if (query.view === 'finance-approval') {
+        for (const assignedSite of assignedSites) {
+          if (!requestedSite || assignedSite === requestedSite) {
+            await this.enrollPendingFinanceProductions(assignedSite);
+          }
+        }
+        andFilters.push({ financeControllerIds: financeControllerId });
+      }
     }
     const siteFilter = this.buildSiteFilter(site);
     if (Object.keys(siteFilter).length) {
