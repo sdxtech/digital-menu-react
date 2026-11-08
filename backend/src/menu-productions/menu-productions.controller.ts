@@ -292,6 +292,35 @@ export class MenuProductionsController {
     );
   }
 
+  @Patch('batch/finance-approve')
+  @Roles(AppRole.FinanceController)
+  approveFinanceBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: MenuProductionSalesBatchDto,
+  ) {
+    return this.menuProductions.reviewFinanceBatch(
+      dto.menuProductionIds,
+      'approved',
+      req.user.sub,
+      req.user.name || req.user.email,
+    );
+  }
+
+  @Patch('batch/finance-reject')
+  @Roles(AppRole.FinanceController)
+  rejectFinanceBatch(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: RejectMenuProductionSalesDto,
+  ) {
+    return this.menuProductions.reviewFinanceBatch(
+      dto.menuProductionIds,
+      'rejected',
+      req.user.sub,
+      req.user.name || req.user.email,
+      dto.reason,
+    );
+  }
+
   @Patch(':id/finance-approve-cost')
   @Roles(AppRole.FinanceController)
   approveFinanceCost(
@@ -393,6 +422,20 @@ export class MenuProductionsController {
       dto,
       getUserSiteScope(req.user),
       this.resolveSalesInputActor(req),
+    );
+  }
+
+  @Patch('batch/approve-sales')
+  @Roles(AppRole.Superadmin, AppRole.UnitManager)
+  approveSales(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: MenuProductionSalesBatchDto,
+  ) {
+    return this.menuProductions.approveSalesBatch(
+      dto.menuProductionIds,
+      getUserSiteScope(req.user),
+      { id: req.user.sub, name: this.resolveSalesInputActor(req) },
+      this.resolveUnitManagerAssignmentScope(req),
     );
   }
 

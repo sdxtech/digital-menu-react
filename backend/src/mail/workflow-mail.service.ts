@@ -25,6 +25,7 @@ type MenuProductionMailRecord = {
   createdBy?: string;
   unitManagerId?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
+  financeReviewReason?: string;
 };
 
 @Injectable()
@@ -216,7 +217,12 @@ export class WorkflowMailService {
       await this.enqueueForRecipients(recipients, {
         subject: `Menu Production Awaiting Approval: ${first.productionCode}`,
         title: 'Menu Production Awaiting Approval',
-        message: `${group.length} menu item(s) have completed sales input and require review.`,
+        message:
+          financeControllerIds !== undefined
+            ? `${group.length} menu item(s) have completed Unit Manager review and require Finance approval.`
+            : first.financeReviewReason
+              ? `Finance returned this batch for Unit Manager review: ${first.financeReviewReason}`
+              : `${group.length} menu item(s) have completed sales input and require review.`,
         details: [
           ['Production code', first.productionCode],
           ['Production date', first.productionDate ?? '-'],

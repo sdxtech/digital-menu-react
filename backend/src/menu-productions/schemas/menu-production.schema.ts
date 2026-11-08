@@ -127,6 +127,15 @@ export class MenuProduction {
   @Prop({ type: String, trim: true })
   salesInputBy?: string;
 
+  @Prop({ enum: ['pending', 'approved', 'rejected'] })
+  salesApprovalStatus?: ApprovalStatus;
+
+  @Prop({ type: String, trim: true })
+  salesApprovedBy?: string;
+
+  @Prop({ type: Date })
+  salesApprovedAt?: Date;
+
   @Prop({ type: String, trim: true })
   salesRejectionReason?: string;
 
@@ -176,6 +185,9 @@ export class MenuProduction {
 
   @Prop({ enum: ['pending', 'approved', 'rejected'] })
   financeSalesStatus?: ApprovalStatus;
+
+  @Prop({ type: String, trim: true })
+  financeReviewReason?: string;
 
   @Prop({ type: String, trim: true })
   financeCostReviewedBy?: string;

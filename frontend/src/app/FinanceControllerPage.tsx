@@ -37,6 +37,7 @@ type Menu = {
   submittedAt?: string
   submittedByName?: string
   salesInputBy?: string
+  reviewedBy?: string
   approvalStatus: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   productionDate: string
@@ -64,7 +65,7 @@ type Group = {
 }
 
 type Site = { code: string; name: string }
-type Rejection = { kind: 'cost' | 'sales'; group: Group; menu?: Menu }
+type Rejection = { group: Group }
 
 const formatMoney = (value?: number) =>
   value === undefined ? '-' : new Intl.NumberFormat('id-ID', {
@@ -117,25 +118,21 @@ export default function FinanceControllerPage() {
     return () => controller.abort()
   }, [load])
 
-  const act = async (kind: 'cost' | 'sales', status: 'approved' | 'rejected', group: Group, menu?: Menu, rejectionReason?: string) => {
+  const act = async (status: 'approved' | 'rejected', group: Group, rejectionReason?: string) => {
     if (!accessToken || saving) return
     setSaving(true)
     setError('')
     setMessage('')
     try {
-      const path = kind === 'cost'
-        ? `/menu-productions/${menu?.id}/finance-${status === 'approved' ? 'approve' : 'reject'}-cost`
-        : `/menu-productions/batch/finance-${status === 'approved' ? 'approve' : 'reject'}-sales`
+      const path = `/menu-productions/batch/finance-${status === 'approved' ? 'approve' : 'reject'}`
       await apiFetch(path, {
         method: 'PATCH',
-        ...(kind === 'sales' || status === 'rejected' ? {
-          body: JSON.stringify({
-            ...(kind === 'sales' ? { menuProductionIds: group.items.map((item) => item.id) } : {}),
-            ...(status === 'rejected' ? { reason: rejectionReason } : {}),
-          }),
-        } : {}),
+        body: JSON.stringify({
+          menuProductionIds: group.items.map((item) => item.id),
+          ...(status === 'rejected' ? { reason: rejectionReason } : {}),
+        }),
       }, accessToken)
-      setMessage(`${kind === 'cost' ? 'Cost per menu' : 'Sales'} ${status}.`)
+      setMessage(status === 'approved' ? 'Batch approved and forwarded to Storekeeper.' : 'Batch returned to Unit Manager for review.')
       setRejection(null)
       setReason('')
       await load()
@@ -150,7 +147,7 @@ export default function FinanceControllerPage() {
     <div className="w-full space-y-6 py-2">
       <div>
         <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
-        <p className="mt-2 text-sm text-muted">Review cost per menu and sales before Unit Manager approval.</p>
+        <p className="mt-2 text-sm text-muted">Review the complete batch after Unit Manager approval. Return revision notes to the Unit Manager when changes are needed.</p>
       </div>
       <label className="block max-w-sm text-sm font-medium">Site
         <select value={site} onChange={(event) => { setSite(event.target.value); setPage(1) }}
@@ -188,7 +185,7 @@ export default function FinanceControllerPage() {
                 <th className="px-4 py-3 font-semibold">Production date</th>
                 <th className="px-4 py-3 font-semibold">Production code</th>
                 <th className="px-4 py-3 font-semibold">Client name</th>
-                <th className="px-4 py-3 font-semibold">Approval status</th>
+                <th className="px-4 py-3 font-semibold">Batch status</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
@@ -198,7 +195,6 @@ export default function FinanceControllerPage() {
                   {loading ? 'Loading approvals...' : 'No menu productions waiting for finance approval.'}
                 </td>
               </tr> : groups.map((group, index) => {
-                const salesPending = group.items.every((item) => item.financeSalesStatus === 'pending')
                 const salesReady = group.items.every((item) =>
                   typeof item.sellingPricePerPax === 'number' &&
                   typeof item.sellingQuantity === 'number' &&
@@ -216,9 +212,9 @@ export default function FinanceControllerPage() {
                 const summaryItems = aggregateStoreRequestSummaryByVendor(group)
                 const submittedAt = group.items.find((item) => item.submittedAt)?.submittedAt
                 const submittedBy = Array.from(new Set(group.items.map((item) => item.submittedByName?.trim()).filter(Boolean))).join(', ')
-                const pendingMenuCount = group.items.filter((item) => item.financeCostStatus === 'pending').length
-                const salesStatus = first?.financeSalesStatus === 'rejected' ? 'Sales returned to Admin Site'
-                  : salesPending ? salesReady ? 'Waiting for Finance Controller approval' : 'Waiting for Admin Site sales input' : 'Sales approved'
+                const reviewedBy = Array.from(new Set(group.items.map((item) => item.reviewedBy?.trim()).filter(Boolean))).join(', ')
+                const approvalStatus = Array.from(new Set(group.items.map((item) => getApprovalStatusLabel(item.approvalStatus)))).join(', ')
+                const batchStatus = 'Waiting for Finance Controller approval'
 
                 return <Fragment key={groupKey}>
                   <tr className="border-t border-border">
@@ -228,10 +224,7 @@ export default function FinanceControllerPage() {
                     <td className="px-4 py-3 text-xs font-bold text-black">{group.productionCode ?? '-'}</td>
                     <td className="px-4 py-3 font-bold text-black">{first?.clientName ?? '-'}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="whitespace-nowrap rounded-full bg-primary-soft px-1.5 py-0.5 text-[11px] font-semibold text-primary">{getApprovalStatusLabel('pending')}</span>
-                        <span className="text-[11px] text-muted">{pendingMenuCount} of {group.items.length} menus pending cost review</span>
-                      </div>
+                      <span className="inline-block rounded-md bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">{batchStatus}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -243,10 +236,7 @@ export default function FinanceControllerPage() {
                           className="whitespace-nowrap rounded-md border border-success bg-white px-2.5 py-1.5 text-xs font-semibold text-success shadow-sm hover:bg-success/10">
                           <span className="flex items-center gap-1.5"><i className="bi bi-download text-sm" aria-hidden="true" /><span>Export</span></span>
                         </button>
-                        {salesPending && salesReady && first ? <>
-                          <button type="button" disabled={saving} onClick={() => act('sales', 'approved', group)} className="whitespace-nowrap rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Approve sales</button>
-                          <button type="button" disabled={saving} onClick={() => { setRejection({ kind: 'sales', group }); setReason('') }} className="whitespace-nowrap rounded-md border border-danger bg-white px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-50">Reject sales</button>
-                        </> : null}
+
                       </div>
                     </td>
                   </tr>
@@ -258,11 +248,12 @@ export default function FinanceControllerPage() {
                           createdAt={submittedAt}
                           submittedBy={submittedBy}
                           admin={first?.salesInputBy}
-                          batchStatus={salesStatus}
+                          reviewedBy={reviewedBy}
+                          batchStatus={batchStatus}
                           productionDate={group.date}
                           client={first?.clientName}
                           totalMenu={group.items.length}
-                          approvalStatus={Array.from(new Set(group.items.map((item) => getApprovalStatusLabel(item.approvalStatus)))).join(', ')}
+                          approvalStatus={approvalStatus}
                           storeRequestStatus={Array.from(new Set(group.items.map((item) => getStoreRequestStatusLabel(item.storeRequestStatus)))).join(', ')}
                         />
                         <section>
@@ -270,9 +261,9 @@ export default function FinanceControllerPage() {
                           <div className="mt-3 overflow-hidden rounded-md border border-black bg-white">
                             <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                               <colgroup>
-                                <col className="w-[5%]" /><col className="w-[10%]" /><col className="w-[20%]" />
-                                <col className="w-[8%]" /><col className="w-[12%]" /><col className="w-[10%]" />
-                                <col className="w-[10%]" /><col className="w-[12%]" /><col className="w-[13%]" />
+                                <col className="w-[5%]" /><col className="w-[10%]" /><col className="w-[25%]" />
+                                <col className="w-[8%]" /><col className="w-[15%]" /><col className="w-[12%]" />
+                                <col className="w-[10%]" /><col className="w-[15%]" />
                               </colgroup>
                               <thead className="bg-background">
                                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
@@ -283,8 +274,7 @@ export default function FinanceControllerPage() {
                                   <th className="px-3 py-3 font-semibold">Estimated Cost</th>
                                   <th className="px-3 py-3 font-semibold">Cost Contribution (%)</th>
                                   <th className="px-3 py-3 font-semibold">Cost/Pax</th>
-                                  <th className="px-3 py-3 font-semibold">Cost Approval Status</th>
-                                  <th className="px-3 py-3 font-semibold">Action</th>
+                                  <th className="px-3 py-3 font-semibold">Unit Manager Approval</th>
                                 </tr>
                               </thead>
                               <tbody>{sortMenuItemsByGroup(group.items).map((item, itemIndex) => {
@@ -302,14 +292,10 @@ export default function FinanceControllerPage() {
                                   <td className="px-3 py-3 font-medium">{formatFoodCostPercentage(estimatedCost, revenue)}</td>
                                   <td className="px-3 py-3 font-medium">{formatMoney(costPerPax)}</td>
                                   <td className="px-3 py-3">
-                                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.financeCostStatus === 'approved' ? 'bg-primary-soft text-primary' : item.financeCostStatus === 'rejected' ? 'bg-danger/10 text-danger' : 'bg-background text-muted'}`}>
-                                      {item.financeCostStatus === 'rejected' ? 'Returned to Chef' : getApprovalStatusLabel(item.financeCostStatus ?? 'pending')}
+                                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.approvalStatus === 'approved' ? 'bg-primary-soft text-primary' : item.approvalStatus === 'rejected' ? 'bg-danger/10 text-danger' : 'bg-background text-muted'}`}>
+                                      {getApprovalStatusLabel(item.approvalStatus)}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-3">{item.financeCostStatus === 'pending' ? <div className="flex flex-nowrap items-center gap-1.5">
-                                    <button type="button" disabled={saving} onClick={() => act('cost', 'approved', group, item)} className="whitespace-nowrap rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Approve</button>
-                                    <button type="button" disabled={saving} onClick={() => { setRejection({ kind: 'cost', group, menu: item }); setReason('') }} className="whitespace-nowrap rounded-md border border-danger bg-white px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-50">Reject</button>
-                                  </div> : <span className="text-xs text-muted">Reviewed</span>}</td>
                                 </tr>
                               })}</tbody>
                       <tfoot className="bg-[#ccd9ec]">
@@ -318,14 +304,15 @@ export default function FinanceControllerPage() {
                           <td className="px-3 py-3 font-bold">{formatMoney(totalCost)}</td>
                           <td className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
                           <td className="px-3 py-3 font-bold">{formatMoney(totalCostPerPax)}</td>
-                          <td colSpan={2} />
+                          <td />
                         </tr>
                         {portionSummary.groups.length > 0 ? <>
-                          <tr aria-hidden="true"><td colSpan={9} className="border-y border-primary bg-white">&nbsp;</td></tr>
+                          <tr aria-hidden="true"><td colSpan={8} className="border-y border-primary bg-white">&nbsp;</td></tr>
                           <tr className="border-y border-primary bg-primary text-xs font-bold uppercase tracking-[0.12em] text-white">
-                            <td colSpan={3} className="!bg-primary px-3 py-3 text-right">Menu Group Summary</td>
+                            <td colSpan={2} aria-hidden="true" className="!bg-primary" />
+                            <td className="!bg-primary px-3 py-3 text-right">Menu Group Summary</td>
                             <td className="px-3 py-3">Qty</td>
-                            <td colSpan={2} className="px-3 py-3">Selling Price/Pax</td>
+                            <td className="px-3 py-3">Selling Price/Pax</td>
                             <td colSpan={2} className="px-3 py-3">Estimated Revenue</td>
                             <td className="px-3 py-3">Cost Contribution (%)</td>
                           </tr>
@@ -337,38 +324,49 @@ export default function FinanceControllerPage() {
                               : sum, 0)
                           const groupSale = first?.groupSales?.find((sale) => sale.name === item.name)
                           return <tr key={item.name} className="border-t border-border">
-                            <td colSpan={3} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name} Qty</td>
+                            <td colSpan={2} aria-hidden="true" className="bg-white" />
+                            <td className="bg-white px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name}</td>
                             <td className="px-3 py-3 font-semibold">{formatQuantity(item.portion)}</td>
-                            <td colSpan={2} className="px-3 py-3">{formatMoney(groupSale?.sellingPricePerPax)}</td>
+                            <td className="px-3 py-3">{formatMoney(groupSale?.sellingPricePerPax)}</td>
                             <td colSpan={2} className="px-3 py-3 font-semibold">{formatMoney(groupSale?.estimatedRevenue)}</td>
                             <td className="px-3 py-3 font-semibold">{formatFoodCostPercentage(groupCost, revenue)}</td>
                           </tr>
                         })}
                         <tr className="border-t border-border">
-                          <td colSpan={3} className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total</td>
+                          <td colSpan={2} aria-hidden="true" className="bg-white" />
+                          <td className="bg-white px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total</td>
                           <td className="px-3 py-3 font-bold">{formatQuantity(portionSummary.total)}</td>
-                          <td colSpan={2} />
+                          <td />
                           <td colSpan={2} className="px-3 py-3 font-bold">{formatMoney(first?.groupSales?.length ? first.groupSales.reduce((sum, sale) => sum + sale.estimatedRevenue, 0) : undefined)}</td>
                           <td className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
                         </tr>
                         <tr aria-hidden="true" className="border-y border-black">
-                          <td colSpan={9} className="h-2 p-0" style={{ backgroundColor: 'var(--dm-primary)' }} />
+                          <td colSpan={8} className="h-2 p-0" style={{ backgroundColor: 'var(--dm-primary)' }} />
                         </tr>
                         {!first?.groupSales?.length ? <><tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Selling Price/Pax</td>
-                          <td colSpan={5} className="px-3 py-3 font-bold">{formatMoney(first?.sellingPricePerPax)}</td>
+                          <td colSpan={4} className="px-3 py-3 font-bold">{formatMoney(first?.sellingPricePerPax)}</td>
                         </tr>
                         <tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Pax Calculation</td>
-                          <td colSpan={5} className="px-3 py-3 font-bold">{first?.sellingQuantity ?? '-'}</td>
+                          <td colSpan={4} className="px-3 py-3 font-bold">{first?.sellingQuantity ?? '-'}</td>
                         </tr></> : null}
                         <tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Estimated Revenue</td>
-                          <td colSpan={5} className="px-3 py-3 font-bold">{formatMoney(revenue)}</td>
+                          <td colSpan={4} className="px-3 py-3 font-bold">{formatMoney(revenue)}</td>
                         </tr>
                         <tr className="border-t border-border">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Food Cost Percentage</td>
-                          <td colSpan={5} className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
+                          <td colSpan={4} className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
+                        </tr>
+                        <tr className="border-t border-border">
+                          <td colSpan={4} />
+                          <td colSpan={4} className="px-3 py-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button type="button" disabled={saving || !salesReady} onClick={() => act('approved', group)} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve</button>
+                              <button type="button" disabled={saving || !salesReady} onClick={() => { setRejection({ group }); setReason('') }} className="rounded-md border border-danger bg-white px-4 py-2 text-sm font-semibold text-danger disabled:opacity-50">Reject</button>
+                            </div>
+                          </td>
                         </tr>
                       </tfoot>
                     </table>
@@ -463,11 +461,11 @@ export default function FinanceControllerPage() {
       </div>
       {rejection ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-md space-y-4 rounded-md bg-surface p-6 shadow-xl">
-          <h2 className="font-semibold">Reject {rejection.kind === 'cost' ? 'cost per menu' : 'sales'}</h2>
+          <h2 className="font-semibold">Return batch to Unit Manager</h2>
           {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
-          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={1000} placeholder="Reason for rejection" className="w-full rounded-md border border-border p-3 text-sm" />
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={4} maxLength={1000} placeholder="Explain which recipes or sales values need Unit Manager review" className="w-full rounded-md border border-border p-3 text-sm" />
           <div className="flex gap-2">
-            <button type="button" disabled={saving || reason.trim().length < 3} onClick={() => act(rejection.kind, 'rejected', rejection.group, rejection.menu, reason.trim())} className="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Reject</button>
+            <button type="button" disabled={saving || reason.trim().length < 3} onClick={() => act('rejected', rejection.group, reason.trim())} className="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Reject</button>
             <button type="button" disabled={saving} onClick={() => setRejection(null)} className="rounded-md border border-border px-4 py-2 text-sm">Cancel</button>
           </div>
         </div>

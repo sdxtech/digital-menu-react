@@ -58,14 +58,14 @@ const makeService = (menus: Array<Record<string, unknown>> = makeMenus()) => {
 };
 
 describe('MPR sales correction workflow', () => {
-  it('routes sales submission email to the assigned finance controllers', async () => {
+  it('routes sales submission email to Unit Manager before Finance', async () => {
     const menus = makeMenus().map((menu) => ({
       ...menu,
       approvalStatus: 'pending',
       financeApprovalRequired: true,
       financeControllerIds: [ids[0]],
     }));
-    const { service, mail } = makeService(menus);
+    const { service, mail, model } = makeService(menus);
     await service.updateBatchSalesDetails(
       'MPR0001',
       {
@@ -79,7 +79,15 @@ describe('MPR sales correction workflow', () => {
     expect(mail.notifyMenuProductionsReadyForApproval).toHaveBeenCalledWith(
       expect.any(Array),
       expect.stringMatching(/^sales-resubmission-/),
-      [ids[0]],
+    );
+    expect(model.updateMany).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          salesApprovalStatus: 'pending',
+          storeRequestStatus: 'not-requested',
+        }),
+      }),
     );
   });
 
@@ -147,6 +155,7 @@ describe('MPR sales correction workflow', () => {
       makeMenus().map((menu, i) => ({
         ...menu,
         group: i ? 'Regular' : 'Asian',
+        salesApprovalStatus: 'pending',
       })),
     );
     await expect(
@@ -342,11 +351,13 @@ describe('MPR sales correction workflow', () => {
         storeRequestStatus: { $in: ['not-requested', 'requested'] },
       });
       expect(updates[0][1].$set).toMatchObject({
-        approvalStatus: 'pending',
+        salesApprovalStatus: 'rejected',
         storeRequestStatus: 'not-requested',
         salesRejectionReason: reason,
         salesRejectedBy: actor.name,
       });
+      expect(updates[0][1].$set).not.toHaveProperty('approvalStatus');
+      expect(updates[0][1].$unset).not.toHaveProperty('approvedAt');
       expect(updates[0][1].$set.salesRejectedAt).toBeInstanceOf(Date);
       expect(updates[0][1].$unset).toEqual({
         sellingPricePerPax: 1,
@@ -354,8 +365,8 @@ describe('MPR sales correction workflow', () => {
         estimatedRevenue: 1,
         groupSales: 1,
         salesInputBy: 1,
-        reviewedBy: 1,
-        approvedAt: 1,
+        salesApprovedBy: 1,
+        salesApprovedAt: 1,
       });
       expect(notifications.createHierarchicalNotification).toHaveBeenCalledWith(
         actor.id,
@@ -389,25 +400,21 @@ describe('MPR sales correction workflow', () => {
   });
 
   it.each([
-    { approvalStatus: 'rejected' },
     { salesRejectionReason: 'Already returned' },
     { sellingQuantity: undefined },
-  ])(
-    'does not mix menu rejection or unsubmitted sales with Reject Sales',
-    async (state) => {
-      const { service, model } = makeService(
-        makeMenus().map((menu) => ({ ...menu, ...state })),
-      );
-      await expect(
-        service.rejectSalesBatch(
-          { menuProductionIds: ids, reason },
-          undefined,
-          actor,
-        ),
-      ).rejects.toThrow();
-      expect(model.updateMany).not.toHaveBeenCalled();
-    },
-  );
+  ])('blocks already returned or unsubmitted sales', async (state) => {
+    const { service, model } = makeService(
+      makeMenus().map((menu) => ({ ...menu, ...state })),
+    );
+    await expect(
+      service.rejectSalesBatch(
+        { menuProductionIds: ids, reason },
+        undefined,
+        actor,
+      ),
+    ).rejects.toThrow();
+    expect(model.updateMany).not.toHaveBeenCalled();
+  });
 
   it('rejects missing reasons, negative prices, and partial or cross-site batch selections', async () => {
     const { service, model } = makeService();
@@ -512,7 +519,8 @@ describe('MPR sales correction workflow', () => {
       'Admin Sales',
     );
     expect(menus[0]).toMatchObject({
-      approvalStatus: 'pending',
+      approvalStatus: 'approved',
+      salesApprovalStatus: 'pending',
       storeRequestStatus: 'not-requested',
       sellingPricePerPax: 20000,
       sellingQuantity: 150,
