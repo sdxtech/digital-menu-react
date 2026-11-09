@@ -122,14 +122,10 @@ const SuperadminStoreRequestPage = () => {
     <div className="space-y-5">
       <div>
         <PageHeading className="text-2xl font-semibold">Store Request Operations</PageHeading>
-        <p className="mt-1 text-sm text-muted">
-          Process store requests and monitor their progress and issuance history
-          from one workspace.
-        </p>
       </div>
 
       <div
-        className="grid gap-3 rounded-md border border-border bg-surface p-3 shadow-sm md:grid-cols-3"
+        className="!mt-2 grid gap-3 rounded-md border border-border bg-surface p-3 shadow-sm md:grid-cols-3"
         role="tablist"
         aria-label="Store request views"
       >
@@ -177,7 +173,6 @@ const SuperadminStoreRequestPage = () => {
           <UnitManagerMenuProductionRecordsPage
             includePending
             title="Menu Production Progress"
-            description="Monitor production batches across all sites from submission through approval, store request, completion, rejection, or cancellation."
           />
         ) : null}
         {activeView === 'history' ? <StorekeeperHistoryPage /> : null}

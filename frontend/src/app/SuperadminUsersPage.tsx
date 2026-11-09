@@ -537,14 +537,11 @@ const SuperadminUsersPage = () => {
   }
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div className="space-y-2">
           <div>
             <PageHeading className="text-2xl font-semibold">User Management</PageHeading>
-            <p className="mt-1 text-sm text-muted">
-              Update names, emails, and passwords for your team.
-            </p>
           </div>
 
           {createOpen ? (
@@ -897,18 +894,6 @@ const SuperadminUsersPage = () => {
                 iconClassName="bi bi-upload text-base"
                 size="sm"
               />
-              <button
-                type="button"
-                onClick={() => fetchUsers(meta.page, meta.limit, search)}
-                aria-label="Refresh users"
-                title="Refresh users"
-                className="rounded-md border border-border bg-background p-2 text-primary"
-              >
-                <i
-                  className="bi bi-arrow-clockwise text-base"
-                  aria-hidden="true"
-                />
-              </button>
             </div>
           </div>
 

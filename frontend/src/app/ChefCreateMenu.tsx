@@ -183,6 +183,7 @@ const initialRecipeForm: RecipeForm = {
 
 type ChefCreateMenuProps = {
   embedded?: boolean
+  showHeading?: boolean
   baseRecipe?: BaseRecipe
   enableIngredientUomConversion?: boolean
   lockSrUomToRawMaterial?: boolean
@@ -194,6 +195,7 @@ type ChefCreateMenuProps = {
 
 const ChefCreateMenu = ({
   embedded = false,
+  showHeading = true,
   baseRecipe: baseRecipeProp,
   enableIngredientUomConversion = false,
   lockSrUomToRawMaterial = false,
@@ -1748,11 +1750,12 @@ const ChefCreateMenu = ({
         </div>
       ) : null}
       <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          {showHeading ? <div>
             <PageHeading
               className="text-2xl font-semibold"
               showBack={!embedded}
+              showBreadcrumb={!embedded}
               backTo={isDraftRecipe ? recipeDraftsPath : undefined}
             >
               {isEditMode
@@ -1763,20 +1766,8 @@ const ChefCreateMenu = ({
                     ? 'Create Recipe from Template'
                     : 'Create New Recipe'}
             </PageHeading>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {showImport ? (
-              <>
-                <RecipeImportTemplateDownload />
-                <ActionButton
-                  action="import"
-                  onClick={openImportModal}
-                  iconClassName="bi bi-upload text-base"
-                  size="sm"
-                />
-              </>
-            ) : null}
-            {embedded && onClose ? (
+          </div> : null}
+          {embedded && onClose ? (
               <button
                 type="button"
                 onClick={onClose}
@@ -1787,7 +1778,6 @@ const ChefCreateMenu = ({
                 <i className="bi bi-x-lg text-sm leading-none" aria-hidden="true" />
               </button>
             ) : null}
-          </div>
         </div>
 
         {isRejectedRecipe ? (
@@ -1849,7 +1839,22 @@ const ChefCreateMenu = ({
         ) : null}
 
         <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-        <h3 className="font-semibold">Recipe details</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold">Recipe details</h3>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {showImport ? (
+                <>
+                  <RecipeImportTemplateDownload />
+                  <ActionButton
+                    action="import"
+                    onClick={openImportModal}
+                    iconClassName="bi bi-upload text-base"
+                    size="sm"
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           {isCorporateChef || isSuperadmin ? (
             <div className="sm:col-span-2">

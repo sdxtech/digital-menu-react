@@ -170,40 +170,36 @@ const SuperadminClientManagementPage = () => {
   }
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <PageHeading className="text-2xl font-semibold">Client Management</PageHeading>
-            <p className="mt-1 text-sm text-muted">Manage clients and the sites serving them.</p>
-          </div>
-          <button type="button" onClick={openCreate} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white">
-            Add Client
-          </button>
+        <div>
+          <PageHeading className="text-2xl font-semibold">Client Management</PageHeading>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                setPage(1)
-                setSearch(searchInput.trim())
-              }
-            }}
-            placeholder="Search client name or ID"
-            className="w-full max-w-sm rounded-md border border-border bg-white px-3 py-2 text-sm"
-          />
-          <button type="button" onClick={() => { setPage(1); setSearch(searchInput.trim()) }} className="rounded-md border border-border bg-background px-4 py-2 text-sm font-semibold text-primary">
-            Search
-          </button>
-        </div>
-
         {message ? <p className="text-sm text-success">{message}</p> : null}
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
+        <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    setPage(1)
+                    setSearch(searchInput.trim())
+                  }
+                }}
+                placeholder="Search client name or ID"
+                className="w-full min-w-0 rounded-2xl border border-border bg-white px-4 py-2 text-sm sm:w-72"
+              />
+              <button type="button" onClick={() => { setPage(1); setSearch(searchInput.trim()) }} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white">
+                Search
+              </button>
+            </div>
+            <button type="button" onClick={openCreate} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white">
+              Add Client
+            </button>
+          </div>
           <TablePagination
             page={page}
             totalPages={totalPages}

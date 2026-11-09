@@ -1936,9 +1936,93 @@ const ChefStoreRequest = ({
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <PageHeading className="text-2xl font-semibold">Store Request</PageHeading>
+      <div>
+        <PageHeading className="text-2xl font-semibold">Store Request</PageHeading>
+      </div>
+
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="flex flex-wrap items-end gap-3">
+            {requireSiteSelection ? (
+              <div className="w-full min-w-0 sm:w-72">
+                <label htmlFor="store-request-site" className="block text-xs font-medium text-muted">
+                  Store request site
+                </label>
+                <select
+                  id="store-request-site"
+                  value={selectedSite}
+                  onChange={(event) => setSelectedSite(event.target.value)}
+                  className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">Select site</option>
+                  {siteOptions
+                    .filter((site) => site.code.trim())
+                    .map((site) => (
+                      <option key={site.code} value={site.code}>
+                        {site.name ? `${site.name} (${site.code})` : site.code}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            ) : null}
+            {!requireSiteSelection ? (
+              <div className="w-full sm:w-60">
+                <label htmlFor="chef-store-request-client" className="sr-only">Client Name</label>
+                <select
+                  id="chef-store-request-client"
+                  value={clientName}
+                  onChange={(event) => setClientName(event.target.value)}
+                  disabled={loading}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                >
+                  <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
+                  {clientOptions.map((client) => (
+                    <option key={client.toLowerCase()} value={client}>
+                      {client}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <DateRangeFilter
+              id="chef-store-request-production"
+              label="Production Date"
+              from={productionDateFrom}
+              to={productionDateTo}
+              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setProductionDateFrom(from)
+                setProductionDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`production-${direction}`)}
+            />
+            <DateRangeFilter
+              id="chef-store-request-created"
+              label="Created Date"
+              from={createdDateFrom}
+              to={createdDateTo}
+              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setCreatedDateFrom(from)
+                setCreatedDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`created-${direction}`)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProductionDateFrom('')
+                setProductionDateTo('')
+                setCreatedDateFrom('')
+                setCreatedDateTo('')
+                setClientName('')
+                setDateSort('production-desc')
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+            >
+              Reset filters
+            </button>
+          </div>
           {enableBulkExport ? (
             <button
               type="button"
@@ -1953,101 +2037,19 @@ const ChefStoreRequest = ({
             </button>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-end gap-3 pt-2">
-          {requireSiteSelection ? (
-            <div className="w-full min-w-0 sm:w-72">
-              <label htmlFor="store-request-site" className="block text-xs font-medium text-muted">
-                Store request site
-              </label>
-              <select
-                id="store-request-site"
-                value={selectedSite}
-                onChange={(event) => setSelectedSite(event.target.value)}
-                className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-              >
-                <option value="">Select site</option>
-                {siteOptions
-                  .filter((site) => site.code.trim())
-                  .map((site) => (
-                    <option key={site.code} value={site.code}>
-                      {site.name ? `${site.name} (${site.code})` : site.code}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          ) : null}
-          {!requireSiteSelection ? (
-            <div className="w-full sm:w-60">
-              <label htmlFor="chef-store-request-client" className="sr-only">Client Name</label>
-              <select
-                id="chef-store-request-client"
-                value={clientName}
-                onChange={(event) => setClientName(event.target.value)}
-                disabled={loading}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-              >
-                <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
-                {clientOptions.map((client) => (
-                  <option key={client.toLowerCase()} value={client}>
-                    {client}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          <DateRangeFilter
-            id="chef-store-request-production"
-            label="Production Date"
-            from={productionDateFrom}
-            to={productionDateTo}
-            sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
-            onApply={(from, to) => {
-              setProductionDateFrom(from)
-              setProductionDateTo(to)
-            }}
-            onSort={(direction) => setDateSort(`production-${direction}`)}
-          />
-          <DateRangeFilter
-            id="chef-store-request-created"
-            label="Created Date"
-            from={createdDateFrom}
-            to={createdDateTo}
-            sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
-            onApply={(from, to) => {
-              setCreatedDateFrom(from)
-              setCreatedDateTo(to)
-            }}
-            onSort={(direction) => setDateSort(`created-${direction}`)}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setProductionDateFrom('')
-              setProductionDateTo('')
-              setCreatedDateFrom('')
-              setCreatedDateTo('')
-              setClientName('')
-              setDateSort('production-desc')
-            }}
-            className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
-          >
-            Reset filters
-          </button>
+        <div className="space-y-2 px-5">
+          {requireSiteSelection && !selectedSite ? (
+                    <p className="text-xs text-muted">
+                      Select a site to load store request batches.
+                    </p>
+                  ) : null}
+          {errorMessage ? (
+                    <p className="text-xs font-medium text-red-600">{errorMessage}</p>
+                  ) : null}
+          {actionMessage ? (
+                    <p className="text-xs font-medium text-primary">{actionMessage}</p>
+                  ) : null}
         </div>
-        {requireSiteSelection && !selectedSite ? (
-          <p className="text-xs text-muted">
-            Select a site to load store request batches.
-          </p>
-        ) : null}
-        {errorMessage ? (
-          <p className="text-xs font-medium text-red-600">{errorMessage}</p>
-        ) : null}
-        {actionMessage ? (
-          <p className="text-xs font-medium text-primary">{actionMessage}</p>
-        ) : null}
-      </div>
-
-      <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
             Showing {paginatedGroups.length} of {requireSiteSelection ? requestTotal : filteredGroups.length} production batches

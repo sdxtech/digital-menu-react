@@ -534,51 +534,11 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
   const paginatedMenuGroups = filteredMenuProductionGroups
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div>
-          <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
-          <p className="mt-2 text-sm text-muted">
-            {corporateOnly
-              ? isCorporateSite ? 'Review recipes from all corporate and operational sites.' : 'Review recipes from your assigned sites.'
-              : 'Review recipes and production menus from the Chef team.'}
-          </p>
-          {corporateOnly && (isCorporateSite || assignedSites.length > 0) ? (
-            <label className="mt-4 block max-w-sm text-sm font-medium text-foreground">
-              Site
-              <select
-                value={selectedSite ?? ''}
-                onChange={(event) => {
-                  const next = new URLSearchParams(searchParams)
-                  next.set('section', 'recipes')
-                  next.set('site', event.target.value)
-                  setRecipePage(1)
-                  setSearchParams(next)
-                }}
-                className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-              >
-                {isCorporateSite ? <option value="">All approval sites</option> : null}
-                {assignedSites.map((site) => (
-                  <option key={site} value={site}>
-                    {(isCorporateSite ? corporateSettings.context?.approvalSiteOptions : corporateSettings.context?.siteOptions ?? user?.siteOptions)?.find((item) => item.code === site)?.name ?? site}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading approval sites...</p> : null}
-          {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}
-          {actionError ? (
-            <p className="mt-2 text-xs font-medium text-red-600">
-              {actionError}
-            </p>
-          ) : null}
-          {actionMessage ? (
-            <p className="mt-2 text-xs font-medium text-primary">
-              {actionMessage}
-            </p>
-          ) : null}
-        </div>
+        <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
+      </div>
 
         {recipeRejectTarget ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -728,14 +688,49 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
           </div>
         ) : null}
 
+        <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="space-y-2 border-b border-border px-5 py-4">
+          {corporateOnly && (isCorporateSite || assignedSites.length > 0) ? (
+            <label className="mt-2 block max-w-sm text-sm font-medium text-foreground">
+              Site
+              <select
+                value={selectedSite ?? ''}
+                onChange={(event) => {
+                  const next = new URLSearchParams(searchParams)
+                  next.set('section', 'recipes')
+                  next.set('site', event.target.value)
+                  setRecipePage(1)
+                  setSearchParams(next)
+                }}
+                className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+              >
+                {isCorporateSite ? <option value="">All approval sites</option> : null}
+                {assignedSites.map((site) => (
+                  <option key={site} value={site}>
+                    {(isCorporateSite ? corporateSettings.context?.approvalSiteOptions : corporateSettings.context?.siteOptions ?? user?.siteOptions)?.find((item) => item.code === site)?.name ?? site}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {corporateSettings.loading ? <p className="mt-2 text-xs text-muted">Loading approval sites...</p> : null}
+          {corporateSettings.error ? <p className="mt-2 text-xs text-red-600">{corporateSettings.error}</p> : null}
+          {actionError ? (
+            <p className="mt-2 text-xs font-medium text-red-600">
+              {actionError}
+            </p>
+          ) : null}
+          {actionMessage ? (
+            <p className="mt-2 text-xs font-medium text-primary">
+              {actionMessage}
+            </p>
+          ) : null}
+        </div>
         {activeSection === 'recipes' ? (
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+          <div className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Recipe Approval</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Review recipe drafts submitted by the Chef team.
-                </p>
               </div>
             </div>
             <TablePagination
@@ -989,13 +984,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="!mt-2 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Menu Production Approval</h2>
-                <p className="mt-1 text-sm text-muted">
-                  Review production batches before they move to Storekeeper.
-                </p>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1068,7 +1060,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 buildBatch={buildMenuProductionApprovalSheets}
               />
             </div>
-            <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+            <div className="p-6">
             <TablePagination
               page={menuGroupPage}
               totalPages={menuGroupTotalPages}
@@ -1796,6 +1788,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   )

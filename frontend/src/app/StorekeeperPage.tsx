@@ -956,9 +956,63 @@ const StorekeeperPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <PageHeading className="text-2xl font-semibold">Store Request</PageHeading>
+      <div>
+        <PageHeading className="text-2xl font-semibold">Store Request</PageHeading>
+      </div>
+
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <DateRangeFilter
+              id="storekeeper-store-request-production"
+              label="Production Date"
+              from={productionFilterStartDate}
+              to={productionFilterEndDate}
+              sortDirection={productionSortOrder === 'none' ? undefined : productionSortOrder}
+              onApply={(from, to) => {
+                setProductionFilterStartDate(from)
+                setProductionFilterEndDate(to)
+                setPage(1)
+              }}
+              onSort={(direction) => {
+                setProductionSortOrder(direction)
+                setCreatedSortOrder('none')
+                setPage(1)
+              }}
+            />
+            <DateRangeFilter
+              id="storekeeper-store-request-created"
+              label="Created Date"
+              from={createdFilterStartDate}
+              to={createdFilterEndDate}
+              sortDirection={createdSortOrder === 'none' ? undefined : createdSortOrder}
+              onApply={(from, to) => {
+                setCreatedFilterStartDate(from)
+                setCreatedFilterEndDate(to)
+                setPage(1)
+              }}
+              onSort={(direction) => {
+                setCreatedSortOrder(direction)
+                setProductionSortOrder('none')
+                setPage(1)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProductionFilterStartDate('')
+                setProductionFilterEndDate('')
+                setCreatedFilterStartDate('')
+                setCreatedFilterEndDate('')
+                setProductionSortOrder('desc')
+                setCreatedSortOrder('none')
+                setPage(1)
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+            >
+              Reset filters
+            </button>
+          </div>
           <button
             type="button"
             onClick={openBulkExportModal}
@@ -971,69 +1025,17 @@ const StorekeeperPage = () => {
             </span>
           </button>
         </div>
-        <p className="text-sm text-muted">
-          This data is auto-added after Unit Manager approval.
-        </p>
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <DateRangeFilter
-            id="storekeeper-store-request-production"
-            label="Production Date"
-            from={productionFilterStartDate}
-            to={productionFilterEndDate}
-            sortDirection={productionSortOrder === 'none' ? undefined : productionSortOrder}
-            onApply={(from, to) => {
-              setProductionFilterStartDate(from)
-              setProductionFilterEndDate(to)
-              setPage(1)
-            }}
-            onSort={(direction) => {
-              setProductionSortOrder(direction)
-              setCreatedSortOrder('none')
-              setPage(1)
-            }}
-          />
-          <DateRangeFilter
-            id="storekeeper-store-request-created"
-            label="Created Date"
-            from={createdFilterStartDate}
-            to={createdFilterEndDate}
-            sortDirection={createdSortOrder === 'none' ? undefined : createdSortOrder}
-            onApply={(from, to) => {
-              setCreatedFilterStartDate(from)
-              setCreatedFilterEndDate(to)
-              setPage(1)
-            }}
-            onSort={(direction) => {
-              setCreatedSortOrder(direction)
-              setProductionSortOrder('none')
-              setPage(1)
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setProductionFilterStartDate('')
-              setProductionFilterEndDate('')
-              setCreatedFilterStartDate('')
-              setCreatedFilterEndDate('')
-              setProductionSortOrder('desc')
-              setCreatedSortOrder('none')
-              setPage(1)
-            }}
-            className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
-          >
-            Reset filters
-          </button>
+        <div className="space-y-2 px-5">
+          <p className="text-sm text-muted">
+                    This data is auto-added after Unit Manager approval.
+                  </p>
+          {loadError ? (
+                    <p className="text-xs font-medium text-red-600">{loadError}</p>
+                  ) : null}
+          {actionMessage ? (
+                    <p className="text-xs font-medium text-primary">{actionMessage}</p>
+                  ) : null}
         </div>
-        {loadError ? (
-          <p className="text-xs font-medium text-red-600">{loadError}</p>
-        ) : null}
-        {actionMessage ? (
-          <p className="text-xs font-medium text-primary">{actionMessage}</p>
-        ) : null}
-      </div>
-
-      <div className="rounded-md border border-border bg-surface shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
             Showing {paginatedGroups.length} of {filteredGroups.length} production batches

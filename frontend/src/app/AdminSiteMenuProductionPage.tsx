@@ -273,26 +273,19 @@ const AdminSiteMenuProductionPage = () => {
     <section className="space-y-5 pb-10">
       <div>
         <PageHeading className="text-2xl font-semibold">Menu Production Sales Input</PageHeading>
-        <p className="mt-1 text-sm text-muted">
-          Complete the selling price for each menu group before Unit Manager approval.
-        </p>
       </div>
       {error ? (
-        <p className="rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <p className="!mt-2 rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </p>
       ) : null}
       {message ? (
-        <p className="rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <p className="!mt-2 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {message}
         </p>
       ) : null}
-      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+      <div className="!mt-2 rounded-md border border-border bg-surface p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Menu Production Sales Input</h2>
-        <p className="mt-1 text-sm text-muted">
-          Review production batches from the Chef team and complete sales
-          information.
-        </p>
         <TablePagination
           page={page}
           totalPages={totalPages}

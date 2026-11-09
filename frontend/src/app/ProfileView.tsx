@@ -80,7 +80,7 @@ const ProfileView = () => {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-100">
+    <div className="space-y-2 animate-in fade-in duration-100">
       <div>
         <PageHeading className="text-2xl font-semibold">My Profile</PageHeading>
         {message && (

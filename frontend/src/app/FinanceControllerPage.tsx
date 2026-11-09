@@ -144,30 +144,33 @@ export default function FinanceControllerPage() {
   }
 
   return (
-    <div className="w-full space-y-6 py-2">
+    <div className="w-full space-y-6 pb-2">
       <div>
         <PageHeading className="text-2xl font-semibold">Approval Center</PageHeading>
-        <p className="mt-2 text-sm text-muted">Review the complete batch after Unit Manager approval. Return revision notes to the Unit Manager when changes are needed.</p>
       </div>
-      <label className="block max-w-sm text-sm font-medium">Site
-        <select value={site} onChange={(event) => { setSite(event.target.value); setPage(1) }}
-          className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2">
-          <option value="">All assigned sites</option>
-          {sites.map((option) => <option key={option.code} value={option.code}>{option.name} ({option.code})</option>)}
-        </select>
-      </label>
-      {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
-      {message ? <p role="status" className="text-sm text-primary">{message}</p> : null}
-      {loading ? <p className="text-sm text-muted">Loading approvals...</p> : null}
-      <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <label className="block max-w-sm text-sm font-medium">Site
+            <select value={site} onChange={(event) => { setSite(event.target.value); setPage(1) }}
+              className="mt-2 w-full rounded-md border border-border bg-white px-3 py-2">
+              <option value="">All assigned sites</option>
+              {sites.map((option) => <option key={option.code} value={option.code}>{option.name} ({option.code})</option>)}
+            </select>
+          </label>
+          {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
+          {message ? <p role="status" className="text-sm text-primary">{message}</p> : null}
+          {loading ? <p className="text-sm text-muted">Loading approvals...</p> : null}
+        </div>
         <TablePagination
           page={page}
           totalPages={Math.ceil(total / 10)}
           onPageChange={setPage}
           loading={loading}
           summary={`Showing ${groups.length} of ${total} production batches`}
+          className="border-b border-border bg-white px-5 py-4"
         />
-        <div className="mt-4 overflow-hidden rounded-md border border-border">
+        <div className="max-w-full overflow-x-auto">
           <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
             <colgroup>
               <col className="w-[5%]" />

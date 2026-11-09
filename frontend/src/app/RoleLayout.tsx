@@ -11,6 +11,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { PageBreadcrumbContext, resolvePageBreadcrumb } from '../lib/page-breadcrumb'
 
 type NavItem = {
   label: string
@@ -18,6 +19,7 @@ type NavItem = {
   end?: boolean
   icon: (className: string) => ReactNode
   children?: NavItem[]
+  breadcrumbPaths?: string[]
   componentKey?: string; // Supported option placeholder configuration identifier
 }
 
@@ -63,6 +65,7 @@ const RoleLayout = ({
   const dashboardAccess = useDashboardAccess()
   const navigate = useNavigate()
   const location = useLocation()
+  const breadcrumb = resolvePageBreadcrumb(navItems, location.pathname, location.search)
   
   const [sidebarOpen, setSidebarOpen] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth >= 768 : true),
@@ -635,8 +638,10 @@ const RoleLayout = ({
             </nav>
           </aside>
 
-          <main className={`ml-14 min-w-0 px-3 pt-4 transition-[margin] md:px-4 ${sidebarOpen ? 'md:ml-56' : 'md:ml-14'}`}>
-            <Outlet />
+          <main className={`ml-14 min-w-0 px-3 pt-2 transition-[margin] md:px-4 ${sidebarOpen ? 'md:ml-56' : 'md:ml-14'}`}>
+            <PageBreadcrumbContext.Provider value={breadcrumb}>
+              <Outlet />
+            </PageBreadcrumbContext.Provider>
           </main>
       </div>
     </AppShell>

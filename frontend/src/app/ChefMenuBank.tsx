@@ -370,38 +370,39 @@ const ChefMenuBank = () => {
     <div className="space-y-6">
       <RecipeExportDialog exportState={recipeExport} />
       <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
-          </div>
-          <RecipeExportToolbar exportState={recipeExport} variant="primary" />
+        <div>
+          <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
         </div>
 
-        <RecipeFilters
-          sites={recipeSites}
-          selectedSite={siteFilter}
-          onSiteChange={(site) => {
-            setSiteFilter(site)
-            setPage(1)
-            setSelectedRecipeId(null)
-          }}
-          siteError={siteError}
-          searchTerm={searchInput}
-          onSearchChange={setSearchInput}
-          onSearch={() => {
-            setSearchTerm(searchInput.trim())
-            setPage(1)
-          }}
-          statuses={statusFilters}
-          approvalStatus={approvalFilter}
-          categories={categories}
-          selectedCategories={categoryFilters}
-          onStatusesChange={setStatusFilters}
-          onApprovalStatusChange={setApprovalFilter}
-          onCategoriesChange={setCategoryFilters}
-        />
-
         <div className="rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <RecipeFilters
+                sites={recipeSites}
+                selectedSite={siteFilter}
+                onSiteChange={(site) => {
+                  setSiteFilter(site)
+                  setPage(1)
+                  setSelectedRecipeId(null)
+                }}
+                siteError={siteError}
+                searchTerm={searchInput}
+                onSearchChange={setSearchInput}
+                onSearch={() => {
+                  setSearchTerm(searchInput.trim())
+                  setPage(1)
+                }}
+                statuses={statusFilters}
+                approvalStatus={approvalFilter}
+                categories={categories}
+                selectedCategories={categoryFilters}
+                onStatusesChange={setStatusFilters}
+                onApprovalStatusChange={setApprovalFilter}
+                onCategoriesChange={setCategoryFilters}
+              />
+            </div>
+            <RecipeExportToolbar exportState={recipeExport} variant="primary" />
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
             <span className="text-muted">
               Showing {recipes.length} of {totalItems} recipes

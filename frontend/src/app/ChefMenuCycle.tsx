@@ -125,7 +125,6 @@ const mapProductionUser = (item: ProductionUserApi): ProductionUserOption => ({
 type ChefMenuCycleProps = {
   embedded?: boolean
   title?: string
-  description?: string
   requireProductionSite?: boolean
   productionSiteOptions?: ProductionSiteOption[]
   requireProductionActors?: boolean
@@ -146,7 +145,6 @@ const getVendorUnitPrice = (option?: RawMaterialVendorPriceOption) => {
 const ChefMenuCycle = ({
   embedded = false,
   title = 'Menu Production',
-  description,
   requireProductionSite = false,
   productionSiteOptions = [],
   requireProductionActors = false,
@@ -1543,7 +1541,7 @@ const ChefMenuCycle = ({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        {!embedded || draftProductionCode ? (
+        {!embedded ? (
           <div>
             <PageHeading
               className="text-2xl font-semibold"
@@ -1551,9 +1549,6 @@ const ChefMenuCycle = ({
             >
               {title}
             </PageHeading>
-            {description ? (
-              <p className="mt-1 text-sm text-muted">{description}</p>
-            ) : null}
           </div>
         ) : null}
 
