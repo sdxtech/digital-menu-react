@@ -11,6 +11,7 @@ import { formatQuantity } from '../lib/quantity'
 import { formatVersionedRecipeName } from '../lib/recipe-version'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { syncSharedCosts } from '../lib/sync-shared-costs'
+import { clearRowIngredientSelections, updateMenuRecipeSelection } from '../lib/menu-production-recipe-selection'
 
 const INPUT_ROWS_PER_PAGE = 30 /* Jumlah baris input menu yang ditampilkan per halaman */
 
@@ -89,6 +90,7 @@ type MenuInputRow = {
   group: string
   recipeId: string
   recipeQuery: string
+  pricingRecipeId: string
   portion: number | ''
 }/* Tipe data untuk menyimpan informasi setiap baris input menu, termasuk id unik, grup, id resep yang dipilih, query teks untuk pencarian resep, dan jumlah porsi */
 
@@ -109,6 +111,7 @@ const createMenuInputRow = (values: Partial<MenuInputRow> = {}): MenuInputRow =>
   group: values.group ?? '',
   recipeId: values.recipeId ?? '',
   recipeQuery: values.recipeQuery ?? '',
+  pricingRecipeId: values.recipeId ?? '',
   portion: values.portion ?? '',
 })/* Fungsi untuk membuat baris input menu baru dengan id unik dan nilai default kosong */
 
@@ -230,7 +233,7 @@ const ChefMenuCycle = ({
     ? '/superadmin/menu-management?tab=menu-production'
     : '/chef/menu-cycle'
   const hydratedDraftRef = useRef('')
-  const restoredDraftRowIdsRef = useRef<Set<string>>(new Set())
+  const restoredDraftMenusRef = useRef<Map<string, MenuProduction>>(new Map())
   const restoredDraftVendorsRef = useRef('')
   const [draftRecipesLoading, setDraftRecipesLoading] = useState(false)
   const [draftRecipesError, setDraftRecipesError] = useState('')
@@ -355,7 +358,11 @@ const ChefMenuCycle = ({
         portion: menu.portion > 0 ? menu.portion : '',
       }),
     )
-    restoredDraftRowIdsRef.current = new Set(restoredRows.map((row) => row.id))
+    restoredDraftMenusRef.current = new Map(
+      restoredRows.map((row, index) => [row.id, draftMenus[index]]),
+    )
+    restoredDraftVendorsRef.current = ''
+    setDraftCostsSynced(false)
     setMenuRows(restoredRows)
     setInputPage(1)
     setInputError('')
@@ -512,8 +519,9 @@ const ChefMenuCycle = ({
       ? parsedPrice
       : undefined
   }
-  const isUnsyncedDraftRow = (rowId: string) =>
-    Boolean(draftProductionCode) && !draftCostsSynced && restoredDraftRowIdsRef.current.has(rowId)
+  const isUnsyncedDraftRow = (row: MenuInputRow) =>
+    Boolean(draftProductionCode) && !draftCostsSynced &&
+    restoredDraftMenusRef.current.get(row.id)?.recipeId === row.recipeId
 
   const sortedProductionSiteOptions = useMemo(
     () =>
@@ -963,12 +971,15 @@ const ChefMenuCycle = ({
       return
     }
 
-    const draftMenus = draftState?.menus ?? []
-    const rowsWithRecipes = menuRows.map((row, rowIndex) => ({
-      row,
-      recipe: recipeById[row.recipeId],
-      draftMenu: draftMenus[rowIndex],
-    }))
+    const rowsWithRecipes = menuRows
+      .filter((row) => restoredDraftMenusRef.current.has(row.id))
+      .map((row) => ({
+        row,
+        recipe: recipeById[row.recipeId],
+        draftMenu: restoredDraftMenusRef.current.get(row.id),
+      }))
+    if (!rowsWithRecipes.length) return
+    if (rowsWithRecipes.some(({ row, draftMenu }) => row.recipeId !== draftMenu?.recipeId)) return
     if (rowsWithRecipes.some(({ recipe }) => !recipe)) return
 
     const allVendorDataLoaded = rowsWithRecipes.every(({ recipe }) =>
@@ -1020,8 +1031,9 @@ const ChefMenuCycle = ({
     })
 
     restoredDraftVendorsRef.current = draftProductionCode
-    setSelectedVendorPriceByIngredientKey(nextSelectedVendors)
-    setCustomPriceByIngredientKey(nextCustomPrices)
+    // Preserve edits made in newly added/replaced rows while draft vendors loaded.
+    setSelectedVendorPriceByIngredientKey((current) => ({ ...nextSelectedVendors, ...current }))
+    setCustomPriceByIngredientKey((current) => ({ ...nextCustomPrices, ...current }))
   }, [
     draftProductionCode,
     draftState?.menus,
@@ -1101,37 +1113,30 @@ const ChefMenuCycle = ({
       .slice(0, 20)
   }/* Fungsi untuk mendapatkan daftar resep yang cocok dengan query pencarian secara parsial berdasarkan kode, nama, kategori, dan site. */
 
+  const updateRowRecipe = (id: string, recipeId: string, recipeQuery: string) => {
+    const currentRow = menuRows.find((row) => row.id === id)
+    if (!currentRow) return
+    const selection = updateMenuRecipeSelection(currentRow, recipeId, recipeQuery)
+    if (selection.resetIngredientSelections) {
+      // A replaced recipe follows Add Menu pricing, not the old draft snapshot.
+      restoredDraftMenusRef.current.delete(id)
+      setSelectedVendorPriceByIngredientKey((current) => clearRowIngredientSelections(current, id))
+      setCustomPriceByIngredientKey((current) => clearRowIngredientSelections(current, id))
+    }
+    setMenuRows((current) => current.map((row) => row.id === id ? selection.row : row))
+  }
+
   const updateRowMenuQuery = (id: string, value: string) => {
     const matchedRecipe = findRecipeByExactQuery(value)
-    setMenuRows((prev) =>
-      prev.map((row) =>
-        row.id === id
-          ? {
-              ...row,
-              recipeQuery: value,
-              recipeId: matchedRecipe ? matchedRecipe.id : '',
-            }
-          : row,
-      ),
-    )
-  }/* Fungsi untuk memperbarui query menu dan id resep yang terkait dalam baris input menu saat pengguna mengetik. Fungsi ini mencari apakah query yang dimasukkan cocok dengan salah satu resep yang tersedia secara tepat, dan jika cocok, id resep akan disimpan di state. Jika tidak cocok, id resep akan dikosongkan. Digunakan sebagai onChange handler untuk input menu. */
+    updateRowRecipe(id, matchedRecipe?.id ?? '', value)
+  }
 
   const selectRowRecipe = (id: string, recipe: Recipe) => {
     setSelectedRecipesById((current) => ({
       ...current,
       [recipe.id]: recipe,
     }))
-    setMenuRows((current) =>
-      current.map((row) =>
-        row.id === id
-          ? {
-              ...row,
-              recipeQuery: formatVersionedRecipeName(recipe),
-              recipeId: recipe.id,
-            }
-          : row,
-      ),
-    )
+    updateRowRecipe(id, recipe.id, formatVersionedRecipeName(recipe))
   }
 
   const updateRowPortion = (id: string, value: string) => {
@@ -1333,7 +1338,7 @@ const ChefMenuCycle = ({
           (option) => option.key === selectedVendorKey,
         )
         const requiresManualPrice =
-          isNmp || isUnsyncedDraftRow(row.id) ||
+          isNmp || isUnsyncedDraftRow(row) ||
           (showIngredientVendorColumn && vendorDataLoaded &&
             (vendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendor)) > 0)))
         const price = requiresManualPrice
@@ -1399,7 +1404,7 @@ const ChefMenuCycle = ({
                     site: selectedVendor.site,
                     currency: selectedVendor.currency,
                     minimumQuantity: selectedVendor.minimumQuantity,
-                    price: isUnsyncedDraftRow(row.id) || !(Number(getVendorUnitPrice(selectedVendor)) > 0)
+                    price: isUnsyncedDraftRow(row) || !(Number(getVendorUnitPrice(selectedVendor)) > 0)
                       ? getManualUnitPrice(vendorSelectionKey)
                       : getVendorUnitPrice(selectedVendor),
                   }
@@ -1474,6 +1479,8 @@ const ChefMenuCycle = ({
   const handleCancelProductionDraft = () => {
     hydratedDraftRef.current = ''
     restoredDraftVendorsRef.current = ''
+    restoredDraftMenusRef.current.clear()
+    setDraftCostsSynced(false)
     setProductionDate('')
     setProductionClientId('')
     setMenuRows([createMenuInputRow()])
@@ -1797,7 +1804,7 @@ const ChefMenuCycle = ({
                 const estimatedCostSummary = ingredients.reduce(
                   (summary, ingredient, ingredientIndex) => {
                     const ingredientQty = Number(ingredient.qty)
-                    if (!Number.isFinite(ingredientQty)) return summary
+                    if (!Number.isFinite(ingredientQty)) return { ...summary, incomplete: true }
 
                     const scaledQty =
                       portionForPreview === null
@@ -1834,7 +1841,7 @@ const ChefMenuCycle = ({
                       (option) => option.key === selectedVendorKey,
                     )
                     const requiresManualPrice =
-                      ingredient.ingredientType === 'NMP' || isUnsyncedDraftRow(row.id) ||
+                      ingredient.ingredientType === 'NMP' || isUnsyncedDraftRow(row) ||
                       (hasSiteVendorResult &&
                         (siteVendorOptions.length === 0 || !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
                     const unitPrice =
@@ -1848,6 +1855,7 @@ const ChefMenuCycle = ({
                       return {
                         ...summary,
                         pending: summary.pending || vendorDataPending,
+                        incomplete: true,
                       }
                     }
 
@@ -1855,11 +1863,12 @@ const ChefMenuCycle = ({
                       total: summary.total + scaledQty * unitPrice,
                       hasCost: true,
                       pending: summary.pending,
+                      incomplete: summary.incomplete,
                     }
                   },
-                  { total: 0, hasCost: false, pending: false },
+                  { total: 0, hasCost: false, pending: false, incomplete: false },
                 )
-                const estimatedTotalCost = estimatedCostSummary.hasCost
+                const estimatedTotalCost = estimatedCostSummary.hasCost && !estimatedCostSummary.incomplete
                   ? estimatedCostSummary.total
                   : undefined
                 const estimatedCostPerPax =
@@ -2138,7 +2147,7 @@ const ChefMenuCycle = ({
                                             )
                                           const isNmp = ingredient.ingredientType === 'NMP'
                                           const requiresManualPrice =
-                                            isNmp || isUnsyncedDraftRow(row.id) ||
+                                            isNmp || isUnsyncedDraftRow(row) ||
                                             (hasSiteVendorResult &&
                                               (siteVendorOptions.length === 0 ||
                                                 !(Number(getVendorUnitPrice(selectedVendorPrice)) > 0)))
