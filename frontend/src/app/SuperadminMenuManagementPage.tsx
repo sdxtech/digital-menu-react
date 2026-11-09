@@ -1003,29 +1003,8 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
       ? totalCostPerPax / (targetPercentage / 100)
       : undefined
 
-  return (
+  const calculatorCard = (
     <section className="rounded-md border border-border bg-surface shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-        <div>
-          <PageHeading as="h2" className="text-lg font-semibold" showBack={!embedded}>Calculator Recipe</PageHeading>
-          <p className="mt-1 text-xs text-muted">
-            Select saved recipes and preview price with estimated ingredient cost.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fetchCalculatorRecipes().catch(() => null)}
-            disabled={loading}
-            aria-label="Refresh calculator recipes"
-            title="Refresh calculator recipes"
-            className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
       {error ? (
         <p className="border-b border-border px-5 py-3 text-xs font-medium text-red-600">
           {error}
@@ -1579,6 +1558,33 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
         </button>
       </div>
     </section>
+  )
+
+  if (embedded) return calculatorCard
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <PageHeading className="text-2xl font-semibold">Calculator Recipe</PageHeading>
+          <p className="mt-1 text-sm text-muted">
+            Select saved recipes and preview price with estimated ingredient cost.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => fetchCalculatorRecipes().catch(() => null)}
+          disabled={loading}
+          aria-label="Refresh calculator recipes"
+          title="Refresh calculator recipes"
+          className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
+        </button>
+      </div>
+
+      {calculatorCard}
+    </div>
   )
 }
 
@@ -2986,9 +2992,6 @@ const SuperadminMenuManagementPage = () => {
       <div className="space-y-6">
         <div>
           <PageHeading className="text-2xl font-semibold">Menu Management</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            Manage recipe, raw material, and category data from one workspace.
-          </p>
         </div>
 
         {categoryModalOpen ? (
@@ -3522,7 +3525,6 @@ const SuperadminMenuManagementPage = () => {
           <ChefMenuCycle
             embedded
             title="Menu Production"
-            description="Create production menus for any site before they move into the approval and store request flow."
             requireProductionSite
             requireProductionActors
             productionSiteOptions={siteOptions}

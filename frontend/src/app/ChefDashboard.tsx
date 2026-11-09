@@ -97,29 +97,31 @@ const ChefDashboard = () => {
         </p>
       ) : null}
 
-      <section aria-label="Today's key metrics" className="grid overflow-hidden rounded-lg border border-border bg-surface shadow-sm md:grid-cols-3">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="flex min-w-0 flex-col border-b border-border last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
-            <div className="flex-1 space-y-2 p-2">
-              <p className="flex items-start gap-2 text-sm font-medium text-foreground">
-                <span aria-hidden="true" className={`mt-0.5 h-4 w-0.5 shrink-0 rounded-full ${metric.accent}`} />
-                {metric.label}
-              </p>
-              <div className="break-words text-[40px] font-semibold leading-tight tabular-nums text-foreground">
-                {metric.value}
+      <section aria-label="Today's key metrics" className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+        <div className="-ml-px -mt-px grid md:grid-cols-3">
+          {metrics.map((metric) => (
+            <div key={metric.label} className="flex min-w-0 flex-col border-l border-t border-black bg-surface">
+              <div className="flex-1 space-y-2 p-2">
+                <p className="flex items-start gap-2 text-sm font-medium text-foreground">
+                  <span aria-hidden="true" className={`mt-0.5 h-4 w-2 shrink-0 ${metric.accent}`} />
+                  {metric.label}
+                </p>
+                <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                  {metric.value}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-border p-2 text-xs leading-5">
+                <span className={`inline-flex shrink-0 items-center gap-2 font-normal tabular-nums ${metric.detailTone}`}>
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-background">
+                    <i aria-hidden="true" className={`bi ${metric.detailIcon}`} />
+                  </span>
+                  {metric.detailValue}
+                </span>
+                <span className="min-w-0 break-words text-right font-normal text-foreground">{metric.detailLabel}</span>
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3 border-t border-border p-2 text-xs leading-5">
-              <span className={`inline-flex shrink-0 items-center gap-2 font-normal tabular-nums ${metric.detailTone}`}>
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-background">
-                  <i aria-hidden="true" className={`bi ${metric.detailIcon}`} />
-                </span>
-                {metric.detailValue}
-              </span>
-              <span className="min-w-0 break-words text-right font-normal text-foreground">{metric.detailLabel}</span>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </section>
 
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
