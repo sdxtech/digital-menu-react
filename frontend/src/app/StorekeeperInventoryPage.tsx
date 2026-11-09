@@ -86,7 +86,7 @@ const StorekeeperInventoryPage = () => {
       <PageHeading className="text-2xl font-semibold">Inventory</PageHeading>
 
       {isSuperadmin ? (
-        <section className="rounded-md border border-border bg-surface p-6 shadow-sm">
+        <section className="!mt-2 rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
@@ -128,7 +128,7 @@ const StorekeeperInventoryPage = () => {
       ) : null}
 
       {inventoryEnabled !== true ? (
-        <div className="space-y-2">
+        <div className={isSuperadmin ? 'space-y-2' : '!mt-2 space-y-2'}>
           {inventoryEnabled === null ? (
             <p className="text-sm text-muted">Checking Inventory availability...</p>
           ) : null}
@@ -148,7 +148,7 @@ const StorekeeperInventoryPage = () => {
           ) : null}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+        <div className={`${isSuperadmin ? '' : '!mt-2 '}overflow-hidden rounded-md border border-border bg-surface shadow-sm`}>
           <iframe
             src={dashboardUrl}
             title="Storekeeper inventory dashboard"

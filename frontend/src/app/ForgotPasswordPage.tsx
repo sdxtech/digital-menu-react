@@ -52,9 +52,6 @@ const ForgotPasswordPage = () => {
             <h2 className="text-lg font-bold text-slate-900 leading-tight">
               Forgot Password?
             </h2>
-            <p className="text-xs text-slate-500 mt-1 leading-normal">
-              Enter your corporate email. We'll verify your credentials and send a link to securely update your password.
-            </p>
           </div>
 
           {/* SYSTEM ALERTS IN-FRAME VIEW */}

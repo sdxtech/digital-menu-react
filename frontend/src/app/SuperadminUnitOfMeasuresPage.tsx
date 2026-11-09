@@ -1047,17 +1047,13 @@ const SuperadminUnitOfMeasuresPage = () => {
   }
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div>
           <PageHeading className="text-2xl font-semibold">UOM Management</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            Manage unit master data and conversion IDs for recipe and raw
-            material measurements.
-          </p>
         </div>
 
-        <section className="rounded-md border border-border bg-surface shadow-sm">
+        <section className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <button

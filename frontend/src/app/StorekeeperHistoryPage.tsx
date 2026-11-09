@@ -485,75 +485,76 @@ const StorekeeperHistoryPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
+      <div>
         <PageHeading className="text-2xl font-semibold">Issuance History</PageHeading>
-        <p className="text-sm text-muted">
-          This data contains completed ingredient issuances and cancelled store
-          requests.
-        </p>
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <div className="w-full sm:w-60">
-            <label htmlFor="issuance-history-client" className="sr-only">Client Name</label>
-            <select
-              id="issuance-history-client"
-              value={clientName}
-              onChange={(event) => setClientName(event.target.value)}
-              disabled={loading}
-              className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
-              {clientOptions.map((client) => (
-                <option key={client.toLowerCase()} value={client}>
-                  {client}
-                </option>
-              ))}
-            </select>
-          </div>
-          <DateRangeFilter
-            id="issuance-history-production"
-            label="Production Date"
-            from={productionDateFrom}
-            to={productionDateTo}
-            sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
-            onApply={(from, to) => {
-              setProductionDateFrom(from)
-              setProductionDateTo(to)
-            }}
-            onSort={(direction) => setDateSort(`production-${direction}`)}
-          />
-          <DateRangeFilter
-            id="issuance-history-created"
-            label="Created Date"
-            from={createdDateFrom}
-            to={createdDateTo}
-            sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
-            onApply={(from, to) => {
-              setCreatedDateFrom(from)
-              setCreatedDateTo(to)
-            }}
-            onSort={(direction) => setDateSort(`created-${direction}`)}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setProductionDateFrom('')
-              setProductionDateTo('')
-              setCreatedDateFrom('')
-              setCreatedDateTo('')
-              setClientName('')
-              setDateSort('production-desc')
-            }}
-            className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
-          >
-            Reset filters
-          </button>
-        </div>
-        {loadError ? (
-          <p className="text-xs font-medium text-red-600">{loadError}</p>
-        ) : null}
       </div>
 
-      <div className="rounded-md border border-border bg-surface shadow-sm">
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-full sm:w-60">
+              <label htmlFor="issuance-history-client" className="sr-only">Client Name</label>
+              <select
+                id="issuance-history-client"
+                value={clientName}
+                onChange={(event) => setClientName(event.target.value)}
+                disabled={loading}
+                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
+                {clientOptions.map((client) => (
+                  <option key={client.toLowerCase()} value={client}>
+                    {client}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <DateRangeFilter
+              id="issuance-history-production"
+              label="Production Date"
+              from={productionDateFrom}
+              to={productionDateTo}
+              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setProductionDateFrom(from)
+                setProductionDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`production-${direction}`)}
+            />
+            <DateRangeFilter
+              id="issuance-history-created"
+              label="Created Date"
+              from={createdDateFrom}
+              to={createdDateTo}
+              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+              onApply={(from, to) => {
+                setCreatedDateFrom(from)
+                setCreatedDateTo(to)
+              }}
+              onSort={(direction) => setDateSort(`created-${direction}`)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setProductionDateFrom('')
+                setProductionDateTo('')
+                setCreatedDateFrom('')
+                setCreatedDateTo('')
+                setClientName('')
+                setDateSort('production-desc')
+              }}
+              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+            >
+              Reset filters
+            </button>
+          </div>
+
+        </div>
+        <div className="space-y-2 px-5">
+          {loadError ? (
+            <p className="text-xs font-medium text-red-600">{loadError}</p>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-md border-b border-border bg-white px-5 py-4 text-xs">
           <span className="text-muted">
             Showing {paginatedGroups.length} of {total} production batches

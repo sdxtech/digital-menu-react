@@ -210,7 +210,6 @@ function App() {
                   includePending
                   enableSiteSelection
                   title="Menu Production Progress"
-                  description="Monitor production batches from submission through approval, store request, completion, rejection, or cancellation."
                 />
               }
             />
@@ -220,7 +219,6 @@ function App() {
                 <UnitManagerRecipeDataPage
                   showExport
                   enableSiteSelection
-                  description="View recipe data and export its details in read-only mode."
                 />
               }
             />

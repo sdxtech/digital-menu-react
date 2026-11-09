@@ -390,14 +390,11 @@ const UnitManagerMenuProductionRecordsPage = ({
   includePending = false,
   enableSiteSelection = false,
   title = 'Menu Production Records',
-  description =
-    'Track approved batches waiting for the Storekeeper, plus rejected, completed, and cancelled production history.',
 }: {
   hideFulfillmentColumns?: boolean
   includePending?: boolean
   enableSiteSelection?: boolean
   title?: string
-  description?: string
 }) => {
   const { accessToken, user } = useAuth()
   const canDeleteMpr = user?.role === 'superadmin'
@@ -845,122 +842,122 @@ const UnitManagerMenuProductionRecordsPage = ({
       <div className="space-y-2">
         <div>
           <PageHeading className="text-2xl font-semibold">{title}</PageHeading>
-          <p className="mt-2 text-sm text-muted">
-            {description}
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            {enableSiteSelection ? (
+        </div>
+
+        <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {enableSiteSelection ? (
+                <div className="w-full sm:w-60">
+                  <label className="sr-only" htmlFor="executive-production-site">
+                    Site
+                  </label>
+                  <select
+                    id="executive-production-site"
+                    value={selectedSite}
+                    onChange={(event) => {
+                      setSelectedSite(event.target.value)
+                      setClientName('')
+                    }}
+                    className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  >
+                    <option value="">Select site</option>
+                    {siteOptions.map((site) => (
+                      <option key={site.code} value={site.code}>
+                        {site.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="w-full sm:w-60">
-                <label className="sr-only" htmlFor="executive-production-site">
-                  Site
-                </label>
+                <label htmlFor="production-record-client" className="sr-only">Client Name</label>
                 <select
-                  id="executive-production-site"
-                  value={selectedSite}
-                  onChange={(event) => {
-                    setSelectedSite(event.target.value)
-                    setClientName('')
-                  }}
-                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  id="production-record-client"
+                  value={clientName}
+                  onChange={(event) => setClientName(event.target.value)}
+                  disabled={loading || (enableSiteSelection && !selectedSite)}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
                 >
-                  <option value="">Select site</option>
-                  {siteOptions.map((site) => (
-                    <option key={site.code} value={site.code}>
-                      {site.name}
+                  <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
+                  {clientOptions.map((client) => (
+                    <option key={client.toLowerCase()} value={client}>
+                      {client}
                     </option>
                   ))}
                 </select>
               </div>
-            ) : null}
-            <div className="w-full sm:w-60">
-              <label htmlFor="production-record-client" className="sr-only">Client Name</label>
-              <select
-                id="production-record-client"
-                value={clientName}
-                onChange={(event) => setClientName(event.target.value)}
-                disabled={loading || (enableSiteSelection && !selectedSite)}
-                className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-muted focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              <DateRangeFilter
+                id="production-record-production"
+                label="Production Date"
+                from={productionDateFrom}
+                to={productionDateTo}
+                sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
+                onApply={(from, to) => {
+                  setProductionDateFrom(from)
+                  setProductionDateTo(to)
+                }}
+                onSort={(direction) => setDateSort(`production-${direction}`)}
+              />
+              <DateRangeFilter
+                id="production-record-created"
+                label="Created Date"
+                from={createdDateFrom}
+                to={createdDateTo}
+                sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
+                onApply={(from, to) => {
+                  setCreatedDateFrom(from)
+                  setCreatedDateTo(to)
+                }}
+                onSort={(direction) => setDateSort(`created-${direction}`)}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setProductionDateFrom('')
+                  setProductionDateTo('')
+                  setCreatedDateFrom('')
+                  setCreatedDateTo('')
+                  setClientName('')
+                  setDateSort('production-desc')
+                }}
+                className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
               >
-                <option value="">{loading ? 'Loading clients...' : 'All clients'}</option>
-                {clientOptions.map((client) => (
-                  <option key={client.toLowerCase()} value={client}>
-                    {client}
-                  </option>
-                ))}
-              </select>
+                Reset filters
+              </button>
+              <ProductionBulkExportButton
+                groups={records}
+                loadGroups={async ({ from, to, client, summaryOnly }) => {
+                  const params = new URLSearchParams({ view: includePending ? 'records-all' : 'records' })
+                  if (from) params.set('startDate', from)
+                  if (to) params.set('endDate', to)
+                  if (client) params.set('clientName', client)
+                  if (summaryOnly) params.set('summaryOnly', 'true')
+                  if (enableSiteSelection) params.set('site', selectedSite)
+                  return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
+                }}
+                disabled={loading || Boolean(error)}
+                filename="menu-production-records-bulk.xlsx"
+                buildBatch={buildRecordSheets}
+              />
             </div>
-            <DateRangeFilter
-              id="production-record-production"
-              label="Production Date"
-              from={productionDateFrom}
-              to={productionDateTo}
-              sortDirection={dateSort === 'production-desc' ? 'desc' : dateSort === 'production-asc' ? 'asc' : undefined}
-              onApply={(from, to) => {
-                setProductionDateFrom(from)
-                setProductionDateTo(to)
-              }}
-              onSort={(direction) => setDateSort(`production-${direction}`)}
-            />
-            <DateRangeFilter
-              id="production-record-created"
-              label="Created Date"
-              from={createdDateFrom}
-              to={createdDateTo}
-              sortDirection={dateSort === 'created-desc' ? 'desc' : dateSort === 'created-asc' ? 'asc' : undefined}
-              onApply={(from, to) => {
-                setCreatedDateFrom(from)
-                setCreatedDateTo(to)
-              }}
-              onSort={(direction) => setDateSort(`created-${direction}`)}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setProductionDateFrom('')
-                setProductionDateTo('')
-                setCreatedDateFrom('')
-                setCreatedDateTo('')
-                setClientName('')
-                setDateSort('production-desc')
-              }}
-              className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
-            >
-              Reset filters
-            </button>
-            <ProductionBulkExportButton
-              groups={records}
-              loadGroups={async ({ from, to, client, summaryOnly }) => {
-                const params = new URLSearchParams({ view: includePending ? 'records-all' : 'records' })
-                if (from) params.set('startDate', from)
-                if (to) params.set('endDate', to)
-                if (client) params.set('clientName', client)
-                if (summaryOnly) params.set('summaryOnly', 'true')
-                if (enableSiteSelection) params.set('site', selectedSite)
-                return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
-              }}
-              disabled={loading || Boolean(error)}
-              filename="menu-production-records-bulk.xlsx"
-              buildBatch={buildRecordSheets}
-            />
+            {financeSiteError ? <p role="alert" className="text-sm text-danger">{financeSiteError}</p> : null}
+            {error ? (
+                        <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
+                      ) : null}
+            {deleteMessage ? (
+                        <p role="status" className="mt-2 text-sm font-semibold text-success">{deleteMessage}</p>
+                      ) : null}
           </div>
-          {financeSiteError ? <p role="alert" className="text-sm text-danger">{financeSiteError}</p> : null}
-          {error ? (
-            <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
-          ) : null}
-          {deleteMessage ? (
-            <p role="status" className="mt-2 text-sm font-semibold text-success">{deleteMessage}</p>
-          ) : null}
-        </div>
-
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
           <TablePagination
             page={page}
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
             summary={`Showing ${paginatedRecords.length} of ${recordTotal} tracked production batches`}
+            className="border-b border-border bg-white px-5 py-4"
           />
-          <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
+          <div className="max-w-full overflow-x-auto">
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

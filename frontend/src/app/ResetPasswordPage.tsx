@@ -81,9 +81,6 @@ const ResetPasswordPage = () => {
             <h2 className="text-lg font-bold text-slate-900 leading-tight">
               Create New Password
             </h2>
-            <p className="text-xs text-slate-500 mt-1 leading-normal">
-              Please choose a strong password to re-secure your access profile.
-            </p>
           </div>
 
           {message && (

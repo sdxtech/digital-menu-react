@@ -89,46 +89,41 @@ const ChefMenuProductionDrafts = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <PageHeading className="text-2xl font-semibold text-foreground">
-            Menu Production Drafts
-          </PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            {isSuperadmin
-              ? 'Manage production drafts across all chefs and sites.'
-              : 'Continue production batches that have not been sent to Admin Site.'}
-          </p>
-        </div>
-        {!isSuperadmin ? (
-          <button
-            type="button"
-            onClick={() => navigate('/chef/menu-cycle')}
-            className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90"
-          >
-            + Create menu production
-          </button>
-        ) : null}
+    <div className="space-y-2">
+      <div>
+        <PageHeading className="text-2xl font-semibold text-foreground">
+          Menu Production Drafts
+        </PageHeading>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+      <div className="rounded-md border border-border bg-surface shadow-sm">
+        {!isSuperadmin ? (
+          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-border px-5 py-4">
+            <button
+              type="button"
+              onClick={() => navigate('/chef/menu-cycle')}
+              className="rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary/90"
+            >
+              + Create menu production
+            </button>
+          </div>
+        ) : null}
         <TablePagination page={page} totalPages={Math.max(1, Math.ceil(total / 10))} onPageChange={setPage} loading={loading}
           summary={`Showing ${groups.length} of ${total} production drafts`} className="border-b border-border px-5 py-4" />
         {error ? <p className="p-5 text-sm text-danger">{error}</p> : null}
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-primary text-white">
-              <tr>
-                <th className="px-5 py-3">NO</th>
-                <th className="px-5 py-3">PRODUCTION CODE</th>
-                <th className="px-5 py-3">PRODUCTION DATE</th>
-                <th className="px-5 py-3">CLIENT</th>
-                {isSuperadmin ? <th className="px-5 py-3">SITE</th> : null}
-                {isSuperadmin ? <th className="px-5 py-3">OWNER</th> : null}
-                <th className="px-5 py-3">MENUS</th>
-                <th className="px-5 py-3">LAST UPDATED</th>
-                <th className="px-5 py-3">ACTION</th>
+          <table className="dm-table min-w-full bg-white text-sm">
+            <thead className="bg-background">
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-[48px] px-2 py-3 text-center font-semibold">No</th>
+                <th className="px-4 py-3 font-semibold">Production Code</th>
+                <th className="px-4 py-3 font-semibold">Production Date</th>
+                <th className="px-4 py-3 font-semibold">Client</th>
+                {isSuperadmin ? <th className="px-4 py-3 font-semibold">Site</th> : null}
+                {isSuperadmin ? <th className="px-4 py-3 font-semibold">Owner</th> : null}
+                <th className="px-4 py-3 font-semibold">Menus</th>
+                <th className="px-4 py-3 font-semibold">Last Updated</th>
+                <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -156,19 +151,19 @@ const ChefMenuProductionDrafts = () => {
                   )
                   return (
                     <tr key={productionCode} className="border-t border-border">
-                      <td className="px-5 py-4 font-bold text-black">{(page - 1) * 10 + index + 1}</td>
-                      <td className="px-5 py-4 font-bold text-black">
+                      <td className="px-2 py-3 text-center text-muted">{(page - 1) * 10 + index + 1}</td>
+                      <td className="px-4 py-3 text-muted">
                         {productionCode}
                       </td>
-                      <td className="px-5 py-4 font-bold text-black">{formatProductionDate(firstMenu?.productionDate)}</td>
-                      <td className="px-5 py-4 font-bold text-black">{firstMenu?.clientName ?? '-'}</td>
-                      {isSuperadmin ? <td className="px-5 py-4 font-bold text-black">{firstMenu?.site ?? '-'}</td> : null}
-                      {isSuperadmin ? <td className="px-5 py-4 font-bold text-black">{firstMenu?.createdByName || firstMenu?.createdBy || '-'}</td> : null}
-                      <td className="px-5 py-4">{menus.length}</td>
-                      <td className="px-5 py-4 font-bold text-black">
+                      <td className="px-4 py-3">{formatProductionDate(firstMenu?.productionDate)}</td>
+                      <td className="px-4 py-3">{firstMenu?.clientName ?? '-'}</td>
+                      {isSuperadmin ? <td className="px-4 py-3">{firstMenu?.site ?? '-'}</td> : null}
+                      {isSuperadmin ? <td className="px-4 py-3">{firstMenu?.createdByName || firstMenu?.createdBy || '-'}</td> : null}
+                      <td className="px-4 py-3">{menus.length}</td>
+                      <td className="px-4 py-3 text-muted">
                         {formatCreatedDate(lastUpdated)}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -180,7 +175,7 @@ const ChefMenuProductionDrafts = () => {
                                 },
                               })
                             }
-                            className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:opacity-50"
+                            className="rounded-md border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Continue
                           </button>
@@ -188,8 +183,9 @@ const ChefMenuProductionDrafts = () => {
                             type="button"
                             disabled={deletingCode !== null}
                             onClick={() => void deleteDraft(productionCode)}
-                            className="rounded-md border border-danger px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-md border border-red-600 bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                           >
+                            <i className="bi bi-trash3" aria-hidden="true" />
                             {deletingCode === productionCode ? 'Deleting...' : 'Delete'}
                           </button>
                         </div>

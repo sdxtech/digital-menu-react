@@ -258,9 +258,6 @@ const SuperadminGroupByManagement = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold">Group By Management</h2>
-            <p className="mt-1 text-xs text-muted">
-              Manage options shown in the Menu Production Group By dropdown.
-            </p>
           </div>
           <button
             type="button"
@@ -311,15 +308,6 @@ const SuperadminGroupByManagement = () => {
               <option value="disabled">Disabled</option>
             </select>
           </div>
-          <button
-            type="button"
-            onClick={() => void fetchItems(page, search)}
-            aria-label="Refresh Group By options"
-            title="Refresh Group By options"
-            className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
-          >
-            <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
-          </button>
         </div>
 
         <TablePagination

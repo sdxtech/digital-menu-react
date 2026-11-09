@@ -85,23 +85,10 @@ const SuperadminDashboardPage = () => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <PageHeading className="text-2xl font-semibold" showBack={false}>Quick View</PageHeading>
-            <p className="mt-1 text-sm text-muted">
-              Monitor platform activity across users, sites, and production flow.
-            </p>
             {error ? (
               <p className="mt-2 text-xs font-medium text-red-600">{error}</p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => fetchDashboard()}
-            className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
-          >
-            <span className="flex items-center gap-2">
-              <i className="bi bi-arrow-clockwise text-sm" aria-hidden="true" />
-              <span>Refresh</span>
-            </span>
-          </button>
         </div>
 
         <section aria-label="Platform key metrics" className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">

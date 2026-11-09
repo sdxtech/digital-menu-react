@@ -764,7 +764,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               onReject={corporateOnly ? () => {
                 const recipe = recipes.find((item) => (item.id ?? item._id) === editingRecipe.id)
                 if (!recipe) {
-                  setError('Recipe is no longer available. Close the editor and refresh the approval list.')
+                  setError('Recipe is no longer available. Close the editor and reopen this page.')
                   setEditingRecipe(null)
                   return
                 }
@@ -782,72 +782,67 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
           </div>
         </div>
       ) : null}
-      <div className="space-y-2">
+      <div>
         <PageHeading className="text-2xl font-semibold">Approval Centers</PageHeading>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full max-w-xs">
-            <label className="text-xs font-medium text-muted">Site</label>
-            {corporateOnly ? (
-              <SiteMultiSelect
-                options={siteOptions}
-                selected={selectedCorporateSites}
-                onChange={(sites) => {
-                  setSelectedCorporateSites(sites)
-                  setRecipePage(1)
-                }}
-                disabled={corporateSettings.loading || Boolean(corporateSettings.error)}
-              />
-            ) : <select
-              value={selectedSite}
-              onChange={(event) => {
-                setSelectedSite(event.target.value)
-                setRecipePage(1)
-              }}
-              className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">Select site</option>
-              {siteOptions.map((site) => (
-                <option key={site.code} value={site.code}>
-                  {site.name || site.code}
-                </option>
-              ))}
-            </select>}
-          </div>
-          <div className="w-full max-w-xs">
-            <label className="text-xs font-medium text-muted">
-              Approval status
-            </label>
-            <select
-              value={approvalFilter}
-              onChange={(event) => {
-                setApprovalFilter(event.target.value as '' | ApprovalStatus)
-                setRecipePage(1)
-              }}
-              className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-            >
-              <option value="">{corporateOnly ? 'All status' : 'All status'}</option>
-              <option value="pending">Submitted</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            onClick={() => fetchApprovals().catch(() => null)}
-            disabled={loading || !hasApprovalScope || corporateSettings.loading || Boolean(corporateSettings.error)}
-            className="rounded-md border border-primary/40 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Refresh
-          </button>
-        </div>
-        {error ? <p className="text-xs font-medium text-red-600">{error}</p> : null}
-        {message ? (
-          <p className="text-xs font-medium text-primary">{message}</p>
-        ) : null}
       </div>
 
-      {activeSection === 'recipes' ? (
-        <section className="rounded-md border border-border bg-surface shadow-sm">
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="space-y-2 border-b border-border px-5 py-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-full max-w-xs">
+              <label className="text-xs font-medium text-muted">Site</label>
+              {corporateOnly ? (
+                <SiteMultiSelect
+                  options={siteOptions}
+                  selected={selectedCorporateSites}
+                  onChange={(sites) => {
+                    setSelectedCorporateSites(sites)
+                    setRecipePage(1)
+                  }}
+                  disabled={corporateSettings.loading || Boolean(corporateSettings.error)}
+                />
+              ) : <select
+                value={selectedSite}
+                onChange={(event) => {
+                  setSelectedSite(event.target.value)
+                  setRecipePage(1)
+                }}
+                className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">Select site</option>
+                {siteOptions.map((site) => (
+                  <option key={site.code} value={site.code}>
+                    {site.name || site.code}
+                  </option>
+                ))}
+              </select>}
+            </div>
+            <div className="w-full max-w-xs">
+              <label className="text-xs font-medium text-muted">
+                Approval status
+              </label>
+              <select
+                value={approvalFilter}
+                onChange={(event) => {
+                  setApprovalFilter(event.target.value as '' | ApprovalStatus)
+                  setRecipePage(1)
+                }}
+                className="mt-2 h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+              >
+                <option value="">{corporateOnly ? 'All status' : 'All status'}</option>
+                <option value="pending">Submitted</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+          {error ? <p className="text-xs font-medium text-red-600">{error}</p> : null}
+          {message ? (
+            <p className="text-xs font-medium text-primary">{message}</p>
+          ) : null}
+        </div>
+        {activeSection === 'recipes' ? (
+        <section className="min-w-0">
           <TablePagination
             page={recipePage}
             totalPages={recipeTotalPages}
@@ -1160,7 +1155,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
               buildBatch={buildMenuProductionApprovalSheets}
             />
           </div>
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+          <div className="p-6">
           <TablePagination
             page={menuPage}
             totalPages={menuTotalPages}
@@ -1598,6 +1593,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
           </div>
         </section>
       )}
+      </div>
 
       {overrideAction ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
