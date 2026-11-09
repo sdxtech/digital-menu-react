@@ -1536,55 +1536,66 @@ const ChefMenuCycle = ({
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div>
-          {embedded && !draftProductionCode ? (
-            <h2 className="text-lg font-semibold">{title}</h2>
-          ) : (
+        {!embedded || draftProductionCode ? (
+          <div>
             <PageHeading
               className="text-2xl font-semibold"
               backTo={draftProductionCode ? productionDraftsPath : undefined}
             >
               {title}
             </PageHeading>
-          )}
-          {description ? (
-            <p className="mt-1 text-sm text-muted">{description}</p>
-          ) : null}
-        </div>
+            {description ? (
+              <p className="mt-1 text-sm text-muted">{description}</p>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-foreground">
-              Pending
-            </h3>
-            <p className="mt-2 text-xl font-semibold">
-              {productionStats.pending}
-            </p>
-            <p className="mt-3 text-sm text-foreground">
-              Menus awaiting Unit Manager approval.
-            </p>
-          </div>
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-foreground">
-              Approved
-            </h3>
-            <p className="mt-2 text-xl font-semibold">
-              {productionStats.approved}
-            </p>
-            <p className="mt-3 text-sm text-foreground">
-              Menus ready for Store Request.
-            </p>
-          </div>
-          <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
-            <h3 className="text-foreground">
-              Total menus
-            </h3>
-            <p className="mt-2 text-xl font-semibold text-foreground">
-              {productionStats.total}
-            </p>
-            <p className="mt-3 text-sm text-foreground">
-              {productionStats.rejected} menus are rejected.
-            </p>
+        <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+          <div className="-ml-px -mt-px grid md:grid-cols-4">
+            <div className="flex min-w-0 flex-col border-l border-t border-black bg-surface">
+              <div className="flex-1 space-y-2 p-2">
+                <h3 className="flex items-start gap-2 text-sm font-medium text-foreground">
+                  <span aria-hidden="true" className="mt-0.5 h-4 w-2 shrink-0 bg-accent-blue" />
+                  Pending
+                </h3>
+                <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                  {productionStats.pending}
+                </div>
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col border-l border-t border-black bg-surface">
+              <div className="flex-1 space-y-2 p-2">
+                <h3 className="flex items-start gap-2 text-sm font-medium text-foreground">
+                  <span aria-hidden="true" className="mt-0.5 h-4 w-2 shrink-0 bg-accent-indigo" />
+                  Approved
+                </h3>
+                <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                  {productionStats.approved}
+                </div>
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col border-l border-t border-black bg-surface">
+              <div className="flex-1 space-y-2 p-2">
+                <h3 className="flex items-start gap-2 text-sm font-medium text-foreground">
+                  <span aria-hidden="true" className="mt-0.5 h-4 w-2 shrink-0 bg-danger" />
+                  Rejected
+                </h3>
+                <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                  {productionStats.rejected}
+                </div>
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col border-l border-t border-black bg-surface">
+              <div className="flex-1 space-y-2 p-2">
+                <h3 className="flex items-start gap-2 text-sm font-medium text-foreground">
+                  <span aria-hidden="true" className="mt-0.5 h-4 w-2 shrink-0 bg-accent-cyan" />
+                  Total menus
+                </h3>
+                <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                  {productionStats.total}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
