@@ -425,18 +425,6 @@ const SuperadminAnalyticsPage = () => {
             Data on this dashboard is based on Menu Productions that have been approved by the Unit Manager.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => {
-            void analyticsQuery.refetch()
-            void clientsQuery.refetch()
-          }}
-          className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-semibold text-primary disabled:opacity-50"
-        >
-          <i className="bi bi-arrow-clockwise mr-2" aria-hidden="true" />
-          Refresh
-        </button>
       </div>
 
       <form
@@ -559,7 +547,7 @@ const SuperadminAnalyticsPage = () => {
           role="alert"
           className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
-          {error} Use Refresh to try again.
+          {error} Apply the filters to try again.
         </p>
       ) : null}
       {loading ? (

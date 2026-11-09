@@ -265,7 +265,7 @@ const ForecastWorkspace = () => {
     <div className="space-y-5">
       <PageHeading className="text-2xl font-semibold">Production Forecast</PageHeading>
 
-      <section className="space-y-5 rounded-md border border-border bg-surface p-4 shadow-sm md:p-6" aria-label="Production forecast planner">
+      <section className="!mt-2 space-y-5 rounded-md border border-border bg-surface p-4 shadow-sm md:p-6" aria-label="Production forecast planner">
         <div className="grid items-end gap-4 lg:grid-cols-3">
           <div className="grid min-w-0 grid-cols-2 gap-2">
             <label className="block min-w-0 text-xs font-semibold uppercase text-muted">From date

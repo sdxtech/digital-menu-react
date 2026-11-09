@@ -283,16 +283,8 @@ const ChefAddRawMaterial = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div>
             <PageHeading className="text-2xl font-semibold">Add Raw Material</PageHeading>
-          </div>
-          <ActionButton
-            action="import"
-            onClick={openImportModal}
-            iconClassName="bi bi-upload text-base"
-            size="sm"
-          />
         </div>
 
         {importOpen ? (
@@ -423,7 +415,15 @@ const ChefAddRawMaterial = () => {
 
         <div className="grid gap-6 lg:grid-cols-12">
           <div className="rounded-md border border-border bg-surface p-6 shadow-sm lg:col-span-12">
-            <h3 className="font-semibold">Material details</h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-semibold">Material details</h3>
+              <ActionButton
+                action="import"
+                onClick={openImportModal}
+                iconClassName="bi bi-upload text-base"
+                size="sm"
+              />
+            </div>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="text-sm font-medium text-foreground">

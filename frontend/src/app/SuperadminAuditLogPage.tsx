@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import TablePagination from "../components/TablePagination";
 import { apiBaseUrl, apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useQuery } from "@tanstack/react-query";
 
 type AuditLog = {
   id: string;
@@ -69,7 +70,36 @@ const auditFiles = (details?: Record<string, unknown>): AuditFile[] =>
   Array.isArray(details?.files) ? (details.files as AuditFile[]) : [];
 
 const SuperadminAuditLogPage = () => {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
+  const sitesQuery = useQuery({
+    queryKey: ["audit", "sites", user?.id ?? user?.email],
+    enabled: Boolean(accessToken),
+    queryFn: async ({ signal }) => {
+      const sites: Array<{ code: string; name: string }> = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const data = await apiFetch<{
+          items: Array<{ code: string; name: string }>;
+          totalPages: number;
+        }>(
+          `/superadmin/sites?page=${page}&limit=200`,
+          { signal },
+          accessToken ?? undefined,
+        );
+        sites.push(...data.items);
+        totalPages = data.totalPages;
+        page += 1;
+      } while (page <= totalPages);
+      return sites;
+    },
+  });
+  const siteNames = useMemo(
+    () => new Map((sitesQuery.data ?? []).map((site) => [site.code, site.name])),
+    [sitesQuery.data],
+  );
+  const formatSiteName = (code?: string) =>
+    code ? siteNames.get(code) || "Unknown site" : "Global";
   const [items, setItems] = useState<AuditLog[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -226,142 +256,143 @@ const SuperadminAuditLogPage = () => {
 
   return (
     <section className="space-y-5 pb-10">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <PageHeading className="text-2xl font-semibold">Audit Log</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            Review system changes and export a PDF report for a selected period.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={exportPdf}
-          disabled={exporting || !startDate || !endDate}
-          className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
-        >
-          <i className="bi bi-file-earmark-pdf mr-2" />
-          {exporting ? "Preparing PDF..." : "Export PDF"}
-        </button>
+      <div>
+        <PageHeading className="text-2xl font-semibold">Audit Log</PageHeading>
       </div>
 
-      <div className="rounded-md border border-border bg-surface p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            onKeyDown={(event) =>
-              event.key === "Enter" && setSearch(searchInput.trim())
-            }
-            placeholder="Search user, action, or target"
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          />
-          <select
-            value={moduleFilter}
-            onChange={(event) => setModuleFilter(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All modules</option>
-            {filterOptions.modules.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-          <select
-            value={roleFilter}
-            onChange={(event) => setRoleFilter(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All roles</option>
-            {filterOptions.roles.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-          <select
-            value={siteFilter}
-            onChange={(event) => setSiteFilter(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All sites</option>
-            {filterOptions.sites.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All statuses</option>
-            <option value="success">Success</option>
-            <option value="failed">Failed</option>
-          </select>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            aria-label="Start date"
-          />
-          <input
-            type="date"
-            value={endDate}
-            onChange={(event) => setEndDate(event.target.value)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            aria-label="End date"
-          />
+      <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) =>
+                  event.key === "Enter" && setSearch(searchInput.trim())
+                }
+                placeholder="Search user, action, or target"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                aria-label="Start date"
+              />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                aria-label="End date"
+              />
+              <select
+                value={siteFilter}
+                onChange={(event) => setSiteFilter(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All sites</option>
+                {filterOptions.sites.map((value) => (
+                  <option key={value} value={value}>
+                    {formatSiteName(value)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All statuses</option>
+                <option value="success">Success</option>
+                <option value="failed">Failed</option>
+              </select>
+              <select
+                value={moduleFilter}
+                onChange={(event) => setModuleFilter(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All modules</option>
+                {filterOptions.modules.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value)}
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All roles</option>
+                {filterOptions.roles.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setSearch(searchInput.trim())}
+                className="rounded-md border border-primary bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
+              >
+                Apply Search
+              </button>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => setSearch(searchInput.trim())}
-            className="rounded-md border border-primary bg-primary-soft px-4 py-2 text-xs font-semibold text-primary"
+            onClick={exportPdf}
+            disabled={exporting || !startDate || !endDate}
+            className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
           >
-            Apply Search
+            <i className="bi bi-file-earmark-pdf mr-2" />
+            {exporting ? "Preparing PDF..." : "Export PDF"}
           </button>
         </div>
-      </div>
-
-      {error ? (
-        <p className="rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="rounded-md border border-border bg-surface p-4 shadow-sm">
+        {error ? (
+                <p className="rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {error}
+                </p>
+              ) : null}
+        {sitesQuery.error ? (
+                <p className="rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  Failed to load site names. Reopen this page to try again.
+                </p>
+              ) : null}
         <TablePagination
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
           loading={loading}
           summary={`Showing ${items.length} of ${total} audit records`}
+          className="border-b border-border bg-white px-5 py-4"
         />
-        <div className="mt-4 overflow-x-auto rounded-md border border-border">
-          <table className="dm-table min-w-full bg-white text-sm">
+        <div className="max-w-full overflow-x-auto">
+          <table className="dm-table min-w-full text-sm">
             <thead className="bg-background">
-              <tr className="text-left text-xs uppercase tracking-[0.12em] text-muted">
-                <th className="px-3 py-3">Time</th>
-                <th className="px-3 py-3">User</th>
-                <th className="px-3 py-3">Role / Site</th>
-                <th className="px-3 py-3">Module</th>
-                <th className="px-3 py-3">Action</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Action</th>
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="px-5 py-4 font-semibold">Time</th>
+                <th className="px-5 py-4 font-semibold">User</th>
+                <th className="px-5 py-4 font-semibold">Role / Site</th>
+                <th className="px-5 py-4 font-semibold">Module</th>
+                <th className="px-5 py-4 font-semibold">Action</th>
+                <th className="px-5 py-4 font-semibold">Status</th>
+                <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <tr className="border-t border-border">
+                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     Loading audit logs...
                   </td>
                 </tr>
               ) : null}
               {!loading && !items.length ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <tr className="border-t border-border">
+                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     No audit records match the selected filters.
                   </td>
                 </tr>
@@ -369,10 +400,10 @@ const SuperadminAuditLogPage = () => {
               {!loading &&
                 items.map((item) => (
                   <tr key={item.id} className="border-t border-border">
-                    <td className="whitespace-nowrap px-3 py-3 text-xs text-muted">
+                    <td className="whitespace-nowrap px-5 py-4 text-xs text-muted">
                       {formatDateTime(item.createdAt)}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-5 py-4">
                       <p className="font-semibold">
                         {item.actorName || "System"}
                       </p>
@@ -380,27 +411,27 @@ const SuperadminAuditLogPage = () => {
                         {item.actorEmail || "-"}
                       </p>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-5 py-4">
                       <p>{item.role || "-"}</p>
                       <p className="text-xs text-muted">
-                        {item.site || "Global"}
+                        {formatSiteName(item.site)}
                       </p>
                     </td>
-                    <td className="px-3 py-3">{item.module}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-5 py-4">{item.module}</td>
+                    <td className="px-5 py-4">
                       <p className="font-medium">{item.action}</p>
                       <p className="max-w-xs truncate text-xs text-muted">
                         {item.path}
                       </p>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-5 py-4">
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-semibold ${item.success ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
                       >
                         {item.success ? "Success" : `Failed ${item.statusCode}`}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-5 py-4">
                       <button
                         type="button"
                         onClick={() => setSelected(item)}
@@ -450,7 +481,7 @@ const SuperadminAuditLogPage = () => {
               <div>
                 <dt className="text-xs text-muted">Role / Site</dt>
                 <dd>
-                  {selected.role || "-"} / {selected.site || "Global"}
+                  {selected.role || "-"} / {formatSiteName(selected.site)}
                 </dd>
               </div>
               <div>

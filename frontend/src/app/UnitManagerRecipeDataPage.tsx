@@ -77,12 +77,9 @@ const getRecipeKey = (recipe: Recipe) =>
 const UnitManagerRecipeDataPage = ({
   showExport = true,
   enableSiteSelection = false,
-  description =
-    'View approved, pending, and rejected recipes without leaving the Unit Manager workspace.',
 }: {
   showExport?: boolean
   enableSiteSelection?: boolean
-  description?: string
 }) => {
   const { accessToken, user } = useAuth()
   const isCorporateChef = user?.role === 'corporate-chef'
@@ -286,74 +283,73 @@ const UnitManagerRecipeDataPage = ({
     <div className="space-y-6">
       <RecipeExportDialog exportState={recipeExport} />
       <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
-            <p className="mt-2 text-sm text-muted">
-              {description}
-            </p>
-          </div>
-          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
-            {showExport ? <RecipeExportToolbar exportState={recipeExport} variant="primary" /> : null}
-            {enableSiteSelection ? (
-              <div className="w-full text-sm sm:w-[calc(11ch+3rem)]">
-                <label
-                  className="sr-only"
-                  htmlFor="executive-recipe-site"
-                >
-                  Site
-                </label>
-                <select
-                  id="executive-recipe-site"
-                  value={selectedSite}
-                  onChange={(event) => setSelectedSite(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
-                >
-                  <option value="">Select site</option>
-                  {siteOptions.map((site) => (
-                    <option key={site.code} value={site.code}>
-                      {site.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-          </div>
+        <div>
+          <PageHeading className="text-2xl font-semibold">Recipe Data</PageHeading>
         </div>
 
-        <RecipeFilters
-          sites={recipeSites}
-          selectedSite={siteFilter}
-          onSiteChange={enableSiteSelection ? undefined : (site) => {
-            setSiteFilter(site)
-            setPage(1)
-            setSelectedRecipeId(null)
-          }}
-          siteError={siteError}
-          searchTerm={searchInput}
-          onSearchChange={setSearchInput}
-          onSearch={() => {
-            setSearchTerm(searchInput.trim())
-            setPage(1)
-          }}
-          statuses={statusFilters}
-          approvalStatus={approvalFilter}
-          categories={categories}
-          selectedCategories={categoryFilters}
-          onStatusesChange={setStatusFilters}
-          onApprovalStatusChange={setApprovalFilter}
-          onCategoriesChange={setCategoryFilters}
-        />
-
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+        <div className="rounded-md border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <RecipeFilters
+                sites={recipeSites}
+                selectedSite={siteFilter}
+                onSiteChange={enableSiteSelection ? undefined : (site) => {
+                  setSiteFilter(site)
+                  setPage(1)
+                  setSelectedRecipeId(null)
+                }}
+                siteError={siteError}
+                searchTerm={searchInput}
+                onSearchChange={setSearchInput}
+                onSearch={() => {
+                  setSearchTerm(searchInput.trim())
+                  setPage(1)
+                }}
+                statuses={statusFilters}
+                approvalStatus={approvalFilter}
+                categories={categories}
+                selectedCategories={categoryFilters}
+                onStatusesChange={setStatusFilters}
+                onApprovalStatusChange={setApprovalFilter}
+                onCategoriesChange={setCategoryFilters}
+              />
+            </div>
+            <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end">
+              {showExport ? <RecipeExportToolbar exportState={recipeExport} variant="primary" /> : null}
+              {enableSiteSelection ? (
+                <div className="w-full text-sm sm:w-[calc(11ch+3rem)]">
+                  <label
+                    className="sr-only"
+                    htmlFor="executive-recipe-site"
+                  >
+                    Site
+                  </label>
+                  <select
+                    id="executive-recipe-site"
+                    value={selectedSite}
+                    onChange={(event) => setSelectedSite(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-accent-blue focus:ring-4 focus:ring-accent-blue/20"
+                  >
+                    <option value="">Select site</option>
+                    {siteOptions.map((site) => (
+                      <option key={site.code} value={site.code}>
+                        {site.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+          </div>
           <TablePagination
             page={page}
             totalPages={totalPages}
             onPageChange={setPage}
             loading={loading}
             summary={`Showing ${recipes.length} of ${totalItems} recipes`}
+            className="border-b border-border bg-white px-5 py-4"
           />
-          <div className="mt-4 max-w-full overflow-x-auto rounded-md border border-border">
+          <div className="max-w-full overflow-x-auto">
             <table className="dm-table min-w-full bg-white text-sm">
               <thead className="bg-background">
                 <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">

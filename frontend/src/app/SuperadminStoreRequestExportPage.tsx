@@ -626,7 +626,7 @@ const SuperadminStoreRequestExportPage = () => {
   }
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div className="space-y-2">
           <div>
@@ -634,7 +634,7 @@ const SuperadminStoreRequestExportPage = () => {
           </div>
         </div>
 
-        <div className="rounded-md border border-border bg-surface p-6 shadow-sm">
+        <div className="!mt-2 rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="mt-5">
             <p className="text-sm font-medium text-foreground">Sites</p>
             <div className="mt-2 relative" ref={siteFilterRef}>

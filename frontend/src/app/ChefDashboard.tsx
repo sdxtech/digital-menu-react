@@ -88,7 +88,6 @@ const ChefDashboard = () => {
     <div className="min-w-0 space-y-4">
       <div className="space-y-1">
         <PageHeading className="text-2xl font-semibold" showBack={false}>Quick View</PageHeading>
-        <p className="text-sm text-muted">Today's menus, approvals, and store requests.</p>
       </div>
 
       {error ? (

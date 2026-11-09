@@ -1563,24 +1563,11 @@ export const RecipeCalculator = ({ embedded = false }: { embedded?: boolean } = 
   if (embedded) return calculatorCard
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div>
           <PageHeading className="text-2xl font-semibold">Calculator Recipe</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            Select saved recipes and preview price with estimated ingredient cost.
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => fetchCalculatorRecipes().catch(() => null)}
-          disabled={loading}
-          aria-label="Refresh calculator recipes"
-          title="Refresh calculator recipes"
-          className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
-        </button>
       </div>
 
       {calculatorCard}
@@ -2988,7 +2975,7 @@ const SuperadminMenuManagementPage = () => {
   ])
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div>
           <PageHeading className="text-2xl font-semibold">Menu Management</PageHeading>
@@ -3521,6 +3508,7 @@ const SuperadminMenuManagementPage = () => {
           </div>
         ) : null}
 
+        <div className="!mt-2 space-y-6">
         {activeTab === 'menu-production' ? (
           <ChefMenuCycle
             embedded
@@ -3541,6 +3529,7 @@ const SuperadminMenuManagementPage = () => {
         {activeTab === 'create-recipe' ? (
           <ChefCreateMenu
             embedded
+            showHeading={false}
             enableIngredientUomConversion
             lockSrUomToRawMaterial
             onSaved={() => {
@@ -3586,17 +3575,6 @@ const SuperadminMenuManagementPage = () => {
                 iconClassName="bi bi-upload text-base leading-none"
                 size="sm"
               />
-              <button
-                type="button"
-                onClick={() =>
-                  fetchRecipes(recipeMeta.page, recipeMeta.limit, recipeSearch)
-                }
-                aria-label="Refresh recipe data"
-                title="Refresh recipe data"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
-              >
-                <i className="bi bi-arrow-clockwise text-base leading-none" aria-hidden="true" />
-              </button>
             </div>
           </div>
 
@@ -4089,9 +4067,6 @@ const SuperadminMenuManagementPage = () => {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="text-lg font-semibold">Raw Material Data</h2>
-              <p className="mt-1 text-xs text-muted">
-                Master data used by recipe ingredients.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ActionButton
@@ -4115,21 +4090,6 @@ const SuperadminMenuManagementPage = () => {
                   <i className="bi bi-plus-circle text-base" aria-hidden="true" />
                   <span>Input</span>
                 </span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  fetchRawMaterials(
-                    rawMaterialMeta.page,
-                    rawMaterialMeta.limit,
-                    rawMaterialSearch,
-                  )
-                }
-                aria-label="Refresh raw material data"
-                title="Refresh raw material data"
-                className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
-              >
-                <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -4312,9 +4272,6 @@ const SuperadminMenuManagementPage = () => {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="text-lg font-semibold">Categories</h2>
-              <p className="mt-1 text-xs text-muted">
-                Categories used to group menu data.
-              </p>
             </div>
             <button
               type="button"
@@ -4356,17 +4313,6 @@ const SuperadminMenuManagementPage = () => {
                 <option value="disabled">Disabled</option>
               </select>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                fetchCategories(categoryMeta.page, categoryMeta.limit, categorySearch)
-              }
-              aria-label="Refresh categories"
-              title="Refresh categories"
-              className="rounded-md border border-primary/40 bg-primary-soft p-2 text-primary"
-            >
-              <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
-            </button>
           </div>
 
           <TablePagination
@@ -4465,6 +4411,7 @@ const SuperadminMenuManagementPage = () => {
         ) : null}
 
         {activeTab === 'group-by' ? <SuperadminGroupByManagement /> : null}
+        </div>
       </div>
     </div>
   )

@@ -600,13 +600,10 @@ const SuperadminSitesPage = () => {
   }
 
   return (
-    <div className="w-full py-2">
+    <div className="w-full pb-2">
       <div className="space-y-6">
         <div>
           <PageHeading className="text-2xl font-semibold">Site Management</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            Manage branches and assignable workspaces for operational users.
-          </p>
         </div>
 
         {createOpen ? (
@@ -802,7 +799,7 @@ const SuperadminSitesPage = () => {
           </div>
         ) : null}
 
-        <div className="rounded-md border border-border bg-surface shadow-sm">
+        <div className="!mt-2 rounded-md border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -847,15 +844,6 @@ const SuperadminSitesPage = () => {
                   <i className="bi bi-building-add text-base" aria-hidden="true" />
                   <span>Create site</span>
                 </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fetchSites(meta.page, meta.limit, search)}
-                aria-label="Refresh sites"
-                title="Refresh sites"
-                className="rounded-md border border-border bg-background p-2 text-primary"
-              >
-                <i className="bi bi-arrow-clockwise text-base" aria-hidden="true" />
               </button>
             </div>
           </div>

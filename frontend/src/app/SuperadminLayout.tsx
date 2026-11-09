@@ -80,6 +80,7 @@ const navItems = [
       {
         label: 'Create New Recipe',
         to: '/superadmin/menu-management?tab=create-recipe',
+        breadcrumbPaths: ['/superadmin/menu-create'],
         icon: (className: string) => (
           <i className={`bi bi-plus-circle ${className}`} aria-hidden="true" />
         ),

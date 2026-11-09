@@ -222,15 +222,10 @@ const ChefRecipeDrafts = () => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div>
           <PageHeading className="text-2xl font-semibold text-foreground">Recipe Drafts</PageHeading>
-          <p className="mt-1 text-sm text-muted">
-            {isSuperadmin
-              ? 'Manage recipe drafts from all users and sites. Continue a draft to edit, save, or submit it.'
-              : 'Continue recipes that have not been submitted for approval.'}
-          </p>
         </div>
       </div>
 
@@ -332,27 +327,32 @@ const ChefRecipeDrafts = () => {
             + Create new recipe
           </button>
         </div>
-        <p className="px-5 py-4 text-xs text-muted">
-          {isSuperadmin
-            ? 'After updating conversions or prices, use Recheck all issues to check imported drafts for all users and sites, across all pages and categories, regardless of the current filters.'
-            : 'After updating conversions or prices, use Recheck to refresh imported draft issues and costs.'}
-        </p>
         {recheckMessage ? <p role="status" className="px-5 pb-4 text-sm text-primary">{recheckMessage}</p> : null}
         {error ? <p className="p-5 text-sm text-danger">{error}</p> : null}
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          loading={loading || draftActionPending}
+          summary={loading ? 'Loading drafts...' : drafts.length === 0
+            ? 'Showing 0 drafts'
+            : `Showing ${startIndex + 1}-${startIndex + drafts.length} of ${total} drafts`}
+          className="border-b border-border px-5 py-4"
+        />
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-primary text-white">
-              <tr>
-                <th className="px-5 py-3">NO</th>
-                <th className="px-5 py-3">RECIPE CODE</th>
-                <th className="px-5 py-3">RECIPE NAME</th>
-                <th className="px-5 py-3">CATEGORY</th>
-                {isSuperadmin && <th className="px-5 py-3">OWNER</th>}
-                {isSuperadmin && <th className="px-5 py-3">SITE</th>}
-                <th className="px-5 py-3">INGREDIENTS</th>
-                <th className="px-5 py-3">ISSUES</th>
-                <th className="px-5 py-3">LAST UPDATED</th>
-                <th className="px-5 py-3">ACTION</th>
+          <table className="dm-table min-w-full bg-white text-sm">
+            <thead className="bg-background">
+              <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
+                <th className="w-[48px] px-2 py-3 text-center font-semibold">No</th>
+                <th className="px-4 py-3 font-semibold">Recipe Code</th>
+                <th className="px-4 py-3 font-semibold">Recipe Name</th>
+                <th className="px-4 py-3 font-semibold">Category</th>
+                {isSuperadmin && <th className="px-4 py-3 font-semibold">Owner</th>}
+                {isSuperadmin && <th className="px-4 py-3 font-semibold">Site</th>}
+                <th className="px-4 py-3 font-semibold">Ingredients</th>
+                <th className="px-4 py-3 font-semibold">Issues</th>
+                <th className="px-4 py-3 font-semibold">Last Updated</th>
+                <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -371,18 +371,18 @@ const ChefRecipeDrafts = () => {
               ) : (
                 drafts.map((draft, index) => (
                   <tr key={draft.id ?? draft._id} className="border-t border-border">
-                    <td className="px-5 py-4">{startIndex + index + 1}</td>
-                    <td className="px-5 py-4 text-muted">{draft.recipeCode ?? '-'}</td>
-                    <td className="px-5 py-4 font-medium text-foreground">
+                    <td className="px-2 py-3 text-center text-muted">{startIndex + index + 1}</td>
+                    <td className="px-4 py-3 text-muted">{draft.recipeCode ?? '-'}</td>
+                    <td className="px-4 py-3 font-medium text-foreground">
                       {draft.name}
                     </td>
-                    <td className="px-5 py-4">{draft.category}</td>
-                    {isSuperadmin && <td className="px-5 py-4">{draft.createdByName || draft.createdByEmail || draft.createdBy || '-'}</td>}
-                    {isSuperadmin && <td className="px-5 py-4">{draft.siteName || draft.site || '-'}</td>}
-                    <td className="px-5 py-4">{draft.ingredientsCount}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3">{draft.category}</td>
+                    {isSuperadmin && <td className="px-4 py-3">{draft.createdByName || draft.createdByEmail || draft.createdBy || '-'}</td>}
+                    {isSuperadmin && <td className="px-4 py-3">{draft.siteName || draft.site || '-'}</td>}
+                    <td className="px-4 py-3">{draft.ingredientsCount}</td>
+                    <td className="px-4 py-3">
                       {draft.importIssues?.length ? (
-                        <details className="text-xs text-amber-700">
+                        <details className="whitespace-normal text-xs text-amber-700">
                           <summary className="cursor-pointer whitespace-nowrap font-semibold">{draft.importIssues.length} issues</summary>
                           <p className="mt-2 text-muted">Issues at last check</p>
                           <ul className="mt-2 max-h-48 min-w-64 max-w-md list-disc space-y-1 overflow-y-auto pl-4">
@@ -393,8 +393,8 @@ const ChefRecipeDrafts = () => {
                         <span className="whitespace-nowrap text-xs text-muted">{draft.importIssues ? 'No issues' : '-'}</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-muted">{formatUpdatedAt(draft.updatedAt)}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-3 text-muted">{formatUpdatedAt(draft.updatedAt)}</td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -430,16 +430,6 @@ const ChefRecipeDrafts = () => {
             </tbody>
           </table>
         </div>
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          loading={loading || draftActionPending}
-          summary={loading ? 'Loading drafts...' : drafts.length === 0
-            ? 'Showing 0 drafts'
-            : `Showing ${startIndex + 1}-${startIndex + drafts.length} of ${total} drafts`}
-          className="border-t border-border px-5 py-4"
-        />
       </div>
     </div>
   )
