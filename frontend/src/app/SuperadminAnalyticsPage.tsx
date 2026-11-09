@@ -569,31 +569,40 @@ const SuperadminAnalyticsPage = () => {
       ) : null}
       {!loading && !error && data ? (
         <>
-          <div className="flex gap-4 overflow-x-auto pb-1">
-            {metrics.filter((metric) => data.access.components[({
-              foodCostPercentage: 'foodCostCard', pax: 'paxCard', estimatedCost: 'costCard', estimatedRevenue: 'revenueCard',
-            } as const)[metric.key]]).map((metric) => (
-              <div
-                key={metric.key}
-                className="min-w-[210px] flex-1 rounded-md border border-border bg-surface p-2 shadow-sm"
-              >
-                <p className="text-sm font-bold">
-                  {metric.key === 'foodCostPercentage'
-                    ? 'Average Food Cost (%)'
-                    : `Total ${metric.label}`}
-                  {metric.key === 'estimatedCost' || metric.key === 'estimatedRevenue'
-                    ? ' (IDR)'
-                    : metric.key === 'pax'
-                      ? ' (Pax)'
-                      : ''}
-                </p>
-                <p className="mt-2 break-words !text-[32px] !leading-10 font-semibold tabular-nums">
-                  {metric.key === 'foodCostPercentage' && data.summary.foodCostPercentage !== null
-                    ? data.summary.foodCostPercentage.toFixed(2)
-                    : format(data.summary[metric.key], metric.key)}
-                </p>
-              </div>
-            ))}
+          <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+            <div className="-ml-px -mt-px grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+              {metrics.filter((metric) => data.access.components[({
+                foodCostPercentage: 'foodCostCard', pax: 'paxCard', estimatedCost: 'costCard', estimatedRevenue: 'revenueCard',
+              } as const)[metric.key]]).map((metric) => (
+                <div
+                  key={metric.key}
+                  className="min-w-0 space-y-2 border-l border-t border-black bg-surface p-2"
+                >
+                  <p className="flex items-start gap-2 text-sm font-medium text-foreground">
+                    <span
+                      aria-hidden="true"
+                      className="mt-0.5 h-4 w-2 shrink-0"
+                      style={{ backgroundColor: metric.color }}
+                    />
+                    <span>
+                      {metric.key === 'foodCostPercentage'
+                        ? 'Average Food Cost (%)'
+                        : `Total ${metric.label}`}
+                      {metric.key === 'estimatedCost' || metric.key === 'estimatedRevenue'
+                        ? ' (IDR)'
+                        : metric.key === 'pax'
+                          ? ' (Pax)'
+                          : ''}
+                    </span>
+                  </p>
+                  <div className="break-words text-[24px] font-semibold leading-tight tabular-nums text-foreground">
+                    {metric.key === 'foodCostPercentage' && data.summary.foodCostPercentage !== null
+                      ? data.summary.foodCostPercentage.toFixed(2)
+                      : format(data.summary[metric.key], metric.key)}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           {data.summary.incompleteBatches > 0 ? (
             <p
