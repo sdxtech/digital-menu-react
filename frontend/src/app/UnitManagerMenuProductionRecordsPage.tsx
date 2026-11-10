@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
@@ -969,14 +970,16 @@ const UnitManagerMenuProductionRecordsPage = ({
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
-                      Loading production records...
-                    </td>
-                  </tr>
-                ) : filteredRecords.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([page, selectedSite, includePending, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])}
+                loading={loading}
+                columns={6}
+                rowCount={filteredRecords.length}
+                label="Loading production records..."
+                error={error}
+                onRetry={() => { void fetchRecords() }}
+              >
+                {filteredRecords.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={6} className="px-5 py-10 text-center text-muted">
                       {error
@@ -1616,7 +1619,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
         </div>

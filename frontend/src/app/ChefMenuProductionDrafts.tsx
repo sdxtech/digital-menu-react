@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import TablePagination from '../components/TablePagination'
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
@@ -126,14 +127,16 @@ const ChefMenuProductionDrafts = () => {
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
-                    Loading menu production drafts...
-                  </td>
-                </tr>
-              ) : groups.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page])}
+              loading={loading}
+              columns={columnCount}
+              rowCount={groups.length}
+              label="Loading menu production drafts..."
+              error={error}
+              onRetry={() => { void fetchDrafts() }}
+            >
+              {groups.length === 0 ? (
                 <tr>
                   <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
                     No menu production drafts yet.
@@ -194,7 +197,7 @@ const ChefMenuProductionDrafts = () => {
                   )
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

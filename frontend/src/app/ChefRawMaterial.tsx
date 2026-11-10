@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { useState, useEffect } from 'react'
 import { useChefData } from '../lib/chef-data'
@@ -112,14 +113,18 @@ const ChefRawMaterial = () => {
                   <th className="px-5 py-4 font-semibold">Unit of Measures</th>
                 </tr>
               </thead>
-              <tbody>
-                {rawMaterialsMeta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={5} className="px-5 py-10 text-center text-muted">
-                      Loading raw materials...
-                    </td>
-                  </tr>
-                ) : rawMaterials.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([rawMaterialsMeta.page])}
+                loading={rawMaterialsMeta.loading}
+                columns={5}
+                rowCount={rawMaterials.length}
+                label="Loading raw materials..."
+                pageSize={rawMaterialsMeta.limit}
+                preserveOnRefresh={false}
+                error={rawMaterialsMeta.error}
+                onRetry={() => { void fetchRawMaterials(rawMaterialsMeta.page, rawMaterialsMeta.limit) }}
+              >
+                {rawMaterials.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={5} className="px-5 py-10 text-center text-muted">
                       {rawMaterialsMeta.error
@@ -152,7 +157,7 @@ const ChefRawMaterial = () => {
                   ); // 🌟 Changed from ) to );
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
             </table>
           </div>
         </div>

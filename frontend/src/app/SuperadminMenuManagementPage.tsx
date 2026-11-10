@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import RecipeImportTemplateDownload from '../components/RecipeImportTemplateDownload'
 import RecipeImportForm from '../components/RecipeImportForm'
@@ -1837,7 +1838,7 @@ const SuperadminMenuManagementPage = () => {
         return
       }
 
-      setRecipeMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setRecipeMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -1893,7 +1894,7 @@ const SuperadminMenuManagementPage = () => {
         return
       }
 
-      setCategoryMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setCategoryMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -1952,7 +1953,7 @@ const SuperadminMenuManagementPage = () => {
         return
       }
 
-      setRawMaterialMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setRawMaterialMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -3716,14 +3717,17 @@ const SuperadminMenuManagementPage = () => {
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {recipeMeta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={12} className="px-5 py-10 text-center text-muted">
-                      Loading recipe data...
-                    </td>
-                  </tr>
-                ) : recipes.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([recipeMeta.page, recipeSearch, recipeStatus, approvalStatus, recipeCategory, recipeSite])}
+                loading={recipeMeta.loading}
+                columns={12}
+                rowCount={recipes.length}
+                label="Loading recipe data..."
+                pageSize={recipeMeta.limit}
+                error={recipeMeta.error}
+                onRetry={() => { void fetchRecipes(recipeMeta.page, recipeMeta.limit) }}
+              >
+                {recipes.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={12} className="px-5 py-10 text-center text-muted">
                       {recipeMeta.error ? recipeMeta.error : 'No recipes found.'}
@@ -3871,7 +3875,7 @@ const SuperadminMenuManagementPage = () => {
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
           {recipeMessage ? (
@@ -4135,14 +4139,17 @@ const SuperadminMenuManagementPage = () => {
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {rawMaterialMeta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
-                      Loading raw materials...
-                    </td>
-                  </tr>
-                ) : rawMaterials.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([rawMaterialMeta.page, rawMaterialSearch])}
+                loading={rawMaterialMeta.loading}
+                columns={7}
+                rowCount={rawMaterials.length}
+                label="Loading raw materials..."
+                pageSize={rawMaterialMeta.limit}
+                error={rawMaterialMeta.error}
+                onRetry={() => { void fetchRawMaterials(rawMaterialMeta.page, rawMaterialMeta.limit) }}
+              >
+                {rawMaterials.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {rawMaterialMeta.error
@@ -4250,7 +4257,7 @@ const SuperadminMenuManagementPage = () => {
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
 
@@ -4335,14 +4342,17 @@ const SuperadminMenuManagementPage = () => {
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {categoryMeta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={3} className="px-5 py-10 text-center text-muted">
-                      Loading categories...
-                    </td>
-                  </tr>
-                ) : categories.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([categoryMeta.page, categorySearch, categoryStatus])}
+                loading={categoryMeta.loading}
+                columns={3}
+                rowCount={categories.length}
+                label="Loading categories..."
+                pageSize={categoryMeta.limit}
+                error={categoryMeta.error}
+                onRetry={() => { void fetchCategories(categoryMeta.page, categoryMeta.limit) }}
+              >
+                {categories.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={3} className="px-5 py-10 text-center text-muted">
                       {categoryMeta.error
@@ -4393,7 +4403,7 @@ const SuperadminMenuManagementPage = () => {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
 

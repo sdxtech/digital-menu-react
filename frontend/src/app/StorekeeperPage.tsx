@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
@@ -1074,14 +1075,16 @@ const StorekeeperPage = () => {
                 <th className="px-3 py-1.5 font-semibold">Store request status</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">
-                    Loading store requests...
-                  </td>
-                </tr>
-              ) : filteredGroups.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, createdFilterStartDate, createdFilterEndDate, productionFilterStartDate, productionFilterEndDate, createdSortOrder, productionSortOrder])}
+              loading={loading}
+              columns={5}
+              rowCount={filteredGroups.length}
+              label="Loading store requests..."
+              error={loadError}
+              onRetry={() => { void fetchStoreRequests() }}
+            >
+              {filteredGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={5} className="px-5 py-10 text-center text-muted">
                     {groups.length === 0
@@ -1338,7 +1341,7 @@ const StorekeeperPage = () => {
                   )
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

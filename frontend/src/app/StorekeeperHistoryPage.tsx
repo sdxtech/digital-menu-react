@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
@@ -594,14 +595,16 @@ const StorekeeperHistoryPage = () => {
                 <th className="px-3 py-1.5 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={6} className="px-5 py-10 text-center text-muted">
-                    Loading issuance history...
-                  </td>
-                </tr>
-              ) : filteredGroups.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])}
+              loading={loading}
+              columns={6}
+              rowCount={filteredGroups.length}
+              label="Loading issuance history..."
+              error={loadError}
+              onRetry={() => { void fetchHistory() }}
+            >
+              {filteredGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={6} className="px-5 py-10 text-center text-muted">
                     {productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
@@ -899,7 +902,7 @@ const StorekeeperHistoryPage = () => {
                   )
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

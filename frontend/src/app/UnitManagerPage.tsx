@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
@@ -755,14 +756,16 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {loadingApprovals ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-6 text-center text-muted">
-                        Loading approval data...
-                      </td>
-                    </tr>
-                  ) : pendingRecipes.length === 0 ? (
+                <LoadingTableBody
+                  key={JSON.stringify([recipePage, selectedSite, activeSection])}
+                  loading={loadingApprovals}
+                  columns={8}
+                  rowCount={pendingRecipes.length}
+                  label="Loading approval data..."
+                  error={actionError}
+                  onRetry={() => { void fetchPending() }}
+                >
+                  {pendingRecipes.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-6 text-center text-muted">
                         No recipes pending approval.
@@ -979,7 +982,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       )
                     })
                   )}
-                </tbody>
+                </LoadingTableBody>
               </table>
             </div>
           </div>
@@ -1063,6 +1066,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
             <div className="p-6">
             <TablePagination
               page={menuGroupPage}
+              loading={loadingApprovals}
               totalPages={menuGroupTotalPages}
               onPageChange={setMenuGroupPage}
               summary={`Showing ${paginatedMenuGroups.length} of ${menuProductionTotal} production batches`}
@@ -1089,7 +1093,15 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <LoadingTableBody
+                  key={JSON.stringify([menuGroupPage, selectedSite, activeSection, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])}
+                  loading={loadingApprovals}
+                  columns={7}
+                  rowCount={paginatedMenuGroups.length}
+                  label="Loading approval data..."
+                  error={actionError}
+                  onRetry={() => { void fetchPending() }}
+                >
                   {filteredMenuProductionGroups.length === 0 ? (
                     <tr className="border-t border-border">
                       <td colSpan={7} className="px-4 py-8 text-center text-muted">
@@ -1782,7 +1794,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       )
                     })
                   )}
-                </tbody>
+                </LoadingTableBody>
               </table>
             </div>
             </div>

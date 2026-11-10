@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import ProductionInformation from '../components/ProductionInformation'
@@ -871,14 +872,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-10 text-center text-muted">
-                      Loading approval data...
-                    </td>
-                  </tr>
-                ) : recipes.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([recipePage, selectedSite, selectedCorporateSites, approvalFilter])}
+                loading={loading}
+                columns={corporateOnly ? 10 : 8}
+                rowCount={recipes.length}
+                label="Loading approval data..."
+                error={error}
+                onRetry={() => { void fetchApprovals() }}
+              >
+                {recipes.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={corporateOnly ? 10 : 8} className="px-5 py-10 text-center text-muted">
                       {corporateSettings.loading ? 'Loading approval sites...' : hasApprovalScope ? 'No recipes found.' : corporateOnly ? 'Select at least one site.' : 'Select a site first.'}
@@ -1098,7 +1101,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
         </section>
@@ -1186,14 +1189,16 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   <th className="px-4 py-3 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                      Loading approval data...
-                    </td>
-                  </tr>
-                ) : filteredMenuGroups.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([menuPage, selectedSite, selectedCorporateSites, approvalFilter, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])}
+                loading={loading}
+                columns={7}
+                rowCount={filteredMenuGroups.length}
+                label="Loading approval data..."
+                error={error}
+                onRetry={() => { void fetchApprovals() }}
+              >
+                {filteredMenuGroups.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={7} className="px-4 py-8 text-center text-muted">
                       {selectedSite
@@ -1587,7 +1592,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
           </div>

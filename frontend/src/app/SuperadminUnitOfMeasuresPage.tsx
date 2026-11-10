@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TablePagination from '../components/TablePagination'
@@ -318,7 +319,7 @@ const SuperadminUnitOfMeasuresPage = () => {
         return
       }
 
-      setUnitMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setUnitMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const data = await apiFetch<{
           items: UnitOfMeasureApi[]
@@ -366,7 +367,7 @@ const SuperadminUnitOfMeasuresPage = () => {
         return
       }
 
-      setConversionMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setConversionMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const data = await apiFetch<{
           items: UnitConversionApi[]
@@ -422,7 +423,7 @@ const SuperadminUnitOfMeasuresPage = () => {
         return
       }
 
-      setRawMaterialMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setRawMaterialMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -1526,14 +1527,17 @@ const SuperadminUnitOfMeasuresPage = () => {
                           <th className="px-4 py-3 font-semibold">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border bg-surface">
-                        {unitMeta.loading ? (
-                          <tr>
-                            <td colSpan={4} className="px-4 py-6 text-center">
-                              Loading units...
-                            </td>
-                          </tr>
-                        ) : units.length === 0 ? (
+                      <LoadingTableBody
+                        key={JSON.stringify([unitMeta.page, search, statusFilter])}
+                        loading={unitMeta.loading}
+                        columns={4}
+                        rowCount={units.length}
+                        label="Loading units..."
+                        pageSize={unitMeta.limit}
+                        error={unitMeta.error}
+                        onRetry={() => { void fetchUnits(unitMeta.page, unitMeta.limit) }}
+                      >
+                        {units.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="px-4 py-6 text-center">
                               {unitMeta.error || 'No units found.'}
@@ -1572,7 +1576,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                             </tr>
                           ))
                         )}
-                      </tbody>
+                      </LoadingTableBody>
                     </table>
                   </div>
                 </>
@@ -1600,14 +1604,17 @@ const SuperadminUnitOfMeasuresPage = () => {
                           <th className="px-4 py-3 font-semibold">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border bg-surface">
-                        {conversionMeta.loading ? (
-                          <tr>
-                            <td colSpan={4} className="px-4 py-6 text-center">
-                              Loading conversions...
-                            </td>
-                          </tr>
-                        ) : conversions.length === 0 ? (
+                      <LoadingTableBody
+                        key={JSON.stringify([conversionMeta.page, search, statusFilter])}
+                        loading={conversionMeta.loading}
+                        columns={4}
+                        rowCount={conversions.length}
+                        label="Loading conversions..."
+                        pageSize={conversionMeta.limit}
+                        error={conversionMeta.error}
+                        onRetry={() => { void fetchConversions(conversionMeta.page, conversionMeta.limit) }}
+                      >
+                        {conversions.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="px-4 py-6 text-center">
                               {conversionMeta.error || 'No conversions found.'}
@@ -1652,7 +1659,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                             </tr>
                           ))
                         )}
-                      </tbody>
+                      </LoadingTableBody>
                     </table>
                   </div>
                 </>
@@ -1699,14 +1706,17 @@ const SuperadminUnitOfMeasuresPage = () => {
                           <th className="px-4 py-3 font-semibold">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border bg-surface">
-                        {rawMaterialMeta.loading ? (
-                          <tr>
-                            <td colSpan={6} className="px-4 py-6 text-center">
-                              Loading raw materials...
-                            </td>
-                          </tr>
-                        ) : rawMaterials.length === 0 ? (
+                      <LoadingTableBody
+                        key={JSON.stringify([rawMaterialMeta.page, search])}
+                        loading={rawMaterialMeta.loading}
+                        columns={6}
+                        rowCount={rawMaterials.length}
+                        label="Loading raw materials..."
+                        pageSize={rawMaterialMeta.limit}
+                        error={rawMaterialMeta.error}
+                        onRetry={() => { void fetchSpecificConversions(rawMaterialMeta.page, rawMaterialMeta.limit) }}
+                      >
+                        {rawMaterials.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="px-4 py-6 text-center">
                               {rawMaterialMeta.error ||
@@ -1811,7 +1821,7 @@ const SuperadminUnitOfMeasuresPage = () => {
                             )
                           })
                         )}
-                      </tbody>
+                      </LoadingTableBody>
                     </table>
                   </div>
                 </>
