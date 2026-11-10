@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { Fragment, useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import TablePagination from '../components/TablePagination'
@@ -304,7 +305,7 @@ const SuperadminSitesPage = () => {
         return
       }
 
-      setMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -872,14 +873,17 @@ const SuperadminSitesPage = () => {
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {meta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted">
-                      Loading sites...
-                    </td>
-                  </tr>
-                ) : sites.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([meta.page, search, statusFilter])}
+                loading={meta.loading}
+                columns={9}
+                rowCount={sites.length}
+                label="Loading sites..."
+                pageSize={meta.limit}
+                error={meta.error}
+                onRetry={() => { void fetchSites(meta.page, meta.limit, search) }}
+              >
+                {sites.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={9} className="px-5 py-10 text-center text-muted">
                       {meta.error ? meta.error : 'No sites found.'}
@@ -1021,7 +1025,7 @@ const SuperadminSitesPage = () => {
                     </Fragment>
                   ))
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
 

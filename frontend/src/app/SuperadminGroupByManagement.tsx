@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { useCallback, useEffect, useState } from 'react'
 import ActionButton from '../components/ActionButton'
 import TablePagination from '../components/TablePagination'
@@ -50,6 +51,7 @@ const SuperadminGroupByManagement = () => {
   const fetchItems = useCallback(
     async (nextPage: number, nextSearch: string) => {
       if (!accessToken) return
+      setPage(nextPage)
       setLoading(true)
       setError('')
       try {
@@ -328,14 +330,17 @@ const SuperadminGroupByManagement = () => {
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={3} className="px-5 py-10 text-center text-muted">
-                    Loading Group By options...
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, search, status])}
+              loading={loading}
+              columns={3}
+              rowCount={items.length}
+              label="Loading Group By options..."
+
+              error={error}
+              onRetry={() => { void fetchItems(page, search) }}
+            >
+              {items.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={3} className="px-5 py-10 text-center text-muted">
                     {error || 'No Group By options found.'}
@@ -376,7 +381,7 @@ const SuperadminGroupByManagement = () => {
                   </tr>
                 ))
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
 

@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import TablePagination from '../components/TablePagination'
 import { useCallback, useEffect, useState } from 'react'
@@ -355,14 +356,16 @@ const ChefRecipeDrafts = () => {
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
-                    Loading recipe drafts...
-                  </td>
-                </tr>
-              ) : drafts.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, search, categoryFilter, issueFilter])}
+              loading={loading}
+              columns={columnCount}
+              rowCount={drafts.length}
+              label="Loading recipe drafts..."
+              error={error}
+              onRetry={() => { void fetchDrafts() }}
+            >
+              {drafts.length === 0 ? (
                 <tr>
                   <td colSpan={columnCount} className="px-5 py-10 text-center text-muted">
                     {total ? 'No recipe drafts on this page.' : categoryFilter || issueFilter ? 'No recipe drafts match the selected filters.' : 'No recipe drafts yet.'}
@@ -427,7 +430,7 @@ const ChefRecipeDrafts = () => {
                   </tr>
                 ))
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>
