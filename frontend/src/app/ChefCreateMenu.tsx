@@ -951,6 +951,10 @@ const ChefCreateMenu = ({
         if (row.id !== id) return row
 
         const next = { ...row, [field]: value }
+        if (field === 'qty' && value !== row.qty && calculateSrQty(next)) {
+          next.srQty = ''
+          next.srQtyManual = false
+        }
         if (field === 'vendor' && value !== row.vendor) next.priceUom = undefined
         if (
           (field === 'ingredientType' || (
