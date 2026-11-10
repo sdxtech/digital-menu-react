@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
@@ -310,10 +311,16 @@ const AdminSiteMenuProductionPage = () => {
                 <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted">Loading production batches...</td></tr>
-              ) : visibleGroups.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page])}
+              loading={loading}
+              columns={10}
+              rowCount={visibleGroups.length}
+              label="Loading production batches..."
+              error={error}
+              onRetry={() => { void fetchGroups() }}
+            >
+              {visibleGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={10} className="px-4 py-8 text-center text-muted">
                     No production menus pending sales input.
@@ -796,7 +803,7 @@ const AdminSiteMenuProductionPage = () => {
                   );
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

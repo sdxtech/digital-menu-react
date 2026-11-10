@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import {
@@ -2091,14 +2092,16 @@ const ChefStoreRequest = ({
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
-                    Loading store requests...
-                  </td>
-                </tr>
-              ) : filteredGroups.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([selectedSite, requestQuery])}
+              loading={loading}
+              columns={9}
+              rowCount={paginatedGroups.length}
+              label="Loading store requests..."
+              error={errorMessage}
+              onRetry={() => { void fetchStoreRequests() }}
+            >
+              {filteredGroups.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={9} className="px-5 py-10 text-center text-muted">
                     {productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
@@ -3296,7 +3299,7 @@ const ChefStoreRequest = ({
                 )
                 })
               )}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

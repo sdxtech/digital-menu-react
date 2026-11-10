@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
 import TablePagination from '../components/TablePagination'
@@ -220,18 +221,21 @@ const SuperadminClientManagementPage = () => {
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={5} className="px-5 py-10 text-center text-muted">Loading clients...</td>
-                </tr>
-              ) : null}
-              {!loading && clients.length === 0 ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, search])}
+              loading={loading}
+              columns={5}
+              rowCount={clients.length}
+              label="Loading clients..."
+              error={error}
+              onRetry={() => { void fetchClients() }}
+            >
+              {clients.length === 0 ? (
                 <tr className="border-t border-border">
                   <td colSpan={5} className="px-5 py-10 text-center text-muted">{error || 'No clients found.'}</td>
                 </tr>
               ) : null}
-              {!loading && clients.map((client, index) => (
+              {clients.map((client, index) => (
                 <tr key={client.id} className="border-t border-border">
                   <td className="px-5 py-4 text-sm text-muted">{(page - 1) * DEFAULT_LIMIT + index + 1}</td>
                   <td className="px-5 py-4">{client.name}</td>
@@ -249,7 +253,7 @@ const SuperadminClientManagementPage = () => {
                   </td>
                 </tr>
               ))}
-            </tbody>
+            </LoadingTableBody>
             </table>
           </div>
         </div>

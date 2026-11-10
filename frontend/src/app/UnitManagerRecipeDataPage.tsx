@@ -1,3 +1,5 @@
+import LoadingIndicator from '../components/LoadingIndicator'
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import RecipeDetailOverview, { formatRecipeDetailPrice } from '../components/RecipeDetailOverview'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -365,14 +367,16 @@ const UnitManagerRecipeDataPage = ({
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={showExport ? 10 : 9} className="px-5 py-10 text-center text-muted">
-                      Loading recipes...
-                    </td>
-                  </tr>
-                ) : recipes.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([page, searchTerm, selectedSite, siteFilter, statusFilters, categoryFilters, approvalFilter])}
+                loading={loading}
+                columns={showExport ? 10 : 9}
+                rowCount={recipes.length}
+                label="Loading recipes..."
+                error={error}
+                onRetry={() => { void fetchRecipes() }}
+              >
+                {recipes.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={showExport ? 10 : 9} className="px-5 py-10 text-center text-muted">
                       {error ? error : 'No recipes found.'}
@@ -433,7 +437,7 @@ const UnitManagerRecipeDataPage = ({
                     )
                   })
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
         </div>
@@ -561,7 +565,7 @@ const UnitManagerRecipeDataPage = ({
                             : '-'}
                         </td>
                         <td className="px-4 py-3">
-                          {ingredientVendors.loading ? 'Loading...' : ingredientVendors.vendorsByCode[ingredient.productCode] || ingredient.vendor?.trim() || '-'}
+                          {ingredientVendors.loading ? <LoadingIndicator label="Loading vendors..." /> : ingredientVendors.vendorsByCode[ingredient.productCode] || ingredient.vendor?.trim() || '-'}
                         </td>
                         <td className="px-4 py-3">{formatRecipeDetailPrice(ingredient.priceUom, '-')}</td>
                         <td className="px-4 py-3 font-medium">{formatRecipeDetailPrice(ingredient.foodCost, '-')}</td>

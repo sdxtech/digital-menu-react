@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import ActionButton from '../components/ActionButton'
@@ -107,7 +108,7 @@ const SuperadminUsersPage = () => {
         return
       }
 
-      setMeta((prev) => ({ ...prev, loading: true, error: '' }))
+      setMeta((prev) => ({ ...prev, page, limit, loading: true, error: '' }))
       try {
         const params = new URLSearchParams()
         params.set('page', String(page))
@@ -937,14 +938,17 @@ const SuperadminUsersPage = () => {
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
-              <tbody>
-                {meta.loading ? (
-                  <tr className="border-t border-border">
-                    <td colSpan={7} className="px-5 py-10 text-center text-muted">
-                      Loading users...
-                    </td>
-                  </tr>
-                ) : users.length === 0 ? (
+              <LoadingTableBody
+                key={JSON.stringify([meta.page, search, selectedSites])}
+                loading={meta.loading}
+                columns={7}
+                rowCount={users.length}
+                label="Loading users..."
+                pageSize={meta.limit}
+                error={meta.error}
+                onRetry={() => { void fetchUsers(meta.page, meta.limit, search) }}
+              >
+                {users.length === 0 ? (
                   <tr className="border-t border-border">
                     <td colSpan={7} className="px-5 py-10 text-center text-muted">
                       {meta.error ? meta.error : 'No users found.'}
@@ -1115,7 +1119,7 @@ const SuperadminUsersPage = () => {
                     </tr>
                   ))
                 )}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
 

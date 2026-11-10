@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { applyDashboardPolicies } from '../lib/dashboard-access-save'
 import { useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -180,7 +181,6 @@ export default function SuperadminDashboardAccessPage() {
   })
   const userTableMessage = search === null
     ? 'Enter a name or email, then press Enter or Search to find users.'
-    : usersQuery.isLoading ? 'Loading users...'
     : usersQuery.error ? usersQuery.error.message
     : usersQuery.data?.items.length === 0 ? 'No users found.' : null
   const selectableUsers = (userTableMessage ? [] : usersQuery.data?.items ?? []).filter((user) => !user.roles.includes('superadmin') && Boolean(user.id ?? user._id))
@@ -253,7 +253,15 @@ export default function SuperadminDashboardAccessPage() {
                   <th scope="col" className="px-4 py-3 font-semibold">Role</th>
                 </tr>
               </thead>
-              <tbody>
+              <LoadingTableBody
+                key={JSON.stringify([page, search])}
+                loading={usersQuery.isFetching && search !== null}
+                columns={4}
+                rowCount={usersQuery.data?.items.length ?? 0}
+                label="Loading users..."
+                error={usersQuery.error?.message}
+                onRetry={() => { void usersQuery.refetch() }}
+              >
                 {userTableMessage ? <tr>
                   <td colSpan={4} role={usersQuery.error ? 'alert' : 'status'} className={`px-4 py-6 text-center ${usersQuery.error ? 'text-red-600' : 'text-muted'}`}>{userTableMessage}</td>
                 </tr> : usersQuery.data?.items.map((user) => {
@@ -271,7 +279,7 @@ export default function SuperadminDashboardAccessPage() {
 
                   </tr>
                 })}
-              </tbody>
+              </LoadingTableBody>
             </table>
           </div>
         {type === 'user' && selectedUsers.length > 0 ? <div className="flex flex-wrap items-center gap-2">

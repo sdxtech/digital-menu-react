@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TablePagination from "../components/TablePagination";
@@ -382,23 +383,23 @@ const SuperadminAuditLogPage = () => {
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t border-border">
-                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
-                    Loading audit logs...
-                  </td>
-                </tr>
-              ) : null}
-              {!loading && !items.length ? (
+            <LoadingTableBody
+              key={JSON.stringify([page, search, moduleFilter, roleFilter, siteFilter, statusFilter, startDate, endDate])}
+              loading={loading}
+              columns={7}
+              rowCount={items.length}
+              label="Loading audit logs..."
+              error={error}
+              onRetry={() => { void fetchLogs() }}
+            >
+              {!items.length ? (
                 <tr className="border-t border-border">
                   <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     No audit records match the selected filters.
                   </td>
                 </tr>
               ) : null}
-              {!loading &&
-                items.map((item) => (
+              {items.map((item) => (
                   <tr key={item.id} className="border-t border-border">
                     <td className="whitespace-nowrap px-5 py-4 text-xs text-muted">
                       {formatDateTime(item.createdAt)}
@@ -442,7 +443,7 @@ const SuperadminAuditLogPage = () => {
                     </td>
                   </tr>
                 ))}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>

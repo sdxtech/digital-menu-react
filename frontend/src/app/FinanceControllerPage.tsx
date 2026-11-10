@@ -1,3 +1,4 @@
+import LoadingTableBody from '../components/LoadingTableBody'
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
@@ -160,7 +161,6 @@ export default function FinanceControllerPage() {
           </label>
           {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
           {message ? <p role="status" className="text-sm text-primary">{message}</p> : null}
-          {loading ? <p className="text-sm text-muted">Loading approvals...</p> : null}
         </div>
         <TablePagination
           page={page}
@@ -192,10 +192,18 @@ export default function FinanceControllerPage() {
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <LoadingTableBody
+              key={JSON.stringify([page, site])}
+              loading={loading}
+              columns={7}
+              rowCount={groups.length}
+              label="Loading approvals..."
+              error={error}
+              onRetry={() => { void load() }}
+            >
               {groups.length === 0 ? <tr className="border-t border-border">
                 <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                  {loading ? 'Loading approvals...' : 'No menu productions waiting for finance approval.'}
+                  No menu productions waiting for finance approval.
                 </td>
               </tr> : groups.map((group, index) => {
                 const salesReady = group.items.every((item) =>
@@ -458,7 +466,7 @@ export default function FinanceControllerPage() {
           </tr> : null}
         </Fragment>
       })}
-            </tbody>
+            </LoadingTableBody>
           </table>
         </div>
       </div>
