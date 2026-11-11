@@ -74,6 +74,10 @@ const format = (value: number | null, metric?: Metric) =>
     : metric === 'foodCostPercentage'
       ? `${value.toFixed(2)}%`
       : numberFormat.format(value)
+const formatDailyPeriod = (period: string, includeYear = false) => {
+  const [year, month, day] = period.split('-')
+  return includeYear ? `${day}-${month}-${year}` : `${day}-${month}`
+}
 
 const initialFilters = (): Filters => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -229,7 +233,11 @@ const TrendChart = ({
           <XAxis
             dataKey="period"
             tickFormatter={(period: string) =>
-              interval === 'monthly' ? period : period.slice(5)
+              interval === 'daily'
+                ? formatDailyPeriod(period)
+                : interval === 'monthly'
+                  ? period
+                  : period.slice(5)
             }
             minTickGap={32}
             tickLine={false}
@@ -260,7 +268,11 @@ const TrendChart = ({
                 : chartSeries
               return (
                 <div className="rounded-md border border-border bg-surface p-3 text-sm text-foreground shadow-md">
-                  <p className="mb-2 font-semibold">{String(label)}</p>
+                  <p className="mb-2 font-semibold">
+                    {interval === 'daily' && typeof label === 'string'
+                      ? formatDailyPeriod(label, true)
+                      : String(label)}
+                  </p>
                   {tooltipSeries.map((item) => (
                     <p key={item.key} className="flex justify-between gap-6">
                       <span style={{ color: item.color }}>{item.label}</span>
