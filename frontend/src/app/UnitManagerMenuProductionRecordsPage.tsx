@@ -1142,7 +1142,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                         {group.productionCode ?? '-'}
                       </td>
                       <td className="px-5 py-4 font-bold text-black">{group.items[0]?.clientName ?? '-'}</td>
-                      <td className="px-5 py-4">{getApprovalStatusLabel(getUmBatchStatus(group.items))}</td>
+                      <td className="px-5 py-4">{getUmBatchStatus(group.items) ? getApprovalStatusLabel(getUmBatchStatus(group.items)!) : '-'}</td>
                       {showFinanceStatus ? <td className="px-5 py-4">{getFinanceBatchStatus(group.items) ? getApprovalStatusLabel(getFinanceBatchStatus(group.items)!) : '-'}</td> : null}
                       <td className="px-5 py-4">{group.items.some((item) => item.salesRejectionReason) ? 'Returned to Admin Sales' : getRecordStatusLabel(recordStatus)}</td>
                           <td className="px-5 py-4">

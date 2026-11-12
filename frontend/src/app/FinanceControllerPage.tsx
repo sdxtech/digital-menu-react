@@ -229,7 +229,7 @@ export default function FinanceControllerPage() {
                     <td className="px-4 py-3 font-bold text-black">{formatProductionDate(group.date)}</td>
                     <td className="px-4 py-3 text-xs font-bold text-black">{group.productionCode ?? '-'}</td>
                     <td className="px-4 py-3 font-bold text-black">{first?.clientName ?? '-'}</td>
-                    <td className="px-4 py-3">{getApprovalStatusLabel(getUmBatchStatus(group.items))}</td>
+                    <td className="px-4 py-3">{getUmBatchStatus(group.items) ? getApprovalStatusLabel(getUmBatchStatus(group.items)!) : '-'}</td>
                     <td className="px-4 py-3">{getApprovalStatusLabel(getFinanceBatchStatus(group.items) ?? 'pending')}</td>
                     <td className="px-4 py-3">
                       <span className="inline-block rounded-md bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">{batchStatus}</span>
