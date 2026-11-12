@@ -21,12 +21,6 @@ const navItems = [
     icon: (className: string) => <i className={`bi bi-journal-check ${className}`} aria-hidden="true" />,
     componentKey: 'MGR_PRODUCTION_RECORDS',
   },
-  {
-    label: 'Recipe Data',
-    to: '/finance-controller/recipe-data',
-    icon: (className: string) => <i className={`bi bi-book ${className}`} aria-hidden="true" />,
-    componentKey: 'MGR_RECIPE_DATA',
-  },
 ]
 
 export default function FinanceControllerLayout() {
