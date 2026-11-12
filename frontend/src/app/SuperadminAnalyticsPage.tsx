@@ -285,6 +285,25 @@ const TrendChart = ({
                       </span>
                     </p>
                   ))}
+                  {series.some((item) => item.key === 'estimatedCost' || item.key === 'estimatedRevenue') ? (
+                    <div className="mt-2 border-t border-border pt-2">
+                      <p className="flex justify-between gap-6">
+                        <span>Food Cost (%)</span>
+                        <span className="font-semibold tabular-nums">
+                          {format(point.foodCostPercentage, 'foodCostPercentage')}
+                        </span>
+                      </p>
+                      <p className="flex justify-between gap-6">
+                        <span>Margin after Food Cost (%)</span>
+                        <span className="font-semibold tabular-nums">
+                          {format(
+                            point.foodCostPercentage === null ? null : 100 - point.foodCostPercentage,
+                            'foodCostPercentage',
+                          )}
+                        </span>
+                      </p>
+                    </div>
+                  ) : null}
                   {isBarChart ? (
                     <p className="mt-2 flex justify-between gap-6 border-t border-border pt-2 font-semibold">
                       <span>Total pax</span>
