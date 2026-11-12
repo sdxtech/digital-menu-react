@@ -31,6 +31,10 @@ export class ListMenuProductionsQueryDto {
   approvalStatus?: 'pending' | 'approved' | 'rejected';
 
   @IsOptional()
+  @IsIn(['pending', 'approved', 'rejected'])
+  financeApprovalStatus?: 'pending' | 'approved' | 'rejected';
+
+  @IsOptional()
   @IsIn(['not-requested', 'requested', 'fulfilled', 'cancelled'])
   storeRequestStatus?:
     | 'not-requested'
@@ -64,7 +68,15 @@ export class ListMenuProductionsQueryDto {
   limit?: number;
 
   @IsOptional()
-  @IsIn(['sales', 'records', 'records-all', 'approval', 'finance-approval', 'history', 'requests'])
+  @IsIn([
+    'sales',
+    'records',
+    'records-all',
+    'approval',
+    'finance-approval',
+    'history',
+    'requests',
+  ])
   view?:
     | 'sales'
     | 'records'

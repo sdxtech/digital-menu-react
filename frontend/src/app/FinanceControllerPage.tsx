@@ -12,6 +12,7 @@ import { formatQuantity } from '../lib/quantity'
 import { downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
+import { getFinanceBatchStatus, getUmBatchStatus } from '../lib/production-batch-status'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type Ingredient = {
@@ -52,6 +53,7 @@ type Menu = {
   estimatedRevenue?: number
   groupSales?: Array<{ name: string; quantity: number; sellingPricePerPax: number; estimatedRevenue: number }>
   salesRejectionReason?: string
+  financeApprovalRequired?: boolean
   financeCostStatus?: 'pending' | 'approved' | 'rejected'
   financeSalesStatus?: 'pending' | 'approved' | 'rejected'
 }
@@ -171,16 +173,7 @@ export default function FinanceControllerPage() {
           className="border-b border-border bg-white px-5 py-4"
         />
         <div className="max-w-full overflow-x-auto">
-          <table className="dm-table !w-full !table-fixed bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
-            <colgroup>
-              <col className="w-[5%]" />
-              <col className="w-[15%]" />
-              <col className="w-[14%]" />
-              <col className="w-[16%]" />
-              <col className="w-[15%]" />
-              <col className="w-[17%]" />
-              <col className="w-[18%]" />
-            </colgroup>
+          <table className="dm-table min-w-full bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="px-4 py-3 font-semibold">No</th>
@@ -188,6 +181,8 @@ export default function FinanceControllerPage() {
                 <th className="px-4 py-3 font-semibold">Production date</th>
                 <th className="px-4 py-3 font-semibold">Production code</th>
                 <th className="px-4 py-3 font-semibold">Client name</th>
+                <th className="px-4 py-3 font-semibold">UM Approval Status</th>
+                <th className="px-4 py-3 font-semibold">Finance Approval Status</th>
                 <th className="px-4 py-3 font-semibold">Batch status</th>
                 <th className="px-4 py-3 font-semibold">Action</th>
               </tr>
@@ -195,14 +190,14 @@ export default function FinanceControllerPage() {
             <LoadingTableBody
               key={JSON.stringify([page, site])}
               loading={loading}
-              columns={7}
+              columns={9}
               rowCount={groups.length}
               label="Loading approvals..."
               error={error}
               onRetry={() => { void load() }}
             >
               {groups.length === 0 ? <tr className="border-t border-border">
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted">
                   No menu productions waiting for finance approval.
                 </td>
               </tr> : groups.map((group, index) => {
@@ -234,6 +229,8 @@ export default function FinanceControllerPage() {
                     <td className="px-4 py-3 font-bold text-black">{formatProductionDate(group.date)}</td>
                     <td className="px-4 py-3 text-xs font-bold text-black">{group.productionCode ?? '-'}</td>
                     <td className="px-4 py-3 font-bold text-black">{first?.clientName ?? '-'}</td>
+                    <td className="px-4 py-3">{getApprovalStatusLabel(getUmBatchStatus(group.items))}</td>
+                    <td className="px-4 py-3">{getApprovalStatusLabel(getFinanceBatchStatus(group.items) ?? 'pending')}</td>
                     <td className="px-4 py-3">
                       <span className="inline-block rounded-md bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">{batchStatus}</span>
                     </td>
@@ -252,7 +249,7 @@ export default function FinanceControllerPage() {
                     </td>
                   </tr>
                   {expanded ? <tr className="border-t border-border bg-background">
-                    <td colSpan={7} className="px-4 py-4">
+                    <td colSpan={9} className="px-4 py-4">
                       <div className="space-y-4">
                         <ProductionInformation
                           productionCode={group.productionCode}

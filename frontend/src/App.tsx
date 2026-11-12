@@ -175,7 +175,6 @@ function App() {
           <Route path="/finance-controller" element={<FinanceControllerLayout />}>
             <Route index element={<FinanceControllerPage />} />
             <Route path="menu-production-records" element={<UnitManagerMenuProductionRecordsPage includePending enableSiteSelection />} />
-            <Route path="recipe-data" element={<UnitManagerRecipeDataPage enableSiteSelection />} />
             <Route path="profile" element={<ProfileView />} />
             <Route path="security" element={<SecurityView />} />
           </Route>

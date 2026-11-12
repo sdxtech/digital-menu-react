@@ -176,6 +176,15 @@ export class MenuProductionsController {
     @Query() query: ListMenuProductionsQueryDto,
   ) {
     if (
+      query.financeApprovalStatus &&
+      query.view !== 'records-all' &&
+      query.view !== 'records'
+    ) {
+      throw new ForbiddenException(
+        'Finance approval status filter is only available for production records.',
+      );
+    }
+    if (
       req.user.roles?.includes(AppRole.FinanceController) &&
       query.view !== 'finance-approval' &&
       query.view !== 'records-all'
