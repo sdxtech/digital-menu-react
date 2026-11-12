@@ -119,10 +119,6 @@ const titleMatchers: TitleMatcher[] = [
     getPageTitle: () => 'Menu Production Records',
   },
   {
-    path: '/finance-controller/recipe-data',
-    getPageTitle: () => 'Recipe Data',
-  },
-  {
     path: '/finance-controller/profile',
     getPageTitle: () => 'My Profile',
   },

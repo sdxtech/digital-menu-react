@@ -67,6 +67,11 @@ export function productionBatchPagePipeline(
         { approvedRequested: 1 },
       ],
     });
+  if (query.financeApprovalStatus)
+    matches.push({
+      financeBatchStatus: query.financeApprovalStatus,
+      financeRequiredCount: { $gt: 0 },
+    });
   const selection: Record<string, unknown> = {};
   if (query.startDate || query.endDate || query.productionDate)
     selection['_id.date'] = query.productionDate ?? {
@@ -102,6 +107,49 @@ export function productionBatchPagePipeline(
         createdAt: { $max: { $ifNull: ['$submittedAt', '$createdAt'] } },
         ...(drafts ? { updatedAt: { $max: '$updatedAt' } } : {}),
         clients: { $addToSet: trim('clientName') },
+        ...(query.financeApprovalStatus
+          ? {
+              financeRequiredCount: {
+                $sum: {
+                  $cond: [{ $eq: ['$financeApprovalRequired', true] }, 1, 0],
+                },
+              },
+              financeRejectedCount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$financeApprovalRequired', true] },
+                        {
+                          $or: [
+                            { $eq: ['$financeCostStatus', 'rejected'] },
+                            { $eq: ['$financeSalesStatus', 'rejected'] },
+                          ],
+                        },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              financeApprovedCount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ['$financeApprovalRequired', true] },
+                        { $eq: ['$financeCostStatus', 'approved'] },
+                        { $eq: ['$financeSalesStatus', 'approved'] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            }
+          : {}),
         ...(query.view === 'approval'
           ? {
               salesApprovalPending: {
@@ -269,6 +317,37 @@ export function productionBatchPagePipeline(
           : {}),
       },
     },
+    ...(query.financeApprovalStatus
+      ? [
+          {
+            $addFields: {
+              financeBatchStatus: {
+                $cond: [
+                  { $gt: ['$financeRejectedCount', 0] },
+                  'rejected',
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $gt: ['$financeRequiredCount', 0] },
+                          {
+                            $eq: [
+                              '$financeRequiredCount',
+                              '$financeApprovedCount',
+                            ],
+                          },
+                        ],
+                      },
+                      'approved',
+                      'pending',
+                    ],
+                  },
+                ],
+              },
+            },
+          } as PipelineStage,
+        ]
+      : []),
     ...(matches.length ? [{ $match: { $and: matches } } as PipelineStage] : []),
     {
       $facet: {

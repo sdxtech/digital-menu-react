@@ -1,5 +1,6 @@
 import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
+import { getFinanceBatchStatus, getUmBatchStatus } from '../lib/production-batch-status'
 import ProductionBulkExportButton from '../components/ProductionBulkExportButton'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
@@ -419,11 +420,13 @@ const UnitManagerMenuProductionRecordsPage = ({
     [financeSites, user?.role, user?.site, user?.siteOptions, user?.sites],
   )
   const [selectedSite, setSelectedSite] = useState('')
+  const showFinanceStatus = user?.role === 'finance-controller' && Boolean(selectedSite)
   const [productionDateFrom, setProductionDateFrom] = useState('')
   const [productionDateTo, setProductionDateTo] = useState('')
   const [createdDateFrom, setCreatedDateFrom] = useState('')
   const [createdDateTo, setCreatedDateTo] = useState('')
   const [clientName, setClientName] = useState('')
+  const [financeApprovalStatus, setFinanceApprovalStatus] = useState('')
   const [dateSort, setDateSort] = useState('production-desc')
   const [recordTotal, setRecordTotal] = useState(0)
   const [recordClients, setRecordClients] = useState<string[]>([])
@@ -456,6 +459,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(RECORD_ITEMS_PER_PAGE), view: includePending ? 'records-all' : 'records' })
       applyProductionTableFilters(params, { productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort })
+      if (showFinanceStatus && financeApprovalStatus) params.set('financeApprovalStatus', financeApprovalStatus)
       if (enableSiteSelection) params.set('site', selectedSite)
       const query = params.toString()
       const data = await apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(
@@ -487,7 +491,7 @@ const UnitManagerMenuProductionRecordsPage = ({
     } finally {
       if (requestId === recordsRequestId.current && !signal?.aborted) setLoading(false)
     }
-  }, [accessToken, enableSiteSelection, includePending, selectedSite, page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+  }, [accessToken, enableSiteSelection, includePending, selectedSite, page, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort, financeApprovalStatus, showFinanceStatus])
 
   const handleDeleteMpr = async () => {
     if (!accessToken || !canDeleteMpr || !deleteTarget || deleting) return
@@ -534,7 +538,7 @@ const UnitManagerMenuProductionRecordsPage = ({
   useEffect(() => {
     setPage(1)
     setExpandedGroups([])
-  }, [selectedSite, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])
+  }, [selectedSite, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort, financeApprovalStatus])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -888,6 +892,16 @@ const UnitManagerMenuProductionRecordsPage = ({
                   ))}
                 </select>
               </div>
+              {showFinanceStatus ? <div className="w-full sm:w-60">
+                <label htmlFor="finance-record-status" className="sr-only">Finance Approval Status</label>
+                <select id="finance-record-status" value={financeApprovalStatus} onChange={(event) => setFinanceApprovalStatus(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm shadow-sm">
+                  <option value="">All Finance Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div> : null}
               <DateRangeFilter
                 id="production-record-production"
                 label="Production Date"
@@ -920,6 +934,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                   setCreatedDateFrom('')
                   setCreatedDateTo('')
                   setClientName('')
+                  setFinanceApprovalStatus('')
                   setDateSort('production-desc')
                 }}
                 className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
@@ -933,6 +948,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                   if (from) params.set('startDate', from)
                   if (to) params.set('endDate', to)
                   if (client) params.set('clientName', client)
+                  if (showFinanceStatus && financeApprovalStatus) params.set('financeApprovalStatus', financeApprovalStatus)
                   if (summaryOnly) params.set('summaryOnly', 'true')
                   if (enableSiteSelection) params.set('site', selectedSite)
                   return apiFetch<{ items: StoreRequestGroup[]; total: number; clients: string[] }>(`/menu-productions/store-requests?${params}`, undefined, accessToken ?? undefined)
@@ -967,13 +983,16 @@ const UnitManagerMenuProductionRecordsPage = ({
                   <th className="px-5 py-4 font-semibold">Production date</th>
                   <th className="px-5 py-4 font-semibold">Production code</th>
                   <th className="px-5 py-4 font-semibold">Client name</th>
+                  <th className="px-5 py-4 font-semibold">UM Approval Status</th>
+                  {showFinanceStatus ? <th className="px-5 py-4 font-semibold">Finance Approval Status</th> : null}
+                  <th className="px-5 py-4 font-semibold">Batch Status</th>
                   <th className="px-5 py-4 font-semibold">Action</th>
                 </tr>
               </thead>
               <LoadingTableBody
                 key={JSON.stringify([page, selectedSite, includePending, productionDateFrom, productionDateTo, createdDateFrom, createdDateTo, clientName, dateSort])}
                 loading={loading}
-                columns={6}
+                columns={showFinanceStatus ? 9 : 8}
                 rowCount={filteredRecords.length}
                 label="Loading production records..."
                 error={error}
@@ -981,7 +1000,7 @@ const UnitManagerMenuProductionRecordsPage = ({
               >
                 {filteredRecords.length === 0 ? (
                   <tr className="border-t border-border">
-                    <td colSpan={6} className="px-5 py-10 text-center text-muted">
+                    <td colSpan={showFinanceStatus ? 9 : 8} className="px-5 py-10 text-center text-muted">
                       {error
                         ? error
                         : productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
@@ -1123,6 +1142,9 @@ const UnitManagerMenuProductionRecordsPage = ({
                         {group.productionCode ?? '-'}
                       </td>
                       <td className="px-5 py-4 font-bold text-black">{group.items[0]?.clientName ?? '-'}</td>
+                      <td className="px-5 py-4">{getApprovalStatusLabel(getUmBatchStatus(group.items))}</td>
+                      {showFinanceStatus ? <td className="px-5 py-4">{getFinanceBatchStatus(group.items) ? getApprovalStatusLabel(getFinanceBatchStatus(group.items)!) : '-'}</td> : null}
+                      <td className="px-5 py-4">{group.items.some((item) => item.salesRejectionReason) ? 'Returned to Admin Sales' : getRecordStatusLabel(recordStatus)}</td>
                           <td className="px-5 py-4">
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -1173,7 +1195,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                         </tr>
                         {isExpanded ? (
                           <tr className="border-t border-border bg-background">
-                            <td colSpan={6} className="px-5 py-5">
+                            <td colSpan={showFinanceStatus ? 9 : 8} className="px-5 py-5">
                               <div className="space-y-4">
                                 <ProductionInformation
                                   productionCode={group.productionCode}
