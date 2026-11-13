@@ -305,7 +305,7 @@ const ChefRecipeDrafts = () => {
               setIssueFilter('')
               setPage(1)
             }}
-            className="h-10 rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200"
+            className="h-10 rounded-lg border border-primary bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primary/90"
           >
             Reset filters
           </button>
