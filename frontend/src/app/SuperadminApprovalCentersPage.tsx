@@ -128,6 +128,11 @@ type StoreRequestMenu = {
   missingRecipe: boolean
   reviewedBy?: string
   salesInputBy?: string
+  financeApprovalRequired?: boolean
+  financeCostStatus?: 'pending' | 'approved' | 'rejected'
+  financeSalesStatus?: 'pending' | 'approved' | 'rejected'
+  financeCostReviewedBy?: string
+  financeSalesReviewedBy?: string
 }
 
 type StoreRequestGroup = {
@@ -1399,6 +1404,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                             <td colSpan={7} className="px-4 py-5">
                               <div className="space-y-4">
                                 <ProductionInformation
+                                  financeItems={group.items}
                                   productionCode={group.productionCode}
                                   createdAt={getGroupSubmittedAt(group)}
                                   submittedBy={submittedByLabel}

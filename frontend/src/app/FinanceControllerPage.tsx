@@ -56,6 +56,8 @@ type Menu = {
   financeApprovalRequired?: boolean
   financeCostStatus?: 'pending' | 'approved' | 'rejected'
   financeSalesStatus?: 'pending' | 'approved' | 'rejected'
+  financeCostReviewedBy?: string
+  financeSalesReviewedBy?: string
 }
 
 type Group = {
@@ -252,6 +254,7 @@ export default function FinanceControllerPage() {
                     <td colSpan={9} className="px-4 py-4">
                       <div className="space-y-4">
                         <ProductionInformation
+                          financeItems={group.items}
                           productionCode={group.productionCode}
                           createdAt={submittedAt}
                           submittedBy={submittedBy}
