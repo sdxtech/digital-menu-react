@@ -106,6 +106,8 @@ type StoreRequestMenu = {
   ingredients?: StoreRequestIngredient[]
   fulfilledBy?: string
   cancelledBy?: string
+  financeCostReviewedBy?: string
+  financeSalesReviewedBy?: string
 }
 
 type StoreRequestGroup = {
@@ -137,7 +139,7 @@ type RecordStatus =
   | 'cancelled'
   | 'rejected'
 
-const getGroupRecordStatus = (
+export const getGroupRecordStatus = (
   group: StoreRequestGroup,
   includePending: boolean,
 ): RecordStatus | null => {
@@ -187,7 +189,7 @@ const getGroupRecordStatus = (
   return null
 }
 
-const getRecordStatusLabel = (status: RecordStatus) => {
+export const getRecordStatusLabel = (status: RecordStatus) => {
   if (status === 'finance-review') return 'Waiting for Finance Review'
   if (status === 'sales-input') return 'Waiting for Sales Input'
   if (status === 'pending') return 'Waiting for Approval'
@@ -1199,6 +1201,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                             <td colSpan={showFinanceStatus ? 9 : 8} className="px-5 py-5">
                               <div className="space-y-4">
                                 <ProductionInformation
+                                  financeItems={group.items}
                                   productionCode={group.productionCode}
                                   createdAt={getGroupSubmittedAt(group)}
                                   submittedBy={submittedByLabel}

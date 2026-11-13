@@ -1,5 +1,6 @@
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
+import ProductionInformation from '../components/ProductionInformation'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import {
   Fragment,
@@ -31,7 +32,7 @@ import {
   toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
-import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
+import { DateRangeFilter, getGroupRecordStatus, getRecordStatusLabel } from './UnitManagerMenuProductionRecordsPage'
 
 type StoreRequestIngredient = {
   ingredientType?: 'IT' | 'NMP'
@@ -114,6 +115,11 @@ type StoreRequestMenu = {
   rejectionReason?: string
   reviewedBy?: string
   salesApprovalStatus?: 'pending' | 'approved' | 'rejected'
+  salesInputBy?: string
+  salesRejectionReason?: string
+  financeApprovalRequired?: boolean
+  financeCostStatus?: 'pending' | 'approved' | 'rejected'
+  financeSalesStatus?: 'pending' | 'approved' | 'rejected'
   storeRequestStatus: 'not-requested' | 'requested' | 'fulfilled' | 'cancelled'
   fulfilledBy?: string
   fulfilledAt?: string
@@ -123,6 +129,8 @@ type StoreRequestMenu = {
   portionSize: number
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
+  financeCostReviewedBy?: string
+  financeSalesReviewedBy?: string
 }
 
 type StoreRequestGroup = {
@@ -2086,16 +2094,14 @@ const ChefStoreRequest = ({
                 <th className="px-5 py-4 font-semibold">Production date</th>
                 <th className="px-5 py-4 font-semibold">Production code</th>
                 <th className="px-5 py-4 font-semibold">Client name</th>
-                <th className="px-5 py-4 font-semibold">Reviewed by</th>
-                <th className="px-5 py-4 font-semibold">Total menu</th>
-                <th className="px-5 py-4 font-semibold">Storekeeper</th>
+                <th className="px-5 py-4 font-semibold">Batch status</th>
                 <th className="px-5 py-4 font-semibold">Action</th>
               </tr>
             </thead>
             <LoadingTableBody
               key={JSON.stringify([selectedSite, requestQuery])}
               loading={loading}
-              columns={9}
+              columns={7}
               rowCount={paginatedGroups.length}
               label="Loading store requests..."
               error={errorMessage}
@@ -2103,7 +2109,7 @@ const ChefStoreRequest = ({
             >
               {filteredGroups.length === 0 ? (
                 <tr className="border-t border-border">
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted">
+                  <td colSpan={7} className="px-5 py-10 text-center text-muted">
                     {productionDateFrom || productionDateTo || createdDateFrom || createdDateTo || clientName.trim()
                       ? 'No production batches match the selected filters.'
                       : 'No production batches submitted yet.'}
@@ -2114,26 +2120,12 @@ const ChefStoreRequest = ({
                 const date = group.date
                 const groupKey = getStoreRequestGroupKey(group)
                 const items = group.items
+                const recordStatus = getGroupRecordStatus(group, true)
+                const batchStatus = items.some((item) => item.salesRejectionReason)
+                  ? 'Returned to Admin Sales'
+                  : recordStatus ? getRecordStatusLabel(recordStatus) : '-'
                 const summaryItems = aggregateStoreRequestSummary(group.summary ?? [])
                 const isExpanded = expandedGroups.includes(groupKey)
-                const cancelledCount = items.filter(
-                  (item) => item.storeRequestStatus === 'cancelled',
-                ).length
-                const approvedCount = items.filter(
-                  (item) =>
-                    item.approvalStatus === 'approved' &&
-                    item.storeRequestStatus !== 'cancelled',
-                ).length
-                const rejectedCount = items.filter(
-                  (item) =>
-                    item.approvalStatus === 'rejected' &&
-                    item.storeRequestStatus !== 'cancelled',
-                ).length
-                const pendingCount = items.filter(
-                  (item) =>
-                    item.approvalStatus === 'pending' &&
-                    item.storeRequestStatus !== 'cancelled',
-                ).length
                 const hasDelivered = items.some(
                   (item) => item.storeRequestStatus === 'fulfilled',
                 )
@@ -2179,38 +2171,10 @@ const ChefStoreRequest = ({
                         {group.productionCode ?? '-'}
                       </td>
                       <td className="px-5 py-4 font-bold text-black">{items[0]?.clientName ?? '-'}</td>
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {reviewedByLabel}
-                      </td>
                       <td className="px-5 py-4">
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <span className="font-semibold text-foreground">
-                            {items.length} total
-                          </span>
-                          {approvedCount > 0 ? (
-                            <span className="rounded-full bg-primary-soft px-2 py-1 font-semibold text-primary">
-                              {approvedCount} approved
-                            </span>
-                          ) : null}
-                          {rejectedCount > 0 ? (
-                            <span className="rounded-full bg-red-100 px-2 py-1 font-semibold text-red-700">
-                              {rejectedCount} rejected
-                            </span>
-                          ) : null}
-                          {cancelledCount > 0 ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
-                              {cancelledCount} cancelled
-                            </span>
-                          ) : null}
-                          {pendingCount > 0 ? (
-                            <span className="rounded-full bg-background px-2 py-1 font-semibold text-muted">
-                              {pendingCount} pending
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-sm text-muted">
-                        {handledByLabel}
+                        <span className="inline-block rounded-md bg-primary-soft px-2 py-1 text-xs font-semibold text-primary">
+                          {batchStatus}
+                        </span>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-wrap items-center gap-2">
@@ -2295,8 +2259,25 @@ const ChefStoreRequest = ({
                     </tr>
                     {isExpanded ? (
                       <tr className="border-t border-border bg-background">
-                        <td colSpan={9} className="px-5 py-5">
+                        <td colSpan={7} className="px-5 py-5">
                           <div className="space-y-3">
+                            <ProductionInformation
+                              financeItems={group.items}
+                              productionCode={group.productionCode}
+                              createdAt={getGroupSubmittedAt(group)}
+                              reviewedBy={reviewedByLabel}
+                              storekeeper={handledByLabel}
+                              batchStatus={batchStatus}
+                              productionDate={group.date}
+                              client={items[0]?.clientName}
+                              totalMenu={items.length}
+                              approvalStatus={Array.from(new Set(
+                                items.map((item) => getApprovalStatusLabel(item.approvalStatus)),
+                              )).join(', ')}
+                              storeRequestStatus={Array.from(new Set(
+                                items.map((item) => getStoreRequestStatusLabel(item.storeRequestStatus)),
+                              )).join(', ')}
+                            />
                             <p className="text-xs font-bold text-muted">
                               Menu details
                             </p>
