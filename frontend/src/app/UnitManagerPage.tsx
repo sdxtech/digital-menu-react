@@ -119,6 +119,7 @@ type StoreRequestMenu = {
   portionSize: number
   ingredients: StoreRequestIngredient[]
   missingRecipe: boolean
+  financeApprovalRequired?: boolean
 }
 
 type StoreRequestGroup = {
@@ -1248,6 +1249,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                               <td colSpan={7} className="px-4 py-4">
                                 <div className="space-y-4">
                                   <ProductionInformation
+                                    financeItems={group.items}
                                     productionCode={group.productionCode}
                                     createdAt={getGroupSubmittedAt(group)}
                                     submittedBy={submittedByLabel}
