@@ -306,8 +306,9 @@ export const DateRangeFilter = ({
             <i className={`bi ${sortDirection === 'desc' ? 'bi-sort-down' : 'bi-sort-up'}`} aria-hidden="true" />
             <span className="sr-only">{sortDirection === 'desc' ? 'Newest to Oldest' : 'Oldest to Newest'}</span>
           </>
-        ) : null}
-        <i className={`bi bi-chevron-down transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        ) : (
+          <i className={`bi bi-chevron-down transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        )}
       </button>
       {open ? (
         <div
@@ -937,7 +938,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                   setFinanceApprovalStatus('')
                   setDateSort('production-desc')
                 }}
-                className="h-10 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-primary hover:bg-background"
+                className="h-10 rounded-lg border border-primary bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primary/90"
               >
                 Reset filters
               </button>
