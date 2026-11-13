@@ -19,7 +19,7 @@ import { calculateFoodCostPercentage, formatFoodCostPercentage } from '../lib/fo
 import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
-import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
+import { sortMenuItemsByGroup, summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import {
   getApprovalStatusLabel,
   getStoreRequestStatusLabel,
@@ -1434,7 +1434,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {group.items.map((menu, idx) => {
+                                        {sortMenuItemsByGroup(group.items).map((menu, idx) => {
                                           const estimatedCost = Number.isFinite(Number(menu.estimatedCost)) ? Number(menu.estimatedCost) : Number.isFinite(Number(menu.cost)) ? Number(menu.cost) : undefined
                                           const estimatedCostPerPax = Number.isFinite(Number(menu.estimatedCostPerPax)) ? Number(menu.estimatedCostPerPax) : estimatedCost !== undefined && menu.portion > 0 ? estimatedCost / menu.portion : undefined
                                           return (
