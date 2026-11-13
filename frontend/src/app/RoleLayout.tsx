@@ -231,7 +231,7 @@ const RoleLayout = ({
 
   const isItemActive = (item: NavItem) => {
     const target = getTarget(item.to)
-    const pathActive = item.end
+    const pathActive = item.children?.length || item.end
       ? location.pathname === target.pathname
       : location.pathname === target.pathname ||
         location.pathname.startsWith(`${target.pathname}/`)
