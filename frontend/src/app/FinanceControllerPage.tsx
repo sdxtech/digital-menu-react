@@ -174,8 +174,19 @@ export default function FinanceControllerPage() {
           summary={`Showing ${groups.length} of ${total} production batches`}
           className="border-b border-border bg-white px-5 py-4"
         />
-        <div className="max-w-full overflow-x-auto">
-          <table className="dm-table min-w-full bg-white text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+        <div className="w-full min-w-0 max-w-full overflow-x-auto">
+          <table className="dm-table !w-full min-w-[1100px] !table-fixed bg-white text-sm [&_td]:break-words [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
+            <colgroup>
+              <col className="w-[4%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
+              <col className="w-[11%]" />
+              <col className="w-[12%]" />
+              <col className="w-[19%]" />
+              <col className="w-[14%]" />
+            </colgroup>
             <thead className="bg-background">
               <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                 <th className="px-4 py-3 font-semibold">No</th>
@@ -251,7 +262,7 @@ export default function FinanceControllerPage() {
                     </td>
                   </tr>
                   {expanded ? <tr className="border-t border-border bg-background">
-                    <td colSpan={9} className="px-4 py-4">
+                    <td colSpan={9} className="!static px-4 py-4">
                       <div className="space-y-4">
                         <ProductionInformation
                           financeItems={group.items}
