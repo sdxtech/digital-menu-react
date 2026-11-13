@@ -17,7 +17,7 @@ import {
   formatFoodCostPercentage,
 } from '../lib/food-cost'
 import { formatQuantity } from '../lib/quantity'
-import { summarizePortionsByGroup } from '../lib/menu-production-quantity'
+import { sortMenuItemsByGroup, summarizePortionsByGroup } from '../lib/menu-production-quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
@@ -1331,7 +1331,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               </td>
                                             </tr>
                                           ) : (
-                                            group.items.map((item, itemIndex) => {
+                                            sortMenuItemsByGroup(group.items).map((item, itemIndex) => {
                                               const estimatedCost = Number.isFinite(
                                                 Number(item.estimatedCost),
                                               )
