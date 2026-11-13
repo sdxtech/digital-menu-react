@@ -6,7 +6,7 @@ import TablePagination from "../components/TablePagination";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatQuantity } from "../lib/quantity";
-import { summarizePortionsByGroup } from "../lib/menu-production-quantity";
+import { sortMenuItemsByGroup, summarizePortionsByGroup } from "../lib/menu-production-quantity";
 import { formatRecipeVersion } from "../lib/recipe-version";
 import { formatUnitLabel } from "../lib/unit-of-measures";
 import {
@@ -443,7 +443,7 @@ const AdminSiteMenuProductionPage = () => {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {group.items.map((menu, menuIndex) => (
+                                      {sortMenuItemsByGroup(group.items).map((menu, menuIndex) => (
                                         <tr
                                           key={menu.id}
                                           className="border-t border-border"
