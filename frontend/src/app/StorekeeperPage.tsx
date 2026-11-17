@@ -1,3 +1,5 @@
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
+import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
@@ -9,20 +11,20 @@ import { useChefData } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
-  aggregateStoreRequestSummaryAcrossGroups,
   aggregateStoreRequestSummary,
-  aggregateStoreRequestSummaryByVendor,
 } from '../lib/store-request-summary'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { useAuth } from '../lib/auth'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
+  prodQty?: number
+  prodUomCode?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -192,6 +194,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'Vendor',
       'Planned QTY',
       'Unit',
+      'Prod QTY', 'Prod UOM',
     ],
   ]
 
@@ -216,8 +219,9 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient?.productCode ?? '',
           ingredient?.name ?? '',
           ingredient?.vendor ?? '',
-          ingredient ? toSpreadsheetDecimal(formatQuantity(ingredient.qty)) : '',
+          ingredient ? toSpreadsheetSrQuantity(ingredient.qty) : '',
           ingredient ? formatUnitLabel(ingredient.unitOfMeasures) : '',
+          ...productionQuantityExportCells(ingredient),
         ])
         rowNumber += 1
       })
@@ -225,42 +229,6 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
   })
 
   return rows
-}
-
-const buildIngredientSummaryExportRows = (
-  groups: StoreRequestGroup[],
-  aggregateAcrossGroups = false,
-) => {
-  if (aggregateAcrossGroups) {
-    return [
-      ['Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummaryAcrossGroups(groups).map((item) => [
-        item.ingredientType ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ] as SpreadsheetCell[][]
-  }
-
-  return [
-    ['Production Date', 'Site', 'Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-    ...groups.flatMap((group) =>
-      aggregateStoreRequestSummaryByVendor(group).map((item) => [
-        toSpreadsheetDate(group.date),
-        group.site ?? '',
-        group.items[0]?.clientName ?? '',
-        item.ingredientType ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ),
-  ] as SpreadsheetCell[][]
 }
 
 const parseDotDecimal = (value: string) => {
@@ -489,6 +457,7 @@ const StorekeeperPage = () => {
         'Vendor',
         'QTY',
         'Unit',
+        'Prod QTY', 'Prod UOM',
       ],
     ]
 
@@ -532,6 +501,7 @@ const StorekeeperPage = () => {
           '',
           '',
           '',
+          '', '',
         ])
         rowNumber += 1
         return
@@ -561,31 +531,17 @@ const StorekeeperPage = () => {
           ingredient.productCode,
           ingredient.name,
           vendor,
-          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
+          toSpreadsheetSrQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
+          ...productionQuantityExportCells(ingredient),
         ])
         rowNumber += 1
       })
     })
 
-    const summaryRows: SpreadsheetCell[][] = [
-      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
-        group.items[0]?.clientName ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ]
+    const summaryRows = buildIngredientSummaryExportRows([group])
 
-    const safeDate = group.date.replace(/[\\/:*?"<>|]/g, '-')
-    const safeProductionCode = (group.productionCode ?? 'no-code').replace(
-      /[\\/:*?"<>|]/g,
-      '-',
-    )
-    downloadSpreadsheet(`store-request-${safeDate}-${safeProductionCode}.xlsx`, [
+    downloadSpreadsheet(`SR-${formatProductionDate(group.date)}.xlsx`, [
       { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
     ])
@@ -640,7 +596,9 @@ const StorekeeperPage = () => {
         site: group.site ?? user?.siteName ?? user?.site ?? '',
       }))
       await downloadSpreadsheet(
-        `store-request-bulk-${bulkExportStartDate}_to_${bulkExportEndDate}.xlsx`,
+        bulkExportStartDate === bulkExportEndDate
+          ? `SR-${formatProductionDate(bulkExportStartDate)}.xlsx`
+          : `SR-${formatProductionDate(bulkExportStartDate)}-sd-${formatProductionDate(bulkExportEndDate)}.xlsx`,
         [
           {
             name: 'Store Requests',
@@ -1099,6 +1057,12 @@ const StorekeeperPage = () => {
                   const summaryItems = aggregateStoreRequestSummary(
                     group.summary ?? [],
                   )
+                  const ingredientRows = group.items.flatMap((menu) => menu.ingredients ?? [])
+                  const productionSummaryItems = aggregateStoreRequestSummary(
+                    ingredientRows.length ? ingredientRows : group.summary ?? [],
+                    false,
+                    true,
+                  )
 
                   return (
                     <Fragment key={groupKey}>
@@ -1284,18 +1248,24 @@ const StorekeeperPage = () => {
                                             Ingredient name
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Qty
+                                            Prod QTY
                                           </th>
                                           <th className="px-3 py-1.5 font-semibold">
-                                            Unit
+                                            Prod UOM
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            SR QTY
+                                          </th>
+                                          <th className="px-3 py-1.5 font-semibold">
+                                            SR UOM
                                           </th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {summaryItems.length === 0 ? (
+                                        {productionSummaryItems.length === 0 ? (
                                           <tr className="border-t border-border">
                                             <td
-                                              colSpan={5}
+                                              colSpan={7}
                                               className="px-4 py-6 text-center text-muted"
                                             >
                                               No ingredients available to
@@ -1303,7 +1273,7 @@ const StorekeeperPage = () => {
                                             </td>
                                           </tr>
                                         ) : (
-                                          summaryItems.map((item, idx) => (
+                                          productionSummaryItems.map((item, idx) => (
                                             <tr
                                               key={`${item.productCode}-${item.unitOfMeasures}-${idx}`}
                                               className="border-t border-border"
@@ -1316,6 +1286,12 @@ const StorekeeperPage = () => {
                                               </td>
                                               <td className="px-3 py-1.5">
                                                 {item.name}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {item.prodQty != null && Number.isFinite(item.prodQty) ? formatQuantity(item.prodQty) : ''}
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                {item.prodUomCode ? formatUnitLabel(item.prodUomCode) : ''}
                                               </td>
                                               <td className="px-3 py-1.5">
                                                 {formatQuantity(item.qty)}

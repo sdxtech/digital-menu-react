@@ -1,7 +1,7 @@
 type SpreadsheetDecimalCell = {
   kind: 'decimal'
   value: number
-  format?: 'integer'
+  format?: 'integer' | 'quantity'
 }
 
 export type SpreadsheetCell =
@@ -19,6 +19,7 @@ export type SpreadsheetSheet = {
 
 const INTEGER_FORMAT = '#,##0'
 const DECIMAL_FORMAT = '0.######'
+const QUANTITY_FORMAT = '0.##'
 const DATE_FORMAT = 'dd/mm/yyyy'
 
 const sanitizeWorksheetName = (value: string) => {
@@ -61,6 +62,11 @@ export const toSpreadsheetDecimal = (
 ): SpreadsheetDecimalCell | '' => {
   const parsed = parseSpreadsheetNumber(value)
   return parsed === '' ? '' : { kind: 'decimal', value: parsed, ...(format ? { format } : {}) }
+}
+
+export const toSpreadsheetSrQuantity = (value: unknown): SpreadsheetDecimalCell | '' => {
+  const parsed = parseSpreadsheetNumber(value)
+  return parsed === '' ? '' : { kind: 'decimal', value: Number(parsed.toFixed(2)), format: 'quantity' }
 }
 
 export const toSpreadsheetDate = (value: unknown): Date | '' => {
@@ -130,7 +136,7 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
         } else if (isSpreadsheetDecimalCell(sourceCell)) {
           cell.numFmt = sourceCell.format === 'integer' || Number.isInteger(sourceCell.value)
             ? INTEGER_FORMAT
-            : DECIMAL_FORMAT
+            : sourceCell.format === 'quantity' ? QUANTITY_FORMAT : DECIMAL_FORMAT
         } else if (typeof cell.value === 'number') {
           cell.numFmt = INTEGER_FORMAT
         }

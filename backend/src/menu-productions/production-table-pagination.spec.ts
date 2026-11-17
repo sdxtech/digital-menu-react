@@ -59,7 +59,10 @@ describe('Production table pagination', () => {
       {} as never,
       {} as never,
       {} as never,
-      { findVendorPrices: jest.fn().mockResolvedValue([]) } as never,
+      {
+        findVendorPrices: jest.fn().mockResolvedValue([]),
+        findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
+      } as never,
     );
     return { model, recipes, service };
   };

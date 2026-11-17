@@ -73,6 +73,8 @@ type Recipe = {
 }
 
 type StoreRequestIngredient = {
+  prodQty?: number
+  prodUomCode?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -1623,10 +1625,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               <colgroup>
                                                 <col className="w-[5%]" />
                                                 <col className="w-[12%]" />
-                                                <col className="w-[30%]" />
+                                                <col className="w-[20%]" />
                                                 <col className="w-[7%]" />
                                                 <col className="w-[7%]" />
-                                                <col className="w-[18%]" />
+                                                <col className="w-[7%]" />
+                                                <col className="w-[7%]" />
+                                                <col className="w-[14%]" />
                                                 <col className="w-[10%]" />
                                                 <col className="w-[11%]" />
                                               </colgroup>
@@ -1639,8 +1643,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 <th className="px-3 py-3 font-semibold">
                                                   Ingredient name
                                                 </th>
-                                                <th className="px-3 py-3 font-semibold">Qty</th>
-                                                <th className="px-3 py-3 font-semibold">Unit</th>
+                                                <th className="px-3 py-3 font-semibold">Prod QTY</th>
+                                                <th className="px-3 py-3 font-semibold">Prod UOM</th>
+                                                <th className="px-3 py-3 font-semibold">SR QTY</th>
+                                                <th className="px-3 py-3 font-semibold">SR UOM</th>
                                                 <th className="px-3 py-3 font-semibold">
                                                   Vendor
                                                 </th>
@@ -1654,7 +1660,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               {item.ingredients.length === 0 ? (
                                                 <tr className="border-t border-border">
                                                   <td
-                                                    colSpan={8}
+                                                    colSpan={10}
                                                     className="px-4 py-5 text-center text-muted"
                                                   >
                                                     No ingredients available.
@@ -1675,6 +1681,12 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                       </td>
                                                       <td className="break-words px-3 py-3 font-medium">
                                                         {ingredient.name || '-'}
+                                                      </td>
+                                                      <td className="px-3 py-3">
+                                                        {ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}
+                                                      </td>
+                                                      <td className="break-words px-3 py-3">
+                                                        {ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}
                                                       </td>
                                                       <td className="px-3 py-3">
                                                         {formatQuantity(ingredient.qty)}

@@ -2081,10 +2081,16 @@ const ChefMenuCycle = ({
                                             Ingredient name
                                           </th>
                                           <th className="w-[56px] px-2 py-3 font-semibold">
-                                            Qty
+                                            Prod QTY
                                           </th>
                                           <th className="w-[56px] px-2 py-3 font-semibold">
-                                            Unit
+                                            Prod UOM
+                                          </th>
+                                          <th className="w-[56px] px-2 py-3 font-semibold">
+                                            SR QTY
+                                          </th>
+                                          <th className="w-[56px] px-2 py-3 font-semibold">
+                                            SR UOM
                                           </th>
                                           {showIngredientVendorColumn ? (
                                             <th className="w-[216px] px-4 py-3 font-semibold">
@@ -2151,6 +2157,12 @@ const ChefMenuCycle = ({
                                               ? ingredient.qty
                                               : (ingredient.qty * portionForPreview) /
                                                 basePax
+                                          const scaledProdQty =
+                                            ingredient.prodQty == null || !Number.isFinite(ingredient.prodQty)
+                                              ? undefined
+                                              : portionForPreview === null
+                                                ? ingredient.prodQty
+                                                : (ingredient.prodQty * portionForPreview) / basePax
                                           const unitPrice = requiresManualPrice
                                             ? getManualUnitPrice(
                                                 vendorSelectionKey,
@@ -2179,6 +2191,12 @@ const ChefMenuCycle = ({
                                               </td>
                                               <td className="px-4 py-3">
                                                 {ingredient.name}
+                                              </td>
+                                              <td className="px-2 py-3">
+                                                {scaledProdQty === undefined ? '' : formatQuantity(scaledProdQty)}
+                                              </td>
+                                              <td className="px-2 py-3">
+                                                {ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}
                                               </td>
                                               <td className="px-2 py-3">
                                                 {formatQuantity(scaledQty)}
