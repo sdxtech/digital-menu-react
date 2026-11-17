@@ -1,3 +1,4 @@
+import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatProductionDate } from '../lib/date-format'
@@ -13,12 +14,15 @@ import {
   downloadSpreadsheet,
   toSpreadsheetDate,
   toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 
 type StoreRequestIngredient = {
+  prodQty?: number
+  prodUomCode?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -296,6 +300,7 @@ const StorekeeperHistoryPage = () => {
         'Completed By',
         'Completed At',
         'Batch Note',
+        'Prod QTY', 'Prod UOM',
       ],
     ]
 
@@ -330,6 +335,7 @@ const StorekeeperHistoryPage = () => {
           completedByLabel,
           completedAtLabel,
           group.fulfillment?.note ?? '',
+          '', '',
         ])
         rowNumber += 1
         return
@@ -384,8 +390,8 @@ const StorekeeperHistoryPage = () => {
           ingredient.name,
           fulfillment?.vendor?.trim() || ingredient.vendor?.trim() || '',
           fulfillment
-            ? toSpreadsheetDecimal(formatQuantity(fulfillment.plannedQty))
-            : toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
+            ? toSpreadsheetSrQuantity(fulfillment.plannedQty)
+            : toSpreadsheetSrQuantity(ingredient.qty),
           fulfillment
             ? toSpreadsheetDecimal(formatQuantity(fulfillment.actualQty))
             : '',
@@ -402,6 +408,7 @@ const StorekeeperHistoryPage = () => {
           completedByLabel,
           completedAtLabel,
           group.fulfillment?.note ?? '',
+          ...productionQuantityExportCells(ingredient),
         ])
         rowNumber += 1
       })
@@ -425,7 +432,7 @@ const StorekeeperHistoryPage = () => {
         item.productCode,
         item.name,
         item.vendor?.trim() ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.plannedQty)),
+        toSpreadsheetSrQuantity(item.plannedQty),
         toSpreadsheetDecimal(formatQuantity(item.actualQty)),
         toSpreadsheetDecimal(formatQuantity(item.varianceQty)),
         toSpreadsheetInteger(item.plannedPrice),
@@ -435,7 +442,7 @@ const StorekeeperHistoryPage = () => {
         item.reason ?? '',
         completedByLabel,
         completedAtLabel,
-        group.fulfillment?.note ?? '',
+        group.fulfillment?.note ?? '', '', '',
       ])
       rowNumber += 1
     })
@@ -467,6 +474,7 @@ const StorekeeperHistoryPage = () => {
         completedByLabel,
         completedAtLabel,
         group.fulfillment?.note ?? '',
+        '', '',
       ])
     }
 

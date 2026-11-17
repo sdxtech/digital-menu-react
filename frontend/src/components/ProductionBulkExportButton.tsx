@@ -47,7 +47,7 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
         setError('No production batches match the export settings.')
         return
       }
-      await downloadSpreadsheet(filename, buildProductionBulkSheets(batches.map(buildBatch)))
+      await downloadSpreadsheet(filename, buildProductionBulkSheets(batches.map(buildBatch), batches))
       dialogRef.current?.close()
     } catch {
       setError('Failed to export production batches. Try a smaller date range or select a client.')

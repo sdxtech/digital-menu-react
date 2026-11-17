@@ -29,6 +29,8 @@ type RecipeIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  prodQty?: number
+  prodUomCode?: string
 }
 
 type Recipe = {
@@ -630,8 +632,10 @@ const ChefMenuBank = () => {
                       <th className="px-4 py-3 font-semibold">Type</th>
                       <th className="px-4 py-3 font-semibold">Product code</th>
                       <th className="px-4 py-3 font-semibold">Ingredient name</th>
-                      <th className="px-4 py-3 font-semibold">Qty</th>
-                      <th className="px-4 py-3 font-semibold">Unit</th>
+                      <th className="px-4 py-3 font-semibold">Prod QTY</th>
+                      <th className="px-4 py-3 font-semibold">Prod UOM</th>
+                      <th className="px-4 py-3 font-semibold">SR QTY</th>
+                      <th className="px-4 py-3 font-semibold">SR UOM</th>
                       <th className="px-4 py-3 font-semibold">Vendor</th>
                       <th className="px-4 py-3 font-semibold">Price</th>
                       <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
@@ -684,6 +688,12 @@ const ChefMenuBank = () => {
                                   : ingredient.name}
                                 {ingredient.priceSourceSite ? <p className="mt-1 text-xs text-muted">Price source: {ingredient.priceSourceSiteName ?? ingredient.priceSourceSite}</p> : null}
                               </div>
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              {ingredient.prodQty ?? ''}
+                            </td>
+                            <td className={`px-4 py-3 align-top ${rowHighlightClass}`}>
+                              {ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}
                             </td>
                             <td
                               className={`px-4 py-3 align-top ${rowHighlightClass} ${missingQty ? 'font-medium text-danger' : ''}`}

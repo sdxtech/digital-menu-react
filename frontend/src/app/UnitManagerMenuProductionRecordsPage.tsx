@@ -1,3 +1,4 @@
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import { getFinanceBatchStatus, getUmBatchStatus } from '../lib/production-batch-status'
@@ -20,7 +21,6 @@ import { formatQuantity } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   aggregateStoreRequestSummary,
-  aggregateStoreRequestSummaryByVendor,
 } from '../lib/store-request-summary'
 import {
   getApprovalStatusLabel,
@@ -31,6 +31,7 @@ import {
   downloadSpreadsheet,
   toSpreadsheetDate,
   toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   type SpreadsheetCell,
   type SpreadsheetSheet,
 } from '../lib/spreadsheet-export'
@@ -42,6 +43,8 @@ type StoreRequestIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  prodQty?: number
+  prodUomCode?: string
   vendor?: string
   vendorSite?: string
   price?: number
@@ -629,6 +632,8 @@ const UnitManagerMenuProductionRecordsPage = ({
         'IT Code',
         'Ingredient Name',
         'Vendor',
+        'Prod QTY',
+        'Prod UOM',
         'QTY Planned',
         'QTY Actual',
         'Variance',
@@ -691,6 +696,8 @@ const UnitManagerMenuProductionRecordsPage = ({
           '',
           '',
           '',
+          '',
+          '',
           approvedBy,
           approvalStatus,
           storeRequestStatus,
@@ -739,7 +746,11 @@ const UnitManagerMenuProductionRecordsPage = ({
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
+          ingredient.prodQty != null && Number.isFinite(ingredient.prodQty)
+            ? toSpreadsheetDecimal(formatQuantity(ingredient.prodQty))
+            : '',
+          ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : '',
+          toSpreadsheetSrQuantity(ingredient.qty),
           fulfillmentItem
             ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
             : '',
@@ -760,19 +771,7 @@ const UnitManagerMenuProductionRecordsPage = ({
       })
     })
 
-    const summaryRows: SpreadsheetCell[][] = [
-      ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit', 'Price', 'Ingredient Cost'],
-      ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
-        group.items[0]?.clientName ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-        toSpreadsheetDecimal(item.price),
-        Number.isFinite(item.ingredientCost) ? item.ingredientCost : '',
-      ]),
-    ]
+    const summaryRows = buildIngredientSummaryExportRows([group])
 
     const firstMenu = group.items[0]
     const recordStatus = getGroupRecordStatus(group, includePending)

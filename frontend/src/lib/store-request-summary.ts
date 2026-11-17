@@ -4,6 +4,8 @@ export type StoreRequestSummaryIngredient = {
   name: string
   unitOfMeasures: string
   qty: number
+  prodQty?: number
+  prodUomCode?: string
   vendor?: string
   vendorSite?: string
   price?: number
@@ -21,6 +23,7 @@ type StoreRequestSummaryGroup = {
 export const aggregateStoreRequestSummary = (
   items: StoreRequestSummaryIngredient[] = [],
   groupItByCodeAndVendor = false,
+  includeProductionUnits = false,
 ): StoreRequestSummaryIngredient[] => {
   const summaryMap = new Map<string, StoreRequestSummaryIngredient>()
   const nonSummarizedItems: StoreRequestSummaryIngredient[] = []
@@ -54,12 +57,23 @@ export const aggregateStoreRequestSummary = (
     const keyBase = groupItByCodeAndVendor
       ? identity
       : `${identity}__${normalizedUnit}`
-    const key = `${keyBase}__${vendor.toLowerCase()}`
+    const prodUomCode = item.prodUomCode?.trim()
+    const key = `${keyBase}__${vendor.toLowerCase()}${includeProductionUnits ? `__${normalizedUnit}` : ''}`
+    const hasProductionQuantity = Boolean(prodUomCode) && item.prodQty != null && Number.isFinite(item.prodQty)
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
     const existing = summaryMap.get(key)
     if (existing) {
       existing.qty += qty
+      if (includeProductionUnits) {
+        if (existing.prodQty != null && hasProductionQuantity && item.prodQty != null &&
+          existing.prodUomCode?.toLowerCase() === prodUomCode?.toLowerCase()) {
+          existing.prodQty += item.prodQty
+        } else {
+          existing.prodQty = undefined
+          existing.prodUomCode = undefined
+        }
+      }
       if (Number.isFinite(Number(item.ingredientCost))) {
         existing.ingredientCost =
           (existing.ingredientCost ?? 0) + Number(item.ingredientCost)
@@ -95,6 +109,10 @@ export const aggregateStoreRequestSummary = (
       name,
       unitOfMeasures,
       qty,
+      ...(includeProductionUnits ? {
+        prodQty: hasProductionQuantity ? item.prodQty : undefined,
+        prodUomCode: hasProductionQuantity ? prodUomCode : undefined,
+      } : {}),
       vendor: vendor || undefined,
       vendorSite: item.vendorSite,
       price: Number.isFinite(Number(item.price)) ? Number(item.price) : undefined,
@@ -114,16 +132,18 @@ export const aggregateStoreRequestSummary = (
 
 export const aggregateStoreRequestSummaryByVendor = (
   group: StoreRequestSummaryGroup,
+  includeProductionUnits = false,
 ) => {
   const ingredientRows =
     group.items?.flatMap((item) => item.ingredients ?? []) ?? []
   const sourceItems = ingredientRows.length ? ingredientRows : group.summary ?? []
 
-  return aggregateStoreRequestSummary(sourceItems)
+  return aggregateStoreRequestSummary(sourceItems, false, includeProductionUnits)
 }
 
 export const aggregateStoreRequestSummaryAcrossGroups = (
   groups: StoreRequestSummaryGroup[],
+  includeProductionUnits = false,
 ) => {
   const sourceItems = groups.flatMap((group) => {
     const ingredientRows =
@@ -131,5 +151,5 @@ export const aggregateStoreRequestSummaryAcrossGroups = (
     return ingredientRows.length ? ingredientRows : group.summary ?? []
   })
 
-  return aggregateStoreRequestSummary(sourceItems, true)
+  return aggregateStoreRequestSummary(sourceItems, true, includeProductionUnits)
 }

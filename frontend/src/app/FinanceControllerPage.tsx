@@ -16,6 +16,8 @@ import { getFinanceBatchStatus, getUmBatchStatus } from '../lib/production-batch
 import { formatUnitLabel } from '../lib/unit-of-measures'
 
 type Ingredient = {
+  prodQty?: number
+  prodUomCode?: string
   ingredientType?: 'IT' | 'NMP'
   name: string
   productCode: string
@@ -412,23 +414,26 @@ export default function FinanceControllerPage() {
                       <div className="overflow-hidden rounded-md border border-border bg-white">
                         <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                           <colgroup>
-                            <col className="w-[5%]" /><col className="w-[12%]" /><col className="w-[30%]" /><col className="w-[7%]" />
-                            <col className="w-[7%]" /><col className="w-[18%]" /><col className="w-[10%]" /><col className="w-[11%]" />
+                            <col className="w-[5%]" /><col className="w-[12%]" /><col className="w-[20%]" /><col className="w-[7%]" />
+                            <col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[14%]" /><col className="w-[10%]" /><col className="w-[11%]" />
                           </colgroup>
                           <thead className="bg-background">
                             <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted">
                               <th className="px-3 py-3 font-semibold">No</th><th className="px-3 py-3 font-semibold">Product code</th>
-                              <th className="px-3 py-3 font-semibold">Ingredient name</th><th className="px-3 py-3 font-semibold">Qty</th>
-                              <th className="px-3 py-3 font-semibold">Unit</th><th className="px-3 py-3 font-semibold">Vendor</th>
+                              <th className="px-3 py-3 font-semibold">Ingredient name</th><th className="px-3 py-3 font-semibold">Prod QTY</th>
+                              <th className="px-3 py-3 font-semibold">Prod UOM</th><th className="px-3 py-3 font-semibold">SR QTY</th>
+                              <th className="px-3 py-3 font-semibold">SR UOM</th><th className="px-3 py-3 font-semibold">Vendor</th>
                               <th className="px-3 py-3 font-semibold">Price</th><th className="px-3 py-3 font-semibold">Ingredient Cost</th>
                             </tr>
                           </thead>
                           <tbody>{item.ingredients.length === 0 ? <tr className="border-t border-border">
-                            <td colSpan={8} className="px-4 py-5 text-center text-muted">No ingredients available.</td>
+                            <td colSpan={10} className="px-4 py-5 text-center text-muted">No ingredients available.</td>
                           </tr> : item.ingredients.map((ingredient, ingredientIndex) => <tr key={`${item.id}-${ingredient.productCode}-${ingredientIndex}`} className="border-t border-border">
                             <td className="px-3 py-3 text-muted">{ingredientIndex + 1}</td>
                             <td className="break-all px-3 py-3">{ingredient.productCode || '-'}</td>
                             <td className="break-words px-3 py-3 font-medium">{ingredient.name || '-'}</td>
+                            <td className="px-3 py-3">{ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}</td>
+                            <td className="break-words px-3 py-3">{ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}</td>
                             <td className="px-3 py-3">{formatQuantity(ingredient.qty)}</td>
                             <td className="break-words px-3 py-3">{formatUnitLabel(ingredient.unitOfMeasures)}</td>
                             <td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td>

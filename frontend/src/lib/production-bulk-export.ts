@@ -1,8 +1,11 @@
 import type { SpreadsheetSheet, SpreadsheetCell } from './spreadsheet-export'
+import { buildIngredientSummaryExportRows } from './ingredient-summary-export.ts'
+import type { StoreRequestSummaryIngredient } from './store-request-summary'
 
 export type ProductionExportGroup = {
   date: string
-  items: { clientName?: string }[]
+  items: { clientName?: string; ingredients?: StoreRequestSummaryIngredient[] }[]
+  summary?: StoreRequestSummaryIngredient[]
 }
 
 export const filterProductionExportGroups = <T extends ProductionExportGroup>(
@@ -18,9 +21,19 @@ export const filterProductionExportGroups = <T extends ProductionExportGroup>(
 }
 
 // Keep each batch's existing calculations and fulfillment detail intact.
-export const buildProductionBulkSheets = (batches: SpreadsheetSheet[][]): SpreadsheetSheet[] => {
+export const buildProductionBulkSheets = (
+  batches: SpreadsheetSheet[][],
+  groups?: ProductionExportGroup[],
+): SpreadsheetSheet[] => {
   if (!batches.length) return []
   return batches[0].map((sheet, sheetIndex) => {
+    if (sheet.name === 'Ingredient Summary' && groups) {
+      const rows = buildIngredientSummaryExportRows(groups, true)
+      if (rows.length > 1_048_576) {
+        throw new Error('Too many rows for an Excel worksheet. Narrow the export filters.')
+      }
+      return { name: sheet.name, rows }
+    }
     const information = sheet.name === 'Menu Production Information'
     const rows: SpreadsheetCell[][] = [
       ['Batch No', ...(information
