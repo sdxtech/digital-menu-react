@@ -1,3 +1,4 @@
+import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import PageHeading from '../components/PageHeading'
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
@@ -13,11 +14,14 @@ import {
   downloadSpreadsheet,
   toSpreadsheetDate,
   toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 
 type StoreRequestIngredient = {
+  prodQty?: number
+  prodUomCode?: string
   productCode: string
   name: string
   unitOfMeasures: string
@@ -376,6 +380,7 @@ const SuperadminStoreRequestExportPage = () => {
           'Completed By',
           'Store Request Status',
           'Completed At',
+          'Prod QTY', 'Prod UOM',
         ],
       ]
       const estimatedCostRows: SpreadsheetCell[][] = [
@@ -470,6 +475,7 @@ const SuperadminStoreRequestExportPage = () => {
               completedBy,
               storeRequestStatus,
               completedAt,
+              '', '',
             ])
             rowNumber += 1
             return
@@ -534,7 +540,7 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.productCode,
               ingredient.name,
               ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-              toSpreadsheetDecimal(formatQuantity(plannedQty)),
+              toSpreadsheetSrQuantity(plannedQty),
               fulfillmentItem
                 ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
                 : '',
@@ -557,6 +563,7 @@ const SuperadminStoreRequestExportPage = () => {
               completedBy,
               storeRequestStatus,
               completedAt,
+              ...productionQuantityExportCells(ingredient),
             ])
             rowNumber += 1
           })
@@ -579,7 +586,7 @@ const SuperadminStoreRequestExportPage = () => {
             item.productCode,
             item.name,
             item.vendor ?? '',
-            toSpreadsheetDecimal(formatQuantity(item.plannedQty)),
+            toSpreadsheetSrQuantity(item.plannedQty),
             toSpreadsheetDecimal(formatQuantity(item.actualQty)),
             toSpreadsheetDecimal(formatQuantity(item.varianceQty)),
             toSpreadsheetInteger(formatPrice(item.plannedPrice)),
@@ -593,7 +600,7 @@ const SuperadminStoreRequestExportPage = () => {
             getStoreRequestStatusLabel(
               group.fulfillment?.status ?? 'fulfilled',
             ),
-            completedAt,
+            completedAt, '', '',
           ])
           rowNumber += 1
         })

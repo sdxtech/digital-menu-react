@@ -15,6 +15,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { Model, Types } from 'mongoose';
 import { RawMaterialsService } from '../raw-materials/raw-materials.service';
+import { resolveProductionQuantity } from './production-quantity';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
 import { CancelStoreRequestBatchDto } from './dto/cancel-store-request-batch.dto';
 import { ChangeRejectedMenuProductionDto } from './dto/change-rejected-menu-production.dto';
@@ -55,6 +56,8 @@ type StoreRequestIngredient = {
   name: string;
   unitOfMeasures: string;
   qty: number;
+  prodQty?: number;
+  prodUomCode?: string;
   vendor?: string;
   vendorSite?: string;
   price?: number;
@@ -188,6 +191,8 @@ type EligibleRecipe = {
     name?: string;
     unitOfMeasures?: string;
     qty?: number;
+    prodQty?: number;
+    prodUomCode?: string;
     priceUom?: number;
     foodCost?: number;
     priceSourceSite?: string;
@@ -3549,6 +3554,8 @@ export class MenuProductionsService implements OnModuleInit {
           name: ingredient.name?.trim() ?? '',
           unitOfMeasures: ingredient.unitOfMeasures?.trim() ?? '',
           qty: Number(ingredient.qty),
+          prodQty: ingredient.prodQty,
+          prodUomCode: ingredient.prodUomCode,
           priceUom: ingredient.priceUom,
           foodCost: ingredient.foodCost,
           priceSourceSite: ingredient.priceSourceSite,
@@ -3897,6 +3904,45 @@ export class MenuProductionsService implements OnModuleInit {
       }
     });
 
+    const menuRecipes = items.map((menu) => {
+      const recipeId = this.normalizeOptionalRecipeId(
+        String(menu.recipeId ?? ''),
+      );
+      const liveRecipe =
+        (recipeId ? recipeById.get(recipeId) : undefined) ??
+        recipeByName.get(this.normalizeName(String(menu.menuName ?? '')));
+      return menu.recipeSnapshot
+        ? { ...liveRecipe, ...menu.recipeSnapshot }
+        : liveRecipe;
+    });
+    const conversionCodes = [
+      ...new Set(
+        menuRecipes.flatMap((recipe) =>
+          (recipe?.ingredients ?? [])
+            .filter(
+              (ingredient) =>
+                ingredient.ingredientType !== 'NMP' &&
+                ingredient.productCode?.trim().toUpperCase() !== 'NMP' &&
+                resolveProductionQuantity(ingredient, 1).prodQty === undefined,
+            )
+            .map(
+              (ingredient) =>
+                ingredient.productCode?.trim().toLowerCase() ?? '',
+            )
+            .filter(Boolean),
+        ),
+      ),
+    ];
+    const materials = conversionCodes.length
+      ? await this.rawMaterials.findLookupsByNormalizedCodes(conversionCodes)
+      : [];
+    const materialByCode = new Map(
+      materials.map((material) => [
+        material.productCode.trim().toLowerCase(),
+        material,
+      ]),
+    );
+
     const groups = new Map<
       string,
       {
@@ -3910,7 +3956,7 @@ export class MenuProductionsService implements OnModuleInit {
       }
     >();
 
-    items.forEach((menu) => {
+    items.forEach((menu, menuIndex) => {
       const productionDate = String(menu.productionDate ?? '').trim();
       const groupKey = this.buildProductionBatchKey({
         productionDate,
@@ -3932,12 +3978,7 @@ export class MenuProductionsService implements OnModuleInit {
       const menuRecipeId = this.normalizeOptionalRecipeId(
         String(menu.recipeId ?? ''),
       );
-      const liveRecipe =
-        (menuRecipeId ? recipeById.get(menuRecipeId) : undefined) ??
-        recipeByName.get(this.normalizeName(String(menu.menuName ?? '')));
-      const recipe = menu.recipeSnapshot
-        ? { ...liveRecipe, ...menu.recipeSnapshot }
-        : liveRecipe;
+      const recipe = menuRecipes[menuIndex];
       // Legacy MPRs may have no recipe snapshot. Their prices must still come
       // from the submitted MPR, never from a recipe changed by Sync Cost.
       const hasRecipeSnapshot = Boolean(menu.recipeSnapshot);
@@ -3996,6 +4037,19 @@ export class MenuProductionsService implements OnModuleInit {
           const qty = this.roundQuantity(
             (Number.isFinite(baseQty) ? baseQty : 0) * multiplier,
           );
+          const production = resolveProductionQuantity(
+            ingredient,
+            multiplier,
+            ingredient.ingredientType !== 'NMP' &&
+              productCode.toUpperCase() !== 'NMP'
+              ? materialByCode.get(productCode.toLowerCase())
+              : undefined,
+          );
+          const prodQty =
+            production.prodQty === undefined
+              ? undefined
+              : this.roundQuantity(production.prodQty);
+          const prodUomCode = production.prodUomCode;
           const selectedVendor = this.findIngredientVendor(
             ingredientVendors,
             index,
@@ -4057,6 +4111,17 @@ export class MenuProductionsService implements OnModuleInit {
           const existing = group.summaryMap.get(summaryKey);
           if (existing) {
             existing.qty += qty;
+            if (
+              existing.prodQty != null &&
+              prodQty != null &&
+              prodUomCode &&
+              existing.prodUomCode === prodUomCode
+            ) {
+              existing.prodQty = this.roundQuantity(existing.prodQty + prodQty);
+            } else {
+              existing.prodQty = undefined;
+              existing.prodUomCode = undefined;
+            }
             if (ingredientCost !== undefined) {
               existing.ingredientCost =
                 (existing.ingredientCost ?? 0) + ingredientCost;
@@ -4081,6 +4146,8 @@ export class MenuProductionsService implements OnModuleInit {
               name,
               unitOfMeasures,
               qty,
+              prodQty: prodUomCode ? prodQty : undefined,
+              prodUomCode: prodQty != null ? prodUomCode : undefined,
               vendor: selectedVendor?.vendor,
               vendorSite: selectedVendor?.site,
               price: unitPrice,
@@ -4095,6 +4162,8 @@ export class MenuProductionsService implements OnModuleInit {
             name,
             unitOfMeasures,
             qty,
+            prodQty,
+            prodUomCode,
             vendor: selectedVendor?.vendor,
             vendorSite: selectedVendor?.site,
             price: unitPrice,

@@ -1,3 +1,4 @@
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
@@ -17,6 +18,8 @@ import {
 const GROUPS_PER_PAGE = 10;
 
 type Ingredient = {
+  prodQty?: number;
+  prodUomCode?: string;
   productCode: string;
   name: string;
   unitOfMeasures: string;
@@ -231,30 +234,8 @@ const AdminSiteMenuProductionPage = () => {
         menu.groupSales?.find((sale) => sale.name === (menu.group?.trim() || '-'))?.estimatedRevenue ?? menu.estimatedRevenue ?? "",
       ]),
     ];
-    const ingredientRows: SpreadsheetCell[][] = [
-      [
-        "No",
-        "Product Code",
-        "Client Name",
-        "Ingredient Name",
-        "Qty",
-        "Unit",
-        "Vendor",
-        "Price",
-        "Ingredient Cost",
-      ],
-      ...group.summary.map((item, index) => [
-        index + 1,
-        item.productCode,
-        group.items[0]?.clientName ?? "",
-        item.name,
-        item.qty,
-        formatUnitLabel(item.unitOfMeasures),
-        item.vendor ?? "",
-        item.price ?? "",
-        item.ingredientCost ?? "",
-      ]),
-    ];
+    const ingredientRows = buildIngredientSummaryExportRows([group])
+
     const safeCode = (group.productionCode ?? "no-code").replace(
       /[\\/:*?"<>|]/g,
       "-",

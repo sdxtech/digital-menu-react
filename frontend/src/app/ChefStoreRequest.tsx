@@ -1,3 +1,5 @@
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
+import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import ProductionInformation from '../components/ProductionInformation'
@@ -19,7 +21,6 @@ import { useChefData, type Recipe } from '../lib/chef-data'
 import { formatQuantity, formatSignedQuantity, quantitiesDiffer } from '../lib/quantity'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
-  aggregateStoreRequestSummaryAcrossGroups,
   aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
 } from '../lib/store-request-summary'
@@ -28,13 +29,15 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
-  toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   toSpreadsheetInteger,
   type SpreadsheetCell,
 } from '../lib/spreadsheet-export'
 import { DateRangeFilter, getGroupRecordStatus, getRecordStatusLabel } from './UnitManagerMenuProductionRecordsPage'
 
 type StoreRequestIngredient = {
+  prodQty?: number
+  prodUomCode?: string
   ingredientType?: 'IT' | 'NMP'
   productCode: string
   name: string
@@ -333,6 +336,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
       'Unit',
       'Price',
       'Ingredient Cost',
+      'Prod QTY', 'Prod UOM',
     ],
   ]
 
@@ -361,6 +365,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           '',
           '',
           '',
+          '', '',
         ])
         rowNumber += 1
         return
@@ -383,64 +388,14 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
-          toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
+          toSpreadsheetSrQuantity(ingredient.qty),
           formatUnitLabel(ingredient.unitOfMeasures),
           toSpreadsheetInteger(ingredient.price),
           toSpreadsheetInteger(ingredient.ingredientCost),
+          ...productionQuantityExportCells(ingredient),
         ])
         rowNumber += 1
       })
-    })
-  })
-
-  return rows
-}
-
-const buildIngredientSummaryExportRows = (
-  groups: StoreRequestGroup[],
-  aggregateAcrossGroups = false,
-) => {
-  if (aggregateAcrossGroups) {
-    return [
-      ['Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit'],
-      ...aggregateStoreRequestSummaryAcrossGroups(groups).map((item) => [
-        item.ingredientType ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ]),
-    ] as SpreadsheetCell[][]
-  }
-
-  const rows: SpreadsheetCell[][] = [
-    [
-      'Production Date',
-      'Site',
-      'Client Name',
-      'Product Type',
-      'Product Code',
-      'Ingredient Name',
-      'Vendor',
-      'QTY',
-      'Unit',
-    ],
-  ]
-
-  groups.forEach((group) => {
-    aggregateStoreRequestSummaryByVendor(group).forEach((item) => {
-      rows.push([
-        toSpreadsheetDate(group.date),
-        group.site ?? '',
-        group.items[0]?.clientName ?? '',
-        item.ingredientType ?? '',
-        item.productCode,
-        item.name,
-        item.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(item.qty)),
-        formatUnitLabel(item.unitOfMeasures),
-      ])
     })
   })
 
@@ -2124,7 +2079,7 @@ const ChefStoreRequest = ({
                 const batchStatus = items.some((item) => item.salesRejectionReason)
                   ? 'Returned to Admin Sales'
                   : recordStatus ? getRecordStatusLabel(recordStatus) : '-'
-                const summaryItems = aggregateStoreRequestSummary(group.summary ?? [])
+                const summaryItems = aggregateStoreRequestSummaryByVendor(group, true)
                 const isExpanded = expandedGroups.includes(groupKey)
                 const hasDelivered = items.some(
                   (item) => item.storeRequestStatus === 'fulfilled',
@@ -3129,10 +3084,16 @@ const ChefStoreRequest = ({
                                                 Ingredient name
                                               </th>
                                               <th className="px-4 py-3 font-semibold">
-                                                Qty
+                                                Prod QTY
                                               </th>
                                               <th className="px-4 py-3 font-semibold">
-                                                Unit
+                                                Prod UOM
+                                              </th>
+                                              <th className="px-4 py-3 font-semibold">
+                                                SR QTY
+                                              </th>
+                                              <th className="px-4 py-3 font-semibold">
+                                                SR UOM
                                               </th>
                                               <th className="px-4 py-3 font-semibold">
                                                 Price
@@ -3156,6 +3117,12 @@ const ChefStoreRequest = ({
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   {ingredient.name}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                  {ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                  {ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                   {formatQuantity(ingredient.qty)}
@@ -3235,10 +3202,16 @@ const ChefStoreRequest = ({
                                           Ingredient name
                                         </th>
                                         <th className="px-4 py-3 font-semibold">
-                                          Qty
+                                          Prod QTY
                                         </th>
                                         <th className="px-4 py-3 font-semibold">
-                                          Unit
+                                          Prod UOM
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          SR QTY
+                                        </th>
+                                        <th className="px-4 py-3 font-semibold">
+                                          SR UOM
                                         </th>
                                       </tr>
                                     </thead>
@@ -3256,6 +3229,12 @@ const ChefStoreRequest = ({
                                           </td>
                                           <td className="px-4 py-3">
                                             {ingredient.name}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}
                                           </td>
                                           <td className="px-4 py-3">
                                             {formatQuantity(ingredient.qty)}

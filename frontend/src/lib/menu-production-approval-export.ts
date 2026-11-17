@@ -1,9 +1,9 @@
+import { buildIngredientSummaryExportRows } from './ingredient-summary-export'
+import { productionQuantityExportCells } from './production-quantity-export'
 import { formatCreatedDate } from './date-format'
 import { formatFoodCostPercentage } from './food-cost'
-import { formatQuantity } from './quantity'
 import { formatRecipeVersion } from './recipe-version'
 import {
-  aggregateStoreRequestSummaryByVendor,
   type StoreRequestSummaryIngredient,
 } from './store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from './status-labels'
@@ -12,6 +12,7 @@ import {
   downloadSpreadsheet,
   toSpreadsheetDate,
   toSpreadsheetDecimal,
+  toSpreadsheetSrQuantity,
   type SpreadsheetCell,
   type SpreadsheetSheet,
 } from './spreadsheet-export'
@@ -132,6 +133,8 @@ export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalE
       'Unit',
       'Price',
       'Ingredient Cost',
+      'Prod QTY',
+      'Prod UOM',
     ],
   ]
 
@@ -151,6 +154,8 @@ export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalE
         menu.recipeCode ?? menu.recipeId ?? '',
         menu.category,
         menu.portion,
+        '',
+        '',
         '',
         '',
         '',
@@ -181,29 +186,17 @@ export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalE
         ingredient.productCode,
         ingredient.name,
         ingredient.vendor ?? '',
-        toSpreadsheetDecimal(formatQuantity(ingredient.qty)),
+        toSpreadsheetSrQuantity(ingredient.qty),
         formatUnitLabel(ingredient.unitOfMeasures),
         toSpreadsheetDecimal(ingredient.price),
         Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
+        ...productionQuantityExportCells(ingredient),
       ])
       rowNumber += 1
     })
   })
 
-  const summaryRows: SpreadsheetCell[][] = [
-    ['Client Name', 'Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'QTY', 'Unit', 'Price', 'Ingredient Cost'],
-    ...aggregateStoreRequestSummaryByVendor(group).map((item) => [
-      group.items[0]?.clientName ?? '',
-      item.ingredientType ?? '',
-      item.productCode,
-      item.name,
-      item.vendor ?? '',
-      toSpreadsheetDecimal(formatQuantity(item.qty)),
-      formatUnitLabel(item.unitOfMeasures),
-      toSpreadsheetDecimal(item.price),
-      Number.isFinite(item.ingredientCost) ? item.ingredientCost : '',
-    ]),
-  ]
+  const summaryRows = buildIngredientSummaryExportRows([group])
 
   const firstMenu = group.items[0]
   const submittedBy = Array.from(new Set(

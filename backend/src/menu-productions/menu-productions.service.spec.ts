@@ -206,7 +206,9 @@ describe('MenuProductionsService sales input', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      {
+        findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
+      } as never,
     );
 
     const result = await service.buildStoreRequestGroups({});
