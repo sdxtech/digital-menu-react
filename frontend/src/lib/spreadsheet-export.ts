@@ -161,7 +161,23 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
 export const downloadSpreadsheet = async (
   filename: string,
   sheets: SpreadsheetSheet[],
+  pdfSummary?: SpreadsheetSheet,
+  format?: 'excel' | 'pdf',
 ) => {
+  const summary = pdfSummary ?? sheets.find((sheet) => sheet.name === 'Ingredient Summary')
+  if (summary) {
+    const { chooseSummaryExportFormat, printIngredientSummary } = await import('./ingredient-summary-print')
+    const selectedFormat = format ?? await chooseSummaryExportFormat()
+    if (selectedFormat === 'cancel') return false
+    if (selectedFormat === 'pdf') {
+      if (summary.rows.length <= 1) {
+        window.alert('No ingredient summary data found.')
+        return false
+      }
+      printIngredientSummary(summary, filename, sheets)
+      return true
+    }
+  }
   const bytes = await buildSpreadsheetBuffer(sheets)
   const blob = new Blob([bytes], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -174,4 +190,5 @@ export const downloadSpreadsheet = async (
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  return true
 }
