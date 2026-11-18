@@ -501,6 +501,7 @@ const ChefStoreRequest = ({
   const [completionNote, setCompletionNote] = useState('')
   const [completionError, setCompletionError] = useState('')
   const [bulkExportOpen, setBulkExportOpen] = useState(false)
+  const [bulkExportFormat, setBulkExportFormat] = useState<'excel' | 'pdf'>('excel')
   const [bulkExportStartDate, setBulkExportStartDate] = useState(() => {
     const today = new Date()
     return toInputDate(new Date(today.getFullYear(), today.getMonth(), 1))
@@ -1114,6 +1115,7 @@ const ChefStoreRequest = ({
   }
 
   const openBulkExportModal = () => {
+    setBulkExportFormat('excel')
     setBulkExportError('')
     setActionMessage('')
     setBulkExportOpen(true)
@@ -1126,6 +1128,7 @@ const ChefStoreRequest = ({
   }
 
   const handleBulkExport = async () => {
+    if (bulkExporting) return
     if (!accessToken) {
       setBulkExportError('Please log in first to export data.')
       return
@@ -1169,7 +1172,7 @@ const ChefStoreRequest = ({
         site: getSiteDisplayName(group.site),
       }))
 
-      await downloadSpreadsheet(
+      const exported = await downloadSpreadsheet(
         `store-request-bulk-${bulkExportStartDate}_to_${bulkExportEndDate}.xlsx`,
         [
           {
@@ -1185,8 +1188,11 @@ const ChefStoreRequest = ({
             rows: buildEstimatedCostExportRows(namedExportGroups),
           },
         ],
+        undefined,
+        bulkExportFormat,
       )
 
+      if (!exported) return
       setActionMessage(
         `Bulk export complete. ${exportGroups.length} production batches exported.`,
       )
@@ -3343,6 +3349,25 @@ const ChefStoreRequest = ({
                       />
                     </div>
                   </div>
+
+                  <fieldset disabled={bulkExporting}>
+                    <legend className="text-sm font-medium text-foreground">Export format</legend>
+                    <div className="mt-2 flex gap-6">
+                      {(['excel', 'pdf'] as const).map((format) => (
+                        <label key={format} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="bulk-export-format"
+                            value={format}
+                            checked={bulkExportFormat === format}
+                            onChange={() => setBulkExportFormat(format)}
+                            className="accent-emerald-600 disabled:cursor-not-allowed"
+                          />
+                          {format === 'excel' ? 'Excel' : 'PDF'}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
 
                   {bulkExportError ? (
                     <p className="text-xs font-medium text-red-600">

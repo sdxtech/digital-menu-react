@@ -47,8 +47,8 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
         setError('No production batches match the export settings.')
         return
       }
-      await downloadSpreadsheet(filename, buildProductionBulkSheets(batches.map(buildBatch), batches))
-      dialogRef.current?.close()
+      const exported = await downloadSpreadsheet(filename, buildProductionBulkSheets(batches.map(buildBatch), batches))
+      if (exported) dialogRef.current?.close()
     } catch {
       setError('Failed to export production batches. Try a smaller date range or select a client.')
     } finally {
@@ -131,7 +131,7 @@ export default function ProductionBulkExportButton<T extends ProductionExportGro
               className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-50">Cancel</button>
             <button type="submit" disabled={disabled || loadingGroups || invalidRange || (loadGroups ? !remoteTotal : !selectedGroups.length) || exporting}
               className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
-              {exporting ? 'Exporting...' : 'Export Excel'}
+              {exporting ? 'Exporting...' : 'Export'}
             </button>
           </div>
         </form>
