@@ -315,6 +315,7 @@ const StorekeeperPage = () => {
   const [cancellationReason, setCancellationReason] = useState('')
   const [cancellationError, setCancellationError] = useState('')
   const [bulkExportOpen, setBulkExportOpen] = useState(false)
+  const [bulkExportFormat, setBulkExportFormat] = useState<'excel' | 'pdf'>('excel')
   const [bulkExportStartDate, setBulkExportStartDate] = useState(() => {
     const today = new Date()
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`
@@ -548,6 +549,7 @@ const StorekeeperPage = () => {
   }
 
   const openBulkExportModal = () => {
+    setBulkExportFormat('excel')
     setBulkExportError('')
     setActionMessage('')
     setBulkExportOpen(true)
@@ -560,6 +562,7 @@ const StorekeeperPage = () => {
   }
 
   const handleBulkExport = async () => {
+    if (bulkExporting) return
     if (!accessToken) {
       setBulkExportError('Please log in first to export data.')
       return
@@ -595,7 +598,7 @@ const StorekeeperPage = () => {
         ...group,
         site: group.site ?? user?.siteName ?? user?.site ?? '',
       }))
-      await downloadSpreadsheet(
+      const exported = await downloadSpreadsheet(
         bulkExportStartDate === bulkExportEndDate
           ? `SR-${formatProductionDate(bulkExportStartDate)}.xlsx`
           : `SR-${formatProductionDate(bulkExportStartDate)}-sd-${formatProductionDate(bulkExportEndDate)}.xlsx`,
@@ -609,7 +612,10 @@ const StorekeeperPage = () => {
             rows: buildIngredientSummaryExportRows(namedExportGroups, true),
           },
         ],
+        undefined,
+        bulkExportFormat,
       )
+      if (!exported) return
       setActionMessage(
         `Bulk export complete. ${exportGroups.length} production batches exported.`,
       )
@@ -1395,6 +1401,25 @@ const StorekeeperPage = () => {
                       />
                     </div>
                   </div>
+
+                  <fieldset disabled={bulkExporting}>
+                    <legend className="text-sm font-medium text-foreground">Export format</legend>
+                    <div className="mt-2 flex gap-6">
+                      {(['excel', 'pdf'] as const).map((format) => (
+                        <label key={format} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="storekeeper-bulk-export-format"
+                            value={format}
+                            checked={bulkExportFormat === format}
+                            onChange={() => setBulkExportFormat(format)}
+                            className="accent-emerald-600 disabled:cursor-not-allowed"
+                          />
+                          {format === 'excel' ? 'Excel' : 'PDF'}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
 
                   {bulkExportError ? (
                     <p className="text-xs font-medium text-red-600">{bulkExportError}</p>

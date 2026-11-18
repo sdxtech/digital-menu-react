@@ -1,4 +1,5 @@
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
 import { formatProductionDate } from '../lib/date-format'
@@ -486,6 +487,7 @@ const StorekeeperHistoryPage = () => {
     downloadSpreadsheet(
       `issuance-history-${safeDate}-${safeProductionCode}.xlsx`,
       [{ name: 'Issuance History', rows }],
+      { name: 'Ingredient Summary', rows: buildIngredientSummaryExportRows([group]) },
     )
   }
 

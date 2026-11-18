@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatQuantity as formatRawQuantity } from '../lib/quantity'
+import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import { formatRecipeVersion } from '../lib/recipe-version'
 import {
   getApprovalStatusLabel,
@@ -615,11 +616,12 @@ const SuperadminStoreRequestExportPage = () => {
           ? `store-request-${siteFilenameSegment}-${startDate}_to_${endDate}.xlsx`
           : `store-request-${siteFilenameSegment}-all-dates.xlsx`
 
-      await downloadSpreadsheet(filename, [
+      const exported = await downloadSpreadsheet(filename, [
         { name: 'Store Requests', rows },
         { name: 'Estimated Costs', rows: estimatedCostRows },
-      ])
+      ], { name: 'Ingredient Summary', rows: buildIngredientSummaryExportRows(groups, true) })
 
+      if (!exported) return
       setInfoMessage(
         `Export complete for ${selectedSitesLabel}. ${groups.length} production batches exported.`,
       )
