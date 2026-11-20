@@ -1,26 +1,28 @@
 import {
+  aggregateStoreRequestSummary,
   aggregateStoreRequestSummaryByVendor,
   aggregateStoreRequestSummaryAcrossGroups,
   type StoreRequestSummaryIngredient,
 } from './store-request-summary.ts'
 import { productionQuantityExportCells } from './production-quantity-export.ts'
-import { toSpreadsheetSrQuantity, type SpreadsheetCell } from './spreadsheet-export.ts'
+import { toSpreadsheetDecimal, toSpreadsheetSrQuantity, type SpreadsheetCell } from './spreadsheet-export.ts'
 import { formatUnitLabel } from './unit-of-measures.ts'
 
 type SummaryExportGroup = {
-  items: Array<{ clientName?: string; ingredients?: StoreRequestSummaryIngredient[] }>
+  items: Array<{ costCalculationVersion?: number; clientName?: string; ingredients?: StoreRequestSummaryIngredient[] }>
   summary?: StoreRequestSummaryIngredient[]
 }
 
-export const buildIngredientSummaryExportRows = (
+const buildQuantitySummaryRows = (
   groups: SummaryExportGroup[],
-  aggregateAcrossGroups = false,
+  aggregateAcrossGroups: boolean,
+  costCalculationVersion?: number,
 ): SpreadsheetCell[][] => {
   const cells = (item: StoreRequestSummaryIngredient): SpreadsheetCell[] => [
     item.productCode,
     item.name,
     item.vendor ?? '',
-    toSpreadsheetSrQuantity(item.qty),
+    toSpreadsheetSrQuantity(item.qty, costCalculationVersion),
     formatUnitLabel(item.unitOfMeasures),
     ...productionQuantityExportCells(item),
   ]
@@ -43,4 +45,54 @@ export const buildIngredientSummaryExportRows = (
       group.items[0]?.clientName ?? '', ...cells(item),
     ])).sort(incompleteFirst),
   ]
+}
+
+const groupsForCostVersion = (groups: SummaryExportGroup[], current: boolean) =>
+  groups.flatMap(group => {
+    const items = group.items.filter(menu => (menu.costCalculationVersion === 2) === current)
+    if (items.length > 0 && items.length === group.items.length) return [group]
+    if (!current && !group.items.length) return [group]
+    return items.length ? [{ items }] : []
+  })
+
+export const buildIngredientSummaryExportRows = (
+  groups: SummaryExportGroup[],
+  acrossGroups = false,
+): SpreadsheetCell[][] => {
+  const current = groupsForCostVersion(groups, true)
+  if (!current.length) return buildQuantitySummaryRows(groups, acrossGroups)
+  const [headers, ...legacy] = buildQuantitySummaryRows(groupsForCostVersion(groups, false), acrossGroups)
+  return [headers, ...legacy, ...buildQuantitySummaryRows(current, acrossGroups, 2).slice(1)]
+}
+
+export const buildMprIngredientSummaryRows = (
+  groups: SummaryExportGroup[],
+  acrossGroups = false,
+): SpreadsheetCell[][] => {
+  if (!groups.some(group => group.items.some(menu => menu.costCalculationVersion === 2))) {
+    return buildIngredientSummaryExportRows(groups, acrossGroups)
+  }
+
+  const legacyGroups = groupsForCostVersion(groups, false)
+  const [headers, ...legacyRows] = buildQuantitySummaryRows(legacyGroups, acrossGroups)
+  const mixed = legacyGroups.length > 0
+  const rows: SpreadsheetCell[][] = [
+    [...headers, 'Price', 'Ingredient Cost', ...(mixed ? ['Cost Version'] : [])],
+    ...legacyRows.map(row => [...row, '', '', 'Legacy']),
+  ]
+  const currentMenus = groups.flatMap(group => group.items.filter(menu => menu.costCalculationVersion === 2))
+  const batches = acrossGroups ? [currentMenus] : groups.map(group => group.items.filter(menu => menu.costCalculationVersion === 2))
+  for (const menus of batches) {
+    const ingredients = menus.flatMap(menu => menu.ingredients ?? [])
+    for (const item of aggregateStoreRequestSummary(ingredients, acrossGroups, true, true)) {
+      rows.push([
+        acrossGroups ? item.ingredientType ?? '' : menus[0]?.clientName ?? '',
+        item.productCode, item.name, item.vendor ?? '', toSpreadsheetDecimal(item.qty),
+        formatUnitLabel(item.unitOfMeasures), ...productionQuantityExportCells(item),
+        toSpreadsheetDecimal(item.price), toSpreadsheetDecimal(item.ingredientCost, 'money'),
+        ...(mixed ? ['2'] : []),
+      ])
+    }
+  }
+  return rows
 }

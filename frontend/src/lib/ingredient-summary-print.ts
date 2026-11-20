@@ -3,7 +3,7 @@ import type { SpreadsheetCell, SpreadsheetSheet } from './spreadsheet-export'
 const cellText = (cell: SpreadsheetCell): string => {
   if (cell == null) return ''
   if (cell instanceof Date) return cell.toISOString().slice(0, 10).split('-').reverse().join('-')
-  if (typeof cell === 'object') return String(cell.value)
+  if (typeof cell === 'object') return cell.format === 'money' ? cell.value.toFixed(2) : String(cell.value)
   return String(cell)
 }
 
@@ -97,6 +97,13 @@ export const printIngredientSummary = (sheet: SpreadsheetSheet, filename: string
     th:nth-child(7),th:nth-child(8){width:5%}
     td:nth-child(5),td:nth-child(7){text-align:right}
   `
+  if (sheet.rows[0].includes('Ingredient Cost')) {
+    style.textContent += `
+      @page{size:A4 landscape}
+      table{table-layout:auto}
+      thead th:nth-child(n){width:auto}
+    `
+  }
   doc.head.append(style)
   const heading = doc.createElement('h1')
   heading.textContent = 'Store Request Summary'

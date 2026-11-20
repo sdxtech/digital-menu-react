@@ -51,6 +51,9 @@ export type MenuProductionIngredientVendor = {
 
 @Schema({ timestamps: true })
 export class MenuProduction {
+  @Prop({ type: Number })
+  costCalculationVersion?: number;
+
   @Prop({ type: Object })
   recipeSnapshot?: { portionSize?: number; ingredients: RecipeIngredient[] };
 

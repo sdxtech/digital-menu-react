@@ -29,6 +29,7 @@ import { formatUnitLabel } from '../lib/unit-of-measures'
 import {
   downloadSpreadsheet,
   toSpreadsheetDate,
+  toSpreadsheetDecimal,
   toSpreadsheetSrQuantity,
   toSpreadsheetInteger,
   type SpreadsheetCell,
@@ -101,6 +102,7 @@ type StoreRequestFulfillment = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   id: string
   productionCode?: string
   submittedAt?: string
@@ -167,14 +169,14 @@ type ReconciliationRow = {
 
 const ITEMS_PER_PAGE = 10
 
-const formatPrice = (value?: number) => {
+const formatPrice = (value?: number, digits = 0) => {
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return '-'
   }
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: digits,
   }).format(value)
 }
 
@@ -388,10 +390,10 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient.productCode,
           ingredient.name,
           ingredient.vendor ?? '',
-          toSpreadsheetSrQuantity(ingredient.qty),
+          toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
           formatUnitLabel(ingredient.unitOfMeasures),
-          toSpreadsheetInteger(ingredient.price),
-          toSpreadsheetInteger(ingredient.ingredientCost),
+          menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(ingredient.price) : toSpreadsheetInteger(ingredient.price),
+          menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(ingredient.ingredientCost, 'money') : toSpreadsheetInteger(ingredient.ingredientCost),
           ...productionQuantityExportCells(ingredient),
         ])
         rowNumber += 1
@@ -436,8 +438,8 @@ const buildEstimatedCostExportRows = (groups: StoreRequestGroup[]) => {
         formatRecipeVersion(menu.recipeVersion),
         menu.category,
         menu.portion,
-        toSpreadsheetInteger(estimatedTotalCost),
-        toSpreadsheetInteger(estimatedCostPerPax),
+        menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(estimatedTotalCost, 'money') : toSpreadsheetInteger(estimatedTotalCost),
+        menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(estimatedCostPerPax, 'money') : toSpreadsheetInteger(estimatedCostPerPax),
       ])
     })
   })
@@ -2085,7 +2087,8 @@ const ChefStoreRequest = ({
                 const batchStatus = items.some((item) => item.salesRejectionReason)
                   ? 'Returned to Admin Sales'
                   : recordStatus ? getRecordStatusLabel(recordStatus) : '-'
-                const summaryItems = aggregateStoreRequestSummaryByVendor(group, true)
+                const costDigits = group.items.some(menu => menu.costCalculationVersion === 2) ? 2 : 0
+                const summaryItems = aggregateStoreRequestSummaryByVendor(group, true, costDigits === 2)
                 const isExpanded = expandedGroups.includes(groupKey)
                 const hasDelivered = items.some(
                   (item) => item.storeRequestStatus === 'fulfilled',
@@ -2903,7 +2906,7 @@ const ChefStoreRequest = ({
                                                 )}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(ingredientCost)}
+                                                {formatPrice(ingredientCost, costDigits)}
                                               </td>
                                             </tr>
                                           )
@@ -2987,7 +2990,7 @@ const ChefStoreRequest = ({
                                           Estimated total cost
                                         </p>
                                         <p className="mt-1 text-sm font-semibold text-foreground">
-                                          {formatPrice(estimatedCost)}
+                                          {formatPrice(estimatedCost, menu.costCalculationVersion === 2 ? 2 : 0)}
                                         </p>
                                       </div>
                                       <div className="rounded-md border border-border bg-background p-3">
@@ -2995,7 +2998,7 @@ const ChefStoreRequest = ({
                                           Cost per pax
                                         </p>
                                         <p className="mt-1 text-sm font-semibold text-foreground">
-                                          {formatPrice(estimatedCostPerPax)}
+                                          {formatPrice(estimatedCostPerPax, menu.costCalculationVersion === 2 ? 2 : 0)}
                                         </p>
                                       </div>
                                     </div>
@@ -3139,12 +3142,10 @@ const ChefStoreRequest = ({
                                                   )}
                                                 </td>
                                                 <td className="px-4 py-3 font-medium">
-                                                  {formatPrice(ingredient.price)}
+                                                  {formatPrice(ingredient.price, menu.costCalculationVersion === 2 ? 2 : 0)}
                                                 </td>
                                                 <td className="px-4 py-3 font-medium">
-                                                  {formatPrice(
-                                                    ingredient.ingredientCost,
-                                                  )}
+                                                  {formatPrice(ingredient.ingredientCost, menu.costCalculationVersion === 2 ? 2 : 0)}
                                                 </td>
                                               </tr>
                                             ))}
