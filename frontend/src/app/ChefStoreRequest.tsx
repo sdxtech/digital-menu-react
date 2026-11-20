@@ -2,6 +2,7 @@ import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-expo
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
+import InventoryStockWarning from '../components/inventory/InventoryStockWarning'
 import ProductionInformation from '../components/ProductionInformation'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import {
@@ -3702,6 +3703,7 @@ const ChefStoreRequest = ({
                       />
                     </div>
 
+                    <InventoryStockWarning site={completionGroup.site} items={completionRows} />
                     {completionError ? (
                       <p className="mt-4 text-xs font-medium text-red-600">
                         {completionError}

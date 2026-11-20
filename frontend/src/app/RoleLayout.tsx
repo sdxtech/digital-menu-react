@@ -230,6 +230,7 @@ const RoleLayout = ({
   }
 
   const isItemActive = (item: NavItem) => {
+    if (item.breadcrumbPaths?.includes(location.pathname)) return true
     const target = getTarget(item.to)
     const pathActive = item.children?.length || item.end
       ? location.pathname === target.pathname
@@ -237,7 +238,10 @@ const RoleLayout = ({
         location.pathname.startsWith(`${target.pathname}/`)
 
     if (!pathActive) return false
-    if (target.search) return location.search === target.search
+    if (target.search) {
+      const currentParams = new URLSearchParams(location.search)
+      return Array.from(new URLSearchParams(target.search)).every(([key, value]) => currentParams.get(key) === value)
+    }
     return true
   }
 
@@ -248,7 +252,7 @@ const RoleLayout = ({
           item.children?.length &&
           (location.pathname === getTarget(item.to).pathname ||
             item.children.some(
-              (child) => location.pathname === getTarget(child.to).pathname,
+              (child) => location.pathname === getTarget(child.to).pathname || Boolean(child.breadcrumbPaths?.includes(location.pathname)),
             )),
       )
       .map((item) => item.to)

@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
-import { Model, Types } from 'mongoose';
+import { Model, Types, type ClientSession } from 'mongoose';
+import { InventoryService } from '../inventory/inventory.service';
 import { RawMaterialsService } from '../raw-materials/raw-materials.service';
 import { resolveProductionQuantity } from './production-quantity';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
@@ -222,6 +223,7 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly workflowMail: WorkflowMailService,
     private readonly rawMaterials: RawMaterialsService,
     @Optional() private readonly sites?: SitesService,
+    @Optional() private readonly inventory?: InventoryService,
   ) {}
 
   private async financeSnapshot(site: string) {
@@ -2593,6 +2595,9 @@ export class MenuProductionsService implements OnModuleInit {
     const filter = this.withSiteFilter({ _id: id }, site);
     let item = await this.menuProductionModel.findOne(filter);
     if (!item) throw new NotFoundException('Menu production not found');
+    if (status === 'fulfilled' || item.storeRequestStatus === 'fulfilled') {
+      await this.inventory?.assertLegacyStatusAllowed(item.site || site);
+    }
     if (
       status === 'requested' &&
       item.storeRequestStatus === 'not-requested' &&
@@ -2955,32 +2960,58 @@ export class MenuProductionsService implements OnModuleInit {
       ];
     }
 
-    const updateResult = await this.menuProductionModel.updateMany(
-      this.withSiteFilter(updateFilter, site),
-      {
-        $set: {
-          storeRequestStatus: 'fulfilled',
-          fulfilledBy: actor,
-          storeFulfillmentItems: fulfillmentItems,
-          storeFulfillmentCompletedAt: completedAt,
-          ...(note ? { storeFulfillmentNote: note } : {}),
+    const persist = async (session?: ClientSession) => {
+      if (session)
+        await this.assertInventoryBatch(menus, normalizedIds, session);
+      const updateResult = await this.menuProductionModel.updateMany(
+        this.withSiteFilter(
+          session
+            ? {
+                $and: [updateFilter, this.inventorySnapshotFilter(menus)],
+              }
+            : updateFilter,
+          site,
+        ),
+        {
+          $set: {
+            storeRequestStatus: 'fulfilled',
+            fulfilledBy: actor,
+            storeFulfillmentItems: fulfillmentItems,
+            storeFulfillmentCompletedAt: completedAt,
+            ...(note ? { storeFulfillmentNote: note } : {}),
+          },
+          $unset: {
+            ...(note ? {} : { storeFulfillmentNote: 1 }),
+            storeCancelledBy: 1,
+            storeCancelledAt: 1,
+            storeCancellationReason: 1,
+          },
         },
-        $unset: {
-          ...(note ? {} : { storeFulfillmentNote: 1 }),
-          storeCancelledBy: 1,
-          storeCancelledAt: 1,
-          storeCancellationReason: 1,
-        },
-      },
-    );
-    const completedCount = options.allowStatusOverride
-      ? updateResult.matchedCount
-      : updateResult.modifiedCount;
-    if (completedCount !== normalizedIds.length) {
-      throw new BadRequestException(
-        'Store request was already completed or cancelled by another user. Please refresh the list.',
+        ...(session ? [{ session }] : []),
       );
-    }
+      const completedCount = options.allowStatusOverride
+        ? updateResult.matchedCount
+        : updateResult.modifiedCount;
+      if (completedCount !== normalizedIds.length) {
+        throw new BadRequestException(
+          'Store request was already completed or cancelled by another user. Please refresh the list.',
+        );
+      }
+      if (session && this.inventory) {
+        await this.inventory.recordIssue(
+          menus[0].site || site || '',
+          batchKeys[0],
+          normalizedIds,
+          fulfillmentItems,
+          actor,
+          menus[0].storeFulfillmentCompletedAt,
+          session,
+        );
+      }
+    };
+    if (this.inventory)
+      await this.inventory.withSite(menus[0].site || site, persist);
+    else await persist();
 
     return {
       productionDate: batch.date,
@@ -3058,23 +3089,52 @@ export class MenuProductionsService implements OnModuleInit {
     const actor = cancelledBy?.trim() || 'Unknown user';
     const cancelledAt = new Date();
 
-    await this.menuProductionModel.updateMany(
-      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
-      {
-        $set: {
-          storeRequestStatus: 'cancelled',
-          storeCancelledBy: actor,
-          storeCancelledAt: cancelledAt,
-          storeCancellationReason: reason,
+    const persist = async (session?: ClientSession) => {
+      if (session)
+        await this.assertInventoryBatch(menus, normalizedIds, session);
+      const result = await this.menuProductionModel.updateMany(
+        this.withSiteFilter(
+          session
+            ? this.inventorySnapshotFilter(menus)
+            : { _id: { $in: normalizedIds } },
+          site,
+        ),
+        {
+          $set: {
+            storeRequestStatus: 'cancelled',
+            storeCancelledBy: actor,
+            storeCancelledAt: cancelledAt,
+            storeCancellationReason: reason,
+          },
+          $unset: {
+            fulfilledBy: 1,
+            storeFulfillmentItems: 1,
+            storeFulfillmentCompletedAt: 1,
+            storeFulfillmentNote: 1,
+          },
         },
-        $unset: {
-          fulfilledBy: 1,
-          storeFulfillmentItems: 1,
-          storeFulfillmentCompletedAt: 1,
-          storeFulfillmentNote: 1,
-        },
-      },
-    );
+        ...(session ? [{ session }] : []),
+      );
+      if (session) {
+        if (result.matchedCount !== normalizedIds.length) {
+          throw new ConflictException(
+            'This batch changed. Refresh before cancelling.',
+          );
+        }
+        await this.inventory!.recordIssue(
+          menus[0].site || site || '',
+          batchKeys[0],
+          normalizedIds,
+          [],
+          actor,
+          menus[0].storeFulfillmentCompletedAt,
+          session,
+        );
+      }
+    };
+    if (this.inventory)
+      await this.inventory.withSite(menus[0].site || site, persist);
+    else await persist();
 
     const firstMenu = menus[0];
     return {
@@ -3157,10 +3217,26 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    const result = await this.menuProductionModel.deleteMany({
-      ...batchFilter,
-      _id: { $in: ids },
-    });
+    const remove = async (session?: ClientSession) => {
+      await this.inventory?.assertDeletable(ids, session);
+      const deleted = await this.menuProductionModel.deleteMany(
+        {
+          ...batchFilter,
+          _id: { $in: ids },
+          ...(session ? this.inventorySnapshotFilter(menus) : {}),
+        },
+        ...(session ? [{ session }] : []),
+      );
+      if (session && deleted.deletedCount !== ids.length) {
+        throw new ConflictException(
+          'This batch changed. Refresh before deleting the complete batch.',
+        );
+      }
+      return deleted;
+    };
+    const result = this.inventory
+      ? await this.inventory.withSite(firstMenu.site || site, remove)
+      : await remove();
     if (!result.deletedCount) {
       throw new NotFoundException(
         'The MPR was already deleted. Refresh the production list.',
@@ -3677,6 +3753,49 @@ export class MenuProductionsService implements OnModuleInit {
   ): string | undefined {
     const trimmed = productionCode?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private inventorySnapshotFilter(
+    menus: Array<{
+      _id: Types.ObjectId;
+      updatedAt?: Date;
+      storeRequestStatus: string;
+    }>,
+  ) {
+    return {
+      $or: menus.map((menu) => ({
+        _id: menu._id,
+        updatedAt: menu.updatedAt ?? { $exists: false },
+        storeRequestStatus: menu.storeRequestStatus,
+      })),
+    };
+  }
+
+  private async assertInventoryBatch(
+    menus: Array<{
+      _id: Types.ObjectId;
+      productionCode?: string;
+      productionDate: string;
+      site?: string;
+    }>,
+    ids: string[],
+    session: ClientSession,
+  ) {
+    const first = menus[0];
+    const count = await this.menuProductionModel
+      .countDocuments({
+        ...(first.productionCode
+          ? { productionCode: first.productionCode }
+          : { _id: first._id }),
+        productionDate: first.productionDate,
+        site: first.site,
+        isDraft: { $ne: true },
+      })
+      .session(session);
+    if (count !== ids.length)
+      throw new ConflictException(
+        'Process the complete Store Request batch for sites with active inventory. Refresh the list.',
+      );
   }
 
   private buildProductionBatchKey(input: {

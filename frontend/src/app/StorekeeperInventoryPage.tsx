@@ -1,14 +1,9 @@
 import PageHeading from '../components/PageHeading'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
-
-const defaultDashboardUrl =
-  'https://datastudio.google.com/embed/reporting/cf2f45a4-fe6b-487f-bb2e-fea018739634/page/p_o5k0hjw06d'
-
-const dashboardUrl =
-  (import.meta.env.VITE_INVENTORY_DASHBOARD_URL as string | undefined)?.trim() ||
-  defaultDashboardUrl
+import InventoryWorkspace from '../components/inventory/InventoryWorkspace'
 
 type InventoryFeatureFlag = {
   enabled: boolean
@@ -16,12 +11,57 @@ type InventoryFeatureFlag = {
 
 const StorekeeperInventoryPage = () => {
   const { accessToken, user } = useAuth()
+  const [searchParams] = useSearchParams()
   const isSuperadmin = user?.role === 'superadmin'
+  const isConfiguration = isSuperadmin && searchParams.get('view') === 'configuration'
+  const currentView =
+    isConfiguration ? 'Inventory Configuration' :
+      searchParams.get('view') === 'movements' ? 'Stock Movement' : 'List of Inventory'
   const [inventoryEnabled, setInventoryEnabled] = useState<boolean | null>(null)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [saving, setSaving] = useState(false)
+  const [selectedSite, setSelectedSite] = useState(() => searchParams.get('site') ?? '')
+  const [sites, setSites] = useState<Array<{ code: string; name: string }>>([])
+  const [sitesError, setSitesError] = useState('')
+  const site = isSuperadmin ? selectedSite : (user?.site ?? '')
+
+  useEffect(() => {
+    if (!isSuperadmin || isConfiguration || !accessToken) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const allSites: Array<{ code: string; name: string }> = []
+        let totalPages = 1
+        for (let page = 1; page <= totalPages; page++) {
+          const result = await apiFetch<{
+            items: Array<{ code: string; name: string }>
+            totalPages?: number
+          }>(
+            `/superadmin/sites?limit=200&page=${page}`,
+            { signal: controller.signal },
+            accessToken,
+          )
+          allSites.push(...result.items)
+          totalPages = result.totalPages ?? 1
+        }
+        if (!controller.signal.aborted)
+          setSites(
+            allSites.sort((a, b) =>
+              a.code.localeCompare(b.code, undefined, { numeric: true }),
+            ),
+          )
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setSitesError(
+            error instanceof Error ? error.message : 'Failed to load sites.',
+          )
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [accessToken, isSuperadmin, isConfiguration])
 
   const fetchInventoryStatus = useCallback(async () => {
     if (!accessToken) return
@@ -81,29 +121,67 @@ const StorekeeperInventoryPage = () => {
     fetchInventoryStatus().catch(() => null)
   }, [fetchInventoryStatus])
 
+  const siteSelector = isSuperadmin ? (
+    <label className="block space-y-1 text-sm">
+      <span className="font-medium">Site</span>
+      <select
+        value={selectedSite}
+        onChange={(event) => setSelectedSite(event.target.value)}
+        className="w-full rounded-md border border-border bg-surface px-3 py-2"
+      >
+        <option value="">Select a site...</option>
+        {sites.map((option) => (
+          <option key={option.code} value={option.code}>
+            {option.code} — {option.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : undefined
+
   return (
     <div className="space-y-6">
-      <PageHeading className="text-2xl font-semibold">Inventory</PageHeading>
+      <PageHeading className="text-2xl font-semibold">{currentView}</PageHeading>
 
-      {isSuperadmin ? (
+      {isConfiguration ? (
         <section className="!mt-2 rounded-md border border-border bg-surface p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <i className="bi bi-boxes text-lg text-primary" aria-hidden="true" />
-                <h2 className="text-base font-semibold">Storekeeper Inventory</h2>
+                <i
+                  className="bi bi-boxes text-lg text-primary"
+                  aria-hidden="true"
+                />
+                <h2 className="text-base font-semibold">
+                  Storekeeper Inventory
+                </h2>
               </div>
               <p className="mt-2 text-sm text-muted">
-                Show or hide the embedded Inventory dashboard in the Storekeeper workspace.
+                Show or hide Inventory in the Storekeeper workspace. Stock
+                recording continues for activated sites. Superadmin access stays
+                available.
               </p>
               {loadError ? (
-                <p className="mt-2 text-xs font-medium text-red-600">{loadError}</p>
+                <div className="mt-2 space-y-2">
+                  <p className="text-xs font-medium text-red-600">{loadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => fetchInventoryStatus()}
+                    className="rounded-md border border-border bg-background px-4 py-2 text-xs font-semibold text-primary"
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : null}
               {actionError ? (
-                <p className="mt-2 text-xs font-medium text-red-600">{actionError}</p>
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {actionError}
+                </p>
               ) : null}
               {actionMessage ? (
-                <p className="mt-2 text-xs font-medium text-green-700">{actionMessage}</p>
+                <p className="mt-2 text-xs font-medium text-green-700">
+                  {actionMessage}
+                </p>
               ) : null}
             </div>
             <button
@@ -127,10 +205,12 @@ const StorekeeperInventoryPage = () => {
         </section>
       ) : null}
 
-      {inventoryEnabled !== true ? (
+      {isConfiguration ? null : !isSuperadmin && inventoryEnabled !== true ? (
         <div className={isSuperadmin ? 'space-y-2' : '!mt-2 space-y-2'}>
           {inventoryEnabled === null ? (
-            <p className="text-sm text-muted">Checking Inventory availability...</p>
+            <p className="text-sm text-muted">
+              Checking Inventory availability...
+            </p>
           ) : null}
           {loadError ? (
             <div className="space-y-3">
@@ -148,14 +228,27 @@ const StorekeeperInventoryPage = () => {
           ) : null}
         </div>
       ) : (
-        <div className={`${isSuperadmin ? '' : '!mt-2 '}overflow-hidden rounded-md border border-border bg-surface shadow-sm`}>
-          <iframe
-            src={dashboardUrl}
-            title="Storekeeper inventory dashboard"
-            className="h-[calc(100vh-13rem)] min-h-[640px] w-full"
-            allowFullScreen
-            sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-          />
+        <div className="!mt-2 space-y-4">
+          {sitesError ? (
+            <p role="alert" className="text-sm text-red-600">
+              {sitesError}
+            </p>
+          ) : null}
+          {accessToken ? (
+            <InventoryWorkspace
+              key={site}
+              site={site}
+              accessToken={accessToken}
+              isSuperadmin={isSuperadmin}
+              siteSelector={siteSelector}
+            />
+          ) : (
+            <p className="text-sm text-muted">
+              {isSuperadmin
+                ? 'Select a site to manage inventory.'
+                : 'A site is required to manage inventory.'}
+            </p>
+          )}
         </div>
       )}
     </div>

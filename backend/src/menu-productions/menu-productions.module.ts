@@ -17,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module'; // 
 import { MailModule } from '../mail/mail.module';
 import { RawMaterialsModule } from '../raw-materials/raw-materials.module';
 import { SitesModule } from '../sites/sites.module';
+import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SitesModule } from '../sites/sites.module';
     MailModule,
     RawMaterialsModule,
     SitesModule,
+    InventoryModule,
   ],
   controllers: [MenuProductionsController],
   providers: [MenuProductionsService],

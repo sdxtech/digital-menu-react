@@ -52,6 +52,12 @@ for (const role of ['chef', 'corporate-chef', 'superadmin']) {
   })
 }
 
+test('PO import routes have their own title for both inventory roles', () => {
+  for (const role of ['storekeeper', 'superadmin']) {
+    assert.equal(resolveDocumentTitle(`/${role}/inventory/import-po`, null), 'Import PO | SPICES')
+  }
+})
+
 test('unknown routes still show Page Not Found', () => {
   for (const path of ['/unknown', '/superadmin/unknown', '/chef/menu-create/unknown']) {
     assert.equal(resolveDocumentTitle(path, null), 'Page Not Found | SPICES')
