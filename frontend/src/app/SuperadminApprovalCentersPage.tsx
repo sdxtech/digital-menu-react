@@ -100,6 +100,7 @@ type StoreRequestIngredient = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   estimatedCost?: number
   estimatedCostPerPax?: number
   cost?: number
@@ -159,12 +160,12 @@ const getSubmittedByLabel = (items: StoreRequestMenu[]) => {
   return names.length ? names.join(', ') : '-'
 }
 
-const formatPrice = (value?: number) => {
+const formatPrice = (value?: number, digits = 0) => {
   if (value === undefined || value === null || !Number.isFinite(value)) return '-'
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: digits,
   }).format(value)
 }
 
@@ -1217,7 +1218,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                   paginatedMenuGroups.map((group, index) => {
                     const groupKey = getGroupKey(group)
                     const isExpanded = expandedGroups.includes(groupKey)
-                    const summaryItems = aggregateStoreRequestSummaryByVendor(group)
+                    const costDigits = group.items.some(menu => menu.costCalculationVersion === 2) ? 2 : 0
+                    const summaryItems = aggregateStoreRequestSummaryByVendor(group, false, costDigits === 2)
                     const hasApproved = group.items.some(
                       (item) => item.approvalStatus === 'approved',
                     )
@@ -1448,9 +1450,9 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                             <td className="px-3 py-3">{menu.group ?? '-'}</td>
                                             <td className="px-3 py-3"><p className="truncate !whitespace-nowrap font-semibold text-foreground" title={menu.menuName}>{menu.menuName}</p><p className="mt-1 truncate !whitespace-nowrap text-xs text-muted">{menu.recipeCode ?? '-'} · {menu.category}</p></td>
                                             <td className="px-3 py-3">{menu.portion}</td>
-                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCost)}</td>
+                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCost, menu.costCalculationVersion === 2 ? 2 : 0)}</td>
                                             <td className="px-3 py-3 font-medium">{estimatedRevenue ? `${(((estimatedCost ?? 0) / estimatedRevenue) * 100).toFixed(2)}%` : '-'}</td>
-                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCostPerPax)}</td>
+                                            <td className="px-3 py-3 font-medium">{formatPrice(estimatedCostPerPax, menu.costCalculationVersion === 2 ? 2 : 0)}</td>
                                             <td
                                               className="px-3 py-3"
                                             >
@@ -1495,7 +1497,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                         })}
                                       </tbody>
                                       <tfoot className="bg-[#ccd9ec]">
-                                        <tr className="border-t-2 border-primary"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Total</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCost)}</td><td className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCostPerPax)}</td><td colSpan={2} /></tr>
+                                        <tr className="border-t-2 border-primary"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Total</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCost, costDigits)}</td><td className="px-3 py-3 font-bold">{foodCostPercentage === undefined ? '-' : `${foodCostPercentage.toFixed(2)}%`}</td><td className="px-3 py-3 font-bold">{formatPrice(totalEstimatedCostPerPax, costDigits)}</td><td colSpan={2} /></tr>
                                         {portionSummary.groups.map((item) => <tr key={`group-portion-${item.name}`} className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.12em]">{item.name} Qty</td><td colSpan={5} className="px-3 py-3 font-semibold">{formatQuantity(item.portion)}</td></tr>)}
                                         <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-right text-xs font-bold uppercase tracking-[0.12em]">Total Qty</td><td colSpan={5} className="px-3 py-3 font-bold">{formatQuantity(portionSummary.total)}</td></tr>
                                         <tr className="border-t border-border"><td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Selling Price/Pax</td><td colSpan={5} className="px-3 py-3 font-bold">{formatPrice(sellingPricePerPax)}</td></tr>
@@ -1526,7 +1528,7 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                         <div className="overflow-hidden rounded-md border border-border bg-white">
                                           <table className="dm-table !w-full !table-fixed text-sm [&_td]:!whitespace-normal [&_th]:!whitespace-normal">
                                             <thead className="bg-background"><tr className="text-left text-xs uppercase tracking-[0.18em] text-muted"><th className="px-3 py-3 font-semibold">No</th><th className="px-3 py-3 font-semibold">Product code</th><th className="px-3 py-3 font-semibold">Ingredient name</th><th className="px-3 py-3 font-semibold">Prod QTY</th><th className="px-3 py-3 font-semibold">Prod UOM</th><th className="px-3 py-3 font-semibold">SR QTY</th><th className="px-3 py-3 font-semibold">SR UOM</th><th className="px-3 py-3 font-semibold">Vendor</th><th className="px-3 py-3 font-semibold">Price</th><th className="px-3 py-3 font-semibold">Ingredient Cost</th></tr></thead>
-                                            <tbody>{menu.ingredients.length === 0 ? <tr className="border-t border-border"><td colSpan={10} className="px-4 py-5 text-center text-muted">No ingredients available.</td></tr> : menu.ingredients.map((ingredient, ingredientIndex) => <tr key={`${menu.id}-${ingredient.productCode}-${ingredientIndex}`} className="border-t border-border"><td className="px-3 py-3 text-muted">{ingredientIndex + 1}</td><td className="break-all px-3 py-3">{ingredient.productCode || '-'}</td><td className="break-words px-3 py-3 font-medium">{ingredient.name || '-'}</td><td className="px-3 py-3">{ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}</td><td className="break-words px-3 py-3">{ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}</td><td className="px-3 py-3">{formatQuantity(ingredient.qty)}</td><td className="break-words px-3 py-3">{formatUnitLabel(ingredient.unitOfMeasures)}</td><td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price)}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost)}</td></tr>)}</tbody>
+                                            <tbody>{menu.ingredients.length === 0 ? <tr className="border-t border-border"><td colSpan={10} className="px-4 py-5 text-center text-muted">No ingredients available.</td></tr> : menu.ingredients.map((ingredient, ingredientIndex) => <tr key={`${menu.id}-${ingredient.productCode}-${ingredientIndex}`} className="border-t border-border"><td className="px-3 py-3 text-muted">{ingredientIndex + 1}</td><td className="break-all px-3 py-3">{ingredient.productCode || '-'}</td><td className="break-words px-3 py-3 font-medium">{ingredient.name || '-'}</td><td className="px-3 py-3">{ingredient.prodQty != null && Number.isFinite(ingredient.prodQty) ? formatQuantity(ingredient.prodQty) : ''}</td><td className="break-words px-3 py-3">{ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : ''}</td><td className="px-3 py-3">{formatQuantity(ingredient.qty)}</td><td className="break-words px-3 py-3">{formatUnitLabel(ingredient.unitOfMeasures)}</td><td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price, menu.costCalculationVersion === 2 ? 2 : 0)}</td><td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost, menu.costCalculationVersion === 2 ? 2 : 0)}</td></tr>)}</tbody>
                                           </table>
                                         </div>
                                       </article>
@@ -1583,8 +1585,8 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                                 )}
                                               </td>
                                               <td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td>
-                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price)}</td>
-                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost)}</td>
+                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.price, costDigits)}</td>
+                                              <td className="break-words px-3 py-3 font-medium">{formatPrice(ingredient.ingredientCost, costDigits)}</td>
                                             </tr>
                                           ))
                                         )}

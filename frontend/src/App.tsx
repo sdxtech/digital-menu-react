@@ -1,3 +1,5 @@
+import InventoryReceiveGoodsPage from './app/InventoryReceiveGoodsPage'
+import InventoryImportPoPage from './app/InventoryImportPoPage'
 import DashboardWorkspaceLayout from './app/DashboardWorkspaceLayout'
 import SuperadminDashboardAccessPage from './app/SuperadminDashboardAccessPage'
 import { useEffect, useState } from 'react'
@@ -270,6 +272,8 @@ function App() {
             
             <Route path="history" element={<StorekeeperHistoryPage />} />
             <Route path="inventory" element={<StorekeeperInventoryPage />} />
+            <Route path="inventory/receive-goods" element={<InventoryReceiveGoodsPage />} />
+            <Route path="inventory/import-po" element={<InventoryImportPoPage />} />
           </Route>
         </Route>
 
@@ -315,6 +319,8 @@ function App() {
               element={<Navigate to="/superadmin/store-request?view=history" replace />}
             />
             <Route path="inventory" element={<StorekeeperInventoryPage />} />
+            <Route path="inventory/receive-goods" element={<InventoryReceiveGoodsPage />} />
+            <Route path="inventory/import-po" element={<InventoryImportPoPage />} />
             <Route path="audit-logs" element={<SuperadminAuditLogPage />} />
             <Route
               path="store-request-export"

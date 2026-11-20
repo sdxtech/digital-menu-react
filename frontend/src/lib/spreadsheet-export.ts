@@ -1,7 +1,7 @@
 type SpreadsheetDecimalCell = {
   kind: 'decimal'
   value: number
-  format?: 'integer' | 'quantity'
+  format?: 'integer' | 'quantity' | 'money'
 }
 
 export type SpreadsheetCell =
@@ -58,13 +58,14 @@ export const toSpreadsheetInteger = (value: unknown): number | '' => {
 
 export const toSpreadsheetDecimal = (
   value: unknown,
-  format?: 'integer',
+  format?: 'integer' | 'money',
 ): SpreadsheetDecimalCell | '' => {
   const parsed = parseSpreadsheetNumber(value)
   return parsed === '' ? '' : { kind: 'decimal', value: parsed, ...(format ? { format } : {}) }
 }
 
-export const toSpreadsheetSrQuantity = (value: unknown): SpreadsheetDecimalCell | '' => {
+export const toSpreadsheetSrQuantity = (value: unknown, costCalculationVersion?: number): SpreadsheetDecimalCell | '' => {
+  if (costCalculationVersion === 2) return toSpreadsheetDecimal(value)
   const parsed = parseSpreadsheetNumber(value)
   return parsed === '' ? '' : { kind: 'decimal', value: Number(parsed.toFixed(2)), format: 'quantity' }
 }
@@ -134,7 +135,7 @@ export const buildSpreadsheetBuffer = async (sheets: SpreadsheetSheet[]) => {
         if (cell.value instanceof Date) {
           cell.numFmt = DATE_FORMAT
         } else if (isSpreadsheetDecimalCell(sourceCell)) {
-          cell.numFmt = sourceCell.format === 'integer' || Number.isInteger(sourceCell.value)
+          cell.numFmt = sourceCell.format === 'money' ? '#,##0.00' : sourceCell.format === 'integer' || Number.isInteger(sourceCell.value)
             ? INTEGER_FORMAT
             : sourceCell.format === 'quantity' ? QUANTITY_FORMAT : DECIMAL_FORMAT
         } else if (typeof cell.value === 'number') {

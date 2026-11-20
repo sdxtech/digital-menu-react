@@ -47,6 +47,7 @@ type Menu = {
   productionDate: string
   portion: number
   estimatedCostPerPax?: number
+  costCalculationVersion?: number
   estimatedCost?: number
   cost?: number
   ingredients: Ingredient[]
@@ -74,9 +75,9 @@ type Group = {
 type Site = { code: string; name: string }
 type Rejection = { group: Group }
 
-const formatMoney = (value?: number) =>
+const formatMoney = (value?: number, digits = 0) =>
   value === undefined ? '-' : new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', maximumFractionDigits: 0,
+    style: 'currency', currency: 'IDR', maximumFractionDigits: digits,
   }).format(value)
 
 export default function FinanceControllerPage() {
@@ -230,7 +231,8 @@ export default function FinanceControllerPage() {
                 const totalCostPerPax = group.items.reduce((sum, item) =>
                   sum + (item.estimatedCostPerPax ?? (item.portion > 0 ? (item.estimatedCost ?? item.cost ?? 0) / item.portion : 0)), 0)
                 const portionSummary = summarizePortionsByGroup(group.items)
-                const summaryItems = aggregateStoreRequestSummaryByVendor(group)
+                const costDigits = group.items.some(menu => menu.costCalculationVersion === 2) ? 2 : 0
+                const summaryItems = aggregateStoreRequestSummaryByVendor(group, false, costDigits === 2)
                 const submittedAt = group.items.find((item) => item.submittedAt)?.submittedAt
                 const submittedBy = Array.from(new Set(group.items.map((item) => item.submittedByName?.trim()).filter(Boolean))).join(', ')
                 const reviewedBy = Array.from(new Set(group.items.map((item) => item.reviewedBy?.trim()).filter(Boolean))).join(', ')
@@ -312,9 +314,9 @@ export default function FinanceControllerPage() {
                                     <p className="mt-1 truncate !whitespace-nowrap text-xs text-muted">{item.recipeCode ?? '-'} · {item.category ?? '-'}</p>
                                   </td>
                                   <td className="px-3 py-3">{item.portion}</td>
-                                  <td className="px-3 py-3 font-medium">{formatMoney(estimatedCost)}</td>
+                                  <td className="px-3 py-3 font-medium">{formatMoney(estimatedCost, item.costCalculationVersion === 2 ? 2 : 0)}</td>
                                   <td className="px-3 py-3 font-medium">{formatFoodCostPercentage(estimatedCost, revenue)}</td>
-                                  <td className="px-3 py-3 font-medium">{formatMoney(costPerPax)}</td>
+                                  <td className="px-3 py-3 font-medium">{formatMoney(costPerPax, item.costCalculationVersion === 2 ? 2 : 0)}</td>
                                   <td className="px-3 py-3">
                                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.approvalStatus === 'approved' ? 'bg-primary-soft text-primary' : item.approvalStatus === 'rejected' ? 'bg-danger/10 text-danger' : 'bg-background text-muted'}`}>
                                       {getApprovalStatusLabel(item.approvalStatus)}
@@ -325,9 +327,9 @@ export default function FinanceControllerPage() {
                       <tfoot className="bg-[#ccd9ec]">
                         <tr className="border-t-2 border-primary">
                           <td colSpan={4} className="px-3 py-3 text-center text-xs font-bold uppercase tracking-[0.12em]">Total</td>
-                          <td className="px-3 py-3 font-bold">{formatMoney(totalCost)}</td>
+                          <td className="px-3 py-3 font-bold">{formatMoney(totalCost, costDigits)}</td>
                           <td className="px-3 py-3 font-bold">{formatFoodCostPercentage(totalCost, revenue)}</td>
-                          <td className="px-3 py-3 font-bold">{formatMoney(totalCostPerPax)}</td>
+                          <td className="px-3 py-3 font-bold">{formatMoney(totalCostPerPax, costDigits)}</td>
                           <td />
                         </tr>
                         {portionSummary.groups.length > 0 ? <>
@@ -437,8 +439,8 @@ export default function FinanceControllerPage() {
                             <td className="px-3 py-3">{formatQuantity(ingredient.qty)}</td>
                             <td className="break-words px-3 py-3">{formatUnitLabel(ingredient.unitOfMeasures)}</td>
                             <td className="break-words px-3 py-3">{ingredient.vendor ?? '-'}</td>
-                            <td className="break-words px-3 py-3 font-medium">{formatMoney(ingredient.price)}</td>
-                            <td className="break-words px-3 py-3 font-medium">{formatMoney(ingredient.ingredientCost)}</td>
+                            <td className="break-words px-3 py-3 font-medium">{formatMoney(ingredient.price, item.costCalculationVersion === 2 ? 2 : 0)}</td>
+                            <td className="break-words px-3 py-3 font-medium">{formatMoney(ingredient.ingredientCost, item.costCalculationVersion === 2 ? 2 : 0)}</td>
                           </tr>)}</tbody>
                         </table>
                       </div>
@@ -471,8 +473,8 @@ export default function FinanceControllerPage() {
                         <td className="px-3 py-3">{formatQuantity(item.qty)}</td>
                         <td className="break-words px-3 py-3">{formatUnitLabel(item.unitOfMeasures)}</td>
                         <td className="break-words px-3 py-3">{item.vendor ?? '-'}</td>
-                        <td className="break-words px-3 py-3 font-medium">{formatMoney(item.price)}</td>
-                        <td className="break-words px-3 py-3 font-medium">{formatMoney(item.ingredientCost)}</td>
+                        <td className="break-words px-3 py-3 font-medium">{formatMoney(item.price, costDigits)}</td>
+                        <td className="break-words px-3 py-3 font-medium">{formatMoney(item.ingredientCost, costDigits)}</td>
                       </tr>)}</tbody>
                     </table>
                   </div>

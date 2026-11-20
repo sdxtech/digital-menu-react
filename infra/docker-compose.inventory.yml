@@ -1,0 +1,16 @@
+# Optional local-development override. Keeps the existing mongo_data volume.
+# The application connects from the host; production topology is configured separately.
+services:
+  mongo:
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { quit(rs.status().ok ? 0 : 1); } catch (e) { if (e.code === 94) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}); quit(1); } throw e; }"
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 5s

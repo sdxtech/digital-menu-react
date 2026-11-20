@@ -1,4 +1,4 @@
-import { buildIngredientSummaryExportRows } from './ingredient-summary-export'
+import { buildMprIngredientSummaryRows } from './ingredient-summary-export'
 import { productionQuantityExportCells } from './production-quantity-export'
 import { formatCreatedDate } from './date-format'
 import { formatFoodCostPercentage } from './food-cost'
@@ -18,6 +18,7 @@ import {
 } from './spreadsheet-export'
 
 type MenuProductionApprovalExportMenu = {
+  costCalculationVersion?: number
   estimatedCost?: number
   sellingPricePerPax?: number
   sellingQuantity?: number
@@ -60,6 +61,7 @@ type MenuProductionApprovalExportGroup = {
 
 export const buildMenuProductionFinancialRows = (
   items: Array<{
+    costCalculationVersion?: number
     estimatedCost?: number
     sellingPricePerPax?: number
     sellingQuantity?: number
@@ -80,7 +82,7 @@ export const buildMenuProductionFinancialRows = (
     : firstMenu?.estimatedRevenue
 
   return [
-    ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost, 'integer')],
+    ['Total Estimated Food Cost', toSpreadsheetDecimal(totalEstimatedCost, items.some(item => item.costCalculationVersion === 2) ? 'money' : 'integer')],
     ['Total Pax Calculation', toSpreadsheetDecimal(sellingQuantity)],
     ['Food Cost Percentage', formatFoodCostPercentage(totalEstimatedCost, estimatedRevenue)],
     ...(firstMenu?.groupSales?.length
@@ -186,17 +188,17 @@ export const buildMenuProductionApprovalSheets = (group: MenuProductionApprovalE
         ingredient.productCode,
         ingredient.name,
         ingredient.vendor ?? '',
-        toSpreadsheetSrQuantity(ingredient.qty),
+        toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
         formatUnitLabel(ingredient.unitOfMeasures),
         toSpreadsheetDecimal(ingredient.price),
-        Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
+        menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(ingredient.ingredientCost, 'money') : Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
         ...productionQuantityExportCells(ingredient),
       ])
       rowNumber += 1
     })
   })
 
-  const summaryRows = buildIngredientSummaryExportRows([group])
+  const summaryRows = buildMprIngredientSummaryRows([group])
 
   const firstMenu = group.items[0]
   const submittedBy = Array.from(new Set(

@@ -28,6 +28,14 @@ const getMenuCreatePageTitle = (state: unknown) => {
 
 const titleMatchers: TitleMatcher[] = [
   {
+    path: '/storekeeper/inventory/import-po',
+    getPageTitle: () => 'Import PO',
+  },
+  {
+    path: '/superadmin/inventory/import-po',
+    getPageTitle: () => 'Import PO',
+  },
+  {
     path: '/dashboard',
     getPageTitle: () => 'Dashboard',
   },
@@ -214,7 +222,11 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/storekeeper/inventory',
-    getPageTitle: () => 'Inventory',
+    getPageTitle: () => 'List of Inventory',
+  },
+  {
+    path: '/storekeeper/inventory/receive-goods',
+    getPageTitle: () => 'Receive goods',
   },
   {
     path: '/admin-site/menu-production-history',
@@ -321,7 +333,11 @@ const titleMatchers: TitleMatcher[] = [
   },
   {
     path: '/superadmin/inventory',
-    getPageTitle: () => 'Inventory',
+    getPageTitle: () => 'List of Inventory',
+  },
+  {
+    path: '/superadmin/inventory/receive-goods',
+    getPageTitle: () => 'Receive goods',
   },
   {
     path: '/superadmin/store-request-export',
@@ -336,7 +352,15 @@ const titleMatchers: TitleMatcher[] = [
 const formatDocumentTitle = (pageTitle?: string) =>
   pageTitle ? `${pageTitle} | ${APP_NAME}` : APP_NAME
 
-export const resolveDocumentTitle = (pathname: string, state: unknown) => {
+export const resolveDocumentTitle = (pathname: string, state: unknown, search = '') => {
+  const currentPath = pathname.replace(/\/+$/, '')
+  if (currentPath === '/superadmin/inventory' || currentPath === '/storekeeper/inventory') {
+    const view = new URLSearchParams(search).get('view')
+    const pageTitle = currentPath === '/superadmin/inventory' && view === 'configuration'
+      ? 'Inventory Configuration'
+      : view === 'movements' ? 'Stock Movement' : 'List of Inventory'
+    return formatDocumentTitle(pageTitle)
+  }
   if (pathname === '/') {
     return formatDocumentTitle()
   }
@@ -356,6 +380,6 @@ export const useRouteDocumentTitle = () => {
   const location = useLocation()
 
   useEffect(() => {
-    document.title = resolveDocumentTitle(location.pathname, location.state)
-  }, [location.pathname, location.state])
+    document.title = resolveDocumentTitle(location.pathname, location.state, location.search)
+  }, [location.pathname, location.state, location.search])
 }

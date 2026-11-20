@@ -184,11 +184,16 @@ const navItems = [
     ),
   },
   {
-    label: 'Inventory',
-    to: '/superadmin/inventory',
+    label: 'Inventory Management',
+    to: '/superadmin/inventory?view=stock',
     icon: (className: string) => (
       <i className={`bi bi-boxes ${className}`} aria-hidden="true" />
     ),
+    children: [
+      { label: 'List of Inventory', to: '/superadmin/inventory?view=stock', breadcrumbPaths: ['/superadmin/inventory/receive-goods', '/superadmin/inventory/import-po'], icon: (className: string) => <i className={`bi bi-box-seam ${className}`} aria-hidden="true" /> },
+      { label: 'Stock Movement', to: '/superadmin/inventory?view=movements', icon: (className: string) => <i className={`bi bi-arrow-left-right ${className}`} aria-hidden="true" /> },
+      { label: 'Inventory Configuration', to: '/superadmin/inventory?view=configuration', icon: (className: string) => <i className={`bi bi-gear ${className}`} aria-hidden="true" /> },
+    ],
   },
   {
     label: 'Store Export',

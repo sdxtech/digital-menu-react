@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
-import { Model, Types } from 'mongoose';
+import { Model, Types, type ClientSession } from 'mongoose';
+import { InventoryService } from '../inventory/inventory.service';
 import { RawMaterialsService } from '../raw-materials/raw-materials.service';
 import { resolveProductionQuantity } from './production-quantity';
 import { CancelPendingMenuProductionBatchDto } from './dto/cancel-pending-menu-production-batch.dto';
@@ -93,6 +94,7 @@ type StoreRequestFulfillment = {
 };
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number;
   id: string;
   site?: string;
   productionCode?: string;
@@ -221,6 +223,7 @@ export class MenuProductionsService implements OnModuleInit {
     private readonly workflowMail: WorkflowMailService,
     private readonly rawMaterials: RawMaterialsService,
     @Optional() private readonly sites?: SitesService,
+    @Optional() private readonly inventory?: InventoryService,
   ) {}
 
   private async financeSnapshot(site: string) {
@@ -585,6 +588,7 @@ export class MenuProductionsService implements OnModuleInit {
   private calculateMenuProductionCostSnapshot(
     input: CreateMenuProductionDto,
     recipe: EligibleRecipe,
+    costCalculationVersion?: number,
   ) {
     const selectedVendors = this.normalizeIngredientVendors(
       input.ingredientVendors,
@@ -608,7 +612,11 @@ export class MenuProductionsService implements OnModuleInit {
         const name = ingredient.name?.trim() ?? '';
         const unitOfMeasures = ingredient.unitOfMeasures?.trim() ?? '';
         const baseQty = Number(ingredient.qty);
-        const qty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+        const scaledQty = (Number.isFinite(baseQty) ? baseQty : 0) * multiplier;
+        const qty =
+          costCalculationVersion === 2
+            ? this.roundQuantity(scaledQty)
+            : scaledQty;
         const selectedVendor = this.findIngredientVendor(
           selectedVendors,
           ingredientIndex,
@@ -668,7 +676,9 @@ export class MenuProductionsService implements OnModuleInit {
         }
         const ingredientCost =
           unitPrice !== undefined
-            ? this.roundQuantity(qty * unitPrice)
+            ? costCalculationVersion === 2
+              ? qty * unitPrice
+              : this.roundQuantity(qty * unitPrice)
             : undefined;
 
         if (ingredientCost !== undefined) {
@@ -692,7 +702,9 @@ export class MenuProductionsService implements OnModuleInit {
     );
 
     const estimatedTotal = hasCost
-      ? this.roundQuantity(estimatedTotalCost)
+      ? costCalculationVersion === 2
+        ? estimatedTotalCost
+        : this.roundQuantity(estimatedTotalCost)
       : undefined;
     const estimatedPerPax =
       estimatedTotal !== undefined && portion > 0
@@ -735,10 +747,12 @@ export class MenuProductionsService implements OnModuleInit {
     const costSnapshot = this.calculateMenuProductionCostSnapshot(
       await this.resolveProductionPrices(input, recipe, normalizedSite),
       recipe,
+      2,
     );
     const isDraft = input.saveAsDraft === true;
     const finance = isDraft ? {} : await this.financeSnapshot(normalizedSite);
     const created = await this.menuProductionModel.create({
+      costCalculationVersion: 2,
       productionCode,
       recipeId: recipe.id,
       recipeCode: recipe.recipeCode,
@@ -780,6 +794,7 @@ export class MenuProductionsService implements OnModuleInit {
     createdBy?: string,
     site?: string,
     assistedBy?: string,
+    costCalculationVersion = 2,
   ) {
     if (!inputs.length) return [];
     const normalizedInputs = inputs.map((input) => ({
@@ -835,9 +850,11 @@ export class MenuProductionsService implements OnModuleInit {
             priceRequests,
           ),
           recipe,
+          costCalculationVersion,
         );
 
         return {
+          ...(costCalculationVersion === 2 ? { costCalculationVersion } : {}),
           productionCode: productionCodeByDate.get(input.productionDate),
           recipeId: recipe.id,
           recipeCode: recipe.recipeCode,
@@ -1028,7 +1045,11 @@ export class MenuProductionsService implements OnModuleInit {
         site,
         priceRequests,
       );
-      const cost = this.calculateMenuProductionCostSnapshot(priced, recipe);
+      const cost = this.calculateMenuProductionCostSnapshot(
+        priced,
+        recipe,
+        draft.costCalculationVersion,
+      );
       const existingVendors = savedVendors;
       const updatedAt = (draft as typeof draft & { updatedAt?: Date })
         .updatedAt;
@@ -1141,6 +1162,7 @@ export class MenuProductionsService implements OnModuleInit {
       existingDraft.createdBy,
       existingDraft.site,
       assistedBy,
+      existingDraft.costCalculationVersion ?? 1,
     );
     await this.menuProductionModel.deleteMany(draftFilter);
     return created;
@@ -1197,6 +1219,7 @@ export class MenuProductionsService implements OnModuleInit {
             id: String(recipe._id),
             version: recipe.version ?? 1,
           },
+          draft.costCalculationVersion,
         );
       }
     }
@@ -1548,6 +1571,48 @@ export class MenuProductionsService implements OnModuleInit {
           this.requireSite(existing.site),
         ),
         recipe,
+        existing.costCalculationVersion,
+      );
+    } else if (changesPortion && existing.costCalculationVersion === 2) {
+      const snapshot = existing.recipeSnapshot;
+      if (!snapshot?.ingredients?.length) {
+        throw new BadRequestException(
+          'The saved recipe ingredients are required to revise portions.',
+        );
+      }
+      for (const [index, ingredient] of snapshot.ingredients.entries()) {
+        const vendor = this.findIngredientVendor(
+          existing.ingredientVendors ?? [],
+          index,
+          ingredient.productCode ?? '',
+          ingredient.name ?? '',
+          ingredient.unitOfMeasures ?? '',
+        );
+        if (
+          !Number.isFinite(ingredient.qty) ||
+          !Number.isFinite(vendor?.price)
+        ) {
+          throw new BadRequestException(
+            `Saved quantity and price are required for ${ingredient.name || ingredient.productCode}.`,
+          );
+        }
+      }
+      costSnapshot = this.calculateMenuProductionCostSnapshot(
+        {
+          recipeId: normalizedRecipeId ?? '',
+          portion,
+          cost: 0,
+          productionDate: existing.productionDate,
+          ingredientVendors: existing.ingredientVendors,
+        },
+        {
+          ...snapshot,
+          id: normalizedRecipeId ?? '',
+          name: existing.menuName,
+          category: existing.category,
+          version: existing.recipeVersion ?? 1,
+        },
+        existing.costCalculationVersion,
       );
     }
     const salesBasisChanged =
@@ -1576,7 +1641,7 @@ export class MenuProductionsService implements OnModuleInit {
           ingredients: recipe.ingredients ?? [],
         };
     }
-    if (changesPortion && !changesMenu) {
+    if (changesPortion && !changesMenu && !costSnapshot) {
       const existingPortion = Number(existing.portion);
       const existingTotalCost = Number(
         existing.estimatedTotalCost ?? existing.cost,
@@ -2530,6 +2595,9 @@ export class MenuProductionsService implements OnModuleInit {
     const filter = this.withSiteFilter({ _id: id }, site);
     let item = await this.menuProductionModel.findOne(filter);
     if (!item) throw new NotFoundException('Menu production not found');
+    if (status === 'fulfilled' || item.storeRequestStatus === 'fulfilled') {
+      await this.inventory?.assertLegacyStatusAllowed(item.site || site);
+    }
     if (
       status === 'requested' &&
       item.storeRequestStatus === 'not-requested' &&
@@ -2892,32 +2960,58 @@ export class MenuProductionsService implements OnModuleInit {
       ];
     }
 
-    const updateResult = await this.menuProductionModel.updateMany(
-      this.withSiteFilter(updateFilter, site),
-      {
-        $set: {
-          storeRequestStatus: 'fulfilled',
-          fulfilledBy: actor,
-          storeFulfillmentItems: fulfillmentItems,
-          storeFulfillmentCompletedAt: completedAt,
-          ...(note ? { storeFulfillmentNote: note } : {}),
+    const persist = async (session?: ClientSession) => {
+      if (session)
+        await this.assertInventoryBatch(menus, normalizedIds, session);
+      const updateResult = await this.menuProductionModel.updateMany(
+        this.withSiteFilter(
+          session
+            ? {
+                $and: [updateFilter, this.inventorySnapshotFilter(menus)],
+              }
+            : updateFilter,
+          site,
+        ),
+        {
+          $set: {
+            storeRequestStatus: 'fulfilled',
+            fulfilledBy: actor,
+            storeFulfillmentItems: fulfillmentItems,
+            storeFulfillmentCompletedAt: completedAt,
+            ...(note ? { storeFulfillmentNote: note } : {}),
+          },
+          $unset: {
+            ...(note ? {} : { storeFulfillmentNote: 1 }),
+            storeCancelledBy: 1,
+            storeCancelledAt: 1,
+            storeCancellationReason: 1,
+          },
         },
-        $unset: {
-          ...(note ? {} : { storeFulfillmentNote: 1 }),
-          storeCancelledBy: 1,
-          storeCancelledAt: 1,
-          storeCancellationReason: 1,
-        },
-      },
-    );
-    const completedCount = options.allowStatusOverride
-      ? updateResult.matchedCount
-      : updateResult.modifiedCount;
-    if (completedCount !== normalizedIds.length) {
-      throw new BadRequestException(
-        'Store request was already completed or cancelled by another user. Please refresh the list.',
+        ...(session ? [{ session }] : []),
       );
-    }
+      const completedCount = options.allowStatusOverride
+        ? updateResult.matchedCount
+        : updateResult.modifiedCount;
+      if (completedCount !== normalizedIds.length) {
+        throw new BadRequestException(
+          'Store request was already completed or cancelled by another user. Please refresh the list.',
+        );
+      }
+      if (session && this.inventory) {
+        await this.inventory.recordIssue(
+          menus[0].site || site || '',
+          batchKeys[0],
+          normalizedIds,
+          fulfillmentItems,
+          actor,
+          menus[0].storeFulfillmentCompletedAt,
+          session,
+        );
+      }
+    };
+    if (this.inventory)
+      await this.inventory.withSite(menus[0].site || site, persist);
+    else await persist();
 
     return {
       productionDate: batch.date,
@@ -2995,23 +3089,52 @@ export class MenuProductionsService implements OnModuleInit {
     const actor = cancelledBy?.trim() || 'Unknown user';
     const cancelledAt = new Date();
 
-    await this.menuProductionModel.updateMany(
-      this.withSiteFilter({ _id: { $in: normalizedIds } }, site),
-      {
-        $set: {
-          storeRequestStatus: 'cancelled',
-          storeCancelledBy: actor,
-          storeCancelledAt: cancelledAt,
-          storeCancellationReason: reason,
+    const persist = async (session?: ClientSession) => {
+      if (session)
+        await this.assertInventoryBatch(menus, normalizedIds, session);
+      const result = await this.menuProductionModel.updateMany(
+        this.withSiteFilter(
+          session
+            ? this.inventorySnapshotFilter(menus)
+            : { _id: { $in: normalizedIds } },
+          site,
+        ),
+        {
+          $set: {
+            storeRequestStatus: 'cancelled',
+            storeCancelledBy: actor,
+            storeCancelledAt: cancelledAt,
+            storeCancellationReason: reason,
+          },
+          $unset: {
+            fulfilledBy: 1,
+            storeFulfillmentItems: 1,
+            storeFulfillmentCompletedAt: 1,
+            storeFulfillmentNote: 1,
+          },
         },
-        $unset: {
-          fulfilledBy: 1,
-          storeFulfillmentItems: 1,
-          storeFulfillmentCompletedAt: 1,
-          storeFulfillmentNote: 1,
-        },
-      },
-    );
+        ...(session ? [{ session }] : []),
+      );
+      if (session) {
+        if (result.matchedCount !== normalizedIds.length) {
+          throw new ConflictException(
+            'This batch changed. Refresh before cancelling.',
+          );
+        }
+        await this.inventory!.recordIssue(
+          menus[0].site || site || '',
+          batchKeys[0],
+          normalizedIds,
+          [],
+          actor,
+          menus[0].storeFulfillmentCompletedAt,
+          session,
+        );
+      }
+    };
+    if (this.inventory)
+      await this.inventory.withSite(menus[0].site || site, persist);
+    else await persist();
 
     const firstMenu = menus[0];
     return {
@@ -3094,10 +3217,26 @@ export class MenuProductionsService implements OnModuleInit {
       );
     }
 
-    const result = await this.menuProductionModel.deleteMany({
-      ...batchFilter,
-      _id: { $in: ids },
-    });
+    const remove = async (session?: ClientSession) => {
+      await this.inventory?.assertDeletable(ids, session);
+      const deleted = await this.menuProductionModel.deleteMany(
+        {
+          ...batchFilter,
+          _id: { $in: ids },
+          ...(session ? this.inventorySnapshotFilter(menus) : {}),
+        },
+        ...(session ? [{ session }] : []),
+      );
+      if (session && deleted.deletedCount !== ids.length) {
+        throw new ConflictException(
+          'This batch changed. Refresh before deleting the complete batch.',
+        );
+      }
+      return deleted;
+    };
+    const result = this.inventory
+      ? await this.inventory.withSite(firstMenu.site || site, remove)
+      : await remove();
     if (!result.deletedCount) {
       throw new NotFoundException(
         'The MPR was already deleted. Refresh the production list.',
@@ -3614,6 +3753,49 @@ export class MenuProductionsService implements OnModuleInit {
   ): string | undefined {
     const trimmed = productionCode?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private inventorySnapshotFilter(
+    menus: Array<{
+      _id: Types.ObjectId;
+      updatedAt?: Date;
+      storeRequestStatus: string;
+    }>,
+  ) {
+    return {
+      $or: menus.map((menu) => ({
+        _id: menu._id,
+        updatedAt: menu.updatedAt ?? { $exists: false },
+        storeRequestStatus: menu.storeRequestStatus,
+      })),
+    };
+  }
+
+  private async assertInventoryBatch(
+    menus: Array<{
+      _id: Types.ObjectId;
+      productionCode?: string;
+      productionDate: string;
+      site?: string;
+    }>,
+    ids: string[],
+    session: ClientSession,
+  ) {
+    const first = menus[0];
+    const count = await this.menuProductionModel
+      .countDocuments({
+        ...(first.productionCode
+          ? { productionCode: first.productionCode }
+          : { _id: first._id }),
+        productionDate: first.productionDate,
+        site: first.site,
+        isDraft: { $ne: true },
+      })
+      .session(session);
+    if (count !== ids.length)
+      throw new ConflictException(
+        'Process the complete Store Request batch for sites with active inventory. Refresh the list.',
+      );
   }
 
   private buildProductionBatchKey(input: {
@@ -4235,6 +4417,9 @@ export class MenuProductionsService implements OnModuleInit {
 
       group.items.push({
         id: this.textValue(menu._id ?? menu.id),
+        ...(menu.costCalculationVersion === 2
+          ? { costCalculationVersion: 2 }
+          : {}),
         site: this.normalizeSite(String(menu.site ?? '')) ?? group.site,
         productionCode: this.normalizeOptionalProductionCode(
           String(menu.productionCode ?? ''),

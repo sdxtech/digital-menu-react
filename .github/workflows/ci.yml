@@ -7,6 +7,8 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      INVENTORY_TEST_MONGO_URI: mongodb://127.0.0.1:27028/?directConnection=true
     defaults:
       run:
         working-directory: backend
@@ -30,11 +32,25 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Start isolated inventory test replica set
+        run: |
+          docker run --detach --rm --name digital-menu-inventory-test --publish 127.0.0.1:27028:27017 mongo:7 --replSet inventory-test --bind_ip_all
+          timeout 60 bash -c 'until docker exec digital-menu-inventory-test mongosh --quiet --eval "db.adminCommand({ping: 1})"; do sleep 1; done'
+          docker exec digital-menu-inventory-test mongosh --quiet --eval 'rs.initiate()'
+          timeout 60 bash -c 'until docker exec digital-menu-inventory-test mongosh --quiet --eval "if (!db.hello().isWritablePrimary) quit(1)"; do sleep 1; done'
+
       - name: Unit tests
         run: npm test -- --runInBand
 
       - name: E2E tests
         run: npm run test:e2e -- --runInBand
+
+      - name: Stop inventory test replica set
+        if: always()
+        run: |
+          if docker container inspect digital-menu-inventory-test > /dev/null 2>&1; then
+            docker stop digital-menu-inventory-test
+          fi
 
   frontend:
     runs-on: ubuntu-latest

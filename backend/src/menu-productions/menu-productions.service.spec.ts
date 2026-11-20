@@ -145,7 +145,7 @@ describe('MenuProductionsService sales input', () => {
       qty: 2,
       priceUom: 999,
     };
-    const submittedMenus = [
+    const submittedMenus: Array<Partial<MenuProduction> & { _id: string }> = [
       {
         _id: 'legacy-menu',
         recipeId,
@@ -178,6 +178,31 @@ describe('MenuProductionsService sales input', () => {
         },
       },
     ];
+    const legacyStatuses = [
+      ['pending', 'not-requested'],
+      ['rejected', 'not-requested'],
+      ['approved', 'requested'],
+      ['approved', 'fulfilled'],
+      ['approved', 'cancelled'],
+    ] as const;
+    for (const [
+      index,
+      [approvalStatus, storeRequestStatus],
+    ] of legacyStatuses.entries()) {
+      submittedMenus.push({
+        ...submittedMenus[1],
+        _id: `historical-${index}`,
+        productionDate: `2026-01-0${index + 3}`,
+        approvalStatus,
+        storeRequestStatus,
+        // Historical detail may disagree with the menu total, as in MPR1029.
+        ingredientVendors: [
+          { ingredientIndex: 0, price: 11450, ingredientCost: 137400 },
+        ],
+        estimatedTotalCost: 22900,
+      });
+    }
+    const originalMenus = structuredClone(submittedMenus);
     const menuProductionModel = {
       find: jest.fn().mockReturnValue({
         sort: jest.fn().mockReturnValue({
@@ -222,6 +247,15 @@ describe('MenuProductionsService sales input', () => {
       estimatedCost: 20,
       ingredients: [{ ingredientCost: 20, price: 10 }],
     });
+    for (const group of result.items.slice(2)) {
+      expect(group.items[0]).not.toHaveProperty('costCalculationVersion');
+      expect(group.items[0]).toMatchObject({
+        estimatedCost: 22900,
+        ingredients: [{ qty: 2, price: 11450, ingredientCost: 137400 }],
+      });
+    }
+    expect(result.items).toHaveLength(2 + legacyStatuses.length);
+    expect(submittedMenus).toEqual(originalMenus);
     expect(menuProductionModel.updateOne).not.toHaveBeenCalled();
     expect(menuProductionModel.updateMany).not.toHaveBeenCalled();
   });
@@ -756,6 +790,7 @@ describe('MenuProductionsService sales input', () => {
         'chef-1',
         'SITE-001',
         'admin-1',
+        1,
       );
       expect(deleteMany).toHaveBeenCalledWith({
         productionCode: 'MPR0001',
@@ -1692,6 +1727,51 @@ describe('Approved sales during Chef recipe revisions', () => {
     );
     return { service, records, model, notifications, mail };
   };
+
+  it.each([
+    [300, 50, 2],
+    [50, 300, 12],
+  ])(
+    'reconciles saved ingredient prices after revising %i to %i portions',
+    async (before, after, qty) => {
+      const { service, records } = makeRevisionService();
+      Object.assign(records[0], {
+        costCalculationVersion: 2,
+        portion: before,
+        recipeSnapshot: {
+          portionSize: 25,
+          ingredients: [
+            { productCode: 'IT-TEA', qty: 1, priceUom: 32000 },
+            { productCode: 'IT-OIL', qty: 0.01234567 },
+          ],
+        },
+        ingredientVendors: [
+          {
+            ingredientIndex: 0,
+            price: 11450,
+            ingredientCost: (before / 25) * 11450,
+          },
+          { ingredientIndex: 1, price: 317118 },
+        ],
+      });
+      await service.changeRejectedMenu(
+        'menu-1',
+        { scope: 'portion', portion: after },
+        chefId,
+        'S001',
+      );
+      const tea = qty * 11450;
+      const oil = Number((0.01234567 * (after / 25)).toFixed(6)) * 317118;
+      expect(
+        records[0].ingredientVendors?.map((item) => item.ingredientCost),
+      ).toEqual([tea, oil]);
+      expect(records[0].estimatedTotalCost).toBe(tea + oil);
+      expect(records[0].estimatedCostPerPax).toBeCloseTo(
+        (tea + oil) / after,
+        5,
+      );
+    },
+  );
 
   it('preserves approved sales and returns a replaced recipe directly to Unit Manager', async () => {
     const { service, records, model, notifications, mail } =

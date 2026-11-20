@@ -2,6 +2,7 @@ import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-expo
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import PageHeading from '../components/PageHeading'
+import InventoryStockWarning from '../components/inventory/InventoryStockWarning'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
 import { formatCreatedDate, formatProductionDate } from '../lib/date-format'
 import { Fragment, useCallback, useEffect, useState } from 'react'
@@ -62,6 +63,7 @@ type StoreRequestFulfillment = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   id: string
   productionCode?: string
   recipeId?: string
@@ -219,7 +221,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient?.productCode ?? '',
           ingredient?.name ?? '',
           ingredient?.vendor ?? '',
-          ingredient ? toSpreadsheetSrQuantity(ingredient.qty) : '',
+          ingredient ? toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion) : '',
           ingredient ? formatUnitLabel(ingredient.unitOfMeasures) : '',
           ...productionQuantityExportCells(ingredient),
         ])
@@ -532,7 +534,7 @@ const StorekeeperPage = () => {
           ingredient.productCode,
           ingredient.name,
           vendor,
-          toSpreadsheetSrQuantity(ingredient.qty),
+          toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
           formatUnitLabel(ingredient.unitOfMeasures),
           ...productionQuantityExportCells(ingredient),
         ])
@@ -1581,7 +1583,9 @@ const StorekeeperPage = () => {
                 </h3>
                 <p className="mt-2 text-sm text-muted">
                   Compare planned quantities with actual raw materials delivered
-                  to kitchen.
+                  to kitchen. For sites with active inventory, completing this
+                  delivery deducts the submitted Actual QTY from stock on the
+                  completion date.
                 </p>
               </div>
               <button
@@ -1848,6 +1852,7 @@ const StorekeeperPage = () => {
                   />
                 </div>
 
+                <InventoryStockWarning site={reconciliationGroup.site} items={reconciliationRows} />
                 {reconciliationError ? (
                   <p className="mt-4 text-xs font-medium text-red-600">
                     {reconciliationError}
