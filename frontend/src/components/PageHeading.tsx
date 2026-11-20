@@ -8,12 +8,14 @@ type PageHeadingProps = HTMLAttributes<HTMLHeadingElement> & {
   backTo?: string
   showBack?: boolean
   showBreadcrumb?: boolean
+  breadcrumbParents?: readonly { label: string; to: string }[]
 }
 
-const PageHeading = ({ as: Heading = 'h1', backTo, showBack = true, showBreadcrumb = true, children, ...props }: PageHeadingProps) => {
+const PageHeading = ({ as: Heading = 'h1', backTo, showBack = true, showBreadcrumb = true, breadcrumbParents, children, ...props }: PageHeadingProps) => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const breadcrumb = useContext(PageBreadcrumbContext)
+  const parents = breadcrumbParents ?? (breadcrumb ? [breadcrumb.parent] : [])
 
   const handleBack = () => {
     if (backTo) {
@@ -32,18 +34,19 @@ const PageHeading = ({ as: Heading = 'h1', backTo, showBack = true, showBreadcru
     return (
       <nav aria-label="Breadcrumb" className="max-w-full min-w-0">
         <ol className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm leading-6">
-          {breadcrumb ? (
-            <li className="min-w-0">
+          {parents.map((parent, index) => (
+            <li key={parent.to} className="flex min-w-0 items-baseline gap-2">
+              {index > 0 ? <span aria-hidden="true" className="select-none text-muted">/</span> : null}
               <Link
-                to={breadcrumb.parent.to}
+                to={parent.to}
                 className="break-words rounded-sm font-medium text-muted transition hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                {breadcrumb.parent.label}
+                {parent.label}
               </Link>
             </li>
-          ) : null}
+          ))}
           <li aria-current="page" className="flex min-w-0 items-baseline gap-2">
-            {breadcrumb ? <span aria-hidden="true" className="select-none text-muted">/</span> : null}
+            {parents.length ? <span aria-hidden="true" className="select-none text-muted">/</span> : null}
             <Heading {...props} className="break-words text-sm font-semibold leading-6 text-foreground">
               {breadcrumb && children === breadcrumb.parent.label ? breadcrumb.current.label : children}
             </Heading>

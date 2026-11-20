@@ -30,6 +30,7 @@ import { MenuGroupsModule } from './menu-groups/menu-groups.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { AuditModule } from './audit/audit.module';
 import { auditMongoosePlugin } from './audit/audit-mongoose.plugin';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { auditMongoosePlugin } from './audit/audit-mongoose.plugin';
     MenuProductionsModule,
     MenuGroupsModule,
     FeatureFlagsModule,
+    InventoryModule,
     AuditModule,
     SitesModule,
     NotificationsModule,
