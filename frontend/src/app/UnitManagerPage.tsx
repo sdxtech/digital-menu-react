@@ -100,6 +100,7 @@ type StoreRequestMenu = {
   group?: string
   portion: number
   cost?: number
+  costCalculationVersion?: number
   estimatedCost?: number
   estimatedCostPerPax?: number
   sellingPricePerPax?: number
@@ -156,14 +157,14 @@ const isApprovalCenterSection = (
 ): value is ApprovalCenterSection =>
   approvalCenterSections.some((section) => section.id === value)
 
-const formatPrice = (value?: number) => {
+const formatPrice = (value?: number, digits = 0) => {
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return '-'
   }
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: digits,
   }).format(value)
 }
 
@@ -1117,8 +1118,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     paginatedMenuGroups.map((group, index) => {
                       const groupKey = getGroupKey(group)
                       const isExpanded = expandedGroups.includes(groupKey)
+                      const costDigits = group.items.some(menu => menu.costCalculationVersion === 2) ? 2 : 0
                       const summaryItems =
-                        aggregateStoreRequestSummaryByVendor(group)
+                        aggregateStoreRequestSummaryByVendor(group, false, costDigits === 2)
                       const submittedByNames = Array.from(
                         new Set(
                           group.items
@@ -1377,7 +1379,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                     {item.portion}
                                                   </td>
                                                   <td className="px-3 py-3 font-medium">
-                                                    {formatPrice(estimatedCost)}
+                                                    {formatPrice(estimatedCost, item.costCalculationVersion === 2 ? 2 : 0)}
                                                   </td>
                                                   <td className="px-3 py-3 font-medium">
                                                     {formatFoodCostPercentage(
@@ -1386,9 +1388,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                     )}
                                                   </td>
                                                   <td className="px-3 py-3 font-medium">
-                                                    {formatPrice(
-                                                      estimatedCostPerPax,
-                                                    )}
+                                                    {formatPrice(estimatedCostPerPax, item.costCalculationVersion === 2 ? 2 : 0)}
                                                   </td>
                                                   <td className="px-3 py-3">
                                                     <span
@@ -1454,7 +1454,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                               Total
                                             </td>
                                             <td className="px-3 py-3 font-bold">
-                                              {formatPrice(totalEstimatedCost)}
+                                              {formatPrice(totalEstimatedCost, costDigits)}
                                             </td>
                                             <td className="px-3 py-3 font-bold">
                                               {foodCostPercentage === undefined
@@ -1462,9 +1462,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                 : `${foodCostPercentage.toFixed(2)}%`}
                                             </td>
                                             <td className="px-3 py-3 font-bold">
-                                              {formatPrice(
-                                                totalEstimatedCostPerPax,
-                                              )}
+                                              {formatPrice(totalEstimatedCostPerPax, costDigits)}
                                             </td>
                                             <td colSpan={2} />
                                           </tr>
@@ -1700,10 +1698,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                         {ingredient.vendor ?? '-'}
                                                       </td>
                                                       <td className="break-words px-3 py-3 font-medium">
-                                                        {formatPrice(ingredient.price)}
+                                                        {formatPrice(ingredient.price, item.costCalculationVersion === 2 ? 2 : 0)}
                                                       </td>
                                                       <td className="break-words px-3 py-3 font-medium">
-                                                        {formatPrice(ingredient.ingredientCost)}
+                                                        {formatPrice(ingredient.ingredientCost, item.costCalculationVersion === 2 ? 2 : 0)}
                                                       </td>
                                                     </tr>
                                                   ),
@@ -1788,10 +1786,10 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                   {item.vendor ?? '-'}
                                                 </td>
                                                 <td className="break-words px-3 py-3 font-medium">
-                                                  {formatPrice(item.price)}
+                                                  {formatPrice(item.price, costDigits)}
                                                 </td>
                                                 <td className="break-words px-3 py-3 font-medium">
-                                                  {formatPrice(item.ingredientCost)}
+                                                  {formatPrice(item.ingredientCost, costDigits)}
                                                 </td>
                                               </tr>
                                             ))

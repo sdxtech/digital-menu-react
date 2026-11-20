@@ -24,6 +24,7 @@ export const aggregateStoreRequestSummary = (
   items: StoreRequestSummaryIngredient[] = [],
   groupItByCodeAndVendor = false,
   includeProductionUnits = false,
+  groupByPrice = false,
 ): StoreRequestSummaryIngredient[] => {
   const summaryMap = new Map<string, StoreRequestSummaryIngredient>()
   const nonSummarizedItems: StoreRequestSummaryIngredient[] = []
@@ -58,7 +59,8 @@ export const aggregateStoreRequestSummary = (
       ? identity
       : `${identity}__${normalizedUnit}`
     const prodUomCode = item.prodUomCode?.trim()
-    const key = `${keyBase}__${vendor.toLowerCase()}${includeProductionUnits ? `__${normalizedUnit}` : ''}`
+    const itemKey = `${keyBase}__${vendor.toLowerCase()}${includeProductionUnits ? `__${normalizedUnit}` : ''}`
+    const key = groupByPrice ? JSON.stringify([itemKey, item.price]) : itemKey
     const hasProductionQuantity = Boolean(prodUomCode) && item.prodQty != null && Number.isFinite(item.prodQty)
 
     const qty = Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0
@@ -133,12 +135,13 @@ export const aggregateStoreRequestSummary = (
 export const aggregateStoreRequestSummaryByVendor = (
   group: StoreRequestSummaryGroup,
   includeProductionUnits = false,
+  groupByPrice = false,
 ) => {
   const ingredientRows =
     group.items?.flatMap((item) => item.ingredients ?? []) ?? []
   const sourceItems = ingredientRows.length ? ingredientRows : group.summary ?? []
 
-  return aggregateStoreRequestSummary(sourceItems, false, includeProductionUnits)
+  return aggregateStoreRequestSummary(sourceItems, false, includeProductionUnits, groupByPrice)
 }
 
 export const aggregateStoreRequestSummaryAcrossGroups = (

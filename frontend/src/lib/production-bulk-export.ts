@@ -1,10 +1,10 @@
 import type { SpreadsheetSheet, SpreadsheetCell } from './spreadsheet-export'
-import { buildIngredientSummaryExportRows } from './ingredient-summary-export.ts'
+import { buildMprIngredientSummaryRows } from './ingredient-summary-export.ts'
 import type { StoreRequestSummaryIngredient } from './store-request-summary'
 
 export type ProductionExportGroup = {
   date: string
-  items: { clientName?: string; ingredients?: StoreRequestSummaryIngredient[] }[]
+  items: { costCalculationVersion?: number; estimatedCost?: number; clientName?: string; ingredients?: StoreRequestSummaryIngredient[] }[]
   summary?: StoreRequestSummaryIngredient[]
 }
 
@@ -26,9 +26,9 @@ export const buildProductionBulkSheets = (
   groups?: ProductionExportGroup[],
 ): SpreadsheetSheet[] => {
   if (!batches.length) return []
-  return batches[0].map((sheet, sheetIndex) => {
+  const sheets = batches[0].map((sheet, sheetIndex) => {
     if (sheet.name === 'Ingredient Summary' && groups) {
-      const rows = buildIngredientSummaryExportRows(groups, true)
+      const rows = buildMprIngredientSummaryRows(groups, true)
       if (rows.length > 1_048_576) {
         throw new Error('Too many rows for an Excel worksheet. Narrow the export filters.')
       }
@@ -53,4 +53,16 @@ export const buildProductionBulkSheets = (
     }
     return { name: sheet.name, rows }
   })
+  const menus = groups?.flatMap(group => group.items) ?? []
+  if (menus.some(menu => menu.costCalculationVersion === 2) &&
+      menus.some(menu => menu.costCalculationVersion !== 2)) {
+    const rows: SpreadsheetCell[][] = [['Cost Version', 'Total Estimated Food Cost']]
+    for (const version of [1, 2]) {
+      const subtotal = menus.filter(menu => (menu.costCalculationVersion ?? 1) === version)
+        .reduce((total, menu) => total + (menu.estimatedCost ?? 0), 0)
+      rows.push([version === 1 ? 'Legacy' : '2', { kind: 'decimal', value: subtotal, format: 'money' }])
+    }
+    sheets.push({ name: 'Cost Subtotals', rows })
+  }
+  return sheets
 }

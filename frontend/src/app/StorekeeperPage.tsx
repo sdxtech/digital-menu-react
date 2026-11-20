@@ -62,6 +62,7 @@ type StoreRequestFulfillment = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   id: string
   productionCode?: string
   recipeId?: string
@@ -219,7 +220,7 @@ const buildStoreRequestExportRows = (groups: StoreRequestGroup[]) => {
           ingredient?.productCode ?? '',
           ingredient?.name ?? '',
           ingredient?.vendor ?? '',
-          ingredient ? toSpreadsheetSrQuantity(ingredient.qty) : '',
+          ingredient ? toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion) : '',
           ingredient ? formatUnitLabel(ingredient.unitOfMeasures) : '',
           ...productionQuantityExportCells(ingredient),
         ])
@@ -532,7 +533,7 @@ const StorekeeperPage = () => {
           ingredient.productCode,
           ingredient.name,
           vendor,
-          toSpreadsheetSrQuantity(ingredient.qty),
+          toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
           formatUnitLabel(ingredient.unitOfMeasures),
           ...productionQuantityExportCells(ingredient),
         ])

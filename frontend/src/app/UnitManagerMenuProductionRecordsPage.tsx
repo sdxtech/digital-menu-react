@@ -1,4 +1,4 @@
-import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
+import { buildMprIngredientSummaryRows } from '../lib/ingredient-summary-export'
 import LoadingTableBody from '../components/LoadingTableBody'
 import { applyProductionTableFilters } from '../lib/production-table-query'
 import { getFinanceBatchStatus, getUmBatchStatus } from '../lib/production-batch-status'
@@ -93,6 +93,7 @@ type StoreRequestMenu = {
   category: string
   group?: string
   portion: number
+  costCalculationVersion?: number
   estimatedCost?: number
   estimatedCostPerPax?: number
   sellingPricePerPax?: number
@@ -201,14 +202,14 @@ export const getRecordStatusLabel = (status: RecordStatus) => {
   return getStoreRequestStatusLabel(status)
 }
 
-const formatPrice = (value?: number) => {
+const formatPrice = (value?: number, digits = 0) => {
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return '-'
   }
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: digits,
   }).format(value)
 }
 
@@ -750,7 +751,7 @@ const UnitManagerMenuProductionRecordsPage = ({
             ? toSpreadsheetDecimal(formatQuantity(ingredient.prodQty))
             : '',
           ingredient.prodUomCode ? formatUnitLabel(ingredient.prodUomCode) : '',
-          toSpreadsheetSrQuantity(ingredient.qty),
+          toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
           fulfillmentItem
             ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
             : '',
@@ -759,7 +760,7 @@ const UnitManagerMenuProductionRecordsPage = ({
             : '',
           formatUnitLabel(ingredient.unitOfMeasures),
           toSpreadsheetDecimal(ingredient.price),
-          Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
+          menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(ingredient.ingredientCost, 'money') : Number.isFinite(ingredient.ingredientCost) ? ingredient.ingredientCost : '',
           approvedBy,
           approvalStatus,
           storeRequestStatus,
@@ -771,7 +772,7 @@ const UnitManagerMenuProductionRecordsPage = ({
       })
     })
 
-    const summaryRows = buildIngredientSummaryExportRows([group])
+    const summaryRows = buildMprIngredientSummaryRows([group])
 
     const firstMenu = group.items[0]
     const recordStatus = getGroupRecordStatus(group, includePending)
@@ -1077,7 +1078,8 @@ const UnitManagerMenuProductionRecordsPage = ({
                     ]
                       .filter(Boolean)
                       .join(', ')
-                    const summaryItems = aggregateStoreRequestSummary(group.summary)
+                    const costDigits = group.items.some(menu => menu.costCalculationVersion === 2) ? 2 : 0
+                    const summaryItems = costDigits ? aggregateStoreRequestSummary(group.items.flatMap(menu => menu.ingredients ?? []), false, true, true) : aggregateStoreRequestSummary(group.summary)
                     const fulfillmentItems = group.fulfillment?.items ?? []
                     const totalEstimatedCost = items.reduce(
                       (total, item) =>
@@ -1284,7 +1286,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 {item.portion}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(estimatedCost)}
+                                                {formatPrice(estimatedCost, item.costCalculationVersion === 2 ? 2 : 0)}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
                                                 {formatFoodCostPercentage(
@@ -1293,7 +1295,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 )}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(estimatedCostPerPax)}
+                                                {formatPrice(estimatedCostPerPax, item.costCalculationVersion === 2 ? 2 : 0)}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {getApprovalStatusLabel(
@@ -1318,7 +1320,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                             Total
                                           </td>
                                           <td className="px-4 py-3 font-bold">
-                                            {formatPrice(totalEstimatedCost)}
+                                            {formatPrice(totalEstimatedCost, costDigits)}
                                           </td>
                                           <td className="px-4 py-3 font-bold">
                                             {foodCostPercentage === undefined
@@ -1326,9 +1328,7 @@ const UnitManagerMenuProductionRecordsPage = ({
                                               : `${foodCostPercentage.toFixed(2)}%`}
                                           </td>
                                           <td className="px-4 py-3 font-bold">
-                                            {formatPrice(
-                                              totalEstimatedCostPerPax,
-                                            )}
+                                            {formatPrice(totalEstimatedCostPerPax, costDigits)}
                                           </td>
                                           <td colSpan={2} />
                                         </tr>
@@ -1522,10 +1522,10 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 {item.vendor ?? '-'}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.price)}
+                                                {formatPrice(item.price, costDigits)}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.ingredientCost)}
+                                                {formatPrice(item.ingredientCost, costDigits)}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {formatQuantity(item.plannedQty)}
@@ -1583,10 +1583,10 @@ const UnitManagerMenuProductionRecordsPage = ({
                                                 {item.vendor ?? '-'}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.price)}
+                                                {formatPrice(item.price, costDigits)}
                                               </td>
                                               <td className="px-4 py-3 font-medium">
-                                                {formatPrice(item.ingredientCost)}
+                                                {formatPrice(item.ingredientCost, costDigits)}
                                               </td>
                                               <td className="px-4 py-3">
                                                 {formatQuantity(item.qty)}

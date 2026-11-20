@@ -61,6 +61,7 @@ type StoreRequestFulfillment = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   id: string
   submittedByName?: string
   reviewedBy?: string
@@ -541,7 +542,7 @@ const SuperadminStoreRequestExportPage = () => {
               ingredient.productCode,
               ingredient.name,
               ingredient.vendor ?? fulfillmentItem?.vendor ?? '',
-              toSpreadsheetSrQuantity(plannedQty),
+              toSpreadsheetSrQuantity(plannedQty, menu.costCalculationVersion),
               fulfillmentItem
                 ? toSpreadsheetDecimal(formatQuantity(fulfillmentItem.actualQty))
                 : '',
@@ -550,9 +551,7 @@ const SuperadminStoreRequestExportPage = () => {
                     formatQuantity(fulfillmentItem.varianceQty),
                   )
                 : '',
-              toSpreadsheetInteger(
-                formatPrice(plannedPrice),
-              ),
+              menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(plannedPrice) : toSpreadsheetInteger(formatPrice(plannedPrice)),
               toSpreadsheetInteger(formatPrice(actualPrice)),
               toSpreadsheetInteger(formatPrice(variancePrice)),
               toSpreadsheetInteger(

@@ -58,6 +58,7 @@ type StoreRequestFulfillment = {
 }
 
 type StoreRequestMenu = {
+  costCalculationVersion?: number
   id: string
   productionCode?: string
   recipeId?: string
@@ -391,15 +392,15 @@ const StorekeeperHistoryPage = () => {
           ingredient.name,
           fulfillment?.vendor?.trim() || ingredient.vendor?.trim() || '',
           fulfillment
-            ? toSpreadsheetSrQuantity(fulfillment.plannedQty)
-            : toSpreadsheetSrQuantity(ingredient.qty),
+            ? toSpreadsheetSrQuantity(fulfillment.plannedQty, menu.costCalculationVersion)
+            : toSpreadsheetSrQuantity(ingredient.qty, menu.costCalculationVersion),
           fulfillment
             ? toSpreadsheetDecimal(formatQuantity(fulfillment.actualQty))
             : '',
           fulfillment
             ? toSpreadsheetDecimal(formatQuantity(fulfillment.varianceQty))
             : '',
-          toSpreadsheetInteger(plannedPrice),
+          menu.costCalculationVersion === 2 ? toSpreadsheetDecimal(plannedPrice) : toSpreadsheetInteger(plannedPrice),
           toSpreadsheetInteger(actualPrice),
           toSpreadsheetInteger(variancePrice),
           formatUnitLabel(
