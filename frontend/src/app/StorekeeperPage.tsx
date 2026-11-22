@@ -1,3 +1,4 @@
+import type { SummaryPrintMenu } from '../lib/ingredient-summary-print'
 import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
@@ -62,7 +63,7 @@ type StoreRequestFulfillment = {
   items: StoreFulfillmentIngredient[]
 }
 
-type StoreRequestMenu = {
+type StoreRequestMenu = SummaryPrintMenu & {
   costCalculationVersion?: number
   id: string
   productionCode?: string
@@ -90,6 +91,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  siteName?: string
   site?: string
   date: string
   productionCode?: string
@@ -547,7 +549,7 @@ const StorekeeperPage = () => {
     downloadSpreadsheet(`SR-${formatProductionDate(group.date)}.xlsx`, [
       { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
-    ])
+    ], undefined, undefined, [group])
   }
 
   const openBulkExportModal = () => {
@@ -616,6 +618,7 @@ const StorekeeperPage = () => {
         ],
         undefined,
         bulkExportFormat,
+        exportGroups,
       )
       if (!exported) return
       setActionMessage(
