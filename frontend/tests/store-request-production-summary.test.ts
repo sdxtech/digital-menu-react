@@ -83,3 +83,48 @@ test('single and bulk summary exports put incomplete production data first and p
   }
   assert.equal(JSON.stringify(groups), original)
 })
+
+test('SR summaries sort categories first, then missing production data, ingredient name and vendor', () => {
+  const rows = [
+    { ...ingredient, productCode: 'IT001', name: 'Vegetable _ GARLIC', vendor: 'Vendor Z' },
+    { ...ingredient, productCode: 'IT002', name: 'Uncategorized', prodQty: undefined },
+    { ...ingredient, productCode: 'IT003', name: 'Vegetables _ CARROT', prodQty: undefined },
+    { ...ingredient, productCode: 'IT004', name: 'Leaves _ LETTUCE', prodQty: 0 },
+    { ...ingredient, productCode: 'IT005', name: 'Fruit _ LEMON' },
+    { ...ingredient, productCode: 'IT006', name: 'Dairy _ MILK' },
+    { ...ingredient, productCode: 'IT007', name: 'Dry Goods _ SALT' },
+    { ...ingredient, productCode: 'IT008', name: 'Cooking Oil _ CANOLA' },
+    { ...ingredient, productCode: 'IT009', name: 'vegetables _ APPLE', prodQty: 0 },
+    { ...ingredient, productCode: 'IT010', name: 'Vegetables _ ZUCCHINI', prodQty: undefined },
+    { ...ingredient, productCode: 'IT011', name: 'Vegetables _ GARLIC', vendor: 'Vendor A' },
+    { ...ingredient, productCode: 'IT012', name: ' _ No category' },
+  ]
+  const groups = rows.map(row => ({ items: [{ clientName: 'Client', ingredients: [row] }] }))
+  const original = JSON.stringify(groups)
+  for (const bulk of [false, true]) {
+    const result = buildIngredientSummaryExportRows(groups, bulk)
+    assert.deepEqual(result.slice(1).map(row => row[1]), [
+      'IT008', 'IT006', 'IT007', 'IT005', 'IT004',
+      'IT003', 'IT010', 'IT009', 'IT011', 'IT001', 'IT002', 'IT012',
+    ])
+    assert.equal(result.length, rows.length + 1)
+    assert.deepEqual(result.slice(1).map(row => row[2]).sort(), rows.map(row => row.name.trim()).sort())
+  }
+  assert.equal(JSON.stringify(groups), original)
+})
+
+test('SR categories stay together across legacy and current cost versions without changing number formats', () => {
+  const groups = [
+    { items: [{ ingredients: [{ ...ingredient, productCode: 'IT001', name: 'Leaves _ LETTUCE' }] }] },
+    { items: [{ costCalculationVersion: 2, ingredients: [
+      { ...ingredient, productCode: 'IT002', name: 'Fruit _ LEMON', qty: 1.234567 },
+      { ...ingredient, productCode: 'IT003', name: 'Leaves _ BASIL', prodQty: undefined },
+    ] }] },
+  ]
+  for (const bulk of [false, true]) {
+    const result = buildIngredientSummaryExportRows(groups, bulk)
+    assert.deepEqual(result.slice(1).map(row => row[1]), ['IT002', 'IT003', 'IT001'])
+    assert.deepEqual(result[1][4], { kind: 'decimal', value: 1.234567 })
+    assert.deepEqual(result[3][4], { kind: 'decimal', value: 1, format: 'quantity' })
+  }
+})

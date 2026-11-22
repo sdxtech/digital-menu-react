@@ -1,3 +1,5 @@
+import type { SummaryPrintGroup } from './ingredient-summary-print'
+
 type SpreadsheetDecimalCell = {
   kind: 'decimal'
   value: number
@@ -164,6 +166,7 @@ export const downloadSpreadsheet = async (
   sheets: SpreadsheetSheet[],
   pdfSummary?: SpreadsheetSheet,
   format?: 'excel' | 'pdf',
+  printGroups?: SummaryPrintGroup[],
 ) => {
   const summary = pdfSummary ?? sheets.find((sheet) => sheet.name === 'Ingredient Summary')
   if (summary) {
@@ -175,7 +178,7 @@ export const downloadSpreadsheet = async (
         window.alert('No ingredient summary data found.')
         return false
       }
-      printIngredientSummary(summary, filename, sheets)
+      printIngredientSummary(summary, filename, sheets, printGroups)
       return true
     }
   }

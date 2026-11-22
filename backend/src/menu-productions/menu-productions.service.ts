@@ -146,6 +146,7 @@ type StoreRequestMenu = {
 
 type StoreRequestGroup = {
   site?: string;
+  siteName?: string;
   date: string;
   productionCode?: string;
   items: StoreRequestMenu[];
@@ -4492,9 +4493,19 @@ export class MenuProductionsService implements OnModuleInit {
       groups.set(groupKey, group);
     });
 
+    const siteCodes = Array.from(
+      new Set(
+        Array.from(groups.values(), (group) => group.site ?? '').filter(
+          Boolean,
+        ),
+      ),
+    );
+    const siteSummaries = await this.sites?.findSummariesByCodes(siteCodes);
+
     return Array.from(groups.values())
       .map((group) => ({
         site: group.site,
+        siteName: siteSummaries?.get(group.site ?? '')?.name,
         date: group.date,
         productionCode: group.productionCode,
         items: group.items,
