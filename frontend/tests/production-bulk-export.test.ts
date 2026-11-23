@@ -26,6 +26,29 @@ test('keeps batch identity and financial values separate across clients in every
   assert.deepEqual(batches, before)
 })
 
+test('aligns sales fields by category across clients and keeps batch revenue last', () => {
+  const legacy = batch('MPR-1', 'Client A', 100)
+  const grouped = batch('MPR-2', 'Client B', 250)
+  const reordered = batch('MPR-3', 'Client C', 150)
+  const breakfast = [['Breakfast Qty', 2], ['Breakfast Selling Price/Pax', 20], ['Breakfast Estimated Revenue', 40]]
+  const lunch = [['Lunch Qty', 3], ['Lunch Selling Price/Pax', 30], ['Lunch Estimated Revenue', 90]]
+
+  legacy[0].rows.push(['Selling Price', 10], ['Estimated Revenue', 50])
+  grouped[0].rows.push(...breakfast, ...lunch, ['Estimated Revenue', 130])
+  reordered[0].rows.push(...lunch, ['Breakfast Qty', 0], ['Breakfast Selling Price/Pax', 20], ['Breakfast Estimated Revenue', 0], ['Estimated Revenue', 90])
+  const lunchOnly = batch('MPR-4', 'Client D', 80)
+  lunchOnly[0].rows.push(...lunch, ['Estimated Revenue', 90])
+
+  const [information] = buildProductionBulkSheets([legacy, grouped, reordered, lunchOnly])
+  assert.deepEqual(information.rows.map((row) => row.slice(4)), [
+    ['Selling Price', 'Breakfast Qty', 'Breakfast Selling Price/Pax', 'Breakfast Estimated Revenue', 'Lunch Qty', 'Lunch Selling Price/Pax', 'Lunch Estimated Revenue', 'Estimated Revenue'],
+    [10, '', '', '', '', '', '', 50],
+    ['', 2, 20, 40, 3, 30, 90, 130],
+    ['', 0, 20, 0, 3, 30, 90, 90],
+    ['', '', '', '', 3, 30, 90, 90],
+  ])
+})
+
 test('exports every supplied batch across pagination boundaries and keeps empty details valid', () => {
   const batches = Array.from({ length: 25 }, (_, index) => batch(`MPR-${index}`, 'Client A', index))
   batches[0][1].rows = [batches[0][1].rows[0]]

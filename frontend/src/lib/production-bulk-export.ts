@@ -34,20 +34,34 @@ export const buildProductionBulkSheets = (
       }
       return { name: sheet.name, rows }
     }
-    const information = sheet.name === 'Menu Production Information'
-    const rows: SpreadsheetCell[][] = [
-      ['Batch No', ...(information
-        ? sheet.rows.slice(1).map((row) => row[0])
-        : sheet.rows[0])],
-    ]
-    batches.forEach((batch, index) => {
-      const source = batch[sheetIndex]
-      if (information) {
-        rows.push([index + 1, ...source.rows.slice(1).map((row) => row[1])])
-      } else {
-        source.rows.slice(1).forEach((row) => rows.push([index + 1, ...row]))
+    let rows: SpreadsheetCell[][]
+    if (sheet.name === 'Menu Production Information') {
+      const fields = new Set<string>()
+      const batchValues = batches.map((batch) => {
+        const values = new Map<string, SpreadsheetCell>()
+        for (const [field, value] of batch[sheetIndex].rows.slice(1)) {
+          if (typeof field !== 'string' || !field) continue
+          fields.add(field)
+          values.set(field, value)
+        }
+        return values
+      })
+      // The batch total follows all category columns, including those found in later batches.
+      if (fields.delete('Estimated Revenue')) fields.add('Estimated Revenue')
+      const headers = [...fields]
+      if (headers.length + 1 > 16_384) {
+        throw new Error('Too many columns for an Excel worksheet. Narrow the export filters.')
       }
-    })
+      rows = [['Batch No', ...headers]]
+      batchValues.forEach((values, index) => {
+        rows.push([index + 1, ...headers.map((field) => values.get(field) ?? '')])
+      })
+    } else {
+      rows = [['Batch No', ...sheet.rows[0]]]
+      batches.forEach((batch, index) => {
+        batch[sheetIndex].rows.slice(1).forEach((row) => rows.push([index + 1, ...row]))
+      })
+    }
     if (rows.length > 1_048_576) {
       throw new Error('Too many rows for an Excel worksheet. Narrow the export filters.')
     }
