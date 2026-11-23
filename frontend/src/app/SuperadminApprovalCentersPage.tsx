@@ -49,6 +49,7 @@ type SiteOption = {
 }
 
 type RecipeIngredient = {
+  vendor?: string
   priceUom?: number
   ingredientType?: 'IT' | 'NMP'
   productCode?: string
@@ -1094,6 +1095,9 @@ const SuperadminApprovalCentersPage = ({ corporateOnly = false }: { corporateOnl
                                                     )
                                                   : '-'}
                                               </td>
+                                              <td className="px-4 py-3">{ingredient.vendor || '-'}</td>
+                                              <td className="whitespace-nowrap px-4 py-3">{formatPrice(ingredient.priceUom)}</td>
+                                              <td className="whitespace-nowrap px-4 py-3">{formatPrice(ingredient.foodCost ?? (ingredient.priceUom != null && ingredient.qty != null ? ingredient.priceUom * ingredient.qty : undefined))}</td>
                                             </tr>
                                           ))
                                         )}
