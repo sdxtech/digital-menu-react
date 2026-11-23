@@ -224,6 +224,11 @@ describe('MenuProductionsService sales input', () => {
         ]),
       }),
     };
+    const sites = {
+      findSummariesByCodes: jest
+        .fn()
+        .mockResolvedValue(new Map([['SITE-A', { name: 'Site Alpha' }]])),
+    };
     const service = new MenuProductionsService(
       menuProductionModel as never,
       {} as never,
@@ -234,9 +239,17 @@ describe('MenuProductionsService sales input', () => {
       {
         findLookupsByNormalizedCodes: jest.fn().mockResolvedValue([]),
       } as never,
+      sites as never,
     );
 
     const result = await service.buildStoreRequestGroups({});
+    expect(sites.findSummariesByCodes).toHaveBeenCalledTimes(1);
+    expect(sites.findSummariesByCodes).toHaveBeenCalledWith(['SITE-A']);
+    expect(
+      result.items.every(
+        (group) => group.site === 'SITE-A' && group.siteName === 'Site Alpha',
+      ),
+    ).toBe(true);
     expect(result.items[0].items[0]).toMatchObject({
       cost: 100,
       estimatedCost: 100,

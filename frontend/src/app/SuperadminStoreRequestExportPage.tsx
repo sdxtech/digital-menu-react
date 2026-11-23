@@ -1,3 +1,4 @@
+import type { SummaryPrintMenu } from '../lib/ingredient-summary-print'
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import PageHeading from '../components/PageHeading'
 import { useEffect, useRef, useState } from 'react'
@@ -60,7 +61,7 @@ type StoreRequestFulfillment = {
   items: StoreFulfillmentIngredient[]
 }
 
-type StoreRequestMenu = {
+type StoreRequestMenu = SummaryPrintMenu & {
   costCalculationVersion?: number
   id: string
   submittedByName?: string
@@ -80,6 +81,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  siteName?: string
   site: string
   date: string
   productionCode?: string
@@ -618,7 +620,7 @@ const SuperadminStoreRequestExportPage = () => {
       const exported = await downloadSpreadsheet(filename, [
         { name: 'Store Requests', rows },
         { name: 'Estimated Costs', rows: estimatedCostRows },
-      ], { name: 'Ingredient Summary', rows: buildIngredientSummaryExportRows(groups, true) })
+      ], { name: 'Ingredient Summary', rows: buildIngredientSummaryExportRows(groups, true) }, undefined, groups)
 
       if (!exported) return
       setInfoMessage(

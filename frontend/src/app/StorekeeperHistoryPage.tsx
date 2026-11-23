@@ -1,3 +1,4 @@
+import type { SummaryPrintMenu } from '../lib/ingredient-summary-print'
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import LoadingTableBody from '../components/LoadingTableBody'
@@ -57,7 +58,7 @@ type StoreRequestFulfillment = {
   items: StoreFulfillmentIngredient[]
 }
 
-type StoreRequestMenu = {
+type StoreRequestMenu = SummaryPrintMenu & {
   costCalculationVersion?: number
   id: string
   productionCode?: string
@@ -80,6 +81,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  siteName?: string
   site?: string
   date: string
   productionCode?: string
@@ -489,6 +491,8 @@ const StorekeeperHistoryPage = () => {
       `issuance-history-${safeDate}-${safeProductionCode}.xlsx`,
       [{ name: 'Issuance History', rows }],
       { name: 'Ingredient Summary', rows: buildIngredientSummaryExportRows([group]) },
+      undefined,
+      [group],
     )
   }
 

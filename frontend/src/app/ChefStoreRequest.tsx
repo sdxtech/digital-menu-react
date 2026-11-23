@@ -1,3 +1,4 @@
+import type { SummaryPrintMenu } from '../lib/ingredient-summary-print'
 import { buildIngredientSummaryExportRows } from '../lib/ingredient-summary-export'
 import { productionQuantityExportCells } from '../lib/production-quantity-export'
 import LoadingTableBody from '../components/LoadingTableBody'
@@ -102,7 +103,7 @@ type StoreRequestFulfillment = {
   }>
 }
 
-type StoreRequestMenu = {
+type StoreRequestMenu = SummaryPrintMenu & {
   costCalculationVersion?: number
   id: string
   productionCode?: string
@@ -140,6 +141,7 @@ type StoreRequestMenu = {
 }
 
 type StoreRequestGroup = {
+  siteName?: string
   site?: string
   date: string
   productionCode?: string
@@ -262,6 +264,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
     string,
     {
       site?: string
+      siteName?: string
       date: string
       productionCode?: string
       items: StoreRequestMenu[]
@@ -275,6 +278,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
     const groupKey = getStoreRequestGroupKey(group)
     const bucket = groupedByBatch.get(groupKey) ?? {
       site: group.site,
+      siteName: group.siteName,
       date: group.date,
       productionCode: group.productionCode,
       items: [],
@@ -303,6 +307,7 @@ const mergeStoreRequestGroups = (groups: StoreRequestGroup[]) => {
   return Array.from(groupedByBatch.values())
     .map((group) => ({
       site: group.site,
+      siteName: group.siteName,
       date: group.date,
       productionCode: group.productionCode,
       items: group.items,
@@ -1114,7 +1119,7 @@ const ChefStoreRequest = ({
       { name: 'Store Request', rows },
       { name: 'Ingredient Summary', rows: summaryRows },
       { name: 'Estimated Costs', rows: estimatedCostRows },
-    ])
+    ], undefined, undefined, [group])
   }
 
   const openBulkExportModal = () => {
@@ -1193,6 +1198,7 @@ const ChefStoreRequest = ({
         ],
         undefined,
         bulkExportFormat,
+        exportGroups,
       )
 
       if (!exported) return

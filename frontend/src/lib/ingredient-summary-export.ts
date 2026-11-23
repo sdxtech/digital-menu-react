@@ -13,6 +13,29 @@ type SummaryExportGroup = {
   summary?: StoreRequestSummaryIngredient[]
 }
 
+const summaryCollator = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
+
+const ingredientSortKey = (cell: SpreadsheetCell) => {
+  const value = String(cell ?? '').trim()
+  const separator = value.indexOf('_')
+  const category = separator < 0 ? '' : value.slice(0, separator).trim().replace(/\s+/g, ' ').toLowerCase()
+  return {
+    category: category === 'vegetable' ? 'vegetables' : category,
+    name: separator < 0 ? value : value.slice(separator + 1).trim(),
+  }
+}
+
+const compareSummaryRows = (a: SpreadsheetCell[], b: SpreadsheetCell[]) => {
+  const left = ingredientSortKey(a[2])
+  const right = ingredientSortKey(b[2])
+  // Both layouts put Prod QTY/UOM in columns G/H. Zero is complete.
+  return Number(!left.category) - Number(!right.category) ||
+    summaryCollator.compare(left.category, right.category) ||
+    Number(a[6] !== '' && Boolean(a[7])) - Number(b[6] !== '' && Boolean(b[7])) ||
+    summaryCollator.compare(left.name, right.name) ||
+    summaryCollator.compare(String(a[3] ?? '').trim(), String(b[3] ?? '').trim())
+}
+
 const buildQuantitySummaryRows = (
   groups: SummaryExportGroup[],
   aggregateAcrossGroups: boolean,
@@ -26,16 +49,12 @@ const buildQuantitySummaryRows = (
     formatUnitLabel(item.unitOfMeasures),
     ...productionQuantityExportCells(item),
   ]
-  // Both summary layouts put Prod QTY/UOM in columns G/H. Zero is complete.
-  const incompleteFirst = (a: SpreadsheetCell[], b: SpreadsheetCell[]) =>
-    Number(a[6] !== '' && Boolean(a[7])) - Number(b[6] !== '' && Boolean(b[7]))
-
   if (aggregateAcrossGroups) {
     return [
       ['Product Type', 'Product Code', 'Ingredient Name', 'Vendor', 'SR QTY', 'SR UOM', 'Prod QTY', 'Prod UOM'],
       ...aggregateStoreRequestSummaryAcrossGroups(groups, true).map((item) => [
         item.ingredientType ?? '', ...cells(item),
-      ]).sort(incompleteFirst),
+      ]).sort(compareSummaryRows),
     ]
   }
 
@@ -43,7 +62,7 @@ const buildQuantitySummaryRows = (
     ['Client Name', 'IT Code', 'Ingredient Name', 'Vendor', 'SR QTY', 'SR UOM', 'Prod QTY', 'Prod UOM'],
     ...groups.flatMap((group) => aggregateStoreRequestSummaryByVendor(group, true).map((item) => [
       group.items[0]?.clientName ?? '', ...cells(item),
-    ])).sort(incompleteFirst),
+    ])).sort(compareSummaryRows),
   ]
 }
 
@@ -62,7 +81,8 @@ export const buildIngredientSummaryExportRows = (
   const current = groupsForCostVersion(groups, true)
   if (!current.length) return buildQuantitySummaryRows(groups, acrossGroups)
   const [headers, ...legacy] = buildQuantitySummaryRows(groupsForCostVersion(groups, false), acrossGroups)
-  return [headers, ...legacy, ...buildQuantitySummaryRows(current, acrossGroups, 2).slice(1)]
+  const rows = [...legacy, ...buildQuantitySummaryRows(current, acrossGroups, 2).slice(1)]
+  return [headers, ...rows.sort(compareSummaryRows)]
 }
 
 export const buildMprIngredientSummaryRows = (
