@@ -22,7 +22,7 @@ import { formatRecipeVersion } from '../lib/recipe-version'
 import { aggregateStoreRequestSummaryByVendor } from '../lib/store-request-summary'
 import { getApprovalStatusLabel, getStoreRequestStatusLabel } from '../lib/status-labels'
 import { RecipeStatusBadge } from '../components/RecipeStatusBadge'
-import RecipeSalesRecommendation from '../components/RecipeSalesRecommendation'
+import RecipeSalesRecommendation, { getRecipeCostPerPax } from '../components/RecipeSalesRecommendation'
 import { formatUnitLabel } from '../lib/unit-of-measures'
 import { buildMenuProductionApprovalSheets, downloadMenuProductionApproval } from '../lib/menu-production-approval-export'
 import { DateRangeFilter } from './UnitManagerMenuProductionRecordsPage'
@@ -33,6 +33,7 @@ const MENU_GROUP_ITEMS_PER_PAGE = 10
 type ApprovalCenterSection = 'recipes' | 'menu-productions'
 
 type RecipeIngredient = {
+  vendor?: string
   priceSourceSite?: string
   priceSourceSiteName?: string
   priceUom?: number
@@ -757,13 +758,15 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                     <th className="px-4 py-3 font-semibold">Category</th>
                     <th className="px-4 py-3 font-semibold">Chef</th>
                     <th className="px-4 py-3 font-semibold">Recipe status</th>
+                    <th className="px-4 py-3 font-semibold">Estimated Total Cost</th>
+                    <th className="px-4 py-3 font-semibold">Cost/Pax</th>
                     <th className="px-4 py-3 font-semibold">Action</th>
                   </tr>
                 </thead>
                 <LoadingTableBody
                   key={JSON.stringify([recipePage, selectedSite, activeSection])}
                   loading={loadingApprovals}
-                  columns={8}
+                  columns={10}
                   rowCount={pendingRecipes.length}
                   label="Loading approval data..."
                   error={actionError}
@@ -771,7 +774,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                 >
                   {pendingRecipes.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-6 text-center text-muted">
+                      <td colSpan={10} className="px-4 py-6 text-center text-muted">
                         No recipes pending approval.
                       </td>
                     </tr>
@@ -780,6 +783,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                       const recipeKey = getRecipeKey(item)
                       const isExpanded = expandedRecipeKeys.includes(recipeKey)
                       const ingredients = item.ingredients ?? []
+                      const costPerPax = getRecipeCostPerPax(item)
+                      const estimatedTotalCost = costPerPax === undefined ? undefined : costPerPax * (item.portionSize ?? 1)
                       const submittedBy =
                         item.createdByName?.trim() ||
                         item.createdByEmail?.trim() ||
@@ -805,6 +810,8 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                             <td className="px-4 py-3">
                               <RecipeStatusBadge status={item.status} />
                             </td>
+                            <td className="whitespace-nowrap px-4 py-3">{formatPrice(estimatedTotalCost)}</td>
+                            <td className="whitespace-nowrap px-4 py-3">{formatPrice(costPerPax)}</td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-2">
                                 <button
@@ -848,7 +855,7 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                           </tr>
                           {isExpanded ? (
                             <tr className="border-t border-border bg-background">
-                              <td colSpan={8} className="px-4 py-4">
+                              <td colSpan={10} className="px-4 py-4">
                                 <div className="grid gap-4 lg:grid-cols-12">
                                   <div className="rounded-md border border-border bg-surface p-4 lg:col-span-4">
                                     <p className="text-xs text-muted">Recipe details</p>
@@ -929,13 +936,16 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                             <th className="px-4 py-3 font-semibold">
                                               Unit
                                             </th>
+                                            <th className="px-4 py-3 font-semibold">Vendor</th>
+                                            <th className="px-4 py-3 font-semibold">Price</th>
+                                            <th className="px-4 py-3 font-semibold">Ingredient Cost</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {ingredients.length === 0 ? (
                                             <tr className="border-t border-border">
                                               <td
-                                                colSpan={5}
+                                                colSpan={8}
                                                 className="px-4 py-6 text-center text-muted"
                                               >
                                                 No ingredients available.
@@ -970,6 +980,9 @@ const UnitManagerPage = ({ corporateOnly = false }: { corporateOnly?: boolean })
                                                         )
                                                       : '-'}
                                                   </td>
+                                                  <td className="px-4 py-3">{ingredient.vendor || '-'}</td>
+                                                  <td className="whitespace-nowrap px-4 py-3">{formatPrice(ingredient.priceUom)}</td>
+                                                  <td className="whitespace-nowrap px-4 py-3">{formatPrice(ingredient.foodCost ?? (ingredient.priceUom != null && ingredient.qty != null ? ingredient.priceUom * ingredient.qty : undefined))}</td>
                                                 </tr>
                                               ),
                                             )
