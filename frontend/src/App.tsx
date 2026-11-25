@@ -195,6 +195,7 @@ function App() {
               element={<UnitManagerMenuProductionRecordsPage />}
             />
             <Route path="recipe-data" element={<UnitManagerRecipeDataPage />} />
+            <Route path="inventory/dashboard" element={<StorekeeperInventoryPage dashboard />} />
           </Route>
         </Route>
 
@@ -272,6 +273,7 @@ function App() {
             
             <Route path="history" element={<StorekeeperHistoryPage />} />
             <Route path="inventory" element={<StorekeeperInventoryPage />} />
+            <Route path="inventory/dashboard" element={<StorekeeperInventoryPage dashboard />} />
             <Route path="inventory/receive-goods" element={<InventoryReceiveGoodsPage />} />
             <Route path="inventory/import-po" element={<InventoryImportPoPage />} />
           </Route>
@@ -319,6 +321,7 @@ function App() {
               element={<Navigate to="/superadmin/store-request?view=history" replace />}
             />
             <Route path="inventory" element={<StorekeeperInventoryPage />} />
+            <Route path="inventory/dashboard" element={<StorekeeperInventoryPage dashboard />} />
             <Route path="inventory/receive-goods" element={<InventoryReceiveGoodsPage />} />
             <Route path="inventory/import-po" element={<InventoryImportPoPage />} />
             <Route path="audit-logs" element={<SuperadminAuditLogPage />} />

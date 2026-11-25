@@ -4,18 +4,20 @@ import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import InventoryWorkspace from '../components/inventory/InventoryWorkspace'
+import InventoryDashboard from '../components/inventory/InventoryDashboard'
 
 type InventoryFeatureFlag = {
   enabled: boolean
 }
 
-const StorekeeperInventoryPage = () => {
+const StorekeeperInventoryPage = ({ dashboard = false }: { dashboard?: boolean }) => {
   const { accessToken, user } = useAuth()
   const [searchParams] = useSearchParams()
   const isSuperadmin = user?.role === 'superadmin'
-  const isConfiguration = isSuperadmin && searchParams.get('view') === 'configuration'
+  const requiresFeatureFlag = user?.role === 'storekeeper'
+  const isConfiguration = !dashboard && isSuperadmin && searchParams.get('view') === 'configuration'
   const currentView =
-    isConfiguration ? 'Inventory Configuration' :
+    dashboard ? 'Inventory Dashboard' : isConfiguration ? 'Inventory Configuration' :
       searchParams.get('view') === 'movements' ? 'Stock Movement' : 'List of Inventory'
   const [inventoryEnabled, setInventoryEnabled] = useState<boolean | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -118,8 +120,8 @@ const StorekeeperInventoryPage = () => {
   }
 
   useEffect(() => {
-    fetchInventoryStatus().catch(() => null)
-  }, [fetchInventoryStatus])
+    if (requiresFeatureFlag || isConfiguration) void fetchInventoryStatus()
+  }, [fetchInventoryStatus, isConfiguration, requiresFeatureFlag])
 
   const siteSelector = isSuperadmin ? (
     <label className="block space-y-1 text-sm">
@@ -205,7 +207,7 @@ const StorekeeperInventoryPage = () => {
         </section>
       ) : null}
 
-      {isConfiguration ? null : !isSuperadmin && inventoryEnabled !== true ? (
+      {isConfiguration ? null : requiresFeatureFlag && inventoryEnabled !== true ? (
         <div className={isSuperadmin ? 'space-y-2' : '!mt-2 space-y-2'}>
           {inventoryEnabled === null ? (
             <p className="text-sm text-muted">
@@ -226,6 +228,9 @@ const StorekeeperInventoryPage = () => {
               </button>
             </div>
           ) : null}
+          {inventoryEnabled === false ? (
+            <p className="text-sm text-muted">Inventory is disabled for Storekeeper.</p>
+          ) : null}
         </div>
       ) : (
         <div className="!mt-2 space-y-4">
@@ -234,7 +239,15 @@ const StorekeeperInventoryPage = () => {
               {sitesError}
             </p>
           ) : null}
-          {accessToken ? (
+          {accessToken && dashboard ? (
+            <InventoryDashboard
+              key={site}
+              site={site}
+              accessToken={accessToken}
+              siteSelector={siteSelector}
+              showSiteLabel={user?.role !== 'storekeeper'}
+            />
+          ) : accessToken ? (
             <InventoryWorkspace
               key={site}
               site={site}

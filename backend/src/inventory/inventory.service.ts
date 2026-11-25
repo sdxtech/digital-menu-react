@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -27,6 +28,7 @@ import type {
   ConfirmPurchaseOrderDto,
   CreateInventoryReceiptDto,
   InventoryLineDto,
+  InventoryDashboardQueryDto,
   InventoryQueryDto,
 } from './inventory.dto';
 import {
@@ -46,8 +48,43 @@ type IssueInput = {
 };
 type Balance = InventoryLine;
 
+// Older issues stored completion time. Their batch reference contains the original MPR date.
+function productionDatedMovements(
+  site: string,
+): import('mongoose').PipelineStage[] {
+  return [
+    { $match: { site } },
+    {
+      $set: {
+        occurredAt: {
+          $cond: [
+            { $eq: ['$kind', 'issue'] },
+            {
+              $dateFromString: {
+                dateString: {
+                  $arrayElemAt: [
+                    { $split: [{ $ifNull: ['$reference', ''] }, '__'] },
+                    1,
+                  ],
+                },
+                format: '%Y-%m-%d',
+                timezone: 'Asia/Jakarta',
+                onError: '$occurredAt',
+                onNull: '$occurredAt',
+              },
+            },
+            '$occurredAt',
+          ],
+        },
+      },
+    },
+  ];
+}
+
 @Injectable()
 export class InventoryService {
+  private readonly logger = new Logger(InventoryService.name);
+
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(InventoryState.name)
@@ -75,6 +112,21 @@ export class InventoryService {
   async status(site: string) {
     const state = await this.states.findOne({ site }).lean();
     return { active: Boolean(state), activatedAt: state?.activatedAt ?? null };
+  }
+
+  async reset(site: string, actor: Actor) {
+    const { deletedEntries } = await this.transaction(async (session) => {
+      // Removing the state first serializes the reset with active inventory writes.
+      await this.states.deleteOne({ site }, { session });
+      const entries = await this.entries.deleteMany({ site }, { session });
+      await this.issues.deleteMany({ site }, { session });
+      await this.previews.deleteMany({ site }, { session });
+      return { deletedEntries: entries.deletedCount };
+    });
+    this.logger.log(
+      `Inventory reset for site ${site} by user ${actor.id}. Removed ${deletedEntries} stock entries.`,
+    );
+    return { active: false, activatedAt: null };
   }
 
   async itemOptions(site: string, search?: string) {
@@ -379,21 +431,38 @@ export class InventoryService {
     actor: Actor,
     allowAdditional = false,
   ) {
-    const preview = await this.previews
-      .findOne({
-        _id: previewId,
-        site,
-        actorId: actor.id,
-        expiresAt: { $gt: new Date() },
-      })
-      .lean();
-    if (!preview)
-      throw new BadRequestException(
-        'The opening preview expired or belongs to another site or user. Upload the file again.',
+    return this.transaction(async (session) => {
+      const preview = await this.previews
+        .findOne({
+          _id: previewId,
+          site,
+          actorId: actor.id,
+          expiresAt: { $gt: new Date() },
+        })
+        .session(session)
+        .lean();
+      if (!preview)
+        throw new BadRequestException(
+          'The opening preview expired or belongs to another site or user. Upload the file again.',
+        );
+      const active =
+        allowAdditional &&
+        (await this.states.exists({ site }).session(session));
+      const result = active
+        ? await this.addOpening(site, previewId, preview.lines, actor, session)
+        : await this.activateInSession(site, preview.lines, actor, session);
+      // A concurrent reset that removed this preview must invalidate the confirmation.
+      const updated = await this.previews.updateOne(
+        { _id: preview._id },
+        { $currentDate: { updatedAt: true } },
+        { session, timestamps: false },
       );
-    if (allowAdditional && (await this.status(site)).active)
-      return this.addOpening(site, previewId, preview.lines, actor);
-    return this.activate(site, preview.lines, actor);
+      if (!updated.matchedCount)
+        throw new ConflictException(
+          'The opening preview is no longer available. Upload the file again.',
+        );
+      return result;
+    });
   }
 
   private async addOpening(
@@ -401,73 +470,79 @@ export class InventoryService {
     previewId: string,
     input: InventoryLineDto[],
     actor: Actor,
+    session: ClientSession,
   ) {
-    return this.transaction(async (session) => {
-      const state = await this.lock(site, session);
-      const sourceKey = `opening-addition:${previewId}`;
-      if (await this.entries.exists({ site, sourceKey }).session(session))
-        return { active: true, activatedAt: state.activatedAt };
-      if (
-        input.some((line) => !inventoryCode(line.productCode).startsWith('IT'))
-      )
-        throw new BadRequestException(
-          'Additional opening balances require IT product codes.',
-        );
-      const lines = await this.normalizeLines(site, input, false, session);
-      const recorded = await this.entries
-        .exists({
-          site,
-          'lines.productCode': { $in: lines.map((line) => line.productCode) },
-        })
-        .session(session);
-      if (recorded)
-        throw new ConflictException(
-          'An item already has inventory history for this site. Upload only new IT items.',
-        );
-      await this.entries.create(
-        [
-          {
-            site,
-            sourceKey,
-            kind: 'opening',
-            occurredAt: new Date(),
-            actor: `${actor.name} (${actor.id})`,
-            note: 'Additional opening balance for new IT items.',
-            lines,
-          },
-        ],
-        { session },
-      );
+    const state = await this.lock(site, session);
+    const sourceKey = `opening-addition:${previewId}`;
+    if (await this.entries.exists({ site, sourceKey }).session(session))
       return { active: true, activatedAt: state.activatedAt };
-    });
+    if (input.some((line) => !inventoryCode(line.productCode).startsWith('IT')))
+      throw new BadRequestException(
+        'Additional opening balances require IT product codes.',
+      );
+    const lines = await this.normalizeLines(site, input, false, session);
+    const recorded = await this.entries
+      .exists({
+        site,
+        'lines.productCode': { $in: lines.map((line) => line.productCode) },
+      })
+      .session(session);
+    if (recorded)
+      throw new ConflictException(
+        'An item already has inventory history for this site. Upload only new IT items.',
+      );
+    await this.entries.create(
+      [
+        {
+          site,
+          sourceKey,
+          kind: 'opening',
+          occurredAt: new Date(),
+          actor: `${actor.name} (${actor.id})`,
+          note: 'Additional opening balance for new IT items.',
+          lines,
+        },
+      ],
+      { session },
+    );
+    return { active: true, activatedAt: state.activatedAt };
   }
 
   async activate(site: string, input: InventoryLineDto[], actor: Actor) {
-    return this.transaction(async (session) => {
-      if (await this.states.exists({ site }).session(session))
-        throw new ConflictException(
-          'Opening inventory has already been imported for this site.',
-        );
-      const lines = await this.normalizeLines(site, input, false, session);
-      const activatedAt = new Date();
-      await this.states.create([{ site, activatedAt, revision: 0 }], {
-        session,
-      });
-      await this.entries.create(
-        [
-          {
-            site,
-            sourceKey: 'opening',
-            kind: 'opening',
-            occurredAt: activatedAt,
-            actor: `${actor.name} (${actor.id})`,
-            lines,
-          },
-        ],
-        { session },
+    return this.transaction((session) =>
+      this.activateInSession(site, input, actor, session),
+    );
+  }
+
+  private async activateInSession(
+    site: string,
+    input: InventoryLineDto[],
+    actor: Actor,
+    session: ClientSession,
+  ) {
+    if (await this.states.exists({ site }).session(session))
+      throw new ConflictException(
+        'Opening inventory has already been imported for this site.',
       );
-      return { active: true, activatedAt };
+    const lines = await this.normalizeLines(site, input, false, session);
+    const activatedAt = new Date();
+    await this.states.create([{ site, activatedAt, revision: 0 }], {
+      session,
     });
+    await this.entries.create(
+      [
+        {
+          site,
+          sourceKey: 'opening',
+          kind: 'opening',
+          occurredAt: activatedAt,
+          actor: `${actor.name} (${actor.id})`,
+          lines,
+        },
+      ],
+      { session },
+    );
+    return { active: true, activatedAt };
   }
 
   private purchaseOrderKey(reference: string) {
@@ -678,6 +753,11 @@ export class InventoryService {
         );
       const lines = await this.normalizeLines(site, input.lines, true, session);
       if (original) {
+        await this.assertStockAvailable(
+          site,
+          inventoryDelta(lines, original.lines),
+          session,
+        );
         const cancelledAt = new Date();
         await this.entries.create(
           [
@@ -737,6 +817,11 @@ export class InventoryService {
         .lean();
       if (!receipt) throw new NotFoundException('Receipt not found.');
       if (receipt.reversedAt) return { reversed: true };
+      const lines = receipt.lines.map((line) => ({
+        ...line,
+        quantity: -line.quantity,
+      }));
+      await this.assertStockAvailable(site, lines, session);
       const reversedAt = new Date();
       await this.entries.create(
         [
@@ -748,10 +833,7 @@ export class InventoryService {
             actor: `${actor.name} (${actor.id})`,
             reference: id,
             note: reason.trim(),
-            lines: receipt.lines.map((line) => ({
-              ...line,
-              quantity: -line.quantity,
-            })),
+            lines,
           },
         ],
         { session },
@@ -797,6 +879,7 @@ export class InventoryService {
     const cutoff = dates[0] ?? query.asOf;
     const search = query.search?.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pipeline: import('mongoose').PipelineStage[] = [
+      ...(cutoff ? productionDatedMovements(site) : []),
       {
         $match: {
           site,
@@ -919,6 +1002,156 @@ export class InventoryService {
     };
   }
 
+  async dashboardStock(site: string) {
+    const status = await this.status(site);
+    if (!status.active) return { ...status, items: [] };
+
+    const items = await this.entries.aggregate<Balance>([
+      { $match: { site } },
+      { $sort: { occurredAt: 1, _id: 1 } },
+      { $unwind: '$lines' },
+      {
+        $group: {
+          _id: { code: '$lines.productCode', unit: '$lines.unitOfMeasures' },
+          name: { $last: '$lines.name' },
+          quantity: { $sum: '$lines.quantity' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          productCode: '$_id.code',
+          unitOfMeasures: '$_id.unit',
+          name: 1,
+          quantity: { $round: ['$quantity', 6] },
+        },
+      },
+    ]);
+    return { ...status, items };
+  }
+
+  private dashboardItem(query: InventoryDashboardQueryDto) {
+    const code = query.productCode?.trim();
+    if (!code) throw new BadRequestException('Select an inventory item.');
+    return { 'lines.productCode': inventoryCode(code) };
+  }
+
+  async dashboardHistory(site: string, query: InventoryDashboardQueryDto) {
+    return this.history(
+      site,
+      { ...query, search: undefined, view: 'lines' },
+      false,
+      this.dashboardItem(query),
+    );
+  }
+
+  async dashboardTrend(site: string, query: InventoryDashboardQueryDto) {
+    const from = query.from?.slice(0, 10);
+    const to = query.to?.slice(0, 10);
+    const days = (Date.parse(to ?? '') - Date.parse(from ?? '')) / 86400000 + 1;
+    if (!from || !to || !Number.isFinite(days) || days < 1 || days > 366) {
+      throw new BadRequestException('Select a date range of 1 to 366 days.');
+    }
+
+    const lineFilter =
+      query.productCode !== undefined ? this.dashboardItem(query) : undefined;
+    const groupBy =
+      query.productCode !== undefined
+        ? {
+            $dateToString: {
+              date: '$occurredAt',
+              format: '%Y-%m-%d',
+              timezone: 'Asia/Jakarta',
+            },
+          }
+        : '$lines.productCode';
+    type MovementTotals = { stockIn: number; stockOut: number };
+    type MovementRow = MovementTotals & { _id: string };
+    const [result] = await this.entries.aggregate<{
+      rows: MovementRow[];
+      totals: MovementTotals[];
+    }>([
+      ...productionDatedMovements(site),
+      {
+        $match: {
+          site,
+          kind: { $ne: 'opening' },
+          occurredAt: {
+            $gte: new Date(`${from}T00:00:00+07:00`),
+            $lte: new Date(`${to}T23:59:59.999+07:00`),
+          },
+        },
+      },
+      { $unwind: '$lines' },
+      ...(lineFilter ? [{ $match: lineFilter }] : []),
+      {
+        $group: {
+          _id: groupBy,
+          stockIn: { $sum: { $max: ['$lines.quantity', 0] } },
+          stockOut: {
+            $sum: { $max: [{ $multiply: ['$lines.quantity', -1] }, 0] },
+          },
+        },
+      },
+      {
+        $facet: {
+          rows:
+            query.productCode === undefined
+              ? [
+                  {
+                    $addFields: {
+                      movement: { $add: ['$stockIn', '$stockOut'] },
+                    },
+                  },
+                  { $match: { movement: { $gt: 0 } } },
+                  { $sort: { movement: -1, _id: 1 } },
+                  { $limit: 10 },
+                ]
+              : [],
+          totals: [
+            {
+              $group: {
+                _id: null,
+                stockIn: { $sum: '$stockIn' },
+                stockOut: { $sum: '$stockOut' },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const rows = result?.rows ?? [];
+    const totals = {
+      stockIn: roundInventory(result?.totals[0]?.stockIn ?? 0),
+      stockOut: roundInventory(result?.totals[0]?.stockOut ?? 0),
+    };
+    if (query.productCode === undefined) {
+      return {
+        points: [],
+        totals,
+        items: rows.map((row) => ({
+          productCode: row._id,
+          stockIn: roundInventory(row.stockIn),
+          stockOut: roundInventory(row.stockOut),
+        })),
+        hasData: rows.length > 0,
+      };
+    }
+    const byDate = new Map(rows.map((row) => [row._id, row]));
+    const points = Array.from({ length: days }, (_, index) => {
+      const date = new Date(Date.parse(from) + index * 86400000)
+        .toISOString()
+        .slice(0, 10);
+      const row = byDate.get(date);
+      return {
+        date,
+        stockIn: roundInventory(row?.stockIn ?? 0),
+        stockOut: roundInventory(row?.stockOut ?? 0),
+      };
+    });
+    return { points, items: [], totals, hasData: rows.length > 0 };
+  }
+
   async previewIssue(site: string, input: InventoryLineDto[]) {
     if (!(await this.status(site)).active)
       return { active: false, shortages: [] };
@@ -928,12 +1161,23 @@ export class InventoryService {
     const lines = tracked.length
       ? await this.normalizeLines(site, tracked, false, undefined, true)
       : [];
-    const balances = await this.entries.aggregate<InventoryLine>([
+    return { active: true, shortages: await this.stockShortages(site, lines) };
+  }
+
+  private async stockShortages(
+    site: string,
+    deductions: InventoryLine[],
+    session?: ClientSession,
+  ) {
+    if (!deductions.length) return [];
+    const query = this.entries.aggregate<InventoryLine>([
       { $match: { site } },
       { $unwind: '$lines' },
       {
         $match: {
-          'lines.productCode': { $in: lines.map((line) => line.productCode) },
+          'lines.productCode': {
+            $in: deductions.map((line) => line.productCode),
+          },
         },
       },
       {
@@ -951,25 +1195,45 @@ export class InventoryService {
         },
       },
     ]);
+    const balances = await (session ? query.session(session) : query);
     const onHand = new Map(
       balances.map((line) => [
         `${line.productCode}::${line.unitOfMeasures}`,
         line.quantity,
       ]),
     );
-    return {
-      active: true,
-      shortages: lines.flatMap((line) => {
-        const available = roundInventory(
-          onHand.get(`${line.productCode}::${line.unitOfMeasures}`) ?? 0,
-        );
-        const remaining = roundInventory(available - line.quantity);
-        return remaining < 0 ? [{ ...line, available, remaining }] : [];
-      }),
-    };
+    return deductions.flatMap((line) => {
+      const available = roundInventory(
+        onHand.get(`${line.productCode}::${line.unitOfMeasures}`) ?? 0,
+      );
+      const remaining = roundInventory(available - line.quantity);
+      return remaining < 0 ? [{ ...line, available, remaining }] : [];
+    });
   }
 
-  async history(site: string, query: InventoryQueryDto, receiptsOnly = false) {
+  private async assertStockAvailable(
+    site: string,
+    delta: InventoryLine[],
+    session: ClientSession,
+  ) {
+    const deductions = delta
+      .filter((line) => line.quantity < 0)
+      .map((line) => ({ ...line, quantity: -line.quantity }));
+    const shortages = await this.stockShortages(site, deductions, session);
+    const first = shortages[0];
+    if (first) {
+      throw new ConflictException(
+        `Insufficient stock for ${first.productCode}: ${first.available} ${first.unitOfMeasures} on hand, ${first.quantity} required. Refresh stock and adjust the quantity.`,
+      );
+    }
+  }
+
+  async history(
+    site: string,
+    query: InventoryQueryDto,
+    receiptsOnly = false,
+    exactItem?: Record<string, string>,
+  ) {
     const filter: Record<string, unknown> = { site };
     if (receiptsOnly) filter.kind = 'receipt';
     if (query.from && query.to && query.from > query.to)
@@ -1001,8 +1265,10 @@ export class InventoryService {
         items: MovementEntry[];
         count: Array<{ total: number }>;
       }>([
+        ...productionDatedMovements(site),
         { $match: filter },
         { $unwind: { path: '$lines', includeArrayIndex: 'lineIndex' } },
+        ...(exactItem ? [{ $match: exactItem }] : []),
         // Apply the product filter again after unwind so sibling items do not leak in.
         ...(filter.$or ? [{ $match: { $or: filter.$or } }] : []),
         { $sort: { occurredAt: -1, _id: -1, lineIndex: 1 } },
@@ -1067,6 +1333,31 @@ export class InventoryService {
         limit: query.limit,
       };
     }
+    if (!receiptsOnly) {
+      const [page] = await this.entries.aggregate<{
+        items: (InventoryEntry & { _id: Types.ObjectId })[];
+        count: { total: number }[];
+      }>([
+        ...productionDatedMovements(site),
+        { $match: filter },
+        { $sort: { occurredAt: -1, _id: -1 } },
+        {
+          $facet: {
+            items: [
+              { $skip: (query.page - 1) * query.limit },
+              { $limit: query.limit },
+            ],
+            count: [{ $count: 'total' }],
+          },
+        },
+      ]);
+      return {
+        items: page?.items ?? [],
+        total: page?.count[0]?.total ?? 0,
+        page: query.page,
+        limit: query.limit,
+      };
+    }
     const [items, total] = await Promise.all([
       this.entries
         .find(filter)
@@ -1116,6 +1407,7 @@ export class InventoryService {
   async recordIssue(
     site: string,
     batchKey: string,
+    productionDate: string,
     ids: string[],
     items: IssueInput[],
     actor: string,
@@ -1169,6 +1461,7 @@ export class InventoryService {
       : [];
     const delta = inventoryDelta(previous?.lines ?? [], lines);
     if (!delta.length && previous) return;
+    await this.assertStockAvailable(site, delta, session);
     const revision = (previous?.revision ?? 0) + 1;
     await this.issues.updateOne(
       { site, batchKey },
@@ -1182,7 +1475,7 @@ export class InventoryService {
             site,
             sourceKey: `issue:${batchKey}:${revision}`,
             kind: 'issue',
-            occurredAt: new Date(),
+            occurredAt: new Date(`${productionDate}T00:00:00+07:00`),
             actor,
             reference: batchKey,
             note:

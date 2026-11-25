@@ -337,6 +337,7 @@ integration('Inventory MongoDB transactions', () => {
         ...base,
         sourceKey: 'issue:test',
         kind: 'issue',
+        occurredAt: new Date('2026-11-20T01:00:00Z'),
         reference: 'S001__2026-11-18__MPR0001',
         lines: [
           { ...rice, quantity: -2 },
@@ -407,6 +408,17 @@ integration('Inventory MongoDB transactions', () => {
       (await inventory.history('S001', { ...query, from: '2026-11-19' })).total,
     ).toBe(0);
     const legacy = await inventory.history('S001', new InventoryQueryDto());
+    const trend = await inventory.dashboardTrend('S001', {
+      ...new InventoryQueryDto(),
+      from: '2026-11-18',
+      to: '2026-11-20',
+      productCode: 'IT001',
+    });
+    expect(trend.points).toMatchObject([
+      { date: '2026-11-18', stockOut: 7 },
+      { date: '2026-11-19', stockOut: 0 },
+      { date: '2026-11-20', stockOut: 0 },
+    ]);
     expect(legacy.total).toBe(4);
     expect(legacy.items[0]).toHaveProperty('lines');
     const otherSite = await inventory.history('S002', query);
@@ -567,15 +579,26 @@ integration('Inventory MongoDB transactions', () => {
     ).toBe('Duplicate delivery');
   });
 
-  it('issues actual quantities, permits negative stock, corrects by delta and reverses on cancellation', async () => {
+  it('rejects insufficient stock, corrects by delta and reverses on cancellation', async () => {
     await activate();
     const menu = await makeMenu();
-    await fulfill(String(menu._id), 12);
-    expect(await balance()).toBe(-2);
+    await expect(fulfill(String(menu._id), 12)).rejects.toThrow(
+      'Insufficient stock for IT001',
+    );
+    expect(await balance()).toBe(10);
+    expect(await entries.countDocuments({ kind: 'issue' })).toBe(0);
+    expect((await menus.findById(menu._id).lean())?.storeRequestStatus).toBe(
+      'requested',
+    );
+    await fulfill(String(menu._id), 10);
+    expect(await balance()).toBe(0);
     expect(
       (await inventory.previewIssue('S001', [{ ...line, quantity: 1 }]))
         .shortages[0].remaining,
-    ).toBe(-3);
+    ).toBe(-1);
+    await expect(fulfill(String(menu._id), 11, true)).rejects.toThrow(
+      'Insufficient stock for IT001',
+    );
     await expect(inventory.assertDeletable([String(menu._id)])).rejects.toThrow(
       'Cancel',
     );
@@ -595,7 +618,32 @@ integration('Inventory MongoDB transactions', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('deducts only submitted actual quantity at completion time and leaves other sites unchanged', async () => {
+  it('rejects cancelling or reducing a receipt when its stock has been used', async () => {
+    await activate();
+    const saved = await receipt(5);
+    const menu = await makeMenu();
+    await fulfill(String(menu._id), 14);
+    const id = String(saved._id);
+    await expect(
+      inventory.reverseReceipt('S001', id, 'Duplicate delivery', actor),
+    ).rejects.toThrow('Insufficient stock for IT001');
+    await expect(
+      inventory.createReceipt(
+        'S001',
+        {
+          requestId: randomUUID(),
+          receivedDate: '2026-11-18',
+          lines: [{ ...line, quantity: 3 }],
+        },
+        actor,
+        id,
+      ),
+    ).rejects.toThrow('Insufficient stock for IT001');
+    expect(await balance()).toBe(1);
+    expect(await entries.countDocuments({ kind: 'receipt-reversal' })).toBe(0);
+  });
+
+  it('posts actual quantity on the MPR production date when a later completion is submitted', async () => {
     await activate();
     await inventory.activate('S002', [line], actor);
     const menu = await makeMenu({ productionDate: '2020-01-01' });
@@ -622,8 +670,10 @@ integration('Inventory MongoDB transactions', () => {
       actor: 'Storekeeper',
       lines: [{ productCode: 'IT001', unitOfMeasures: 'KG', quantity: -8 }],
     });
-    expect(movement?.occurredAt.getTime()).toBeGreaterThanOrEqual(submittedAt);
-    expect(movement?.occurredAt.getTime()).toBeLessThanOrEqual(savedAt);
+    expect(movement?.occurredAt).toEqual(new Date('2019-12-31T17:00:00Z'));
+    const completedAt = completed?.storeFulfillmentCompletedAt?.getTime();
+    expect(completedAt).toBeGreaterThanOrEqual(submittedAt);
+    expect(completedAt).toBeLessThanOrEqual(savedAt);
     const history = await inventory.history('S001', {
       ...new InventoryQueryDto(),
       view: 'lines',
