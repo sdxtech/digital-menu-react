@@ -28,6 +28,7 @@ const navItems = [
       <i className={`bi bi-boxes ${className}`} aria-hidden="true" />
     ),
     children: [
+      { label: 'Inventory Dashboard', to: '/storekeeper/inventory/dashboard', icon: (className: string) => <i className={`bi bi-speedometer2 ${className}`} aria-hidden="true" /> },
       { label: 'List of Inventory', to: '/storekeeper/inventory?view=stock', breadcrumbPaths: ['/storekeeper/inventory/receive-goods', '/storekeeper/inventory/import-po'], icon: (className: string) => <i className={`bi bi-box-seam ${className}`} aria-hidden="true" /> },
       { label: 'Stock Movement', to: '/storekeeper/inventory?view=movements', icon: (className: string) => <i className={`bi bi-arrow-left-right ${className}`} aria-hidden="true" /> },
     ],

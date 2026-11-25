@@ -81,7 +81,7 @@ const InventoryStockWarning = ({ site, items }: Props) => {
       className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
     >
       <p className="font-semibold">
-        This issuance can result in negative stock. You can still complete it.
+        Requested quantity exceeds stock on hand.
       </p>
       <ul className="mt-2 list-disc space-y-1 pl-4">
         {shortages.map((line) => (
@@ -93,7 +93,7 @@ const InventoryStockWarning = ({ site, items }: Props) => {
         ))}
       </ul>
       <p className="mt-2">
-        Availability is an estimate and may change before saving.
+        Saving checks available stock against the actual change in quantity.
       </p>
     </div>
   )

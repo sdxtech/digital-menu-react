@@ -2,6 +2,13 @@ import RoleLayout from './RoleLayout'
 
 const navItems = [
   {
+    label: 'Inventory Dashboard',
+    to: '/unit-manager/inventory/dashboard',
+    icon: (className: string) => (
+      <i className={`bi bi-boxes ${className}`} aria-hidden="true" />
+    ),
+  },
+  {
     label: 'Approval Center',
     to: '/unit-manager?section=recipes',
     icon: (className: string) => (

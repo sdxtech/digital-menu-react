@@ -50,6 +50,13 @@ export class ConfirmOpeningInventoryDto {
   previewId: string;
 }
 
+export class ResetInventoryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  confirmation: string;
+}
+
 export class CreateInventoryReceiptDto {
   @IsUUID()
   requestId: string;
@@ -144,4 +151,11 @@ export class InventoryQueryDto {
   @Min(1)
   @Max(100)
   limit = 20;
+}
+
+export class InventoryDashboardQueryDto extends InventoryQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  productCode?: string;
 }

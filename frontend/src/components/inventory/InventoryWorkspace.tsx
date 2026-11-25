@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import {
@@ -33,6 +34,7 @@ const inputClass =
   'rounded-md border border-border bg-background px-3 py-2 text-sm'
 
 const InventoryWorkspace = ({ site, accessToken, isSuperadmin, siteSelector }: Props) => {
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -70,6 +72,9 @@ const InventoryWorkspace = ({ site, accessToken, isSuperadmin, siteSelector }: P
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [reverseError, setReverseError] = useState('')
+  const [resetConfirmation, setResetConfirmation] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -209,6 +214,40 @@ const InventoryWorkspace = ({ site, accessToken, isSuperadmin, siteSelector }: P
     }
   }
 
+  const resetInventory = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!isSuperadmin || !site || resetConfirmation?.trim() !== site || resetting) return
+    setResetting(true)
+    setResetError('')
+    setMessage('')
+    try {
+      const current = await apiFetch<InventoryStatus>(
+        `/inventory/reset?site=${encodeURIComponent(site)}`,
+        { method: 'POST', body: JSON.stringify({ confirmation: site }) },
+        accessToken,
+      )
+      queryClient.removeQueries({
+        predicate: ({ queryKey: [key, params] }) =>
+          key === 'inventory-dashboard' ? params === site :
+            (key === 'inventory-dashboard-trend' || key === 'inventory-dashboard-history') &&
+            typeof params === 'string' && new URLSearchParams(params).get('site') === site,
+      })
+      setStatus(current)
+      setBalances([])
+      setEntries([])
+      setTotal(0)
+      setPage(1)
+      setOpening(false)
+      setResetConfirmation(null)
+      setMessage(`Inventory for ${site} was reset. Import an opening balance to activate it again.`)
+      setRevision((value) => value + 1)
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : 'Failed to reset inventory.')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   const exportStock = async () => {
     if (!site || !status?.active || exporting) return
     setExporting(true)
@@ -330,6 +369,14 @@ const InventoryWorkspace = ({ site, accessToken, isSuperadmin, siteSelector }: P
       <div className="flex flex-wrap items-end gap-3">
         {siteSelector ? <div className="w-full sm:w-64 sm:shrink-0">{siteSelector}</div> : null}
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {isSuperadmin && (
+            <button type="button"
+              onClick={() => { setResetError(''); setResetConfirmation('') }}
+              disabled={!site || resetConfirmation !== null || saving || exporting}
+              className="rounded-md border border-red-600 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-50">
+              Reset Inventory
+            </button>
+          )}
           {tab === 'stock' ? (
             <button type="button" onClick={() => setOpening((value) => !value)}
               disabled={!site || !status || (status.active && !isSuperadmin) || loading}
@@ -402,6 +449,32 @@ const InventoryWorkspace = ({ site, accessToken, isSuperadmin, siteSelector }: P
           />
         </>
       ) : null}
+      {isSuperadmin && resetConfirmation !== null && (
+        <form onSubmit={(event) => void resetInventory(event)} aria-labelledby="inventory-reset-title"
+          className="space-y-3 rounded-md border border-red-200 bg-surface p-4">
+          <h2 id="inventory-reset-title" className="font-semibold">Reset Inventory for {site}</h2>
+          <p className="text-sm">
+            This permanently deletes all stock balances and movement history for {site}.
+            You will need to import a new opening balance to activate inventory again.
+          </p>
+          <label className="block space-y-1 text-sm">
+            <span className="block">Type {site} to confirm</span>
+            <input type="text" value={resetConfirmation} maxLength={100} autoComplete="off"
+              disabled={resetting} onChange={(event) => setResetConfirmation(event.target.value)}
+              className={inputClass} />
+          </label>
+          {resetError && <p role="alert" className="text-sm text-red-600">{resetError}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={resetting || resetConfirmation.trim() !== site}
+              className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              {resetting ? 'Resetting...' : 'Confirm Reset'}
+            </button>
+            <button type="button" disabled={resetting} onClick={() => setResetConfirmation(null)} className={inputClass}>
+              Back
+            </button>
+          </div>
+        </form>
+      )}
       <section
         className="rounded-md border border-border bg-surface"
       >

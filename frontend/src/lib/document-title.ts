@@ -27,6 +27,10 @@ const getMenuCreatePageTitle = (state: unknown) => {
 }
 
 const titleMatchers: TitleMatcher[] = [
+  ...['storekeeper', 'superadmin', 'unit-manager'].map((role) => ({
+    path: `/${role}/inventory/dashboard`,
+    getPageTitle: () => 'Inventory Dashboard',
+  })),
   {
     path: '/storekeeper/inventory/import-po',
     getPageTitle: () => 'Import PO',

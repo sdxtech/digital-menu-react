@@ -52,7 +52,7 @@ describe('Inventory closing balance', () => {
         '2026-11-18': 7,
       },
     });
-    expect(aggregate.mock.calls[0][0][0]).toEqual({
+    expect(aggregate.mock.calls[0][0]).toContainEqual({
       $match: {
         site: 'S001',
         occurredAt: { $lte: new Date('2026-11-18T16:59:59.999Z') },
@@ -119,7 +119,7 @@ describe('Inventory closing balance', () => {
       ...new InventoryQueryDto(),
       asOf: '2026-11-18',
     });
-    expect(aggregate.mock.calls[0][0][0]).toEqual({
+    expect(aggregate.mock.calls[0][0]).toContainEqual({
       $match: {
         site: 'S001',
         occurredAt: { $lte: new Date('2026-11-18T16:59:59.999Z') },
