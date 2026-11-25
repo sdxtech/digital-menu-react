@@ -4,7 +4,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AppRole } from '../auth/roles.constants';
 import type { AuthenticatedRequest } from '../auth/types/authenticated-request.type';
 import { InventoryController } from './inventory.controller';
-import { InventoryQueryDto } from './inventory.dto';
+import { InventoryDashboardQueryDto, InventoryQueryDto } from './inventory.dto';
 import type { InventoryService } from './inventory.service';
 
 describe('Inventory authorization', () => {
@@ -40,6 +40,21 @@ describe('Inventory authorization', () => {
     await expect(
       controller.status(request(AppRole.Storekeeper), new InventoryQueryDto()),
     ).rejects.toThrow('User site is required');
+  });
+
+  it('uses the assigned site for a unit manager dashboard', async () => {
+    const inventory = {
+      resolveSite: jest.fn((site: string) => Promise.resolve(site)),
+      dashboardStock: jest.fn(),
+    };
+    const controller = new InventoryController(
+      inventory as unknown as InventoryService,
+    );
+    await controller.dashboard(request(AppRole.UnitManager, 'S001'), {
+      ...new InventoryDashboardQueryDto(),
+      site: 'S002',
+    });
+    expect(inventory.dashboardStock).toHaveBeenCalledWith('S001');
   });
 
   it('allows superadmin site selection and restricts reversal to superadmin', async () => {
@@ -84,5 +99,14 @@ describe('Inventory authorization', () => {
     expect(
       guard.canActivate(context(AppRole.Storekeeper, 'createReceipt')),
     ).toBe(true);
+    for (const handler of ['dashboard', 'dashboardTrend', 'dashboardHistory']) {
+      expect(guard.canActivate(context(AppRole.UnitManager, handler))).toBe(
+        true,
+      );
+      expect(guard.canActivate(context(AppRole.Chef, handler))).toBe(false);
+    }
+    expect(
+      guard.canActivate(context(AppRole.UnitManager, 'createReceipt')),
+    ).toBe(false);
   });
 });

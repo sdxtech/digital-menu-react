@@ -23,8 +23,10 @@ import {
   CreateInventoryReceiptDto,
   ConfirmOpeningInventoryDto,
   ConfirmPurchaseOrderDto,
+  InventoryDashboardQueryDto,
   InventoryQueryDto,
   OpeningInventoryDto,
+  ResetInventoryDto,
   ReverseInventoryReceiptDto,
 } from './inventory.dto';
 import { InventoryService } from './inventory.service';
@@ -51,6 +53,21 @@ export class InventoryController {
     return this.inventory.status(await this.site(req, query));
   }
 
+  @Post('reset')
+  @Roles(AppRole.Superadmin)
+  async reset(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: InventoryQueryDto,
+    @Body() input: ResetInventoryDto,
+  ) {
+    const site = await this.site(req, query);
+    if (input.confirmation !== site)
+      throw new BadRequestException(
+        'Enter the selected site code to reset inventory.',
+      );
+    return this.inventory.reset(site, this.actor(req));
+  }
+
   @Get('balances')
   async balances(
     @Req() req: AuthenticatedRequest,
@@ -68,6 +85,33 @@ export class InventoryController {
       await this.site(req, query),
       query.search,
     );
+  }
+
+  @Get('dashboard')
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin, AppRole.UnitManager)
+  async dashboard(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: InventoryDashboardQueryDto,
+  ) {
+    return this.inventory.dashboardStock(await this.site(req, query));
+  }
+
+  @Get('dashboard/trend')
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin, AppRole.UnitManager)
+  async dashboardTrend(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: InventoryDashboardQueryDto,
+  ) {
+    return this.inventory.dashboardTrend(await this.site(req, query), query);
+  }
+
+  @Get('dashboard/history')
+  @Roles(AppRole.Storekeeper, AppRole.Superadmin, AppRole.UnitManager)
+  async dashboardHistory(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: InventoryDashboardQueryDto,
+  ) {
+    return this.inventory.dashboardHistory(await this.site(req, query), query);
   }
 
   @Get('movements')

@@ -1,9 +1,87 @@
 import { ConflictException } from '@nestjs/common';
-import type { Connection } from 'mongoose';
+import type { ClientSession, Connection } from 'mongoose';
 import { InventoryService } from './inventory.service';
 import { Workbook } from 'exceljs';
 
 describe('Inventory database prerequisites', () => {
+  it.each([
+    { actualQty: 5, expectedDelta: -1 },
+    { actualQty: 6, expectedDelta: null },
+  ])(
+    'checks the net issue correction within the write session',
+    async ({ actualQty, expectedDelta }) => {
+      const material = {
+        productCode: 'IT001',
+        name: 'Rice',
+        unitOfMeasures: 'KG',
+      };
+      const session = {} as ClientSession;
+      const inSession = jest
+        .fn()
+        .mockResolvedValue([{ ...material, quantity: 1 }]);
+      const issueUpdate = jest.fn().mockResolvedValue(undefined);
+      const ledgerCreate = jest.fn().mockResolvedValue(undefined);
+      const inventory = new InventoryService(
+        {} as never,
+        {
+          findOne: () => ({
+            session: () => ({ lean: () => Promise.resolve({}) }),
+          }),
+        } as never,
+        {
+          aggregate: () => ({ session: inSession }),
+          create: ledgerCreate,
+        } as never,
+        {
+          findOne: () => ({
+            session: () => ({
+              lean: () =>
+                Promise.resolve({
+                  lines: [{ ...material, quantity: 4 }],
+                  revision: 1,
+                }),
+            }),
+          }),
+          updateOne: issueUpdate,
+        } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      jest
+        .spyOn(inventory, 'normalizeLines')
+        .mockResolvedValue([{ ...material, quantity: actualQty }]);
+      const write = inventory.recordIssue(
+        'S001',
+        'batch',
+        '2026-11-18',
+        ['menu'],
+        [{ ...material, actualQty }],
+        'Storekeeper',
+        undefined,
+        session,
+      );
+      if (expectedDelta === null) {
+        await expect(write).rejects.toThrow('Insufficient stock for IT001');
+        expect(issueUpdate).not.toHaveBeenCalled();
+        expect(ledgerCreate).not.toHaveBeenCalled();
+      } else {
+        await expect(write).resolves.toBeUndefined();
+        expect(ledgerCreate).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              occurredAt: new Date('2026-11-17T17:00:00Z'),
+              lines: [{ ...material, quantity: expectedDelta }],
+            }),
+          ],
+          { session },
+        );
+      }
+      expect(inSession).toHaveBeenCalledWith(session);
+    },
+  );
+
   it('saves a separate received date for each PO and rejects invalid dates', async () => {
     const workbook = new Workbook();
     workbook.addWorksheet('Sheet1').addRows([

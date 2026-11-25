@@ -3002,6 +3002,7 @@ export class MenuProductionsService implements OnModuleInit {
         await this.inventory.recordIssue(
           menus[0].site || site || '',
           batchKeys[0],
+          menus[0].productionDate,
           normalizedIds,
           fulfillmentItems,
           actor,
@@ -3125,6 +3126,7 @@ export class MenuProductionsService implements OnModuleInit {
         await this.inventory!.recordIssue(
           menus[0].site || site || '',
           batchKeys[0],
+          menus[0].productionDate,
           normalizedIds,
           [],
           actor,
