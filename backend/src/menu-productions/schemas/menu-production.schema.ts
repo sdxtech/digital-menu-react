@@ -207,6 +207,9 @@ export class MenuProduction {
   @Prop({ type: Boolean, default: false, index: true })
   isDraft: boolean;
 
+  @Prop({ type: Number, min: 0 })
+  draftRowIndex?: number;
+
   @Prop({ type: Date, index: true })
   submittedAt?: Date;
 
