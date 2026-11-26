@@ -835,7 +835,7 @@ export class MenuProductionsService implements OnModuleInit {
       ReturnType<RawMaterialsService['findVendorPrices']>
     >();
     const payload = await Promise.all(
-      normalizedInputs.map(async (input) => {
+      normalizedInputs.map(async (input, rowIndex) => {
         const recipe = recipeById.get(input.recipeId);
         if (!recipe) {
           throw new BadRequestException(
@@ -879,6 +879,7 @@ export class MenuProductionsService implements OnModuleInit {
           salesApprovalStatus: 'pending',
           ...finance,
           isDraft: saveAsDraft,
+          ...(saveAsDraft ? { draftRowIndex: rowIndex } : {}),
           ...(submittedAt ? { submittedAt } : {}),
           storeRequestStatus: 'not-requested',
           createdBy,

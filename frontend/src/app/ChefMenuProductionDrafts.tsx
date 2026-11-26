@@ -11,6 +11,15 @@ import type { MenuProduction } from '../lib/chef-data'
 type MenuProductionApi = Omit<MenuProduction, 'id'> & {
   id?: string
   _id?: string
+  draftRowIndex?: number
+}
+
+function compareDraftRows(a: MenuProductionApi, b: MenuProductionApi) {
+  if (a.draftRowIndex !== undefined || b.draftRowIndex !== undefined) {
+    return (a.draftRowIndex ?? Infinity) - (b.draftRowIndex ?? Infinity)
+  }
+  // Older batches have no saved row position. Use their original insertion order.
+  return (a._id ?? a.id ?? '').localeCompare(b._id ?? b.id ?? '')
 }
 
 const ChefMenuProductionDrafts = () => {
@@ -174,7 +183,7 @@ const ChefMenuProductionDrafts = () => {
                             onClick={() =>
                               navigate(isSuperadmin ? '/superadmin/menu-management?tab=menu-production' : '/chef/menu-cycle', {
                                 state: {
-                                  menuProductionDraft: { productionCode, menus },
+                                  menuProductionDraft: { productionCode, menus: [...menus].sort(compareDraftRows) },
                                 },
                               })
                             }
